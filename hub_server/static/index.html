@@ -907,7 +907,7 @@
       const selectNode = document.getElementById("assign-node-id");
 
       // 1. Render dropdown selection for nodes
-      let selectHtml = '<option value="">-- 解除指派 / None --</option>';
+      let selectHtml = '<option value="">-- 選擇設備 / Select Device --</option>';
       data.unassigned_nodes.forEach(node => {
         selectHtml += `<option value="${node}">[未指派] ${node}</option>`;
       });
@@ -991,6 +991,11 @@
 
       if (isNaN(sn) || sn <= 0) {
         alert("請輸入有效的站位數字編號 (大於 0)");
+        return;
+      }
+
+      if (!node_id) {
+        alert("請選擇要指派的設備 ID / Please select a device to assign");
         return;
       }
 
