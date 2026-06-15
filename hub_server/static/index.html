@@ -580,24 +580,9 @@
         <div class="card-title">設備與站位指派 / Stations</div>
         
         <!-- List of current assignments -->
-        <div id="station-list-container" style="font-size: 0.85rem; margin-bottom: 1.25rem;">
+        <div id="station-list-container" style="font-size: 0.85rem;">
           <p style="color: var(--text-muted);">等待設備連線中...</p>
         </div>
-
-        <!-- Assign station form -->
-        <div class="form-group">
-          <label for="assign-station-num">指定站位編號 (Station Number)</label>
-          <input type="number" id="assign-station-num" class="form-control" placeholder="數字, 例如: 1" value="1" min="1">
-        </div>
-
-        <div class="form-group">
-          <label for="assign-node-id">選擇設備 (Device / Node ID)</label>
-          <select id="assign-node-id" class="form-control">
-            <option value="">-- 請選擇 --</option>
-          </select>
-        </div>
-
-        <button class="btn btn-secondary" onclick="assignStation()">確認指派</button>
       </div>
 
       <!-- Game Action Card -->
@@ -904,24 +889,9 @@
 
     function renderStations(data) {
       const listContainer = document.getElementById("station-list-container");
-      const selectNode = document.getElementById("assign-node-id");
-
-      // 1. Render dropdown selection for nodes
-      let selectHtml = '<option value="">-- 選擇設備 / Select Device --</option>';
-      data.unassigned_nodes.forEach(node => {
-        selectHtml += `<option value="${node}">[未指派] ${node}</option>`;
-      });
-
-      const stations = data.stations;
-      Object.keys(stations).forEach(sn => {
-        const info = stations[sn];
-        if (info.node_id) {
-          selectHtml += `<option value="${info.node_id}">[站位 ${sn}] ${info.node_id}</option>`;
-        }
-      });
-      selectNode.innerHTML = selectHtml;
 
       // 2. Render stations list with details & QR Codes
+      const stations = data.stations;
       const snKeys = Object.keys(stations).sort((a, b) => a - b);
       if (snKeys.length === 0 && data.unassigned_nodes.length === 0) {
         listContainer.innerHTML = '<p style="color: var(--text-muted); text-align: center;">等待設備發現...</p>';
@@ -985,41 +955,7 @@
       listContainer.innerHTML = html;
     }
 
-    async function assignStation() {
-      const sn = parseInt(document.getElementById("assign-station-num").value, 10);
-      const node_id = document.getElementById("assign-node-id").value;
 
-      if (isNaN(sn) || sn <= 0) {
-        alert("請輸入有效的站位數字編號 (大於 0)");
-        return;
-      }
-
-      if (!node_id) {
-        alert("請選擇要指派的設備 ID / Please select a device to assign");
-        return;
-      }
-
-      try {
-        const res = await fetch("/api/stations/assign", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            station_number: sn,
-            node_id: node_id || null
-          })
-        });
-        if (res.ok) {
-          const data = await res.json();
-          renderStations(data);
-          fetchState();
-        } else {
-          const err = await res.json();
-          alert("指派失敗: " + (err.detail || "伺服器錯誤"));
-        }
-      } catch (err) {
-        alert("指派失敗: " + err);
-      }
-    }
 
     async function directUnassign(sn) {
       if (!confirm(`確定要解除 STATION ${sn} 的設備與報名資訊嗎？`)) {
