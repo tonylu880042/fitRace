@@ -921,8 +921,6 @@
         html += '<div style="font-size: 0.75rem; color: var(--volt-yellow); font-weight: 700; margin-top: 0.25rem;">已指派站位 (Stations):</div>';
         snKeys.forEach(sn => {
           const info = stations[sn];
-          const signupUrl = `${baseUrl}/static/signup.html?station=${sn}`;
-          const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(signupUrl)}`;
           
           html += `
             <div style="background: rgba(0, 0, 0, 0.2); padding: 0.6rem; border: 1px solid var(--steel-border); border-radius: 4px; display: flex; flex-direction: column; gap: 0.3rem;">
@@ -934,17 +932,8 @@
                 </div>
               </div>
               <div style="font-size: 0.75rem; color: var(--text-muted);">設備 ID: ${info.node_id || '無'}</div>
-              <div style="font-size: 0.8rem; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 0.3rem; margin-top: 0.2rem;">
-                <span>選手: <strong style="color: var(--text-main);">${info.athlete_name || '未報名'}${info.team_name ? ` (${info.team_name})` : ''}</strong></span>
-                <a href="${signupUrl}" target="_blank" style="color: var(--volt-yellow); text-decoration: none; font-size: 0.7rem; border: 1px solid var(--volt-yellow); padding: 0.1rem 0.35rem; border-radius: 2px; text-transform: uppercase; font-weight: 700;">
-                  報名連結
-                </a>
-              </div>
-              <div style="text-align: center; margin-top: 0.15rem;">
-                <details style="font-size: 0.7rem; cursor: pointer; color: var(--text-muted);">
-                  <summary style="outline: none;">展開報名 QR 碼</summary>
-                  <img src="${qrUrl}" style="width: 100px; height: 100px; margin-top: 0.4rem; border: 1px solid var(--steel-border); border-radius: 4px; background: white; padding: 2px;" alt="QR Code">
-                </details>
+              <div style="font-size: 0.8rem; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 0.3rem; margin-top: 0.2rem;">
+                選手: <strong style="color: var(--text-main);">${info.athlete_name || '未報名'}${info.team_name ? ` (${info.team_name})` : ''}</strong>
               </div>
             </div>
           `;
