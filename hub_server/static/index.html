@@ -679,6 +679,7 @@
         }
         if (data.type === "state_change") {
           updateUIState(data);
+          fetchStations();
           return;
         }
         if (data && Object.keys(data).length > 0) {
@@ -957,7 +958,10 @@
             <div style="background: rgba(0, 0, 0, 0.2); padding: 0.6rem; border: 1px solid var(--steel-border); border-radius: 4px; display: flex; flex-direction: column; gap: 0.3rem;">
               <div style="display: flex; justify-content: space-between; align-items: center;">
                 <strong style="color: var(--volt-yellow); font-family: 'Oswald', sans-serif; font-size: 0.95rem;">STATION ${sn}</strong>
-                <span style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">${info.equipment_type}</span>
+                <div style="display: flex; align-items: center; gap: 0.4rem;">
+                  <span style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">${info.equipment_type || '無設備'}</span>
+                  <button onclick="directUnassign(${sn})" style="background: none; border: 1px solid #ef4444; color: #ef4444; font-size: 0.65rem; padding: 0.05rem 0.25rem; border-radius: 2px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='#ef4444'; this.style.color='#fff';" onmouseout="this.style.background='none'; this.style.color='#ef4444';">解除</button>
+                </div>
               </div>
               <div style="font-size: 0.75rem; color: var(--text-muted);">設備 ID: ${info.node_id || '無'}</div>
               <div style="font-size: 0.8rem; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 0.3rem; margin-top: 0.2rem;">
@@ -1009,6 +1013,32 @@
         }
       } catch (err) {
         alert("指派失敗: " + err);
+      }
+    }
+
+    async function directUnassign(sn) {
+      if (!confirm(`確定要解除 STATION ${sn} 的設備與報名資訊嗎？`)) {
+        return;
+      }
+      try {
+        const res = await fetch("/api/stations/assign", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            station_number: sn,
+            node_id: null
+          })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          renderStations(data);
+          fetchState();
+        } else {
+          const err = await res.json();
+          alert("解除失敗: " + (err.detail || "伺服器錯誤"));
+        }
+      } catch (err) {
+        alert("解除失敗: " + err);
       }
     }
 

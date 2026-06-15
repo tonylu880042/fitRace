@@ -124,9 +124,19 @@ def get_stations():
 
 
 @app.post("/api/stations/assign")
-def assign_station(payload: AssignStationPayload):
+async def assign_station(payload: AssignStationPayload):
     try:
         race_manager.assign_station(payload.station_number, payload.node_id)
+        # Broadcast the updated race state and leaderboard progress to all WebSocket clients
+        await ws_manager.broadcast({
+            "type": "state_change",
+            "state": race_manager.get_state().value,
+            "config": race_manager.get_config().model_dump() if race_manager.get_config() else None,
+            "registered_nodes": race_manager.get_registered_nodes(),
+            "start_time_epoch_ms": race_manager._start_time_epoch_ms,
+            "end_time_epoch_ms": getattr(race_manager, "_end_time_epoch_ms", None),
+            "leaderboard": race_manager.get_leaderboard_progress(),
+        })
         return race_manager.get_stations_status()
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
