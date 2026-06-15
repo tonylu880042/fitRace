@@ -1,0 +1,1300 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FitRaceStudio - 實時競賽看板與中控台</title>
+  <meta name="description" content="FitRaceStudio 本地端 IoT 有氧運動競賽實時看板與賽事控制台">
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;700&family=Outfit:wght@400;600;800&family=Noto+Sans+TC:wght@500;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-color: #09090b;
+      --card-bg: #18181b;
+      --steel-border: #27272a;
+      --volt-yellow: #e2ff3b;
+      --hazard-amber: #f59e0b;
+      --crimson-red: #f43f5e;
+      --text-main: #fafafa;
+      --text-muted: #a1a1aa;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Outfit', 'Noto Sans TC', sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      min-height: 100vh;
+      overflow-x: hidden;
+      padding: 1.5rem;
+    }
+
+    /* Industrial grid overlay */
+    body::before {
+      content: "";
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-image: radial-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 0);
+      background-size: 24px 24px;
+      pointer-events: none;
+      z-index: -1;
+    }
+
+    /* Container Grid */
+    .app-container {
+      max-width: 1400px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 1fr 360px;
+      gap: 1.5rem;
+    }
+
+    @media (max-width: 1024px) {
+      .app-container {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* Header styling */
+    header {
+      grid-column: 1 / -1;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 2rem 2.5rem;
+      background: linear-gradient(rgba(9, 9, 11, 0.75), rgba(9, 9, 11, 0.92)), url('/static/hero.png');
+      background-size: cover;
+      background-position: center 25%;
+      border: 2px solid var(--steel-border);
+      border-radius: 4px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Top hazard accent line */
+    header::after {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 4px;
+      background: repeating-linear-gradient(
+        -45deg,
+        var(--volt-yellow),
+        var(--volt-yellow) 8px,
+        #000 8px,
+        #000 16px
+      );
+    }
+
+    .brand h1 {
+      font-family: 'Oswald', sans-serif;
+      font-size: 2.2rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .brand h1 span {
+      color: var(--volt-yellow);
+    }
+
+    .brand p {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      margin-top: 0.2rem;
+    }
+
+    .status-badge {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 1rem;
+      border-radius: 4px;
+      font-family: 'Oswald', sans-serif;
+      font-weight: 700;
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid var(--steel-border);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--crimson-red);
+      box-shadow: 0 0 8px var(--crimson-red);
+    }
+
+    .status-dot.active {
+      background: var(--volt-yellow);
+      box-shadow: 0 0 8px var(--volt-yellow);
+    }
+
+    /* Main Content Area */
+    main {
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 2px solid var(--steel-border);
+      border-radius: 4px;
+      padding: 1.5rem;
+      position: relative;
+    }
+
+    /* Optional warning light card header style */
+    .card.accent::after {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 4px;
+      height: 100%;
+      background: var(--volt-yellow);
+    }
+
+    .card-title {
+      font-family: 'Oswald', sans-serif;
+      font-size: 1.4rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 1.25rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 2px solid var(--steel-border);
+      padding-bottom: 0.75rem;
+    }
+
+    .card-title span {
+      font-family: 'Outfit', sans-serif;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      background: rgba(0, 0, 0, 0.2);
+      padding: 0.25rem 0.6rem;
+      border-radius: 2px;
+      border: 1px solid var(--steel-border);
+    }
+
+    /* Leaderboard list */
+    .leaderboard-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .leaderboard-item {
+      display: grid;
+      grid-template-columns: 50px 1.5fr 1fr 1fr 120px;
+      align-items: center;
+      padding: 0.85rem 1.25rem;
+      background: rgba(0, 0, 0, 0.25);
+      border: 1px solid var(--steel-border);
+      border-radius: 4px;
+      transition: all 0.2s ease;
+      position: relative;
+    }
+
+    .leaderboard-item:hover {
+      border-color: rgba(255, 255, 255, 0.15);
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    /* Top rank highlight */
+    .leaderboard-item:nth-child(1) {
+      border: 1px solid var(--volt-yellow);
+      background: rgba(226, 255, 59, 0.03);
+    }
+
+    .rank {
+      font-family: 'Oswald', sans-serif;
+      font-size: 1.8rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-align: center;
+    }
+
+    .leaderboard-item:nth-child(1) .rank { color: var(--volt-yellow); }
+    .leaderboard-item:nth-child(2) .rank { color: #d4d4d8; }
+    .leaderboard-item:nth-child(3) .rank { color: #a1a1aa; }
+
+    .athlete-info {
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+      flex-direction: row;
+    }
+
+    .athlete-name {
+      font-weight: 800;
+      font-size: 1.15rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .equipment-tag {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-family: 'Oswald', sans-serif;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-top: 0.15rem;
+    }
+
+    .metric-group {
+      text-align: right;
+    }
+
+    .metric-val {
+      font-family: 'Oswald', sans-serif;
+      font-size: 1.5rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .metric-lbl {
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-top: 0.1rem;
+    }
+
+    /* Progress bar */
+    .progress-track {
+      grid-column: 1 / -1;
+      height: 8px;
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid var(--steel-border);
+      border-radius: 2px;
+      margin-top: 0.85rem;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: var(--volt-yellow);
+      width: 0%;
+      transition: width 0.4s cubic-bezier(0.1, 0.8, 0.25, 1);
+    }
+
+    /* Right Side Panel */
+    .control-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+
+    .form-group {
+      margin-bottom: 1rem;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-bottom: 0.4rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .form-control {
+      width: 100%;
+      padding: 0.7rem 0.9rem;
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid var(--steel-border);
+      border-radius: 4px;
+      color: var(--text-main);
+      font-family: inherit;
+      font-size: 0.95rem;
+      transition: border-color 0.2s;
+    }
+
+    .form-control:focus {
+      outline: none;
+      border-color: var(--volt-yellow);
+    }
+
+    /* Action Buttons */
+    .btn {
+      display: inline-flex;
+      justify-content: center;
+      align-items: center;
+      padding: 0.8rem 1.5rem;
+      font-family: 'Oswald', sans-serif;
+      font-size: 1.05rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s;
+      width: 100%;
+      margin-bottom: 0.75rem;
+    }
+
+    .btn-primary {
+      background: var(--volt-yellow);
+      color: #000;
+    }
+
+    .btn-primary:hover {
+      background: #eaff54;
+      box-shadow: 0 0 12px rgba(226, 255, 59, 0.35);
+    }
+
+    .btn-success {
+      background: var(--volt-yellow);
+      color: #000;
+    }
+
+    .btn-success:hover {
+      background: #eaff54;
+      box-shadow: 0 0 12px rgba(226, 255, 59, 0.35);
+    }
+
+    .btn-danger {
+      background: var(--crimson-red);
+      color: #fff;
+    }
+
+    .btn-danger:hover {
+      background: #fb7185;
+      box-shadow: 0 0 12px rgba(244, 63, 94, 0.35);
+    }
+
+    .btn-secondary {
+      background: transparent;
+      color: var(--text-main);
+      border: 1px solid var(--steel-border);
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: var(--text-muted);
+    }
+
+    .btn:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+      box-shadow: none !important;
+    }
+
+    .empty-state {
+      padding: 4rem 1rem;
+      text-align: center;
+      color: var(--text-muted);
+      border: 1px dashed var(--steel-border);
+      border-radius: 4px;
+    }
+
+    .empty-state svg {
+      width: 50px;
+      height: 50px;
+      stroke: var(--text-muted);
+      margin-bottom: 1rem;
+      opacity: 0.5;
+    }
+
+    /* Registration Notification Toast */
+    .marquee-toast {
+      position: fixed;
+      top: -100px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 90%;
+      max-width: 600px;
+      background: linear-gradient(90deg, #18181b, #27272a);
+      border: 2px solid var(--volt-yellow);
+      border-radius: 8px;
+      padding: 1rem 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      box-shadow: 0 10px 30px rgba(226, 255, 59, 0.3);
+      z-index: 9999;
+      transition: top 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    
+    .marquee-toast.show {
+      top: 30px;
+    }
+
+    .marquee-icon {
+      font-size: 2rem;
+      animation: pulse 1s infinite alternate;
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(1); }
+      100% { transform: scale(1.15); }
+    }
+
+    .marquee-text {
+      flex-grow: 1;
+      font-size: 1.15rem;
+      font-weight: 600;
+    }
+
+    .marquee-text span {
+      color: var(--volt-yellow);
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="app-container">
+    
+    <!-- Top Header -->
+    <header>
+      <div class="brand" style="display: flex; align-items: center; gap: 1rem;">
+        <img src="/static/icon.png" style="width: 54px; height: 54px; border-radius: 8px; border: 1px solid var(--steel-border);" alt="Logo">
+        <div>
+          <h1 style="line-height: 1.1; margin: 0;">FitRace<span>Studio</span></h1>
+          <p style="margin: 0; margin-top: 0.2rem;">Real-Time Performance Leaderboard & Scoring</p>
+        </div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 1.5rem;">
+        <!-- General Registration QR Code -->
+        <div style="display: flex; align-items: center; gap: 0.75rem; background: rgba(0,0,0,0.4); border: 1px solid var(--steel-border); padding: 0.4rem 0.8rem; border-radius: 4px;" id="header-qr-container">
+          <div style="text-align: right;">
+            <div style="font-family: 'Oswald', sans-serif; font-weight: 700; font-size: 0.9rem; color: var(--volt-yellow); text-transform: uppercase; letter-spacing: 0.5px;">掃碼自助報名</div>
+            <div style="font-size: 0.7rem; color: var(--text-muted);">Scan to Register</div>
+          </div>
+          <img id="header-qr-img" src="" style="width: 54px; height: 54px; border-radius: 4px; background: white; padding: 2px;" alt="Register QR">
+        </div>
+        <div class="status-badge">
+          <span class="status-dot" id="ws-dot"></span>
+          <span id="ws-status">Offline</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Live Leaderboard -->
+    <main>
+      <div class="card accent">
+        <div class="card-title">
+          <div>即時排行榜 / Live Leaderboard</div>
+          <span id="race-type-indicator">賽制: 未配置</span>
+        </div>
+
+        <div id="leaderboard-container">
+          <div class="empty-state">
+            <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15.362 5.214A8.252 8.252 0 0 1 12 21 8.25 8.25 0 0 1 6.038 7.047 8.287 8.287 0 0 0 9 9.601a8.983 8.983 0 0 1 3.361-6.867 8.21 8.21 0 0 0 3 2.48z" />
+            </svg>
+            <p>等待賽事啟動與連線節點傳送數據...</p>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Right Control Desk -->
+    <aside class="control-panel">
+      
+      <!-- Current State Card -->
+      <div class="card">
+        <div class="card-title">當前狀態 / Status</div>
+        <div style="font-family: 'Oswald', sans-serif; font-size: 1.8rem; font-weight: 700; text-align: center; margin-bottom: 0.5rem; color: var(--volt-yellow);" id="current-state-lbl">
+           IDLE
+         </div>
+         <div style="font-family: 'Oswald', sans-serif; font-size: 2.2rem; font-weight: 700; text-align: center; margin-bottom: 1rem; color: var(--text-main); letter-spacing: 1px; display: none;" id="stopwatch-lbl">
+           00:00.0
+         </div>
+        <div style="font-size: 0.85rem; color: var(--text-muted); text-align: center;" id="current-config-desc">
+          無賽事配置
+        </div>
+        <div id="auto-reset-banner" style="display: none; margin-top: 1rem; padding: 0.5rem; background: rgba(244, 63, 94, 0.15); border: 1px solid var(--crimson-red); border-radius: 4px; text-align: center; font-size: 0.85rem; font-family: 'Noto Sans TC', sans-serif;">
+          ⏱️ <span id="auto-reset-countdown" style="font-weight: 800; color: var(--crimson-red);">60</span> 秒後自動重置賽事 
+          <button onclick="cancelAutoReset(true)" style="background: transparent; border: 1px solid var(--text-muted); color: var(--text-main); font-size: 0.75rem; padding: 0.15rem 0.4rem; border-radius: 2px; cursor: pointer; margin-left: 0.5rem;">取消</button>
+        </div>
+      </div>
+
+      <!-- Config Form -->
+      <div class="card">
+        <div class="card-title">配置比賽 / Settings</div>
+        <div class="form-group">
+          <label for="race-type">賽制類型</label>
+          <select id="race-type" class="form-control" onchange="toggleConfigFields()">
+            <option value="distance">距離挑戰賽 (m)</option>
+            <option value="calories">卡路里挑戰賽 (kcal)</option>
+            <option value="time">時間挑戰賽 (s)</option>
+            <option value="max_power">最大瓦特挑戰賽 (W)</option>
+          </select>
+        </div>
+        
+        <div class="form-group" id="distance-group">
+          <label for="target-distance">目標距離 (公尺)</label>
+          <input type="number" id="target-distance" class="form-control" value="1000">
+        </div>
+
+        <div class="form-group" id="time-group" style="display:none;">
+          <label for="target-duration">限制時間 (秒)</label>
+          <input type="number" id="target-duration" class="form-control" value="300">
+        </div>
+
+        <div class="form-group">
+          <label for="auto-reset-delay">完賽自動重置</label>
+          <select id="auto-reset-delay" class="form-control">
+            <option value="30">30 秒後自動重置</option>
+            <option value="60" selected>1 分鐘後自動重置</option>
+            <option value="120">2 分鐘後自動重置</option>
+            <option value="300">5 分鐘後自動重置</option>
+            <option value="0">不自動重置 (手動)</option>
+          </select>
+        </div>
+
+        <button class="btn btn-primary" id="btn-configure" onclick="configureRace()">送出配置</button>
+        <div id="config-status-tip" style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem; line-height: 1.3;">
+          ℹ️ 賽事進行中 (RUNNING) 無法變更配置。完賽後 (STOPPED) 送出配置，將會自動清除前次紀錄。
+        </div>
+      </div>
+
+      <!-- Station & Device Config Card -->
+      <div class="card">
+        <div class="card-title">設備與站位指派 / Stations</div>
+        
+        <!-- List of current assignments -->
+        <div id="station-list-container" style="font-size: 0.85rem; margin-bottom: 1.25rem;">
+          <p style="color: var(--text-muted);">等待設備連線中...</p>
+        </div>
+
+        <!-- Assign station form -->
+        <div class="form-group">
+          <label for="assign-station-num">指定站位編號 (Station Number)</label>
+          <input type="number" id="assign-station-num" class="form-control" placeholder="數字, 例如: 1" value="1" min="1">
+        </div>
+
+        <div class="form-group">
+          <label for="assign-node-id">選擇設備 (Device / Node ID)</label>
+          <select id="assign-node-id" class="form-control">
+            <option value="">-- 請選擇 --</option>
+          </select>
+        </div>
+
+        <button class="btn btn-secondary" onclick="assignStation()">確認指派</button>
+      </div>
+
+      <!-- Game Action Card -->
+      <div class="card">
+        <div class="card-title">賽事控制 / Control</div>
+        <button class="btn btn-success" id="btn-start" onclick="startRace()">啟動賽事 (START)</button>
+        <button class="btn btn-danger" id="btn-stop" onclick="stopRace()">停止賽事 (STOP)</button>
+        <button class="btn btn-secondary" id="btn-reset" onclick="resetRace()">重置賽事 (RESET)</button>
+      </div>
+
+    </aside>
+
+  </div>
+
+  <script>
+    let ws;
+    let currentState = "IDLE";
+    let currentConfig = null;
+    let stopwatchInterval = null;
+    let raceStartTime = null;
+    let leaderboardNodes = [];
+    let autoResetInterval = null;
+    let autoResetSecondsLeft = 0;
+    let autoResetCancelled = false;
+
+    function toggleConfigFields() {
+      const type = document.getElementById("race-type").value;
+      const distGroup = document.getElementById("distance-group");
+      const timeGroup = document.getElementById("time-group");
+      const distLabel = distGroup.querySelector("label");
+      const timeLabel = timeGroup.querySelector("label");
+
+      if (type === "distance") {
+        distGroup.style.display = "block";
+        timeGroup.style.display = "none";
+        distLabel.innerText = "目標距離 (公尺)";
+      } else if (type === "calories") {
+        distGroup.style.display = "block";
+        timeGroup.style.display = "none";
+        distLabel.innerText = "目標卡路里 (kcal)";
+      } else if (type === "time") {
+        distGroup.style.display = "none";
+        timeGroup.style.display = "block";
+        timeLabel.innerText = "限制時間 (秒)";
+      } else if (type === "max_power") {
+        distGroup.style.display = "none";
+        timeGroup.style.display = "block";
+        timeLabel.innerText = "挑戰時間 (秒)";
+      }
+    }
+
+    function connectWebSocket() {
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const host = window.location.host;
+      const wsUrl = `${protocol}//${host}/ws/dashboard`;
+
+      ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        document.getElementById("ws-dot").className = "status-dot active";
+        document.getElementById("ws-status").innerText = "Online";
+        fetchState();
+        fetchStations();
+      };
+
+      ws.onclose = () => {
+        document.getElementById("ws-dot").className = "status-dot";
+        document.getElementById("ws-status").innerText = "Offline";
+        setTimeout(connectWebSocket, 3000);
+      };
+
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.type === "registration_success") {
+          showRegistrationMarquee(data.athlete_name, data.station_number, data.team_name, data.equipment_type);
+          fetchState();
+          fetchStations();
+          return;
+        }
+        if (data.type === "state_change") {
+          updateUIState(data);
+          return;
+        }
+        if (data && Object.keys(data).length > 0) {
+          renderLeaderboard(data);
+        }
+        fetchStations(); // Update registrations dynamically
+      };
+    }
+
+    function getAvatarColor(name) {
+      let hash = 0;
+      for (let i = 0; i < name.length; i++) {
+        hash = name.charCodeAt(i) + ((hash << 5) - hash);
+      }
+      const h = Math.abs(hash) % 360;
+      return `hsl(${h}, 65%, 40%)`;
+    }
+
+    function showRegistrationMarquee(name, station, team, equipmentType) {
+      let toast = document.getElementById("marquee-toast");
+      if (!toast) {
+        toast = document.createElement("div");
+        toast.id = "marquee-toast";
+        toast.className = "marquee-toast";
+        document.body.appendChild(toast);
+      }
+      
+      const teamSuffix = team ? ` (${team})` : '';
+      const eqDisplay = (equipmentType && equipmentType !== 'unknown') ? ` - ${equipmentType.toUpperCase()}` : '';
+      toast.innerHTML = `
+        <div class="marquee-icon">🎉</div>
+        <div class="marquee-text">
+          歡迎 <span>${name}${teamSuffix}</span> 報名成功！已指派至 <span>STATION ${station}${eqDisplay}</span>
+        </div>
+      `;
+      
+      toast.classList.add("show");
+      
+      setTimeout(() => {
+        toast.classList.remove("show");
+      }, 5000);
+    }
+
+    function renderLeaderboard(progressData) {
+      console.log("renderLeaderboard progressData:", progressData);
+      const container = document.getElementById("leaderboard-container");
+      const nodes = Object.values(progressData);
+      console.log("Object.values nodes:", nodes);
+      leaderboardNodes = nodes;
+      
+      if (nodes.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <p>等待運動節點數據...</p>
+          </div>`;
+        return;
+      }
+
+      // Sort and render based on config type
+      const raceType = (currentConfig && currentConfig.race_type) || 'distance';
+
+      if (raceType === 'distance' || raceType === 'calories') {
+        nodes.sort((a, b) => {
+          const aFinished = a.progress_percent >= 100;
+          const bFinished = b.progress_percent >= 100;
+          if (aFinished && bFinished) {
+            return (a.finished_time_ms || 0) - (b.finished_time_ms || 0);
+          }
+          if (aFinished) return -1;
+          if (bFinished) return 1;
+          return b.progress_percent - a.progress_percent;
+        });
+      } else if (raceType === 'time') {
+        nodes.sort((a, b) => b.distance_m - a.distance_m);
+      } else if (raceType === 'max_power' || raceType === 'watts') {
+        nodes.sort((a, b) => b.max_power_watts - a.max_power_watts);
+      } else {
+        nodes.sort((a, b) => b.progress_percent - a.progress_percent);
+      }
+
+      let html = '<div class="leaderboard-list">';
+      nodes.forEach((node, index) => {
+        const stationBadge = node.station_number 
+          ? `<span style="background: var(--volt-yellow); color: #000; padding: 0.15rem 0.4rem; border-radius: 2px; font-weight: 800; font-size: 0.75rem; margin-right: 0.5rem; font-family: 'Oswald', sans-serif;">STATION ${node.station_number}</span>`
+          : '';
+
+        const displayName = node.athlete_name + (node.team_name ? ` <span class="team-suffix" style="font-size: 0.8rem; color: var(--volt-yellow); opacity: 0.85; font-weight: 600;">(${node.team_name})</span>` : '');
+
+        let avatarHtml = '';
+        if (node.avatar_url) {
+          avatarHtml = `<img class="athlete-avatar" src="${node.avatar_url}" style="width: 44px; height: 44px; border-radius: 50%; border: 2px solid var(--steel-border); object-fit: cover; flex-shrink: 0;">`;
+        } else {
+          const initial = (node.athlete_name || '?').charAt(0).toUpperCase();
+          avatarHtml = `<div class="athlete-avatar fallback-avatar" style="width: 44px; height: 44px; border-radius: 50%; border: 2px solid var(--steel-border); background-color: #3f3f46; color: #fff; display: flex; justify-content: center; align-items: center; font-weight: 800; font-size: 1.2rem; font-family: 'Oswald', sans-serif; flex-shrink: 0;">${initial}</div>`;
+        }
+
+        let metricCols = '';
+        if (raceType === 'calories') {
+          const calDisplay = node.calories !== undefined ? node.calories.toFixed(1) : '0.0';
+          const powerDisplay = node.power_watts !== undefined ? node.power_watts : '0';
+          const progressText = node.finished_time_ms 
+            ? `<span style="color: var(--volt-yellow); font-weight: 800;">${(node.finished_time_ms / 1000.0).toFixed(1)}s</span>`
+            : `${node.progress_percent.toFixed(1)}%`;
+          const progressLabel = node.finished_time_ms ? "完賽時間" : "進度";
+
+          metricCols = `
+            <div class="metric-group">
+              <div class="metric-val">${powerDisplay}</div>
+              <div class="metric-lbl">功率 (W)</div>
+            </div>
+            <div class="metric-group">
+              <div class="metric-val" style="color: var(--volt-yellow); font-weight: 800;">${calDisplay}</div>
+              <div class="metric-lbl">卡路里 (kcal)</div>
+            </div>
+            <div class="metric-group">
+              <div class="metric-val">${progressText}</div>
+              <div class="metric-lbl">${progressLabel}</div>
+            </div>
+          `;
+        } else if (raceType === 'max_power' || raceType === 'watts') {
+          const powerDisplay = node.power_watts !== undefined ? node.power_watts : '0';
+          const maxPowerDisplay = node.max_power_watts !== undefined ? node.max_power_watts : '0';
+          const progressText = `${node.progress_percent.toFixed(1)}%`;
+
+          metricCols = `
+            <div class="metric-group">
+              <div class="metric-val">${powerDisplay}</div>
+              <div class="metric-lbl">當前功率 (W)</div>
+            </div>
+            <div class="metric-group">
+              <div class="metric-val" style="color: var(--volt-yellow); font-weight: 800;">${maxPowerDisplay}</div>
+              <div class="metric-lbl">最大功率 (W)</div>
+            </div>
+            <div class="metric-group">
+              <div class="metric-val">${progressText}</div>
+              <div class="metric-lbl">時間進度</div>
+            </div>
+          `;
+        } else if (raceType === 'time') {
+          const speedDisplay = node.instantaneous_speed_kph.toFixed(1);
+          const distDisplay = node.distance_m.toFixed(0);
+          const progressText = `${node.progress_percent.toFixed(1)}%`;
+
+          metricCols = `
+            <div class="metric-group">
+              <div class="metric-val">${speedDisplay}</div>
+              <div class="metric-lbl">速度 (kph)</div>
+            </div>
+            <div class="metric-group">
+              <div class="metric-val" style="color: var(--volt-yellow); font-weight: 800;">${distDisplay}</div>
+              <div class="metric-lbl">距離 (m)</div>
+            </div>
+            <div class="metric-group">
+              <div class="metric-val">${progressText}</div>
+              <div class="metric-lbl">時間進度</div>
+            </div>
+          `;
+        } else { // distance
+          const speedDisplay = node.instantaneous_speed_kph.toFixed(1);
+          const distDisplay = node.distance_m.toFixed(0);
+          const progressText = node.finished_time_ms 
+            ? `<span style="color: var(--volt-yellow); font-weight: 800;">${(node.finished_time_ms / 1000.0).toFixed(1)}s</span>`
+            : `${node.progress_percent.toFixed(1)}%`;
+          const progressLabel = node.finished_time_ms ? "完賽時間" : "進度";
+
+          metricCols = `
+            <div class="metric-group">
+              <div class="metric-val">${speedDisplay}</div>
+              <div class="metric-lbl">速度 (kph)</div>
+            </div>
+            <div class="metric-group">
+              <div class="metric-val" style="color: var(--volt-yellow); font-weight: 800;">${distDisplay}</div>
+              <div class="metric-lbl">距離 (m)</div>
+            </div>
+            <div class="metric-group">
+              <div class="metric-val">${progressText}</div>
+              <div class="metric-lbl">${progressLabel}</div>
+            </div>
+          `;
+        }
+
+        html += `
+          <div class="leaderboard-item" id="node-${node.node_id}">
+            <div class="rank">${index + 1}</div>
+            <div class="athlete-info">
+              ${avatarHtml}
+              <div style="display: flex; flex-direction: column;">
+                <div class="athlete-name">${stationBadge}${displayName}</div>
+                <div class="equipment-tag">${node.node_id}</div>
+              </div>
+            </div>
+            ${metricCols}
+            <div class="progress-track">
+              <div class="progress-fill" style="width: ${Math.min(100, node.progress_percent)}%"></div>
+            </div>
+          </div>
+        `;
+      });
+      html += '</div>';
+      container.innerHTML = html;
+    }
+
+    async function fetchState() {
+      try {
+        const res = await fetch(`/api/race/state?t=${Date.now()}`);
+        const data = await res.json();
+        updateUIState(data);
+      } catch (err) {
+        console.error("Failed to fetch state:", err);
+      }
+    }
+
+    async function fetchStations() {
+      try {
+        const res = await fetch(`/api/stations?t=${Date.now()}`);
+        const data = await res.json();
+        renderStations(data);
+      } catch (err) {
+        console.error("Failed to fetch stations:", err);
+      }
+    }
+
+    function renderStations(data) {
+      const listContainer = document.getElementById("station-list-container");
+      const selectNode = document.getElementById("assign-node-id");
+
+      // 1. Render dropdown selection for nodes
+      let selectHtml = '<option value="">-- 解除指派 / None --</option>';
+      data.unassigned_nodes.forEach(node => {
+        selectHtml += `<option value="${node}">[未指派] ${node}</option>`;
+      });
+
+      const stations = data.stations;
+      Object.keys(stations).forEach(sn => {
+        const info = stations[sn];
+        if (info.node_id) {
+          selectHtml += `<option value="${info.node_id}">[站位 ${sn}] ${info.node_id}</option>`;
+        }
+      });
+      selectNode.innerHTML = selectHtml;
+
+      // 2. Render stations list with details & QR Codes
+      const snKeys = Object.keys(stations).sort((a, b) => a - b);
+      if (snKeys.length === 0 && data.unassigned_nodes.length === 0) {
+        listContainer.innerHTML = '<p style="color: var(--text-muted); text-align: center;">等待設備發現...</p>';
+        return;
+      }
+
+      const hubIp = window.location.hostname;
+      const port = window.location.port ? `:${window.location.port}` : '';
+      const baseUrl = `${window.location.protocol}//${hubIp}${port}`;
+
+      let html = '<div style="display: flex; flex-direction: column; gap: 0.65rem;">';
+      
+      // List active unassigned nodes first
+      if (data.unassigned_nodes.length > 0) {
+        html += '<div style="font-size: 0.75rem; color: var(--hazard-amber); font-weight: 700;">未指派設備 (Active Unassigned):</div>';
+        data.unassigned_nodes.forEach(node => {
+          html += `
+            <div style="background: rgba(245, 158, 11, 0.05); border: 1px dashed var(--hazard-amber); padding: 0.4rem; border-radius: 4px; display: flex; justify-content: space-between; align-items: center;">
+              <span>🔌 ${node}</span>
+              <span style="font-size: 0.7rem; color: var(--text-muted);">未指定站位</span>
+            </div>
+          `;
+        });
+      }
+
+      if (snKeys.length > 0) {
+        html += '<div style="font-size: 0.75rem; color: var(--volt-yellow); font-weight: 700; margin-top: 0.25rem;">已指派站位 (Stations):</div>';
+        snKeys.forEach(sn => {
+          const info = stations[sn];
+          const signupUrl = `${baseUrl}/static/signup.html?station=${sn}`;
+          const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(signupUrl)}`;
+          
+          html += `
+            <div style="background: rgba(0, 0, 0, 0.2); padding: 0.6rem; border: 1px solid var(--steel-border); border-radius: 4px; display: flex; flex-direction: column; gap: 0.3rem;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <strong style="color: var(--volt-yellow); font-family: 'Oswald', sans-serif; font-size: 0.95rem;">STATION ${sn}</strong>
+                <span style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">${info.equipment_type}</span>
+              </div>
+              <div style="font-size: 0.75rem; color: var(--text-muted);">設備 ID: ${info.node_id || '無'}</div>
+              <div style="font-size: 0.8rem; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 0.3rem; margin-top: 0.2rem;">
+                <span>選手: <strong style="color: var(--text-main);">${info.athlete_name || '未報名'}${info.team_name ? ` (${info.team_name})` : ''}</strong></span>
+                <a href="${signupUrl}" target="_blank" style="color: var(--volt-yellow); text-decoration: none; font-size: 0.7rem; border: 1px solid var(--volt-yellow); padding: 0.1rem 0.35rem; border-radius: 2px; text-transform: uppercase; font-weight: 700;">
+                  報名連結
+                </a>
+              </div>
+              <div style="text-align: center; margin-top: 0.15rem;">
+                <details style="font-size: 0.7rem; cursor: pointer; color: var(--text-muted);">
+                  <summary style="outline: none;">展開報名 QR 碼</summary>
+                  <img src="${qrUrl}" style="width: 100px; height: 100px; margin-top: 0.4rem; border: 1px solid var(--steel-border); border-radius: 4px; background: white; padding: 2px;" alt="QR Code">
+                </details>
+              </div>
+            </div>
+          `;
+        });
+      }
+
+      html += '</div>';
+      listContainer.innerHTML = html;
+    }
+
+    async function assignStation() {
+      const sn = parseInt(document.getElementById("assign-station-num").value, 10);
+      const node_id = document.getElementById("assign-node-id").value;
+
+      if (isNaN(sn) || sn <= 0) {
+        alert("請輸入有效的站位數字編號 (大於 0)");
+        return;
+      }
+
+      try {
+        const res = await fetch("/api/stations/assign", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            station_number: sn,
+            node_id: node_id || null
+          })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          renderStations(data);
+          fetchState();
+        } else {
+          const err = await res.json();
+          alert("指派失敗: " + (err.detail || "伺服器錯誤"));
+        }
+      } catch (err) {
+        alert("指派失敗: " + err);
+      }
+    }
+
+    let raceEndTime = null;
+
+    function updateUIState(data) {
+      console.log("updateUIState data:", data);
+      if (!data || data.state === undefined) {
+        console.warn("Skipping updateUIState: invalid state data received", data);
+        return;
+      }
+      currentState = data.state;
+      currentConfig = data.config;
+      raceStartTime = data.start_time_epoch_ms;
+      raceEndTime = data.end_time_epoch_ms || null;
+
+      if (data.leaderboard) {
+        renderLeaderboard(data.leaderboard);
+      }
+
+      document.getElementById("current-state-lbl").innerText = currentState;
+      
+      const configDesc = document.getElementById("current-config-desc");
+      const typeIndicator = document.getElementById("race-type-indicator");
+
+      if (currentConfig) {
+        if (currentConfig.race_type === "distance") {
+          configDesc.innerText = `距離賽：目標 ${currentConfig.target_value} 公尺`;
+          typeIndicator.innerText = `賽制: 距離賽 (${currentConfig.target_value}m)`;
+        } else if (currentConfig.race_type === "calories") {
+          configDesc.innerText = `卡路里賽：目標 ${currentConfig.target_value} kcal`;
+          typeIndicator.innerText = `賽制: 卡路里賽 (${currentConfig.target_value} kcal)`;
+        } else if (currentConfig.race_type === "time") {
+          configDesc.innerText = `時間賽：限制 ${currentConfig.duration_sec} 秒`;
+          typeIndicator.innerText = `賽制: 時間賽 (${currentConfig.duration_sec}s)`;
+        } else if (currentConfig.race_type === "max_power" || currentConfig.race_type === "watts") {
+          configDesc.innerText = `最大功率賽：限時 ${currentConfig.duration_sec} 秒`;
+          typeIndicator.innerText = `賽制: 最大瓦特賽 (${currentConfig.duration_sec}s)`;
+        }
+      } else {
+        configDesc.innerText = "無賽事配置";
+        typeIndicator.innerText = "賽制: 未配置";
+      }
+
+      // Stopwatch Display control
+      if (currentState === "RUNNING") {
+        document.getElementById("stopwatch-lbl").style.display = "block";
+        raceStartTime = data.start_time_epoch_ms;
+        if (!stopwatchInterval && raceStartTime) {
+          stopwatchInterval = setInterval(updateStopwatch, 50);
+        }
+      } else {
+        if (stopwatchInterval) {
+          clearInterval(stopwatchInterval);
+          stopwatchInterval = null;
+        }
+        if (currentState === "STOPPED") {
+          document.getElementById("stopwatch-lbl").style.display = "block";
+          if (raceStartTime) {
+            updateStopwatch();
+          }
+        } else {
+          document.getElementById("stopwatch-lbl").style.display = "none";
+          document.getElementById("stopwatch-lbl").innerText = "00:00.0";
+          raceStartTime = null;
+        }
+      }
+
+      // Button states
+      document.getElementById("btn-start").disabled = (currentState !== "READY");
+      document.getElementById("btn-stop").disabled = (currentState !== "RUNNING");
+      document.getElementById("btn-reset").disabled = (currentState === "RUNNING");
+
+      // Configure button & dynamic status tip control
+      const btnConfigure = document.getElementById("btn-configure");
+      const configTip = document.getElementById("config-status-tip");
+      if (currentState === "RUNNING") {
+        btnConfigure.disabled = true;
+        configTip.style.color = "var(--crimson-red)";
+        configTip.innerText = "⚠️ 賽事進行中，無法變更配置。";
+      } else if (currentState === "STOPPED") {
+        btnConfigure.disabled = false;
+        configTip.style.color = "var(--hazard-amber)";
+        configTip.innerText = "ℹ️ 送出新配置將自動重置前次賽事紀錄。";
+      } else {
+        btnConfigure.disabled = false;
+        configTip.style.color = "var(--text-muted)";
+        configTip.innerText = "ℹ️ 狀態可行：隨時可以送出新配置。";
+      }
+
+      if (currentState === "STOPPED") {
+        if (!autoResetInterval && !autoResetCancelled) {
+          startAutoResetCountdown();
+        }
+      } else {
+        autoResetCancelled = false;
+        cancelAutoReset(false);
+      }
+    }
+
+    function startAutoResetCountdown() {
+      if (autoResetInterval) {
+        clearInterval(autoResetInterval);
+        autoResetInterval = null;
+      }
+
+      const delaySelect = document.getElementById("auto-reset-delay");
+      const delaySeconds = parseInt(delaySelect.value, 10);
+      
+      if (delaySeconds <= 0) {
+        document.getElementById("auto-reset-banner").style.display = "none";
+        return;
+      }
+
+      autoResetSecondsLeft = delaySeconds;
+      document.getElementById("auto-reset-countdown").innerText = autoResetSecondsLeft;
+      document.getElementById("auto-reset-banner").style.display = "block";
+
+      autoResetInterval = setInterval(() => {
+        autoResetSecondsLeft--;
+        if (autoResetSecondsLeft <= 0) {
+          clearInterval(autoResetInterval);
+          autoResetInterval = null;
+          document.getElementById("auto-reset-banner").style.display = "none";
+          resetRace();
+        } else {
+          document.getElementById("auto-reset-countdown").innerText = autoResetSecondsLeft;
+        }
+      }, 1000);
+    }
+
+    function cancelAutoReset(manual = false) {
+      if (autoResetInterval) {
+        clearInterval(autoResetInterval);
+        autoResetInterval = null;
+      }
+      if (manual) {
+        autoResetCancelled = true;
+      }
+      document.getElementById("auto-reset-banner").style.display = "none";
+    }
+
+    function updateStopwatch() {
+      if (!raceStartTime) return;
+      
+      let elapsed = 0;
+      if (currentState === "RUNNING") {
+        elapsed = Date.now() - raceStartTime;
+      } else if (raceEndTime) {
+        elapsed = raceEndTime - raceStartTime;
+      } else {
+        elapsed = Date.now() - raceStartTime;
+      }
+      if (elapsed < 0) elapsed = 0;
+      
+      // Check if all competitors are finished
+      let allFinished = false;
+      const nodes = leaderboardNodes;
+      if (nodes && nodes.length > 0 && currentConfig) {
+        if (currentConfig.race_type === "distance" || currentConfig.race_type === "calories") {
+          allFinished = nodes.every(node => node.progress_percent >= 100);
+        } else if (currentConfig.race_type === "time" || currentConfig.race_type === "max_power" || currentConfig.race_type === "watts") {
+          allFinished = elapsed >= (currentConfig.duration_sec * 1000);
+        }
+      }
+ 
+      if (allFinished || currentState === "STOPPED") {
+        // Stop ticking interval
+        if (stopwatchInterval) {
+          clearInterval(stopwatchInterval);
+          stopwatchInterval = null;
+        }
+        
+        // Show exact final completed time if distance/calories
+        if (currentConfig && (currentConfig.race_type === "distance" || currentConfig.race_type === "calories")) {
+          const maxFinishTime = Math.max(...nodes.map(node => node.finished_time_ms || 0));
+          if (maxFinishTime > 0) {
+            elapsed = maxFinishTime;
+          }
+        } else if (currentConfig && currentConfig.duration_sec > 0 && (currentConfig.race_type === "time" || currentConfig.race_type === "max_power" || currentConfig.race_type === "watts")) {
+          elapsed = currentConfig.duration_sec * 1000;
+        }
+      }
+
+      const totalTenths = Math.floor(elapsed / 100);
+      const tenths = totalTenths % 10;
+      const totalSeconds = Math.floor(elapsed / 1000);
+      const seconds = totalSeconds % 60;
+      const minutes = Math.floor(totalSeconds / 60);
+
+      const displayStr = 
+        (minutes < 10 ? "0" + minutes : minutes) + ":" + 
+        (seconds < 10 ? "0" + seconds : seconds) + "." + 
+        tenths;
+         
+      document.getElementById("stopwatch-lbl").innerText = displayStr;
+    }
+
+    async function configureRace() {
+      const type = document.getElementById("race-type").value;
+      const target_value = parseFloat(document.getElementById("target-distance").value) || 0;
+      const duration_sec = parseInt(document.getElementById("target-duration").value) || 0;
+
+      try {
+        const res = await fetch("/api/race/configure", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            race_type: type,
+            target_value: target_value,
+            duration_sec: duration_sec
+          })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          updateUIState(data);
+        } else {
+          alert("配置失敗: " + (data.detail || "伺服器錯誤"));
+        }
+      } catch (err) {
+        alert("配置失敗: " + err);
+      }
+    }
+
+    async function startRace() {
+      try {
+        const res = await fetch("/api/race/start", { method: "POST" });
+        const data = await res.json();
+        if (res.ok) {
+          updateUIState(data);
+        } else {
+          alert("啟動失敗: " + (data.detail || "伺服器錯誤"));
+        }
+      } catch (err) {
+        alert("啟動失敗: " + err);
+      }
+    }
+
+    async function stopRace() {
+      try {
+        const res = await fetch("/api/race/stop", { method: "POST" });
+        const data = await res.json();
+        if (res.ok) {
+          updateUIState(data);
+        } else {
+          alert("停止失敗: " + (data.detail || "伺服器錯誤"));
+        }
+      } catch (err) {
+        alert("停止失敗: " + err);
+      }
+    }
+
+    async function resetRace() {
+      try {
+        const res = await fetch("/api/race/reset", { method: "POST" });
+        const data = await res.json();
+        if (res.ok) {
+          updateUIState(data);
+          document.getElementById("leaderboard-container").innerHTML = `
+            <div class="empty-state">
+              <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15.362 5.214A8.252 8.252 0 0 1 12 21 8.25 8.25 0 0 1 6.038 7.047 8.287 8.287 0 0 0 9 9.601a8.983 8.983 0 0 1 3.361-6.867 8.21 8.21 0 0 0 3 2.48z" />
+              </svg>
+              <p>等待賽事啟動與連線節點傳送數據...</p>
+            </div>`;
+          fetchStations(); // Refresh athletes
+        } else {
+          alert("重置失敗: " + (data.detail || "伺服器錯誤"));
+        }
+      } catch (err) {
+        alert("重置失敗: " + err);
+      }
+    }
+
+    window.onload = () => {
+      connectWebSocket();
+      toggleConfigFields();
+
+      // Initialize general registration QR Code on the right side of the hero bar
+      const hubIp = window.location.hostname;
+      const port = window.location.port ? `:${window.location.port}` : '';
+      const baseUrl = `${window.location.protocol}//${hubIp}${port}`;
+      const generalSignupUrl = `${baseUrl}/static/signup.html`;
+      const qrCodeApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(generalSignupUrl)}`;
+      document.getElementById("header-qr-img").src = qrCodeApiUrl;
+    };
+  </script>
+</body>
+</html>

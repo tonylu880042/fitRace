@@ -1,0 +1,7 @@
+{
+  "node_id": "treadmill-01",
+  "equipment_id": "TREAD_01",
+  "equipment_type": "treadmill",
+  "mqtt_host": "localhost",
+  "mqtt_port": 1883
+}

@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FitRaceStudio - 自助掃碼報名</title>
+  <meta name="description" content="選手自助掃碼報名綁定設備站位">
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@700&family=Outfit:wght@400;600;800&family=Noto+Sans+TC:wght@500;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-color: #09090b;
+      --card-bg: #18181b;
+      --steel-border: #27272a;
+      --volt-yellow: #e2ff3b;
+      --crimson-red: #f43f5e;
+      --text-main: #fafafa;
+      --text-muted: #a1a1aa;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Outfit', 'Noto Sans TC', sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 1.5rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Industrial grid overlay */
+    body::before {
+      content: "";
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-image: radial-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 0);
+      background-size: 24px 24px;
+      pointer-events: none;
+      z-index: -1;
+    }
+
+    .signup-container {
+      width: 100%;
+      max-width: 440px;
+      background: var(--card-bg);
+      border: 2px solid var(--steel-border);
+      border-radius: 8px;
+      padding: 2.5rem 2rem;
+      position: relative;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+    }
+
+    /* Top hazard accent line */
+    .signup-container::after {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 6px;
+      background: repeating-linear-gradient(
+        -45deg,
+        var(--volt-yellow),
+        var(--volt-yellow) 8px,
+        #000 8px,
+        #000 16px
+      );
+      border-top-left-radius: 6px;
+      border-top-right-radius: 6px;
+    }
+
+    .logo {
+      font-family: 'Oswald', sans-serif;
+      font-size: 2rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      margin-bottom: 0.5rem;
+      text-align: center;
+    }
+
+    .logo span {
+      color: var(--volt-yellow);
+    }
+
+    .subtitle {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+
+    .station-badge {
+      display: inline-block;
+      padding: 0.4rem 1rem;
+      background: rgba(226, 255, 59, 0.1);
+      border: 1px solid var(--volt-yellow);
+      color: var(--volt-yellow);
+      border-radius: 4px;
+      font-family: 'Oswald', sans-serif;
+      font-weight: 700;
+      font-size: 1.1rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 1.5rem;
+    }
+
+    .form-group {
+      margin-bottom: 1.5rem;
+      text-align: left;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-bottom: 0.5rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .form-control {
+      width: 100%;
+      padding: 0.85rem 1rem;
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid var(--steel-border);
+      border-radius: 4px;
+      color: var(--text-main);
+      font-family: inherit;
+      font-size: 1.05rem;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .form-control:focus {
+      outline: none;
+      border-color: var(--volt-yellow);
+      box-shadow: 0 0 8px rgba(226, 255, 59, 0.15);
+    }
+
+    .btn {
+      display: inline-flex;
+      justify-content: center;
+      align-items: center;
+      padding: 0.9rem 1.5rem;
+      font-family: 'Oswald', sans-serif;
+      font-size: 1.1rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s;
+      width: 100%;
+      background: var(--volt-yellow);
+      color: #000;
+    }
+
+    .btn:hover {
+      background: #eaff54;
+      box-shadow: 0 0 12px rgba(226, 255, 59, 0.35);
+    }
+
+    .btn:active {
+      transform: scale(0.98);
+    }
+
+    .btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .msg {
+      margin-top: 1rem;
+      padding: 0.75rem;
+      border-radius: 4px;
+      font-size: 0.9rem;
+      display: none;
+      text-align: center;
+    }
+
+    .msg-success {
+      background: rgba(226, 255, 59, 0.1);
+      border: 1px solid var(--volt-yellow);
+      color: var(--volt-yellow);
+    }
+
+    .msg-error {
+      background: rgba(244, 63, 94, 0.1);
+      border: 1px solid var(--crimson-red);
+      color: var(--crimson-red);
+    }
+
+    .spinner {
+      border: 3px solid rgba(0, 0, 0, 0.1);
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      border-left-color: #000;
+      animation: spin 1s linear infinite;
+      display: none;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    #avatar-file {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="signup-container">
+    <div style="display: flex; justify-content: center; margin-bottom: 1rem;">
+      <img src="/static/icon.png" style="width: 70px; height: 70px; border-radius: 12px; border: 2px solid var(--steel-border); box-shadow: 0 4px 10px rgba(0,0,0,0.4);" alt="Logo">
+    </div>
+    <div class="logo">FitRace<span>Studio</span></div>
+    <div class="subtitle">Athlete Self-Registration</div>
+
+    <center>
+      <div class="station-badge" id="station-lbl">Station: 未指定</div>
+    </center>
+
+    <form id="signup-form" onsubmit="submitForm(event)">
+      <div class="form-group" style="text-align: center;">
+        <label>選手頭像 / Athlete Avatar</label>
+        <div class="avatar-options" style="display: flex; justify-content: space-around; margin-top: 0.75rem; gap: 0.75rem;">
+          <div class="avatar-option active" data-type="default" style="display: flex; flex-direction: column; align-items: center; cursor: pointer;">
+            <div class="avatar-circle" style="width: 50px; height: 50px; border-radius: 50%; border: 2px solid var(--volt-yellow); background: #3f3f46; display: flex; justify-content: center; align-items: center; font-size: 1.5rem; transition: all 0.2s; box-shadow: 0 0 10px rgba(226, 255, 59, 0.4);">👤</div>
+            <span style="font-size: 0.75rem; color: var(--volt-yellow); margin-top: 0.35rem; font-weight: 600;">預設</span>
+          </div>
+          <div class="avatar-option" data-type="male" style="display: flex; flex-direction: column; align-items: center; cursor: pointer;">
+            <div class="avatar-circle" style="width: 50px; height: 50px; border-radius: 50%; border: 2px solid var(--steel-border); background: #1e3a8a; display: flex; justify-content: center; align-items: center; font-size: 1.5rem; transition: all 0.2s;">👨</div>
+            <span style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.35rem;">男生</span>
+          </div>
+          <div class="avatar-option" data-type="female" style="display: flex; flex-direction: column; align-items: center; cursor: pointer;">
+            <div class="avatar-circle" style="width: 50px; height: 50px; border-radius: 50%; border: 2px solid var(--steel-border); background: #701a75; display: flex; justify-content: center; align-items: center; font-size: 1.5rem; transition: all 0.2s;">👩</div>
+            <span style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.35rem;">女生</span>
+          </div>
+          <div class="avatar-option" data-type="custom" id="custom-option" style="display: flex; flex-direction: column; align-items: center; cursor: pointer;">
+            <div class="avatar-circle" id="custom-preview-circle" style="width: 50px; height: 50px; border-radius: 50%; border: 2px dashed var(--steel-border); background: rgba(0,0,0,0.4); display: flex; justify-content: center; align-items: center; font-size: 1.3rem; transition: all 0.2s; background-size: cover; background-position: center;">📷</div>
+            <span style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.35rem;">上傳</span>
+          </div>
+        </div>
+        <input type="file" id="avatar-file" accept="image/*" style="display: none;">
+      </div>
+
+      <div class="form-group" id="station-select-group" style="display: none;">
+        <label for="station-select">選擇設備站位 / Select Station</label>
+        <select id="station-select" class="form-control">
+          <option value="1">Station 1</option>
+          <option value="2">Station 2</option>
+          <option value="3">Station 3</option>
+          <option value="4">Station 4</option>
+          <option value="5">Station 5</option>
+          <option value="6">Station 6</option>
+          <option value="7">Station 7</option>
+          <option value="8">Station 8</option>
+          <option value="9">Station 9</option>
+          <option value="10">Station 10</option>
+          <option value="11">Station 11</option>
+          <option value="12">Station 12</option>
+          <option value="13">Station 13</option>
+          <option value="14">Station 14</option>
+          <option value="15">Station 15</option>
+          <option value="16">Station 16</option>
+          <option value="17">Station 17</option>
+          <option value="18">Station 18</option>
+          <option value="19">Station 19</option>
+          <option value="20">Station 20</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="athlete-name">選手姓名 / Athlete Name</label>
+        <input type="text" id="athlete-name" class="form-control" placeholder="請輸入姓名..." required maxlength="20">
+      </div>
+
+      <div class="form-group">
+        <label for="team-name">組別隊伍 (選填) / Team (Optional)</label>
+        <input type="text" id="team-name" class="form-control" placeholder="例如: RD, 紅隊, 17Fit..." maxlength="10">
+      </div>
+
+      <button type="submit" class="btn" id="submit-btn">
+        <span id="btn-text">確認報名 / REGISTER</span>
+        <div class="spinner" id="btn-spinner"></div>
+      </button>
+
+      <div class="msg msg-success" id="success-msg">報名成功！請至現場大螢幕確認您的站位。</div>
+      <div class="msg msg-error" id="error-msg">報名失敗，請稍後再試。</div>
+    </form>
+  </div>
+
+  <script>
+    // Extract station number from URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const station = parseInt(urlParams.get('station'), 10);
+
+    const stationLbl = document.getElementById('station-lbl');
+    const submitBtn = document.getElementById('submit-btn');
+    const athleteNameInput = document.getElementById('athlete-name');
+    const teamNameInput = document.getElementById('team-name');
+    const avatarFileInput = document.getElementById('avatar-file');
+    const customOption = document.getElementById('custom-option');
+    const customPreview = document.getElementById('custom-preview-circle');
+    const successMsg = document.getElementById('success-msg');
+    const errorMsg = document.getElementById('error-msg');
+    const btnText = document.getElementById('btn-text');
+    const btnSpinner = document.getElementById('btn-spinner');
+
+    let avatarBase64 = null;
+
+    const MALE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <circle cx="64" cy="64" r="64" fill="#1e3a8a"/>
+  <circle cx="64" cy="46" r="22" fill="#93c5fd"/>
+  <path d="M20 112 C20 82, 44 76, 64 76 C84 76, 108 82, 108 112 Z" fill="#93c5fd"/>
+</svg>`;
+
+    const FEMALE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <circle cx="64" cy="64" r="64" fill="#701a75"/>
+  <circle cx="64" cy="46" r="20" fill="#fbcfe8"/>
+  <path d="M20 112 C20 84, 44 78, 64 78 C84 78, 108 84, 108 112 Z" fill="#fbcfe8"/>
+  <path d="M46 36 C46 22, 82 22, 82 36 C82 46, 78 50, 64 56 C50 50, 46 46, 46 36 Z" fill="#db2777"/>
+</svg>`;
+
+    const maleBase64 = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(MALE_SVG)));
+    const femaleBase64 = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(FEMALE_SVG)));
+
+    const avatarOptions = document.querySelectorAll('.avatar-option');
+
+    avatarOptions.forEach(opt => {
+      opt.addEventListener('click', () => {
+        if (submitBtn.disabled) return;
+
+        avatarOptions.forEach(o => {
+          o.classList.remove('active');
+          const circle = o.querySelector('.avatar-circle');
+          circle.style.borderColor = 'var(--steel-border)';
+          circle.style.boxShadow = 'none';
+          circle.style.transform = 'none';
+          o.querySelector('span').style.color = 'var(--text-muted)';
+          o.querySelector('span').style.fontWeight = '400';
+        });
+
+        opt.classList.add('active');
+        const activeCircle = opt.querySelector('.avatar-circle');
+        activeCircle.style.borderColor = 'var(--volt-yellow)';
+        activeCircle.style.boxShadow = '0 0 10px rgba(226, 255, 59, 0.4)';
+        activeCircle.style.transform = 'scale(1.05)';
+        opt.querySelector('span').style.color = 'var(--volt-yellow)';
+        opt.querySelector('span').style.fontWeight = '600';
+
+        const type = opt.getAttribute('data-type');
+        if (type === 'default') {
+          avatarBase64 = null;
+        } else if (type === 'male') {
+          avatarBase64 = maleBase64;
+        } else if (type === 'female') {
+          avatarBase64 = femaleBase64;
+        } else if (type === 'custom') {
+          avatarFileInput.click();
+        }
+      });
+    });
+
+    avatarFileInput.addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(event) {
+        const img = new Image();
+        img.onload = function() {
+          const canvas = document.createElement('canvas');
+          canvas.width = 128;
+          canvas.height = 128;
+          const ctx = canvas.getContext('2d');
+          
+          const size = Math.min(img.width, img.height);
+          const sx = (img.width - size) / 2;
+          const sy = (img.height - size) / 2;
+          ctx.drawImage(img, sx, sy, size, size, 0, 0, 128, 128);
+          
+          avatarBase64 = canvas.toDataURL('image/webp', 0.85);
+          customPreview.style.backgroundImage = `url(${avatarBase64})`;
+          customPreview.innerText = '';
+          customOption.click();
+        };
+        img.src = event.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+
+    const hasQueryStation = !isNaN(station) && station > 0;
+    if (!hasQueryStation) {
+      stationLbl.style.display = 'none';
+      document.getElementById('station-select-group').style.display = 'block';
+    } else {
+      stationLbl.innerText = `Station ${station}`;
+    }
+
+    async function submitForm(event) {
+      event.preventDefault();
+      
+      const name = athleteNameInput.value.trim();
+      if (!name) return;
+      const team = teamNameInput.value.trim() || null;
+
+      let finalStation = station;
+      if (!hasQueryStation) {
+        finalStation = parseInt(document.getElementById('station-select').value, 10);
+      }
+      if (isNaN(finalStation) || finalStation <= 0) return;
+
+      // Reset messages
+      successMsg.style.display = 'none';
+      errorMsg.style.display = 'none';
+
+      // Show loading
+      submitBtn.disabled = true;
+      btnText.style.display = 'none';
+      btnSpinner.style.display = 'inline-block';
+
+      try {
+        const response = await fetch('/api/race/register', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            station_number: finalStation,
+            athlete_name: name,
+            team_name: team,
+            avatar_base64: avatarBase64
+          })
+        });
+
+        if (response.ok) {
+          successMsg.style.display = 'block';
+          athleteNameInput.value = '';
+          teamNameInput.value = '';
+          avatarBase64 = null;
+          document.querySelector('[data-type="default"]').click();
+          customPreview.style.backgroundImage = '';
+          customPreview.innerText = '📷';
+        } else {
+          const errData = await response.json();
+          errorMsg.innerText = `報名失敗: ${errData.detail || '請洽現場裁判'}`;
+          errorMsg.style.display = 'block';
+        }
+      } catch (err) {
+        errorMsg.innerText = `連線錯誤，請確認網路連線。`;
+        errorMsg.style.display = 'block';
+      } finally {
+        // Hide loading
+        submitBtn.disabled = false;
+        btnText.style.display = 'inline-block';
+        btnSpinner.style.display = 'none';
+      }
+    }
+  </script>
+</body>
+</html>
