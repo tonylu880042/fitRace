@@ -202,6 +202,7 @@
       display: flex;
       flex-direction: column;
       gap: 0.75rem;
+      position: relative;
     }
 
     .leaderboard-item {
@@ -212,8 +213,15 @@
       background: rgba(0, 0, 0, 0.25);
       border: 1px solid var(--steel-border);
       border-radius: 4px;
-      transition: all 0.2s ease;
+      transform-origin: center;
+      transition:
+        transform 0.38s cubic-bezier(0.2, 0.9, 0.22, 1),
+        border-color 0.25s ease,
+        background 0.25s ease,
+        box-shadow 0.25s ease;
       position: relative;
+      overflow: hidden;
+      will-change: transform;
     }
 
     .leaderboard-item:hover {
@@ -224,7 +232,16 @@
     /* Top rank highlight */
     .leaderboard-item:nth-child(1) {
       border: 1px solid var(--volt-yellow);
-      background: rgba(226, 255, 59, 0.03);
+      background: linear-gradient(90deg, rgba(226, 255, 59, 0.09), rgba(0, 0, 0, 0.22) 46%);
+      box-shadow: 0 0 24px rgba(226, 255, 59, 0.12);
+    }
+
+    .leaderboard-item.rank-up {
+      animation: rankUpPulse 0.75s ease-out;
+    }
+
+    .leaderboard-item.rank-down {
+      animation: rankDownPulse 0.75s ease-out;
     }
 
     .rank {
@@ -239,6 +256,116 @@
     .leaderboard-item:nth-child(2) .rank { color: #d4d4d8; }
     .leaderboard-item:nth-child(3) .rank { color: #a1a1aa; }
 
+    .medal-mark {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.8rem;
+      height: 1.8rem;
+      margin-top: 0.15rem;
+      border-radius: 999px;
+      font-family: 'Oswald', sans-serif;
+      font-size: 0.7rem;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      color: #09090b;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      box-shadow: inset 0 1px 1px rgba(255,255,255,0.5), 0 0 18px rgba(255,255,255,0.12);
+    }
+
+    .medal-gold {
+      background: linear-gradient(145deg, #fff7ad, #f6c83f 45%, #b7791f);
+      box-shadow: inset 0 1px 1px rgba(255,255,255,0.7), 0 0 22px rgba(246, 200, 63, 0.42);
+    }
+
+    .medal-silver {
+      background: linear-gradient(145deg, #f4f4f5, #b9bec8 48%, #71717a);
+    }
+
+    .medal-bronze {
+      background: linear-gradient(145deg, #fed7aa, #c7772f 48%, #854d0e);
+    }
+
+    .podium-panel {
+      display: grid;
+      grid-template-columns: 1fr 1.15fr 1fr;
+      gap: 0.75rem;
+      margin-bottom: 0.9rem;
+      align-items: end;
+    }
+
+    .podium-card {
+      min-height: 104px;
+      border: 1px solid var(--steel-border);
+      border-radius: 4px;
+      background: rgba(0, 0, 0, 0.28);
+      padding: 0.85rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .podium-card::after {
+      content: "";
+      position: absolute;
+      inset: auto -15% -45% -15%;
+      height: 70%;
+      background: radial-gradient(circle, rgba(255,255,255,0.16), transparent 62%);
+      pointer-events: none;
+    }
+
+    .podium-card.place-1 {
+      min-height: 126px;
+      border-color: var(--volt-yellow);
+      background: linear-gradient(180deg, rgba(226, 255, 59, 0.16), rgba(0, 0, 0, 0.28));
+      box-shadow: 0 0 28px rgba(226, 255, 59, 0.16);
+      animation: championGlow 1.8s ease-in-out infinite alternate;
+    }
+
+    .podium-card.place-2 {
+      border-color: rgba(212, 212, 216, 0.6);
+    }
+
+    .podium-card.place-3 {
+      border-color: rgba(245, 158, 11, 0.55);
+    }
+
+    .podium-place {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-family: 'Oswald', sans-serif;
+      font-size: 0.75rem;
+      font-weight: 800;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .podium-name {
+      margin-top: 0.55rem;
+      font-size: 1.2rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      line-height: 1.1;
+    }
+
+    .podium-score {
+      margin-top: 0.3rem;
+      font-family: 'Oswald', sans-serif;
+      font-size: 1.35rem;
+      font-weight: 800;
+      color: var(--volt-yellow);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .podium-sub {
+      margin-top: 0.1rem;
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
     .athlete-info {
       display: flex;
       align-items: center;
@@ -251,6 +378,18 @@
       font-size: 1.15rem;
       text-transform: uppercase;
       letter-spacing: 0.5px;
+    }
+
+    .station-pill {
+      background: var(--volt-yellow);
+      color: #000;
+      padding: 0.15rem 0.4rem;
+      border-radius: 2px;
+      font-family: 'Oswald', sans-serif;
+      font-size: 0.75rem;
+      font-weight: 800;
+      margin-right: 0.5rem;
+      white-space: nowrap;
     }
 
     .equipment-tag {
@@ -271,6 +410,13 @@
       font-size: 1.5rem;
       font-weight: 700;
       font-variant-numeric: tabular-nums;
+    }
+
+    .score-primary,
+    .metric-val.score-primary {
+      color: var(--volt-yellow);
+      font-weight: 800;
+      text-shadow: 0 0 12px rgba(226, 255, 59, 0.2);
     }
 
     .metric-lbl {
@@ -294,9 +440,89 @@
 
     .progress-fill {
       height: 100%;
-      background: var(--volt-yellow);
+      background:
+        linear-gradient(90deg, rgba(255,255,255,0.1), rgba(255,255,255,0.42), rgba(255,255,255,0.1)),
+        var(--volt-yellow);
+      background-size: 160px 100%, auto;
       width: 0%;
-      transition: width 0.4s cubic-bezier(0.1, 0.8, 0.25, 1);
+      box-shadow: 0 0 14px rgba(226, 255, 59, 0.45);
+      transition: width 0.45s cubic-bezier(0.1, 0.8, 0.25, 1);
+      animation: progressSweep 1.8s linear infinite;
+    }
+
+    @keyframes progressSweep {
+      from { background-position: -160px 0, 0 0; }
+      to { background-position: 160px 0, 0 0; }
+    }
+
+    @keyframes rankUpPulse {
+      0% { box-shadow: 0 0 0 rgba(226, 255, 59, 0); }
+      35% { box-shadow: 0 0 34px rgba(226, 255, 59, 0.32); border-color: var(--volt-yellow); }
+      100% { box-shadow: 0 0 0 rgba(226, 255, 59, 0); }
+    }
+
+    @keyframes rankDownPulse {
+      0% { box-shadow: 0 0 0 rgba(245, 158, 11, 0); }
+      35% { box-shadow: 0 0 24px rgba(245, 158, 11, 0.18); border-color: rgba(245, 158, 11, 0.65); }
+      100% { box-shadow: 0 0 0 rgba(245, 158, 11, 0); }
+    }
+
+    @keyframes championGlow {
+      from { box-shadow: 0 0 18px rgba(226, 255, 59, 0.12); }
+      to { box-shadow: 0 0 34px rgba(226, 255, 59, 0.32); }
+    }
+
+    .celebration-overlay {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      overflow: hidden;
+      z-index: 9998;
+      opacity: 0;
+      transition: opacity 0.25s ease;
+    }
+
+    .celebration-overlay.show {
+      opacity: 1;
+    }
+
+    .celebration-flash {
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at center, rgba(226, 255, 59, 0.18), transparent 52%);
+      animation: finishFlash 1.2s ease-out forwards;
+    }
+
+    .confetti-piece {
+      position: absolute;
+      top: -12px;
+      width: 8px;
+      height: 18px;
+      border-radius: 2px;
+      animation: confettiFall 2.8s linear forwards;
+      transform: rotate(var(--spin));
+    }
+
+    @keyframes finishFlash {
+      0% { opacity: 0; transform: scale(0.8); }
+      20% { opacity: 1; transform: scale(1); }
+      100% { opacity: 0; transform: scale(1.2); }
+    }
+
+    @keyframes confettiFall {
+      0% { transform: translate3d(0, -20px, 0) rotate(var(--spin)); opacity: 1; }
+      100% { transform: translate3d(var(--drift), 110vh, 0) rotate(calc(var(--spin) + 720deg)); opacity: 0; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .leaderboard-item,
+      .progress-fill,
+      .podium-card.place-1,
+      .celebration-flash,
+      .confetti-piece {
+        animation: none !important;
+        transition: none !important;
+      }
     }
 
     /* Right Side Panel */
@@ -604,6 +830,8 @@
     let stopwatchInterval = null;
     let raceStartTime = null;
     let leaderboardNodes = [];
+    let leaderboardRankByNode = new Map();
+    let celebrationShownForRaceKey = null;
     let autoResetInterval = null;
     let autoResetSecondsLeft = 0;
     let autoResetCancelled = false;
@@ -708,66 +936,268 @@
       }, 5000);
     }
 
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    function metricNumber(value, fallback = 0) {
+      const number = Number(value);
+      return Number.isFinite(number) ? number : fallback;
+    }
+
+    function isLeaderboardFinal(raceType, nodes) {
+      if (!nodes.length) return false;
+      if (raceType === "distance" || raceType === "calories") {
+        return nodes.every((node) => Boolean(node.finished_time_ms) || metricNumber(node.progress_percent) >= 100);
+      }
+      return currentState === "STOPPED";
+    }
+
+    function getMedalMeta(rank) {
+      if (rank === 1) return { className: "medal-gold", label: "🥇", title: "金牌" };
+      if (rank === 2) return { className: "medal-silver", label: "🥈", title: "銀牌" };
+      if (rank === 3) return { className: "medal-bronze", label: "🥉", title: "銅牌" };
+      return null;
+    }
+
+    function formatResultScore(node, raceType) {
+      if (raceType === "distance" || raceType === "calories") {
+        if (node.finished_time_ms) {
+          return {
+            value: `${(metricNumber(node.finished_time_ms) / 1000).toFixed(1)}s`,
+            label: raceType === "distance" ? "Finish Time" : "Complete Time"
+          };
+        }
+        return {
+          value: `${metricNumber(node.progress_percent).toFixed(1)}%`,
+          label: "Progress"
+        };
+      }
+      if (raceType === "time") {
+        return {
+          value: `${metricNumber(node.distance_m).toFixed(0)}m`,
+          label: "Distance"
+        };
+      }
+      if (raceType === "max_power" || raceType === "watts") {
+        return {
+          value: `${metricNumber(node.max_power_watts).toFixed(0)}W`,
+          label: "Max Power"
+        };
+      }
+      return {
+        value: `${metricNumber(node.progress_percent).toFixed(1)}%`,
+        label: "Progress"
+      };
+    }
+
+    function renderPodium(nodes, raceType) {
+      const topThree = nodes.slice(0, 3);
+      if (topThree.length === 0) return "";
+
+      const podiumOrder = topThree.length >= 3 ? [1, 0, 2] : topThree.map((_, index) => index);
+      const cards = podiumOrder.map((nodeIndex) => {
+        const node = topThree[nodeIndex];
+        if (!node) return "";
+        const rank = nodeIndex + 1;
+        const medal = getMedalMeta(rank);
+        const score = formatResultScore(node, raceType);
+        const teamSuffix = node.team_name ? ` (${escapeHtml(node.team_name)})` : "";
+        return `
+          <div class="podium-card place-${rank}">
+            <div class="podium-place">
+              <span class="medal-mark ${medal.className}" title="${medal.title}">${medal.label}</span>
+              <span>#${rank} ${medal.title}</span>
+            </div>
+            <div class="podium-name">${escapeHtml(node.athlete_name || "Athlete")}${teamSuffix}</div>
+            <div class="podium-score">${score.value}</div>
+            <div class="podium-sub">${score.label} · ${escapeHtml(node.node_id || "")}</div>
+          </div>
+        `;
+      }).join("");
+
+      return `<div class="podium-panel" aria-label="Race winners">${cards}</div>`;
+    }
+
+    function triggerFinishCelebration(nodes) {
+      const raceKey = `${raceEndTime || raceStartTime || "race"}:${nodes.map((node) => node.node_id).join("|")}`;
+      if (celebrationShownForRaceKey === raceKey) return;
+      celebrationShownForRaceKey = raceKey;
+
+      const existing = document.getElementById("celebration-overlay");
+      if (existing) existing.remove();
+
+      const overlay = document.createElement("div");
+      overlay.id = "celebration-overlay";
+      overlay.className = "celebration-overlay";
+      overlay.innerHTML = '<div class="celebration-flash"></div>';
+
+      const colors = ["#e2ff3b", "#f59e0b", "#f4f4f5", "#22d3ee", "#f43f5e"];
+      for (let i = 0; i < 72; i++) {
+        const piece = document.createElement("span");
+        piece.className = "confetti-piece";
+        piece.style.left = `${Math.random() * 100}%`;
+        piece.style.background = colors[i % colors.length];
+        piece.style.animationDelay = `${Math.random() * 0.65}s`;
+        piece.style.animationDuration = `${2.2 + Math.random() * 1.1}s`;
+        piece.style.setProperty("--drift", `${(Math.random() * 260) - 130}px`);
+        piece.style.setProperty("--spin", `${Math.random() * 360}deg`);
+        overlay.appendChild(piece);
+      }
+
+      document.body.appendChild(overlay);
+      requestAnimationFrame(() => overlay.classList.add("show"));
+      window.setTimeout(() => overlay.classList.remove("show"), 3200);
+      window.setTimeout(() => overlay.remove(), 3800);
+    }
+
+    function sortLeaderboardNodes(nodes, raceType) {
+      const compareStation = (a, b) => metricNumber(a.station_number, 999) - metricNumber(b.station_number, 999);
+
+      if (raceType === 'distance') {
+        return nodes.sort((a, b) => {
+          const aFinished = Boolean(a.finished_time_ms) || metricNumber(a.progress_percent) >= 100;
+          const bFinished = Boolean(b.finished_time_ms) || metricNumber(b.progress_percent) >= 100;
+          if (aFinished && bFinished) {
+            const finishDiff = metricNumber(a.finished_time_ms, Infinity) - metricNumber(b.finished_time_ms, Infinity);
+            if (finishDiff !== 0) return finishDiff;
+          }
+          if (aFinished !== bFinished) return aFinished ? -1 : 1;
+          const progressDiff = metricNumber(b.progress_percent) - metricNumber(a.progress_percent);
+          if (progressDiff !== 0) return progressDiff;
+          const distanceDiff = metricNumber(b.distance_m) - metricNumber(a.distance_m);
+          if (distanceDiff !== 0) return distanceDiff;
+          const speedDiff = metricNumber(b.instantaneous_speed_kph) - metricNumber(a.instantaneous_speed_kph);
+          return speedDiff || compareStation(a, b);
+        });
+      }
+
+      if (raceType === 'calories') {
+        return nodes.sort((a, b) => {
+          const aFinished = Boolean(a.finished_time_ms) || metricNumber(a.progress_percent) >= 100;
+          const bFinished = Boolean(b.finished_time_ms) || metricNumber(b.progress_percent) >= 100;
+          if (aFinished && bFinished) {
+            const finishDiff = metricNumber(a.finished_time_ms, Infinity) - metricNumber(b.finished_time_ms, Infinity);
+            if (finishDiff !== 0) return finishDiff;
+          }
+          if (aFinished !== bFinished) return aFinished ? -1 : 1;
+          const caloriesDiff = metricNumber(b.calories) - metricNumber(a.calories);
+          if (caloriesDiff !== 0) return caloriesDiff;
+          const powerDiff = metricNumber(b.power_watts) - metricNumber(a.power_watts);
+          return powerDiff || compareStation(a, b);
+        });
+      }
+
+      if (raceType === 'time') {
+        return nodes.sort((a, b) => {
+          const distanceDiff = metricNumber(b.distance_m) - metricNumber(a.distance_m);
+          if (distanceDiff !== 0) return distanceDiff;
+          const speedDiff = metricNumber(b.instantaneous_speed_kph) - metricNumber(a.instantaneous_speed_kph);
+          return speedDiff || compareStation(a, b);
+        });
+      }
+
+      if (raceType === 'max_power' || raceType === 'watts') {
+        return nodes.sort((a, b) => {
+          const maxPowerDiff = metricNumber(b.max_power_watts) - metricNumber(a.max_power_watts);
+          if (maxPowerDiff !== 0) return maxPowerDiff;
+          const currentPowerDiff = metricNumber(b.power_watts) - metricNumber(a.power_watts);
+          return currentPowerDiff || compareStation(a, b);
+        });
+      }
+
+      return nodes.sort((a, b) => metricNumber(b.progress_percent) - metricNumber(a.progress_percent) || compareStation(a, b));
+    }
+
+    function animateLeaderboardReorder(previousRects) {
+      const items = document.querySelectorAll(".leaderboard-item");
+      items.forEach((item) => {
+        const nodeId = item.dataset.nodeId;
+        const previousRect = previousRects.get(nodeId);
+        if (!previousRect) return;
+
+        const nextRect = item.getBoundingClientRect();
+        const deltaY = previousRect.top - nextRect.top;
+        const deltaX = previousRect.left - nextRect.left;
+        if (Math.abs(deltaY) < 1 && Math.abs(deltaX) < 1) return;
+
+        item.style.transform = `translate(${deltaX}px, ${deltaY}px)`;
+        item.style.transition = "transform 0s";
+
+        requestAnimationFrame(() => {
+          item.style.transition = "";
+          item.style.transform = "";
+        });
+      });
+
+      window.setTimeout(() => {
+        document.querySelectorAll(".leaderboard-item.rank-up, .leaderboard-item.rank-down")
+          .forEach((item) => item.classList.remove("rank-up", "rank-down"));
+      }, 900);
+    }
+
     function renderLeaderboard(progressData) {
-      console.log("renderLeaderboard progressData:", progressData);
       const container = document.getElementById("leaderboard-container");
+      const previousRects = new Map();
+      container.querySelectorAll(".leaderboard-item").forEach((item) => {
+        previousRects.set(item.dataset.nodeId, item.getBoundingClientRect());
+      });
+
       const nodes = Object.values(progressData);
-      console.log("Object.values nodes:", nodes);
-      leaderboardNodes = nodes;
       
       if (nodes.length === 0) {
         container.innerHTML = `
           <div class="empty-state">
             <p>等待運動節點數據...</p>
           </div>`;
+        leaderboardNodes = [];
+        leaderboardRankByNode = new Map();
         return;
       }
 
-      // Sort and render based on config type
       const raceType = (currentConfig && currentConfig.race_type) || 'distance';
+      sortLeaderboardNodes(nodes, raceType);
+      leaderboardNodes = nodes;
+      const leaderboardFinal = isLeaderboardFinal(raceType, nodes);
 
-      if (raceType === 'distance' || raceType === 'calories') {
-        nodes.sort((a, b) => {
-          const aFinished = a.progress_percent >= 100;
-          const bFinished = b.progress_percent >= 100;
-          if (aFinished && bFinished) {
-            return (a.finished_time_ms || 0) - (b.finished_time_ms || 0);
-          }
-          if (aFinished) return -1;
-          if (bFinished) return 1;
-          return b.progress_percent - a.progress_percent;
-        });
-      } else if (raceType === 'time') {
-        nodes.sort((a, b) => b.distance_m - a.distance_m);
-      } else if (raceType === 'max_power' || raceType === 'watts') {
-        nodes.sort((a, b) => b.max_power_watts - a.max_power_watts);
-      } else {
-        nodes.sort((a, b) => b.progress_percent - a.progress_percent);
-      }
-
-      let html = '<div class="leaderboard-list">';
+      let html = leaderboardFinal ? renderPodium(nodes, raceType) : '';
+      html += '<div class="leaderboard-list">';
       nodes.forEach((node, index) => {
+        const currentRank = index + 1;
+        const previousRank = leaderboardRankByNode.get(node.node_id);
+        const rankDelta = previousRank ? previousRank - currentRank : 0;
+        const rankClass = rankDelta > 0 ? "rank-up" : rankDelta < 0 ? "rank-down" : "";
+        const medalMeta = leaderboardFinal ? getMedalMeta(currentRank) : null;
+        const medalHtml = medalMeta
+          ? `<span class="medal-mark ${medalMeta.className}" title="${medalMeta.title}">${medalMeta.label}</span>`
+          : "";
         const stationBadge = node.station_number 
-          ? `<span style="background: var(--volt-yellow); color: #000; padding: 0.15rem 0.4rem; border-radius: 2px; font-weight: 800; font-size: 0.75rem; margin-right: 0.5rem; font-family: 'Oswald', sans-serif;">STATION ${node.station_number}</span>`
+          ? `<span class="station-pill">STATION ${escapeHtml(node.station_number)}</span>`
           : '';
 
-        const displayName = node.athlete_name + (node.team_name ? ` <span class="team-suffix" style="font-size: 0.8rem; color: var(--volt-yellow); opacity: 0.85; font-weight: 600;">(${node.team_name})</span>` : '');
+        const athleteName = escapeHtml(node.athlete_name || "Athlete");
+        const displayName = athleteName + (node.team_name ? ` <span class="team-suffix" style="font-size: 0.8rem; color: var(--volt-yellow); opacity: 0.85; font-weight: 600;">(${escapeHtml(node.team_name)})</span>` : '');
 
         let avatarHtml = '';
         if (node.avatar_url) {
-          avatarHtml = `<img class="athlete-avatar" src="${node.avatar_url}" style="width: 44px; height: 44px; border-radius: 50%; border: 2px solid var(--steel-border); object-fit: cover; flex-shrink: 0;">`;
+          avatarHtml = `<img class="athlete-avatar" src="${escapeHtml(node.avatar_url)}" style="width: 44px; height: 44px; border-radius: 50%; border: 2px solid var(--steel-border); object-fit: cover; flex-shrink: 0;" alt="">`;
         } else {
-          const initial = (node.athlete_name || '?').charAt(0).toUpperCase();
+          const initial = escapeHtml((node.athlete_name || '?').charAt(0).toUpperCase());
           avatarHtml = `<div class="athlete-avatar fallback-avatar" style="width: 44px; height: 44px; border-radius: 50%; border: 2px solid var(--steel-border); background-color: #3f3f46; color: #fff; display: flex; justify-content: center; align-items: center; font-weight: 800; font-size: 1.2rem; font-family: 'Oswald', sans-serif; flex-shrink: 0;">${initial}</div>`;
         }
 
         let metricCols = '';
         if (raceType === 'calories') {
-          const calDisplay = node.calories !== undefined ? node.calories.toFixed(1) : '0.0';
-          const powerDisplay = node.power_watts !== undefined ? node.power_watts : '0';
+          const calDisplay = metricNumber(node.calories).toFixed(1);
+          const powerDisplay = metricNumber(node.power_watts).toFixed(0);
           const progressText = node.finished_time_ms 
-            ? `<span style="color: var(--volt-yellow); font-weight: 800;">${(node.finished_time_ms / 1000.0).toFixed(1)}s</span>`
-            : `${node.progress_percent.toFixed(1)}%`;
+            ? `<span class="score-primary">${(metricNumber(node.finished_time_ms) / 1000.0).toFixed(1)}s</span>`
+            : `${metricNumber(node.progress_percent).toFixed(1)}%`;
           const progressLabel = node.finished_time_ms ? "完賽時間" : "進度";
 
           metricCols = `
@@ -776,7 +1206,7 @@
               <div class="metric-lbl">功率 (W)</div>
             </div>
             <div class="metric-group">
-              <div class="metric-val" style="color: var(--volt-yellow); font-weight: 800;">${calDisplay}</div>
+              <div class="metric-val score-primary">${calDisplay}</div>
               <div class="metric-lbl">卡路里 (kcal)</div>
             </div>
             <div class="metric-group">
@@ -785,9 +1215,9 @@
             </div>
           `;
         } else if (raceType === 'max_power' || raceType === 'watts') {
-          const powerDisplay = node.power_watts !== undefined ? node.power_watts : '0';
-          const maxPowerDisplay = node.max_power_watts !== undefined ? node.max_power_watts : '0';
-          const progressText = `${node.progress_percent.toFixed(1)}%`;
+          const powerDisplay = metricNumber(node.power_watts).toFixed(0);
+          const maxPowerDisplay = metricNumber(node.max_power_watts).toFixed(0);
+          const progressText = `${metricNumber(node.progress_percent).toFixed(1)}%`;
 
           metricCols = `
             <div class="metric-group">
@@ -795,7 +1225,7 @@
               <div class="metric-lbl">當前功率 (W)</div>
             </div>
             <div class="metric-group">
-              <div class="metric-val" style="color: var(--volt-yellow); font-weight: 800;">${maxPowerDisplay}</div>
+              <div class="metric-val score-primary">${maxPowerDisplay}</div>
               <div class="metric-lbl">最大功率 (W)</div>
             </div>
             <div class="metric-group">
@@ -804,9 +1234,9 @@
             </div>
           `;
         } else if (raceType === 'time') {
-          const speedDisplay = node.instantaneous_speed_kph.toFixed(1);
-          const distDisplay = node.distance_m.toFixed(0);
-          const progressText = `${node.progress_percent.toFixed(1)}%`;
+          const speedDisplay = metricNumber(node.instantaneous_speed_kph).toFixed(1);
+          const distDisplay = metricNumber(node.distance_m).toFixed(0);
+          const progressText = `${metricNumber(node.progress_percent).toFixed(1)}%`;
 
           metricCols = `
             <div class="metric-group">
@@ -814,7 +1244,7 @@
               <div class="metric-lbl">速度 (kph)</div>
             </div>
             <div class="metric-group">
-              <div class="metric-val" style="color: var(--volt-yellow); font-weight: 800;">${distDisplay}</div>
+              <div class="metric-val score-primary">${distDisplay}</div>
               <div class="metric-lbl">距離 (m)</div>
             </div>
             <div class="metric-group">
@@ -823,11 +1253,11 @@
             </div>
           `;
         } else { // distance
-          const speedDisplay = node.instantaneous_speed_kph.toFixed(1);
-          const distDisplay = node.distance_m.toFixed(0);
+          const speedDisplay = metricNumber(node.instantaneous_speed_kph).toFixed(1);
+          const distDisplay = metricNumber(node.distance_m).toFixed(0);
           const progressText = node.finished_time_ms 
-            ? `<span style="color: var(--volt-yellow); font-weight: 800;">${(node.finished_time_ms / 1000.0).toFixed(1)}s</span>`
-            : `${node.progress_percent.toFixed(1)}%`;
+            ? `<span class="score-primary">${(metricNumber(node.finished_time_ms) / 1000.0).toFixed(1)}s</span>`
+            : `${metricNumber(node.progress_percent).toFixed(1)}%`;
           const progressLabel = node.finished_time_ms ? "完賽時間" : "進度";
 
           metricCols = `
@@ -836,7 +1266,7 @@
               <div class="metric-lbl">速度 (kph)</div>
             </div>
             <div class="metric-group">
-              <div class="metric-val" style="color: var(--volt-yellow); font-weight: 800;">${distDisplay}</div>
+              <div class="metric-val score-primary">${distDisplay}</div>
               <div class="metric-lbl">距離 (m)</div>
             </div>
             <div class="metric-group">
@@ -847,24 +1277,29 @@
         }
 
         html += `
-          <div class="leaderboard-item" id="node-${node.node_id}">
-            <div class="rank">${index + 1}</div>
+          <div class="leaderboard-item ${rankClass}" id="node-${escapeHtml(node.node_id)}" data-node-id="${escapeHtml(node.node_id)}">
+            <div class="rank">${currentRank}${medalHtml}</div>
             <div class="athlete-info">
               ${avatarHtml}
               <div style="display: flex; flex-direction: column;">
                 <div class="athlete-name">${stationBadge}${displayName}</div>
-                <div class="equipment-tag">${node.node_id}</div>
+                <div class="equipment-tag">${escapeHtml(node.node_id)}</div>
               </div>
             </div>
             ${metricCols}
             <div class="progress-track">
-              <div class="progress-fill" style="width: ${Math.min(100, node.progress_percent)}%"></div>
+              <div class="progress-fill" style="width: ${Math.min(100, metricNumber(node.progress_percent))}%"></div>
             </div>
           </div>
         `;
       });
       html += '</div>';
       container.innerHTML = html;
+      leaderboardRankByNode = new Map(nodes.map((node, index) => [node.node_id, index + 1]));
+      animateLeaderboardReorder(previousRects);
+      if (leaderboardFinal) {
+        triggerFinishCelebration(nodes);
+      }
     }
 
     async function fetchState() {
@@ -1065,6 +1500,9 @@
         }
       } else {
         autoResetCancelled = false;
+        if (currentState === "IDLE" || currentState === "READY") {
+          celebrationShownForRaceKey = null;
+        }
         cancelAutoReset(false);
       }
     }
