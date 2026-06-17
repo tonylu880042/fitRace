@@ -224,6 +224,10 @@
   - 新增 Edge Node 的服務重啟、整機重開與關機指令。
   - 電源控制需透過受限 privileged helper 或 systemd command service 執行，不可由 Web API 任意執行 shell command。
   - 比賽進行中、更新進行中或未通過 local admin 驗證時必須拒絕操作。
+- **客製化開機畫面 (Custom Boot Splash Screen)**：
+  - 設計專屬 logo 圖片（`.png` 格式），替換 RPi 預設啟動畫面。
+  - 將自訂圖片置於 `/usr/share/plymouth/themes/pix/splash.png`，並重新構建 initramfs 使得開機載入生效。
+  - 調整 `cmdline.txt` 開機參數，加入 `quiet splash loglevel=3 logo.nologo vt.global_cursor_default=0` 以隱藏預設草莓圖示、Linux 開機日誌與閃爍游標，使產品開機體驗更具備專屬硬體質感。
 
 ### 4.3 目前進展紀錄 (2026-06-17)
 - **已完成：Hub systemd runtime 整理與實機啟動驗證**
