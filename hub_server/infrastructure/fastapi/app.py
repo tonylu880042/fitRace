@@ -1,6 +1,7 @@
 import asyncio
 import os
 import base64
+import logging
 import subprocess
 from contextlib import asynccontextmanager
 from dataclasses import asdict
@@ -19,10 +20,13 @@ from hub_server.usecases.update_checker import UpdateChecker
 from fitrace_common.power_manager import PowerActionError, PowerManager
 from fitrace_common.version import APP_VERSION
 
+logger = logging.getLogger("hub_server.fastapi")
+
 DEFAULT_UPDATE_PUBLIC_KEY_PATH = str(
     Path(__file__).resolve().parents[3] / "fitrace_common" / "release-ed25519-public.pem"
 )
 HUB_UPDATER_SERVICE = os.getenv("FITRACE_HUB_UPDATER_SERVICE", "fitracestudio-hub-updater.service")
+MAX_AVATAR_BYTES = 256 * 1024
 
 
 def run_systemctl(command: list[str]):
@@ -99,6 +103,55 @@ class PowerActionPayload(BaseModel):
     confirmation: Optional[str] = None
 
 
+class DiagnosticTelemetryPayload(BaseModel):
+    node_id: str = "diagnostic-bike-01"
+    equipment_type: str = "fan_bike"
+    distance_m: float = 25.0
+    elapsed_time_ms: int = 5000
+    instantaneous_speed_kph: float = 18.0
+    cadence_rpm: int = 75
+    power_watts: int = 180
+def get_real_ip() -> Optional[str]:
+    import socket
+    # 1. Try UDP socket trick to get interface routing to external IP
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+            if ip and ip != "127.0.0.1":
+                return ip
+    except Exception:
+        pass
+
+    # 2. Try socket.getaddrinfo / gethostbyname resolve loopback fallback
+    try:
+        hostname = socket.gethostname()
+        for addr in socket.getaddrinfo(hostname, None):
+            ip = addr[4][0]
+            if ip and ip != "127.0.0.1" and not ip.startswith("127.") and ":" not in ip:
+                return ip
+    except Exception:
+        pass
+
+    # 3. Try fallback broadcast route trick
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("10.255.255.255", 1))
+            ip = s.getsockname()[0]
+            if ip and ip != "127.0.0.1":
+                return ip
+    except Exception:
+        pass
+
+    return None
+
+
+@app.get("/api/system/ip")
+def get_system_ip():
+    ip = get_real_ip()
+    return {"ip": ip or "127.0.0.1"}
+
+
 @app.get("/health")
 def health_check():
     return {"status": "ok", "version": APP_VERSION}
@@ -111,6 +164,44 @@ def require_admin(request: Request):
     provided_token = request.headers.get("X-FitRace-Admin-Token")
     if provided_token != expected_token:
         raise HTTPException(status_code=401, detail="Admin token required")
+
+
+def require_diagnostics_admin(request: Request):
+    expected_token = os.getenv("FITRACE_DIAGNOSTICS_TOKEN") or os.getenv("FITRACE_ADMIN_TOKEN")
+    if not expected_token:
+        raise HTTPException(status_code=503, detail="Diagnostics token is not configured")
+    provided_token = request.headers.get("X-FitRace-Diagnostics-Token")
+    if provided_token != expected_token:
+        raise HTTPException(status_code=401, detail="Diagnostics token required")
+
+
+def is_test_telemetry_enabled() -> bool:
+    return (
+        os.getenv("TESTING") == "1"
+        or os.getenv("FITRACE_ENABLE_TEST_TELEMETRY") == "1"
+    )
+
+
+def is_diagnostics_enabled() -> bool:
+    return os.getenv("FITRACE_ENABLE_DIAGNOSTICS") == "1"
+
+
+def decode_avatar_webp(avatar_base64: str) -> bytes:
+    if "," in avatar_base64:
+        header, base64_data = avatar_base64.split(",", 1)
+        if header.strip().lower() != "data:image/webp;base64":
+            raise ValueError("Avatar must be a WebP data URL")
+    else:
+        base64_data = avatar_base64
+
+    img_data = base64.b64decode(base64_data, validate=True)
+    if not img_data:
+        raise ValueError("Empty image data")
+    if len(img_data) > MAX_AVATAR_BYTES:
+        raise ValueError("Avatar image is too large")
+    if len(img_data) < 12 or img_data[:4] != b"RIFF" or img_data[8:12] != b"WEBP":
+        raise ValueError("Avatar must be a WebP image")
+    return img_data
 
 
 async def get_race_state_data() -> dict:
@@ -192,7 +283,7 @@ async def apply_hub_update(request: Request):
     if race_manager.get_state() != RaceState.IDLE:
         raise HTTPException(status_code=409, detail="Hub update apply is allowed only when race state is IDLE")
     try:
-        await asyncio.to_thread(run_systemctl, ["systemctl", "start", HUB_UPDATER_SERVICE])
+        await asyncio.to_thread(run_systemctl, ["sudo", "systemctl", "start", HUB_UPDATER_SERVICE])
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=409, detail=str(e))
     return {"state": "updater_started", "service": HUB_UPDATER_SERVICE}
@@ -228,7 +319,107 @@ async def reboot_hub(payload: PowerActionPayload, request: Request):
 @app.post("/api/system/power/shutdown")
 async def shutdown_hub(payload: PowerActionPayload, request: Request):
     require_admin(request)
+    
+    # 1. Notify all EdgeNodes via MQTT to shut down
+    mqtt_client = getattr(request.app.state, "mqtt_client", None)
+    if mqtt_client:
+        try:
+            import json
+            await mqtt_client.publish(
+                "fitrace/nodes/command",
+                json.dumps({"action": "shutdown"})
+            )
+            logger.info("Published shutdown command to all EdgeNodes via MQTT")
+        except Exception as e:
+            logger.error(f"Failed to publish shutdown command to EdgeNodes: {e}")
+            
+    # 2. Wait a short moment to ensure MQTT messages are sent
+    await asyncio.sleep(0.5)
+    
+    # 3. Shutdown the Central Hub itself
     return await run_hub_power_action(lambda: power_manager.shutdown(payload.confirmation))
+
+
+@app.post("/api/system/power/shutdown-system")
+async def shutdown_system(request: Request):
+    require_admin(request)
+    
+    # 1. Notify all EdgeNodes via MQTT to shut down
+    mqtt_client = getattr(request.app.state, "mqtt_client", None)
+    if mqtt_client:
+        try:
+            import json
+            await mqtt_client.publish(
+                "fitrace/nodes/command",
+                json.dumps({"action": "shutdown"})
+            )
+            logger.info("Published shutdown command to all EdgeNodes via MQTT")
+        except Exception as e:
+            logger.error(f"Failed to publish shutdown command to EdgeNodes: {e}")
+            
+    # 2. Wait a short moment to ensure MQTT messages are sent
+    await asyncio.sleep(0.5)
+    
+    # 3. Shutdown the Central Hub itself
+    return await run_hub_power_action(lambda: power_manager.shutdown("SHUTDOWN"))
+
+
+@app.post("/api/diagnostics/telemetry")
+async def run_diagnostic_telemetry(payload: DiagnosticTelemetryPayload, request: Request):
+    if not is_diagnostics_enabled():
+        raise HTTPException(status_code=404, detail="Not found")
+
+    require_diagnostics_admin(request)
+
+    if race_manager.get_state() == RaceState.RUNNING:
+        raise HTTPException(
+            status_code=409,
+            detail="Diagnostics cannot run while a race is running",
+        )
+
+    diagnostic_manager = RaceManager()
+    diagnostic_manager.configure(RaceConfig(race_type="distance", target_value=100.0))
+    diagnostic_manager.register_node(payload.node_id, "DIAGNOSTIC MODE")
+    diagnostic_manager.start_race()
+    progress = diagnostic_manager.update_telemetry(
+        {
+            "node_id": payload.node_id,
+            "equipment_type": payload.equipment_type,
+            "distance_m": payload.distance_m,
+            "elapsed_time_ms": payload.elapsed_time_ms,
+            "instantaneous_speed_kph": payload.instantaneous_speed_kph,
+            "cadence_rpm": payload.cadence_rpm,
+            "power_watts": payload.power_watts,
+        }
+    )
+    if diagnostic_manager.get_state() == RaceState.RUNNING:
+        diagnostic_manager.stop_race()
+
+    await ws_manager.broadcast(progress)
+    diagnostic_event = {
+        "type": "diagnostic_telemetry",
+        "status": "passed",
+        "diagnostic": True,
+        "node_id": payload.node_id,
+        "progress": progress,
+        "checks": {
+            "api": "ok",
+            "race_manager": "ok",
+            "websocket_broadcast": "sent",
+        },
+    }
+    await ws_manager.broadcast(diagnostic_event)
+
+    logger.info(
+        "diagnostic telemetry sent",
+        extra={
+            "client": request.client.host if request.client else None,
+            "node_id": payload.node_id,
+            "equipment_type": payload.equipment_type,
+        },
+    )
+
+    return diagnostic_event
 
 
 @app.get("/api/locales")
@@ -310,15 +501,7 @@ async def register_athlete(payload: RegisterAthletePayload):
         has_avatar = False
         if payload.avatar_base64:
             try:
-                if "," in payload.avatar_base64:
-                    header, base64_data = payload.avatar_base64.split(",", 1)
-                else:
-                    base64_data = payload.avatar_base64
-                
-                img_data = base64.b64decode(base64_data)
-                if not img_data:
-                    raise ValueError("Empty image data")
-                
+                img_data = decode_avatar_webp(payload.avatar_base64)
                 avatar_dir = os.path.join(
                     os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
                     "static",
@@ -369,6 +552,9 @@ async def register_athlete(payload: RegisterAthletePayload):
 
 @app.post("/api/test/telemetry")
 async def post_test_telemetry(payload: Dict[str, Any]):
+    if not is_test_telemetry_enabled():
+        raise HTTPException(status_code=404, detail="Not found")
+
     try:
         node_id = payload.get("node_id")
         if not node_id:

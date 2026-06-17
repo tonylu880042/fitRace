@@ -71,5 +71,12 @@
   "alert.stop_failed": "Arresto fallito",
   "alert.reset_failed": "Reset fallito",
   "alert.server_error": "Errore server",
-  "confirm.unassign": "Rimuovere attrezzatura e registrazione dalla postazione {station}?"
+  "confirm.unassign": "Rimuovere attrezzatura e registrazione dalla postazione {station}?",
+  "power.title": "System Power",
+  "power.restart": "Restart Hub Service",
+  "power.reboot": "Reboot Hub",
+  "power.shutdown": "Shutdown Hub",
+  "power.shutdown_system": "Shutdown System",
+  "power.status_tip": "Power actions are available only while race state is IDLE.",
+  "power.status_locked": "Power controls locked while race state is {state}."
 }

@@ -58,16 +58,16 @@ class PowerManager:
     def restart_service(self) -> PowerActionResult:
         return self._execute(
             action="restart-service",
-            command=["systemctl", "restart", self._service_name],
+            command=["sudo", "systemctl", "restart", self._service_name],
         )
 
     def reboot(self, confirmation: str | None = None) -> PowerActionResult:
         self._require_confirmation(confirmation, expected="REBOOT")
-        return self._execute(action="reboot", command=["systemctl", "reboot"])
+        return self._execute(action="reboot", command=["sudo", "systemctl", "reboot"])
 
     def shutdown(self, confirmation: str | None = None) -> PowerActionResult:
         self._require_confirmation(confirmation, expected="SHUTDOWN")
-        return self._execute(action="shutdown", command=["systemctl", "poweroff"])
+        return self._execute(action="shutdown", command=["sudo", "systemctl", "poweroff"])
 
     def _execute(self, *, action: str, command: list[str]) -> PowerActionResult:
         if not self._action_allowed():

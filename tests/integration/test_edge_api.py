@@ -90,7 +90,7 @@ def test_edge_power_shutdown_requires_confirmation_and_defaults_to_dry_run():
     payload = response.json()
     assert payload["dry_run"] is True
     assert payload["executed"] is False
-    assert payload["command"] == ["systemctl", "poweroff"]
+    assert payload["command"] == ["sudo", "systemctl", "poweroff"]
 
 
 def test_edge_ble_scan_endpoint_filters_ftms_devices(monkeypatch):

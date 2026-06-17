@@ -22,24 +22,28 @@
 以下改善項目來自目前程式碼審查結果，應優先於新增大型功能處理。目標是先穩定 API 邊界、測試執行方式與核心狀態管理，避免後續 Phase 2/3 功能堆疊在脆弱基礎上。
 
 ### P0: 安全與正式環境防護
-- **移除或限制測試遙測端點**：
+- **已完成：移除或限制測試遙測端點**：
   - 目前 `/api/test/telemetry` 在正式 app 中無條件開放，會讓任何可連到 Hub 的用戶注入遙測資料、註冊節點並影響比賽狀態。
   - 改善方向：僅在 `TESTING=1` 或明確的 development mode 中註冊此端點；正式環境改由 MQTT ingestion 路徑接收資料。
   - 驗證標準：正式設定下呼叫 `/api/test/telemetry` 回傳 `404` 或不可用；測試環境仍可使用該端點完成整合測試。
-- **強化 Avatar 上傳驗證**：
+  - 進展紀錄：已改為只有 `TESTING=1` 或 `FITRACE_ENABLE_TEST_TELEMETRY=1` 時可用；未開啟時回傳 `404`。
+  - 現場維護方案：新增受控 `POST /api/diagnostics/telemetry`，需 `FITRACE_ENABLE_DIAGNOSTICS=1` 與 local admin token；比賽進行中拒絕執行，使用臨時 RaceManager 產生 synthetic telemetry 並廣播到 Dashboard，不污染正式比賽狀態。
+- **已完成：強化 Avatar 上傳驗證**：
   - 目前報名 API 接收任意 base64 bytes 並直接寫成 `.webp` 檔案，缺少大小限制與內容驗證。
   - 改善方向：限制 payload 大小、使用嚴格 base64 decode、驗證 MIME/header 與實際圖片格式，並拒絕空檔或超大檔。
   - 驗證標準：新增 API tests 覆蓋非法 base64、錯誤 MIME、超大圖片與合法 WebP 圖片。
+  - 進展紀錄：前端報名頁會將手機上傳照片與預設 SVG 頭像裁切轉成 WebP 再送出；後端使用嚴格 base64 decode、256KB 大小限制與 RIFF/WEBP header 驗證後才寫檔。
 
 ### P1: RaceManager 狀態邊界整理
 - **停止從 API/MQTT adapter 直接修改 private fields**：
   - 目前 `app.py` 與 `mqtt_subscriber.py` 直接操作 `RaceManager._registered_nodes`、`_progress`、`_stations`、`_active_nodes`。
   - 改善方向：在 `RaceManager` 新增 public methods，例如 `record_active_node()`、`ensure_node_registered()`、`ingest_telemetry()`，讓所有狀態轉換集中在 usecase 層。
   - 驗證標準：API 與 MQTT adapter 不再直接存取 `_` 開頭欄位；既有 race state、station、avatar、websocket tests 全部通過。
-- **補齊 RaceConfig 驗證**：
+- **已完成：補齊 RaceConfig 驗證**：
   - 目前 `race_type` 接受任意字串，未知賽制可能導致進度計算與自動停止邏輯不一致。
   - 改善方向：將 `race_type` 改為 enum 或 `Literal["distance", "time", "calories", "max_power", "watts"]`，並依賽制驗證 `target_value` 或 `duration_sec` 必填且大於 0。
   - 驗證標準：新增 invalid config tests；未知 race type 回傳 `400`，不會進入 `READY/RUNNING` 狀態。
+  - 進展紀錄：`RaceConfig.race_type` 已限制為 `distance`、`time`、`calories`、`max_power`、`watts`；距離/卡路里賽需 `target_value > 0`，時間/最大功率/watts 賽需 `duration_sec > 0`。
 
 ### P1: 測試與專案工具鏈
 - **新增 Python 專案設定檔**：

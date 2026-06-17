@@ -30,6 +30,19 @@ async def shutdown(loop, signal=None):
     await asyncio.gather(*tasks, return_exceptions=True)
     loop.stop()
 
+async def execute_node_shutdown():
+    logger.info("Initiating system shutdown for Edge Node...")
+    await asyncio.sleep(0.5)
+    dry_run = os.getenv("FITRACE_POWER_COMMANDS_ENABLED") != "1"
+    if dry_run:
+        logger.info("[Dry Run] sudo systemctl poweroff would be executed")
+    else:
+        try:
+            import subprocess
+            subprocess.run(["sudo", "systemctl", "poweroff"], check=True, timeout=15)
+        except Exception as e:
+            logger.error(f"Failed to execute sudo systemctl poweroff: {e}")
+
 
 def main():
     # Load configuration
@@ -78,6 +91,28 @@ def main():
 
         try:
             await mqtt_client.connect()
+            
+            # Subscribe to command topics
+            command_topic_broadcast = "fitrace/nodes/command"
+            command_topic_specific = f"fitrace/nodes/{node_id}/command"
+
+            def on_message(client, userdata, msg):
+                try:
+                    payload = json.loads(msg.payload.decode("utf-8"))
+                    action = payload.get("action")
+                    if action == "shutdown":
+                        logger.info("Received MQTT shutdown command")
+                        loop.call_soon_threadsafe(
+                            lambda: asyncio.create_task(execute_node_shutdown())
+                        )
+                except Exception as ex:
+                    logger.error(f"Error handling command message: {ex}")
+
+            mqtt_client._client.on_message = on_message
+            mqtt_client._client.subscribe(command_topic_broadcast)
+            mqtt_client._client.subscribe(command_topic_specific)
+            logger.info("Subscribed to MQTT command topics: %s and %s", command_topic_broadcast, command_topic_specific)
+
         except Exception as e:
             logger.error(
                 f"MQTT connection failed: {e}. Running in standalone mode (no publish)."

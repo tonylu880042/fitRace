@@ -46,15 +46,21 @@ def test_signup_page_has_language_switcher_defaulting_to_english():
     assert 'Athlete Self-Registration' in response.text
     assert 'Deutsch (Schweiz)' in response.text
     assert 'Svenska' in response.text
+    assert "function convertAvatarFileToWebp" in response.text
+    assert "function convertAvatarSourceToWebp" in response.text
+    assert "canvas.toDataURL('image/webp', 0.85)" in response.text
 
 
-def test_dashboard_includes_system_power_controls():
-    response = client.get("/static/index.html")
+def test_dashboard_does_not_include_system_power_controls_but_signup_does():
+    response_index = client.get("/static/index.html")
+    assert response_index.status_code == 200
+    assert "System Power" not in response_index.text
 
-    assert response.status_code == 200
-    assert "System Power" in response.text
-    assert "Restart Hub Service" in response.text
-    assert "Shutdown Hub" in response.text
+    response_signup = client.get("/static/signup.html")
+    assert response_signup.status_code == 200
+    assert "System Power" in response_signup.text
+    assert "Restart Hub Service" in response_signup.text
+    assert "Shutdown Hub" in response_signup.text
 
 
 def test_nodes_endpoint_returns_registered_edge_nodes():
@@ -199,7 +205,7 @@ def test_update_apply_hub_endpoint_starts_updater_service_when_idle(monkeypatch)
 
     assert response.status_code == 200
     assert response.json()["state"] == "updater_started"
-    assert calls == [["systemctl", "start", "fitracestudio-hub-updater.service"]]
+    assert calls == [["sudo", "systemctl", "start", "fitracestudio-hub-updater.service"]]
 
 
 def test_hub_checks_updates_once_on_startup(monkeypatch):
@@ -219,11 +225,22 @@ def test_hub_checks_updates_once_on_startup(monkeypatch):
     assert calls == ["checked"]
 
 
-def test_power_shutdown_requires_confirmation_and_does_not_execute_in_dry_run():
+def test_power_shutdown_requires_confirmation_and_does_not_execute_in_dry_run(monkeypatch):
     client.post("/api/race/reset")
 
     missing_confirmation = client.post("/api/system/power/shutdown", json={})
     assert missing_confirmation.status_code == 409
+
+    class MockMqttClient:
+        def __init__(self):
+            self.published = []
+
+        async def publish(self, topic, payload):
+            self.published.append((topic, payload))
+
+    mock_mqtt = MockMqttClient()
+    from hub_server.infrastructure.fastapi.app import app
+    app.state.mqtt_client = mock_mqtt
 
     response = client.post(
         "/api/system/power/shutdown",
@@ -234,7 +251,12 @@ def test_power_shutdown_requires_confirmation_and_does_not_execute_in_dry_run():
     payload = response.json()
     assert payload["dry_run"] is True
     assert payload["executed"] is False
-    assert payload["command"] == ["systemctl", "poweroff"]
+    assert payload["command"] == ["sudo", "systemctl", "poweroff"]
+
+    assert len(mock_mqtt.published) == 1
+    topic, msg = mock_mqtt.published[0]
+    assert topic == "fitrace/nodes/command"
+    assert "shutdown" in msg
 
 
 def test_power_actions_are_blocked_while_race_is_running():
@@ -281,7 +303,134 @@ def test_race_workflow_via_api():
     assert res.json()["state"] == "IDLE"
 
 
-def test_race_close_endpoint_via_api():
+def test_race_configure_rejects_invalid_config_and_keeps_idle_state():
+    client.post("/api/race/reset")
+
+    res = client.post(
+        "/api/race/configure",
+        json={"race_type": "mystery", "target_value": 100, "duration_sec": 0},
+    )
+    assert res.status_code == 400
+    assert client.get("/api/race/state").json()["state"] == "IDLE"
+
+    res = client.post(
+        "/api/race/configure",
+        json={"race_type": "distance", "target_value": 0, "duration_sec": 0},
+    )
+    assert res.status_code == 400
+    assert client.get("/api/race/state").json()["state"] == "IDLE"
+
+    res = client.post(
+        "/api/race/configure",
+        json={"race_type": "time", "target_value": 0, "duration_sec": 0},
+    )
+    assert res.status_code == 400
+    assert client.get("/api/race/state").json()["state"] == "IDLE"
+
+
+def test_test_telemetry_endpoint_is_disabled_without_explicit_test_mode(monkeypatch):
+    monkeypatch.delenv("TESTING", raising=False)
+    monkeypatch.delenv("FITRACE_ENABLE_TEST_TELEMETRY", raising=False)
+
+    res = client.post(
+        "/api/test/telemetry",
+        json={"node_id": "bike-01", "equipment_type": "bike"},
+    )
+
+    assert res.status_code == 404
+
+
+def test_diagnostic_telemetry_endpoint_is_disabled_by_default(monkeypatch):
+    monkeypatch.delenv("FITRACE_ENABLE_DIAGNOSTICS", raising=False)
+
+    res = client.post(
+        "/api/diagnostics/telemetry",
+        json={"node_id": "diagnostic-bike-01"},
+    )
+
+    assert res.status_code == 404
+
+
+def test_diagnostic_telemetry_requires_admin_token(monkeypatch):
+    monkeypatch.setenv("FITRACE_ENABLE_DIAGNOSTICS", "1")
+    monkeypatch.setenv("FITRACE_DIAGNOSTICS_TOKEN", "secret")
+    monkeypatch.delenv("FITRACE_ADMIN_TOKEN", raising=False)
+
+    res = client.post(
+        "/api/diagnostics/telemetry",
+        json={"node_id": "diagnostic-bike-01"},
+    )
+
+    assert res.status_code == 401
+
+
+def test_diagnostic_telemetry_blocks_while_race_is_running(monkeypatch):
+    monkeypatch.setenv("FITRACE_ENABLE_DIAGNOSTICS", "1")
+    monkeypatch.setenv("FITRACE_DIAGNOSTICS_TOKEN", "secret")
+    monkeypatch.delenv("FITRACE_ADMIN_TOKEN", raising=False)
+    client.post("/api/race/reset")
+    client.post(
+        "/api/race/configure",
+        json={"race_type": "time", "target_value": 0, "duration_sec": 60},
+    )
+    client.post("/api/race/start")
+
+    res = client.post(
+        "/api/diagnostics/telemetry",
+        json={"node_id": "diagnostic-bike-01"},
+        headers={"X-FitRace-Diagnostics-Token": "secret"},
+    )
+
+    assert res.status_code == 409
+    assert "running" in res.json()["detail"].lower()
+    client.post("/api/race/reset")
+
+
+def test_diagnostic_telemetry_broadcasts_synthetic_progress_without_mutating_race_state(
+    monkeypatch,
+):
+    from hub_server.infrastructure.fastapi import app as hub_app
+
+    monkeypatch.setenv("FITRACE_ENABLE_DIAGNOSTICS", "1")
+    monkeypatch.setenv("FITRACE_DIAGNOSTICS_TOKEN", "secret")
+    monkeypatch.delenv("FITRACE_ADMIN_TOKEN", raising=False)
+    client.post("/api/race/reset")
+    broadcasts = []
+
+    async def capture_broadcast(message):
+        broadcasts.append(message)
+
+    monkeypatch.setattr(hub_app.ws_manager, "broadcast", capture_broadcast)
+
+    res = client.post(
+        "/api/diagnostics/telemetry",
+        json={
+            "node_id": "diagnostic-bike-01",
+            "equipment_type": "fan_bike",
+            "distance_m": 25,
+            "elapsed_time_ms": 5000,
+            "power_watts": 180,
+        },
+        headers={"X-FitRace-Diagnostics-Token": "secret"},
+    )
+
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["status"] == "passed"
+    assert payload["diagnostic"] is True
+    assert payload["checks"]["race_manager"] == "ok"
+    assert payload["checks"]["websocket_broadcast"] == "sent"
+    assert payload["progress"]["diagnostic-bike-01"]["progress_percent"] == 25.0
+    assert broadcasts[0]["diagnostic-bike-01"]["distance_m"] == 25
+    assert broadcasts[1]["type"] == "diagnostic_telemetry"
+
+    state = client.get("/api/race/state").json()
+    assert state["state"] == "IDLE"
+    assert state["leaderboard"] == {}
+
+
+def test_race_close_endpoint_via_api(monkeypatch):
+    monkeypatch.setenv("TESTING", "1")
     client.post("/api/race/reset")
 
     config_payload = {"race_type": "distance", "target_value": 100, "duration_sec": 0}
@@ -310,7 +459,8 @@ def test_race_close_endpoint_via_api():
     assert data["leaderboard"]["bike-01"]["finished_time_ms"] is None
 
 
-def test_websocket_dashboard_broadcast():
+def test_websocket_dashboard_broadcast(monkeypatch):
+    monkeypatch.setenv("TESTING", "1")
     config_payload = {"race_type": "distance", "target_value": 1000, "duration_sec": 0}
     # Configure and start first
     client.post("/api/race/configure", json=config_payload)
@@ -340,3 +490,37 @@ def test_websocket_dashboard_broadcast():
         data = websocket.receive_json()
         assert data["rower-01"]["distance_m"] == 50.0
         assert data["rower-01"]["progress_percent"] == 5.0  # 50 / 1000 * 100
+
+
+def test_system_ip_endpoint_returns_ip():
+    response = client.get("/api/system/ip")
+    assert response.status_code == 200
+    data = response.json()
+    assert "ip" in data
+    assert isinstance(data["ip"], str)
+
+
+def test_power_shutdown_system_notifies_nodes_and_shuts_down(monkeypatch):
+    client.post("/api/race/reset")
+
+    class MockMqttClient:
+        def __init__(self):
+            self.published = []
+
+        async def publish(self, topic, payload):
+            self.published.append((topic, payload))
+
+    mock_mqtt = MockMqttClient()
+    from hub_server.infrastructure.fastapi.app import app
+    app.state.mqtt_client = mock_mqtt
+
+    response = client.post("/api/system/power/shutdown-system")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["dry_run"] is True
+    assert payload["executed"] is False
+    assert payload["command"] == ["sudo", "systemctl", "poweroff"]
+    assert len(mock_mqtt.published) == 1
+    topic, msg = mock_mqtt.published[0]
+    assert topic == "fitrace/nodes/command"
+    assert "shutdown" in msg

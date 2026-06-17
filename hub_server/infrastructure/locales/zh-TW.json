@@ -71,5 +71,12 @@
   "alert.stop_failed": "停止失敗",
   "alert.reset_failed": "重置失敗",
   "alert.server_error": "伺服器錯誤",
-  "confirm.unassign": "確定要解除 Station {station} 的設備與報名資訊嗎？"
+  "confirm.unassign": "確定要解除 Station {station} 的設備與報名資訊嗎？",
+  "power.title": "系統電源",
+  "power.restart": "重啟 Hub 服務",
+  "power.reboot": "重啟 Hub",
+  "power.shutdown": "關閉 Hub",
+  "power.shutdown_system": "系統關機 (含周邊)",
+  "power.status_tip": "電源操作僅在賽事為空閒 (IDLE) 時可用。",
+  "power.status_locked": "賽事狀態為 {state}，電源操作已鎖定。"
 }

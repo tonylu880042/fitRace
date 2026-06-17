@@ -12,6 +12,12 @@ TINY_WEBP_BASE64 = (
 )
 
 
+def remove_station_avatar(station_number: int):
+    file_path = f"hub_server/static/avatars/station_{station_number}.webp"
+    if os.path.exists(file_path):
+        os.remove(file_path)
+
+
 def test_race_manager_stores_team_and_avatar():
     manager = RaceManager()
     
@@ -122,3 +128,87 @@ def test_api_avatar_upload_and_removal():
     res = client.post("/api/race/register", json=register_payload_no_avatar)
     assert res.status_code == 200
     assert not os.path.exists(target_file)
+
+
+def test_api_avatar_upload_rejects_invalid_base64():
+    client = TestClient(app)
+    client.post("/api/race/reset")
+    remove_station_avatar(7)
+
+    res = client.post(
+        "/api/race/register",
+        json={
+            "station_number": 7,
+            "athlete_name": "Invalid Base64",
+            "avatar_base64": "data:image/webp;base64,not valid base64!",
+        },
+    )
+
+    assert res.status_code == 400
+    assert "Invalid avatar image" in res.json()["detail"]
+    assert not os.path.exists("hub_server/static/avatars/station_7.webp")
+
+
+def test_api_avatar_upload_rejects_wrong_mime_type():
+    client = TestClient(app)
+    client.post("/api/race/reset")
+    remove_station_avatar(8)
+
+    res = client.post(
+        "/api/race/register",
+        json={
+            "station_number": 8,
+            "athlete_name": "Wrong Mime",
+            "avatar_base64": TINY_WEBP_BASE64.replace("image/webp", "image/png"),
+        },
+    )
+
+    assert res.status_code == 400
+    assert "WebP" in res.json()["detail"]
+    assert not os.path.exists("hub_server/static/avatars/station_8.webp")
+
+
+def test_api_avatar_upload_rejects_non_webp_bytes():
+    client = TestClient(app)
+    client.post("/api/race/reset")
+    remove_station_avatar(9)
+    png_like_data = "data:image/webp;base64," + base64.b64encode(b"\x89PNG\r\n").decode()
+
+    res = client.post(
+        "/api/race/register",
+        json={
+            "station_number": 9,
+            "athlete_name": "Wrong Bytes",
+            "avatar_base64": png_like_data,
+        },
+    )
+
+    assert res.status_code == 400
+    assert "WebP" in res.json()["detail"]
+    assert not os.path.exists("hub_server/static/avatars/station_9.webp")
+
+
+def test_api_avatar_upload_rejects_oversized_payload():
+    client = TestClient(app)
+    client.post("/api/race/reset")
+    remove_station_avatar(10)
+    oversized_webp = (
+        b"RIFF"
+        + (300_000).to_bytes(4, "little")
+        + b"WEBP"
+        + (b"0" * 300_000)
+    )
+
+    res = client.post(
+        "/api/race/register",
+        json={
+            "station_number": 10,
+            "athlete_name": "Too Large",
+            "avatar_base64": "data:image/webp;base64,"
+            + base64.b64encode(oversized_webp).decode(),
+        },
+    )
+
+    assert res.status_code == 400
+    assert "too large" in res.json()["detail"].lower()
+    assert not os.path.exists("hub_server/static/avatars/station_10.webp")

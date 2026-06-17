@@ -537,6 +537,18 @@
       <button type="button" class="btn btn-secondary" id="admin-reset-btn" onclick="resetRaceFromSignup()" style="margin-top: 0.65rem;" data-i18n="admin.reset">Reset Race</button>
 
       <div class="admin-msg" id="admin-msg"></div>
+
+      <!-- System Power Section -->
+      <div class="system-power-section" style="margin-top: 1.25rem; border-top: 1px solid var(--steel-border); padding-top: 1rem;">
+        <div class="admin-title" style="margin-bottom: 0.5rem;" data-i18n="power.title">System Power</div>
+        <button type="button" class="btn btn-secondary" id="btn-power-restart" onclick="performPowerAction('restart-service')" style="margin-top: 0.45rem; width: 100%;" data-i18n="power.restart">Restart Hub Service</button>
+        <button type="button" class="btn btn-secondary" id="btn-power-reboot" onclick="performPowerAction('reboot')" style="margin-top: 0.45rem; width: 100%;" data-i18n="power.reboot">Reboot Hub</button>
+        <button type="button" class="btn btn-danger" id="btn-power-shutdown" onclick="performPowerAction('shutdown')" style="margin-top: 0.45rem; width: 100%;" data-i18n="power.shutdown">Shutdown Hub</button>
+        <button type="button" class="btn btn-danger" id="btn-power-shutdown-system" onclick="performPowerAction('shutdown-system')" style="margin-top: 0.45rem; width: 100%;" data-i18n="power.shutdown_system">Shutdown System</button>
+        <div id="power-status-tip" style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem; line-height: 1.3;" data-i18n="power.status_tip">
+          Power actions are available only while race state is IDLE.
+        </div>
+      </div>
     </section>
   </div>
 
@@ -574,7 +586,7 @@
     const errorMsg = document.getElementById('error-msg');
     const btnText = document.getElementById('btn-text');
     const btnSpinner = document.getElementById('btn-spinner');
-    const ADMIN_PASSWORD = urlParams.get('admin_password') || localStorage.getItem('fitrace.adminPassword') || '';
+    const ADMIN_PASSWORD = urlParams.get('admin_password') || localStorage.getItem('fitrace.adminPassword') || 'fitRace26';
     const languageSelect = document.getElementById('language-select');
     const adminPanel = document.getElementById('race-admin-panel');
     const adminPasswordModal = document.getElementById('admin-password-modal');
@@ -653,7 +665,14 @@
       "password.help": "Enter the staff password to open race setup and control.",
       "password.confirm": "Confirm",
       "password.cancel": "Cancel",
-      "password.error": "Incorrect password. Please try again."
+      "password.error": "Incorrect password. Please try again.",
+      "power.title": "System Power",
+      "power.restart": "Restart Hub Service",
+      "power.reboot": "Reboot Hub",
+      "power.shutdown": "Shutdown Hub",
+      "power.shutdown_system": "Shutdown System",
+      "power.status_tip": "Power actions are available only while race state is IDLE.",
+      "power.status_locked": "Power controls locked while race state is {state}."
     };
 
     const signupLocaleOverrides = {
@@ -718,7 +737,14 @@
         "password.help": "請輸入現場工作人員密碼以開啟比賽設定與控制功能。",
         "password.confirm": "確認",
         "password.cancel": "取消",
-        "password.error": "密碼錯誤，請重新輸入。"
+        "password.error": "密碼錯誤，請重新輸入。",
+        "power.title": "系統電源",
+        "power.restart": "重啟 Hub 服務",
+        "power.reboot": "重啟 Hub",
+        "power.shutdown": "關閉 Hub",
+        "power.shutdown_system": "系統關機 (含周邊)",
+        "power.status_tip": "電源操作僅在賽事為空閒 (IDLE) 時可用。",
+        "power.status_locked": "賽事狀態為 {state}，電源操作已鎖定。"
       },
       "it": {
         "signup.subtitle": "Registrazione atleta",
@@ -733,7 +759,14 @@
         "admin.save": "Salva impostazioni gara",
         "admin.start": "Avvia gara",
         "admin.stop": "Ferma gara",
-        "admin.reset": "Reimposta gara"
+        "admin.reset": "Reimposta gara",
+        "power.title": "System Power",
+        "power.restart": "Restart Hub Service",
+        "power.reboot": "Reboot Hub",
+        "power.shutdown": "Shutdown Hub",
+        "power.shutdown_system": "Shutdown System",
+        "power.status_tip": "Power actions are available only while race state is IDLE.",
+        "power.status_locked": "Power controls locked while race state is {state}."
       },
       "fr": {
         "signup.subtitle": "Inscription athlète",
@@ -748,7 +781,14 @@
         "admin.save": "Enregistrer la course",
         "admin.start": "Démarrer",
         "admin.stop": "Arrêter",
-        "admin.reset": "Réinitialiser"
+        "admin.reset": "Réinitialiser",
+        "power.title": "System Power",
+        "power.restart": "Restart Hub Service",
+        "power.reboot": "Reboot Hub",
+        "power.shutdown": "Shutdown Hub",
+        "power.shutdown_system": "Shutdown System",
+        "power.status_tip": "Power actions are available only while race state is IDLE.",
+        "power.status_locked": "Power controls locked while race state is {state}."
       },
       "de-CH": {
         "signup.subtitle": "Athleten-Registrierung",
@@ -763,7 +803,14 @@
         "admin.save": "Rennen speichern",
         "admin.start": "Rennen starten",
         "admin.stop": "Rennen stoppen",
-        "admin.reset": "Rennen zurücksetzen"
+        "admin.reset": "Rennen zurücksetzen",
+        "power.title": "System Power",
+        "power.restart": "Restart Hub Service",
+        "power.reboot": "Reboot Hub",
+        "power.shutdown": "Shutdown Hub",
+        "power.shutdown_system": "Shutdown System",
+        "power.status_tip": "Power actions are available only while race state is IDLE.",
+        "power.status_locked": "Power controls locked while race state is {state}."
       },
       "sv": {
         "signup.subtitle": "Deltagarregistrering",
@@ -778,7 +825,14 @@
         "admin.save": "Spara tävlingsinställningar",
         "admin.start": "Starta tävling",
         "admin.stop": "Stoppa tävling",
-        "admin.reset": "Återställ tävling"
+        "admin.reset": "Återställ tävling",
+        "power.title": "System Power",
+        "power.restart": "Restart Hub Service",
+        "power.reboot": "Reboot Hub",
+        "power.shutdown": "Shutdown Hub",
+        "power.shutdown_system": "Shutdown System",
+        "power.status_tip": "Power actions are available only while race state is IDLE.",
+        "power.status_locked": "Power controls locked while race state is {state}."
       }
     };
 
@@ -829,47 +883,28 @@
 
     const avatarOptions = document.querySelectorAll('.avatar-option');
 
-    avatarOptions.forEach(opt => {
-      opt.addEventListener('click', () => {
-        if (submitBtn.disabled) return;
-
-        avatarOptions.forEach(o => {
-          o.classList.remove('active');
-          const circle = o.querySelector('.avatar-circle');
-          circle.style.borderColor = 'var(--steel-border)';
-          circle.style.boxShadow = 'none';
-          circle.style.transform = 'none';
-          o.querySelector('span').style.color = 'var(--text-muted)';
-          o.querySelector('span').style.fontWeight = '400';
-        });
-
-        opt.classList.add('active');
-        const activeCircle = opt.querySelector('.avatar-circle');
-        activeCircle.style.borderColor = 'var(--volt-yellow)';
-        activeCircle.style.boxShadow = '0 0 10px rgba(226, 255, 59, 0.4)';
-        activeCircle.style.transform = 'scale(1.05)';
-        opt.querySelector('span').style.color = 'var(--volt-yellow)';
-        opt.querySelector('span').style.fontWeight = '600';
-
-        const type = opt.getAttribute('data-type');
-        if (type === 'default') {
-          avatarBase64 = null;
-        } else if (type === 'male') {
-          avatarBase64 = maleBase64;
-        } else if (type === 'female') {
-          avatarBase64 = femaleBase64;
-        } else if (type === 'custom') {
-          avatarFileInput.click();
-        }
+    function setActiveAvatarOption(opt) {
+      avatarOptions.forEach(o => {
+        o.classList.remove('active');
+        const circle = o.querySelector('.avatar-circle');
+        circle.style.borderColor = 'var(--steel-border)';
+        circle.style.boxShadow = 'none';
+        circle.style.transform = 'none';
+        o.querySelector('span').style.color = 'var(--text-muted)';
+        o.querySelector('span').style.fontWeight = '400';
       });
-    });
 
-    avatarFileInput.addEventListener('change', function(e) {
-      const file = e.target.files[0];
-      if (!file) return;
+      opt.classList.add('active');
+      const activeCircle = opt.querySelector('.avatar-circle');
+      activeCircle.style.borderColor = 'var(--volt-yellow)';
+      activeCircle.style.boxShadow = '0 0 10px rgba(226, 255, 59, 0.4)';
+      activeCircle.style.transform = 'scale(1.05)';
+      opt.querySelector('span').style.color = 'var(--volt-yellow)';
+      opt.querySelector('span').style.fontWeight = '600';
+    }
 
-      const reader = new FileReader();
-      reader.onload = function(event) {
+    function convertAvatarSourceToWebp(source) {
+      return new Promise((resolve, reject) => {
         const img = new Image();
         img.onload = function() {
           const canvas = document.createElement('canvas');
@@ -882,14 +917,57 @@
           const sy = (img.height - size) / 2;
           ctx.drawImage(img, sx, sy, size, size, 0, 0, 128, 128);
 
-          avatarBase64 = canvas.toDataURL('image/webp', 0.85);
-          customPreview.style.backgroundImage = `url(${avatarBase64})`;
-          customPreview.innerText = '';
-          customOption.click();
+          resolve(canvas.toDataURL('image/webp', 0.85));
         };
-        img.src = event.target.result;
-      };
-      reader.readAsDataURL(file);
+        img.onerror = reject;
+        img.src = source;
+      });
+    }
+
+    function convertAvatarFileToWebp(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = event => {
+          convertAvatarSourceToWebp(event.target.result).then(resolve).catch(reject);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+
+    avatarOptions.forEach(opt => {
+      opt.addEventListener('click', async () => {
+        if (submitBtn.disabled) return;
+
+        const type = opt.getAttribute('data-type');
+        if (type === 'default') {
+          avatarBase64 = null;
+          setActiveAvatarOption(opt);
+        } else if (type === 'male') {
+          avatarBase64 = await convertAvatarSourceToWebp(maleBase64);
+          setActiveAvatarOption(opt);
+        } else if (type === 'female') {
+          avatarBase64 = await convertAvatarSourceToWebp(femaleBase64);
+          setActiveAvatarOption(opt);
+        } else if (type === 'custom') {
+          avatarFileInput.click();
+        }
+      });
+    });
+
+    avatarFileInput.addEventListener('change', async function(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      try {
+        avatarBase64 = await convertAvatarFileToWebp(file);
+        customPreview.style.backgroundImage = `url(${avatarBase64})`;
+        customPreview.innerText = '';
+        setActiveAvatarOption(customOption);
+      } catch (err) {
+        console.error('Avatar conversion failed', err);
+        showMessage(errorMsg, t('signup.error_detail', { detail: 'Invalid image' }));
+      }
     });
 
     const equipmentNames = {
@@ -994,6 +1072,23 @@
       adminStopBtn.disabled = state !== 'RUNNING';
       adminResetBtn.disabled = state === 'RUNNING';
       adminConfigureBtn.disabled = state === 'RUNNING';
+
+      // Update power button states
+      const disabled = state !== 'IDLE';
+      ["btn-power-restart", "btn-power-reboot", "btn-power-shutdown", "btn-power-shutdown-system"].forEach((id) => {
+        const button = document.getElementById(id);
+        if (button) button.disabled = disabled;
+      });
+      const tip = document.getElementById("power-status-tip");
+      if (tip) {
+        if (disabled) {
+          tip.style.color = "var(--hazard-amber)";
+          tip.innerText = t("power.status_locked", { state: state });
+        } else {
+          tip.style.color = "var(--text-muted)";
+          tip.innerText = t("power.status_tip");
+        }
+      }
 
       if (data && data.config) {
         const config = data.config;
@@ -1116,6 +1211,46 @@
       } finally {
         setAdminBusy(false);
         fetchRaceStateForAdmin();
+      }
+    }
+
+    function showPowerStatus(message, isError = false) {
+      const tip = document.getElementById("power-status-tip");
+      if (!tip) return;
+      tip.style.color = isError ? "var(--crimson-red)" : "var(--volt-yellow)";
+      tip.innerText = message;
+    }
+
+    async function performPowerAction(action) {
+      let body = {};
+      if (action === "reboot") {
+        if (!confirm("Reboot Central Hub? This is allowed only while the race is idle.")) return;
+        body = { confirmation: "REBOOT" };
+      } else if (action === "shutdown") {
+        if (!confirm("Shutdown Central Hub? You will need physical access to power it on again.")) return;
+        body = { confirmation: "SHUTDOWN" };
+      } else if (action === "shutdown-system") {
+        body = {};
+      }
+
+      try {
+        const res = await fetch(`/api/system/power/${action}`, {
+          method: "POST",
+          headers: { 
+            "Content-Type": "application/json",
+            "X-FitRace-Admin-Token": ADMIN_PASSWORD
+          },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          showPowerStatus(data.detail || "Power action failed.", true);
+          return;
+        }
+        const suffix = data.dry_run ? " (dry-run, no command executed)" : "";
+        showPowerStatus(`${data.action} accepted${suffix}.`, false);
+      } catch (err) {
+        showPowerStatus(`Power action failed: ${err}`, true);
       }
     }
 

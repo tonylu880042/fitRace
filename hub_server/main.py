@@ -21,6 +21,7 @@ async def main_async():
     mqtt_client = AsyncMqttClient(
         host=mqtt_host, port=mqtt_port, client_id="fitrace-hub-server"
     )
+    app.state.mqtt_client = mqtt_client
     subscriber = None
     try:
         await mqtt_client.connect()

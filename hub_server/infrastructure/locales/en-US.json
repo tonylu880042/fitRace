@@ -71,5 +71,12 @@
   "alert.stop_failed": "Stop failed",
   "alert.reset_failed": "Reset failed",
   "alert.server_error": "Server error",
-  "confirm.unassign": "Unassign Station {station} equipment and registration?"
+  "confirm.unassign": "Unassign Station {station} equipment and registration?",
+  "power.title": "System Power",
+  "power.restart": "Restart Hub Service",
+  "power.reboot": "Reboot Hub",
+  "power.shutdown": "Shutdown Hub",
+  "power.shutdown_system": "Shutdown System",
+  "power.status_tip": "Power actions are available only while race state is IDLE.",
+  "power.status_locked": "Power controls locked while race state is {state}."
 }

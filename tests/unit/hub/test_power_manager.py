@@ -17,7 +17,7 @@ def test_power_manager_defaults_to_dry_run_and_restarts_service_when_idle():
 
     assert result.dry_run is True
     assert result.executed is False
-    assert result.command == ["systemctl", "restart", "fitracestudio-hub.service"]
+    assert result.command == ["sudo", "systemctl", "restart", "fitracestudio-hub.service"]
     assert calls == []
 
 
@@ -32,7 +32,7 @@ def test_power_manager_requires_confirmation_for_shutdown():
         manager.shutdown()
 
     result = manager.shutdown("SHUTDOWN")
-    assert result.command == ["systemctl", "poweroff"]
+    assert result.command == ["sudo", "systemctl", "poweroff"]
 
 
 def test_power_manager_blocks_power_actions_when_race_is_not_idle():

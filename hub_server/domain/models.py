@@ -1,5 +1,7 @@
 from enum import Enum
-from pydantic import BaseModel, Field
+from typing import Literal
+
+from pydantic import BaseModel, Field, model_validator
 
 
 class RaceState(str, Enum):
@@ -10,13 +12,27 @@ class RaceState(str, Enum):
 
 
 class RaceConfig(BaseModel):
-    race_type: str = Field(..., description="Type of race: 'distance', 'time', 'calories', or 'max_power'")
+    race_type: Literal["distance", "time", "calories", "max_power", "watts"] = Field(
+        ..., description="Type of race"
+    )
     target_value: float = Field(
-        0.0, description="Target value for distance (m) or calories (kcal) based race"
+        0.0,
+        ge=0.0,
+        description="Target value for distance (m) or calories (kcal) based race",
     )
     duration_sec: int = Field(
-        0, description="Target duration for time-based race in seconds"
+        0,
+        ge=0,
+        description="Target duration for time-based race in seconds",
     )
+
+    @model_validator(mode="after")
+    def validate_required_target(self):
+        if self.race_type in ("distance", "calories") and self.target_value <= 0:
+            raise ValueError("target_value must be greater than 0 for distance and calories races")
+        if self.race_type in ("time", "max_power", "watts") and self.duration_sec <= 0:
+            raise ValueError("duration_sec must be greater than 0 for time, max_power, and watts races")
+        return self
 
 
 class EquipmentStreamStatus(BaseModel):

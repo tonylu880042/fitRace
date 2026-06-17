@@ -1,4 +1,5 @@
 import pytest
+from pydantic import ValidationError
 from hub_server.domain.models import RaceState, RaceConfig
 from hub_server.usecases.race_manager import RaceManager
 
@@ -10,6 +11,23 @@ def test_race_config_model():
     assert config.race_type == "distance"
     assert config.target_value == 1000.0
     assert config.duration_sec == 0
+
+
+@pytest.mark.parametrize("race_type", ["distance", "calories"])
+def test_race_config_requires_positive_target_for_target_based_races(race_type):
+    with pytest.raises(ValidationError):
+        RaceConfig(race_type=race_type, target_value=0, duration_sec=0)
+
+
+@pytest.mark.parametrize("race_type", ["time", "max_power", "watts"])
+def test_race_config_requires_positive_duration_for_duration_based_races(race_type):
+    with pytest.raises(ValidationError):
+        RaceConfig(race_type=race_type, target_value=0, duration_sec=0)
+
+
+def test_race_config_rejects_unknown_race_type():
+    with pytest.raises(ValidationError):
+        RaceConfig(race_type="mystery", target_value=100, duration_sec=0)
 
 
 def test_race_manager_initial_state():
@@ -285,5 +303,4 @@ def test_unbound_station_start_and_telemetry():
     # Since only Station 1 is bound and active, it should auto-stop the race (ignoring unbound Station 2)
     assert manager.get_state() == RaceState.STOPPED
     assert progress["bike-01"]["finished_time_ms"] == 10000
-
 
