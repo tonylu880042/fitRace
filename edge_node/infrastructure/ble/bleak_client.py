@@ -35,9 +35,11 @@ class BleakTelemetryClient:
         equipment_id: str,
         equipment_type: str,
         target_device: str,  # MAC address or Bluetooth Name
-        on_telemetry: Callable[[TelemetryData], Coroutine[None, None, None]]
+        on_telemetry: Callable[[TelemetryData], Coroutine[None, None, None]],
+        edge_node_id: Optional[str] = None,
     ):
         self._node_id = node_id
+        self._edge_node_id = edge_node_id
         self._equipment_id = equipment_id
         self._equipment_type = equipment_type.lower()
         self._target_device = target_device
@@ -56,7 +58,7 @@ class BleakTelemetryClient:
         
         self._should_run = True
         logger.info(f"Starting BLE Client for device: {self._target_device}")
-        asyncio.create_task(self._connect_loop())
+        self._reconnect_task = asyncio.create_task(self._connect_loop())
 
     async def stop(self):
         self._should_run = False
@@ -121,6 +123,7 @@ class BleakTelemetryClient:
             # Map values to TelemetryData structure
             telemetry = TelemetryData(
                 node_id=self._node_id,
+                edge_node_id=self._edge_node_id,
                 equipment_id=self._equipment_id,
                 equipment_type=self._equipment_type,
                 instantaneous_speed_kph=parsed.get("speed_kph", 0.0),

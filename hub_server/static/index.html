@@ -147,6 +147,35 @@
       box-shadow: 0 0 8px var(--volt-yellow);
     }
 
+    .version-badge {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 0.15rem;
+      padding: 0.45rem 0.7rem;
+      border: 1px solid var(--steel-border);
+      border-radius: 4px;
+      background: rgba(0, 0, 0, 0.3);
+      font-family: 'Oswald', sans-serif;
+      text-transform: uppercase;
+      min-width: 74px;
+    }
+
+    .version-badge .version-label {
+      font-size: 0.62rem;
+      line-height: 1;
+      letter-spacing: 1px;
+      color: var(--text-muted);
+    }
+
+    .version-badge .version-value {
+      font-size: 0.95rem;
+      line-height: 1;
+      font-weight: 700;
+      color: var(--volt-yellow);
+      letter-spacing: 0;
+    }
+
     /* Main Content Area */
     main {
       display: flex;
@@ -231,9 +260,24 @@
 
     /* Top rank highlight */
     .leaderboard-item:nth-child(1) {
-      border: 1px solid var(--volt-yellow);
-      background: linear-gradient(90deg, rgba(226, 255, 59, 0.09), rgba(0, 0, 0, 0.22) 46%);
-      box-shadow: 0 0 24px rgba(226, 255, 59, 0.12);
+      border: 2px solid var(--volt-yellow);
+      background: linear-gradient(90deg, rgba(226, 255, 59, 0.14), rgba(0, 0, 0, 0.28) 46%);
+      box-shadow: 0 0 28px rgba(226, 255, 59, 0.22), inset 0 0 10px rgba(226, 255, 59, 0.08);
+    }
+
+    .leaderboard-item.champion-final {
+      animation: championShimmer 2.5s ease-in-out infinite alternate;
+    }
+
+    @keyframes championShimmer {
+      0% {
+        border-color: var(--volt-yellow);
+        box-shadow: 0 0 24px rgba(226, 255, 59, 0.25), inset 0 0 10px rgba(226, 255, 59, 0.08);
+      }
+      100% {
+        border-color: #ffffff;
+        box-shadow: 0 0 38px rgba(226, 255, 59, 0.45), inset 0 0 20px rgba(226, 255, 59, 0.18);
+      }
     }
 
     .leaderboard-item.rank-up {
@@ -250,6 +294,35 @@
       font-weight: 700;
       color: var(--text-muted);
       text-align: center;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100%;
+    }
+
+    .rank-champion {
+      font-size: 2.1rem;
+      display: inline-block;
+      animation: crownFloat 2s ease-in-out infinite;
+      filter: drop-shadow(0 0 6px rgba(226, 255, 59, 0.6));
+      line-height: 1;
+    }
+
+    @keyframes crownFloat {
+      0%, 100% { transform: translateY(0) rotate(0deg); }
+      50% { transform: translateY(-4px) rotate(4deg); }
+    }
+
+    .rank-silver {
+      font-size: 1.8rem;
+      filter: drop-shadow(0 0 4px rgba(212, 212, 216, 0.4));
+      line-height: 1;
+    }
+
+    .rank-bronze {
+      font-size: 1.8rem;
+      filter: drop-shadow(0 0 4px rgba(245, 158, 11, 0.4));
+      line-height: 1;
     }
 
     .leaderboard-item:nth-child(1) .rank { color: var(--volt-yellow); }
@@ -645,6 +718,115 @@
       opacity: 0.5;
     }
 
+    .edge-node-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.65rem;
+    }
+
+    .edge-node-card {
+      border: 1px solid var(--steel-border);
+      border-radius: 4px;
+      background: rgba(0, 0, 0, 0.22);
+      padding: 0.75rem;
+    }
+
+    .edge-node-card.offline {
+      border-color: rgba(244, 63, 94, 0.45);
+      background: rgba(244, 63, 94, 0.06);
+    }
+
+    .edge-node-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.75rem;
+    }
+
+    .edge-node-title {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      min-width: 0;
+    }
+
+    .node-status-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      flex: 0 0 auto;
+      margin-top: 0.35rem;
+      background: var(--crimson-red);
+      box-shadow: 0 0 8px rgba(244, 63, 94, 0.75);
+    }
+
+    .node-status-dot.online {
+      background: var(--volt-yellow);
+      box-shadow: 0 0 8px rgba(226, 255, 59, 0.75);
+    }
+
+    .edge-node-name {
+      font-family: 'Oswald', sans-serif;
+      font-size: 1rem;
+      font-weight: 800;
+      line-height: 1.15;
+      overflow-wrap: anywhere;
+      text-transform: uppercase;
+    }
+
+    .edge-node-meta {
+      margin-top: 0.18rem;
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      overflow-wrap: anywhere;
+    }
+
+    .stream-count {
+      border: 1px solid var(--steel-border);
+      border-radius: 3px;
+      padding: 0.2rem 0.45rem;
+      font-family: 'Oswald', sans-serif;
+      font-size: 0.75rem;
+      font-weight: 800;
+      white-space: nowrap;
+      color: var(--volt-yellow);
+      background: rgba(0, 0, 0, 0.25);
+    }
+
+    .edge-streams {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      margin-top: 0.65rem;
+    }
+
+    .stream-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      max-width: 100%;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 3px;
+      padding: 0.18rem 0.4rem;
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text-muted);
+      font-size: 0.68rem;
+      line-height: 1.2;
+    }
+
+    .stream-pill strong {
+      color: var(--text-main);
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }
+
+    .edge-summary {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-bottom: 0.75rem;
+      line-height: 1.35;
+    }
+
     /* Registration Notification Toast */
     .marquee-toast {
       position: fixed;
@@ -702,21 +884,25 @@
         <img src="/static/icon.png" style="width: 54px; height: 54px; border-radius: 8px; border: 1px solid var(--steel-border);" alt="Logo">
         <div>
           <h1 style="line-height: 1.1; margin: 0;">FitRace<span>Studio</span></h1>
-          <p style="margin: 0; margin-top: 0.2rem;">Real-Time Performance Leaderboard & Scoring</p>
+          <p style="margin: 0; margin-top: 0.2rem;" data-i18n="app.subtitle">Real-Time Performance Leaderboard & Scoring</p>
         </div>
       </div>
       <div style="display: flex; align-items: center; gap: 1.5rem;">
         <!-- General Registration QR Code -->
         <div style="display: flex; align-items: center; gap: 0.75rem; background: rgba(0,0,0,0.4); border: 1px solid var(--steel-border); padding: 0.4rem 0.8rem; border-radius: 4px;" id="header-qr-container">
           <div style="text-align: right;">
-            <div style="font-family: 'Oswald', sans-serif; font-weight: 700; font-size: 0.9rem; color: var(--volt-yellow); text-transform: uppercase; letter-spacing: 0.5px;">掃碼自助報名</div>
-            <div style="font-size: 0.7rem; color: var(--text-muted);">Scan to Register</div>
+            <div style="font-family: 'Oswald', sans-serif; font-weight: 700; font-size: 0.9rem; color: var(--volt-yellow); text-transform: uppercase; letter-spacing: 0.5px;" data-i18n="qr.self_registration">Self Registration</div>
+            <div style="font-size: 0.7rem; color: var(--text-muted);" data-i18n="qr.scan_to_register">Scan to Register</div>
           </div>
           <img id="header-qr-img" src="" style="width: 97px; height: 97px; border-radius: 4px; background: white; padding: 2px;" alt="Register QR">
         </div>
         <div class="status-badge">
           <span class="status-dot" id="ws-dot"></span>
-          <span id="ws-status">Offline</span>
+          <span id="ws-status" data-i18n="connection.offline">Offline</span>
+        </div>
+        <div class="version-badge" aria-label="Hub software version">
+          <span class="version-label">Version</span>
+          <span class="version-value" id="hub-version">v--</span>
         </div>
       </div>
     </header>
@@ -725,8 +911,8 @@
     <main>
       <div class="card accent">
         <div class="card-title">
-          <div>即時排行榜 / Live Leaderboard</div>
-          <span id="race-type-indicator">賽制: 未配置</span>
+          <div data-i18n="leaderboard.title">Live Leaderboard</div>
+          <span id="race-type-indicator" data-i18n="race.unconfigured">Race: Not configured</span>
         </div>
 
         <div id="leaderboard-container">
@@ -734,7 +920,7 @@
             <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5">
               <path stroke-linecap="round" stroke-linejoin="round" d="M15.362 5.214A8.252 8.252 0 0 1 12 21 8.25 8.25 0 0 1 6.038 7.047 8.287 8.287 0 0 0 9 9.601a8.983 8.983 0 0 1 3.361-6.867 8.21 8.21 0 0 0 3 2.48z" />
             </svg>
-            <p>等待賽事啟動與連線節點傳送數據...</p>
+            <p data-i18n="leaderboard.empty">Waiting for the race to start and nodes to send data...</p>
           </div>
         </div>
       </div>
@@ -745,7 +931,7 @@
       
       <!-- Current State Card -->
       <div class="card">
-        <div class="card-title">當前狀態 / Status</div>
+        <div class="card-title" data-i18n="status.title">Status</div>
         <div style="font-family: 'Oswald', sans-serif; font-size: 1.8rem; font-weight: 700; text-align: center; margin-bottom: 0.5rem; color: var(--volt-yellow);" id="current-state-lbl">
            IDLE
          </div>
@@ -753,70 +939,111 @@
            00:00.0
          </div>
         <div style="font-size: 0.85rem; color: var(--text-muted); text-align: center;" id="current-config-desc">
-          無賽事配置
+          No race configured
         </div>
         <div id="auto-reset-banner" style="display: none; margin-top: 1rem; padding: 0.5rem; background: rgba(244, 63, 94, 0.15); border: 1px solid var(--crimson-red); border-radius: 4px; text-align: center; font-size: 0.85rem; font-family: 'Noto Sans TC', sans-serif;">
-          ⏱️ <span id="auto-reset-countdown" style="font-weight: 800; color: var(--crimson-red);">60</span> 秒後自動重置賽事 
-          <button onclick="cancelAutoReset(true)" style="background: transparent; border: 1px solid var(--text-muted); color: var(--text-main); font-size: 0.75rem; padding: 0.15rem 0.4rem; border-radius: 2px; cursor: pointer; margin-left: 0.5rem;">取消</button>
+          ⏱️ <span id="auto-reset-text"><span id="auto-reset-countdown" style="font-weight: 800; color: var(--crimson-red);">60</span>s</span>
+          <button onclick="cancelAutoReset(true)" style="background: transparent; border: 1px solid var(--text-muted); color: var(--text-main); font-size: 0.75rem; padding: 0.15rem 0.4rem; border-radius: 2px; cursor: pointer; margin-left: 0.5rem;" data-i18n="auto_reset.cancel">Cancel</button>
         </div>
       </div>
 
       <!-- Config Form -->
       <div class="card">
-        <div class="card-title">配置比賽 / Settings</div>
+        <div class="card-title" data-i18n="settings.title">Settings</div>
         <div class="form-group">
-          <label for="race-type">賽制類型</label>
+          <label for="language-select" data-i18n="settings.language">System language</label>
+          <select id="language-select" class="form-control" onchange="setLanguage(this.value)">
+            <option value="en-US">English</option>
+            <option value="zh-TW">繁體中文</option>
+            <option value="it">Italiano</option>
+            <option value="fr">Français</option>
+            <option value="de-CH">Deutsch (Schweiz)</option>
+            <option value="sv">Svenska</option>
+          </select>
+          <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.45rem; line-height: 1.3;" data-i18n="settings.language_help">
+            Default language is English (en-US). This setting is saved in this browser.
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="race-type" data-i18n="race_type.label">Race type</label>
           <select id="race-type" class="form-control" onchange="toggleConfigFields()">
-            <option value="distance">距離挑戰賽 (m)</option>
-            <option value="calories">卡路里挑戰賽 (kcal)</option>
-            <option value="time">時間挑戰賽 (s)</option>
-            <option value="max_power">最大瓦特挑戰賽 (W)</option>
+            <option value="distance" data-i18n="race.distance">Distance Challenge (m)</option>
+            <option value="calories" data-i18n="race.calories">Calories Challenge (kcal)</option>
+            <option value="time" data-i18n="race.time">Time Challenge (s)</option>
+            <option value="max_power" data-i18n="race.max_power">Max Power Challenge (W)</option>
           </select>
         </div>
         
         <div class="form-group" id="distance-group">
-          <label for="target-distance">目標距離 (公尺)</label>
+          <label for="target-distance">Target distance (m)</label>
           <input type="number" id="target-distance" class="form-control" value="1000">
         </div>
 
         <div class="form-group" id="time-group" style="display:none;">
-          <label for="target-duration">限制時間 (秒)</label>
+          <label for="target-duration">Time limit (seconds)</label>
           <input type="number" id="target-duration" class="form-control" value="300">
         </div>
 
         <div class="form-group">
-          <label for="auto-reset-delay">完賽自動重置</label>
+          <label for="auto-reset-delay" data-i18n="auto_reset.label">Auto reset after finish</label>
           <select id="auto-reset-delay" class="form-control">
-            <option value="30">30 秒後自動重置</option>
-            <option value="60" selected>1 分鐘後自動重置</option>
-            <option value="120">2 分鐘後自動重置</option>
-            <option value="300">5 分鐘後自動重置</option>
-            <option value="0">不自動重置 (手動)</option>
+            <option value="30" data-i18n="auto_reset.30">Auto reset after 30 seconds</option>
+            <option value="60" selected data-i18n="auto_reset.60">Auto reset after 1 minute</option>
+            <option value="120" data-i18n="auto_reset.120">Auto reset after 2 minutes</option>
+            <option value="300" data-i18n="auto_reset.300">Auto reset after 5 minutes</option>
+            <option value="0" data-i18n="auto_reset.manual">Manual reset only</option>
           </select>
         </div>
 
-        <button class="btn btn-primary" id="btn-configure" onclick="configureRace()">送出配置</button>
+        <button class="btn btn-primary" id="btn-configure" onclick="configureRace()" data-i18n="config.submit">Save Settings</button>
         <div id="config-status-tip" style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem; line-height: 1.3;">
-          ℹ️ 賽事進行中 (RUNNING) 無法變更配置。完賽後 (STOPPED) 送出配置，將會自動清除前次紀錄。
+          Ready: settings can be saved now.
         </div>
       </div>
 
       <!-- Station & Device Config Card -->
       <div class="card">
-        <div class="card-title">設備與站位指派 / Stations</div>
+        <div class="card-title" data-i18n="stations.title">Stations</div>
         
         <!-- List of current assignments -->
         <div id="station-list-container" style="font-size: 0.85rem;">
-          <p style="color: var(--text-muted);">等待設備連線中...</p>
+          <p style="color: var(--text-muted);" data-i18n="stations.waiting">Waiting for equipment discovery...</p>
         </div>
       </div>
 
       <!-- Game Action Card -->
       <div class="card">
-        <div class="card-title">賽事控制 / Control</div>
-        <button class="btn btn-success" id="btn-start" onclick="startRace()">啟動賽事 (START)</button>
-        <button class="btn btn-danger" id="btn-stop" onclick="stopRace()">停止賽事 (STOP)</button>
-        <button class="btn btn-secondary" id="btn-reset" onclick="resetRace()">重置賽事 (RESET)</button>
+        <div class="card-title" data-i18n="control.title">Control</div>
+        <button class="btn btn-success" id="btn-start" onclick="startRace()" data-i18n="control.start">Start Race</button>
+        <button class="btn btn-danger" id="btn-stop" onclick="stopRace()" data-i18n="control.stop">Stop Race</button>
+        <button class="btn btn-secondary" id="btn-reset" onclick="resetRace()" data-i18n="control.reset">Reset Race</button>
+      </div>
+
+      <!-- System Power Card -->
+      <div class="card">
+        <div class="card-title">System Power</div>
+        <button class="btn btn-secondary" id="btn-power-restart" onclick="performPowerAction('restart-service')">Restart Hub Service</button>
+        <button class="btn btn-secondary" id="btn-power-reboot" onclick="performPowerAction('reboot')">Reboot Hub</button>
+        <button class="btn btn-danger" id="btn-power-shutdown" onclick="performPowerAction('shutdown')">Shutdown Hub</button>
+        <div id="power-status-tip" style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem; line-height: 1.3;">
+          Power actions are available only while race state is IDLE.
+        </div>
+      </div>
+
+      <!-- Edge Node Status Card -->
+      <div class="card">
+        <div class="card-title">
+          <div data-i18n="edge.title">Edge Nodes</div>
+          <span id="edge-node-summary">0 online</span>
+        </div>
+        <div class="edge-summary" id="edge-node-caption">
+          Waiting for Edge Node heartbeat...
+        </div>
+        <div id="edge-node-list" class="edge-node-list" aria-live="polite">
+          <div class="empty-state" style="padding: 1.6rem 0.75rem;">
+            <p data-i18n="edge.empty">No Edge Node status received</p>
+          </div>
+        </div>
       </div>
 
     </aside>
@@ -835,6 +1062,49 @@
     let autoResetInterval = null;
     let autoResetSecondsLeft = 0;
     let autoResetCancelled = false;
+    let edgeNodes = [];
+    let currentLocale = localStorage.getItem("fitrace.locale") || "en-US";
+    let messages = {};
+
+    function t(key, params = {}) {
+      let value = messages[key] || key;
+      Object.entries(params).forEach(([name, replacement]) => {
+        value = value.replaceAll(`{${name}}`, String(replacement));
+      });
+      return value;
+    }
+
+    async function loadLocale(locale = currentLocale) {
+      const response = await fetch(`/api/locales/${encodeURIComponent(locale)}?t=${Date.now()}`);
+      const payload = await response.json();
+      currentLocale = payload.locale || "en-US";
+      messages = payload.messages || {};
+      localStorage.setItem("fitrace.locale", currentLocale);
+      document.documentElement.lang = currentLocale;
+      const languageSelect = document.getElementById("language-select");
+      if (languageSelect) languageSelect.value = currentLocale;
+      applyTranslations();
+    }
+
+    async function setLanguage(locale) {
+      await loadLocale(locale);
+      toggleConfigFields();
+      updateUIState({
+        state: currentState,
+        config: currentConfig,
+        start_time_epoch_ms: raceStartTime,
+        end_time_epoch_ms: raceEndTime,
+        leaderboard: null,
+      });
+      renderEdgeNodes(edgeNodes);
+      fetchStations();
+    }
+
+    function applyTranslations() {
+      document.querySelectorAll("[data-i18n]").forEach((element) => {
+        element.innerText = t(element.dataset.i18n);
+      });
+    }
 
     function toggleConfigFields() {
       const type = document.getElementById("race-type").value;
@@ -846,19 +1116,19 @@
       if (type === "distance") {
         distGroup.style.display = "block";
         timeGroup.style.display = "none";
-        distLabel.innerText = "目標距離 (公尺)";
+        distLabel.innerText = t("field.target_distance");
       } else if (type === "calories") {
         distGroup.style.display = "block";
         timeGroup.style.display = "none";
-        distLabel.innerText = "目標卡路里 (kcal)";
+        distLabel.innerText = t("field.target_calories");
       } else if (type === "time") {
         distGroup.style.display = "none";
         timeGroup.style.display = "block";
-        timeLabel.innerText = "限制時間 (秒)";
+        timeLabel.innerText = t("field.duration_limit");
       } else if (type === "max_power") {
         distGroup.style.display = "none";
         timeGroup.style.display = "block";
-        timeLabel.innerText = "挑戰時間 (秒)";
+        timeLabel.innerText = t("field.challenge_duration");
       }
     }
 
@@ -871,14 +1141,15 @@
 
       ws.onopen = () => {
         document.getElementById("ws-dot").className = "status-dot active";
-        document.getElementById("ws-status").innerText = "Online";
+        document.getElementById("ws-status").innerText = t("connection.online");
         fetchState();
         fetchStations();
+        fetchNodes();
       };
 
       ws.onclose = () => {
         document.getElementById("ws-dot").className = "status-dot";
-        document.getElementById("ws-status").innerText = "Offline";
+        document.getElementById("ws-status").innerText = t("connection.offline");
         setTimeout(connectWebSocket, 3000);
       };
 
@@ -893,6 +1164,15 @@
         if (data.type === "state_change") {
           updateUIState(data);
           fetchStations();
+          return;
+        }
+        if (data.type === "node_status") {
+          renderEdgeNodes(data.nodes || (data.node ? [data.node] : []));
+          return;
+        }
+        if (data.type === "system_power") {
+          const suffix = data.dry_run ? " (dry-run)" : "";
+          showPowerStatus(`${data.action} ${data.message}${suffix}`, false);
           return;
         }
         if (data && Object.keys(data).length > 0) {
@@ -922,12 +1202,12 @@
       
       const teamSuffix = team ? ` (${team})` : '';
       const eqDisplay = (equipmentType && equipmentType !== 'unknown') ? ` - ${equipmentType.toUpperCase()}` : '';
-      toast.innerHTML = `
-        <div class="marquee-icon">🎉</div>
-        <div class="marquee-text">
-          歡迎 <span>${name}${teamSuffix}</span> 報名成功！已指派至 <span>STATION ${station}${eqDisplay}</span>
-        </div>
-      `;
+      const text = t("registration.welcome", {
+        name: `${name}${teamSuffix}`,
+        station,
+        equipment: eqDisplay,
+      });
+      toast.innerHTML = `<div class="marquee-icon">🎉</div><div class="marquee-text"><span>${escapeHtml(text)}</span></div>`;
       
       toast.classList.add("show");
       
@@ -950,6 +1230,73 @@
       return Number.isFinite(number) ? number : fallback;
     }
 
+    function formatRelativeAge(epochMs) {
+      const timestamp = Number(epochMs);
+      if (!Number.isFinite(timestamp) || timestamp <= 0) return "--";
+      const diffSec = Math.max(0, Math.round((Date.now() - timestamp) / 1000));
+      if (diffSec < 2) return "now";
+      if (diffSec < 60) return `${diffSec}s`;
+      const minutes = Math.floor(diffSec / 60);
+      return `${minutes}m`;
+    }
+
+    function renderEdgeNodes(nodes) {
+      edgeNodes = Array.isArray(nodes) ? nodes : [];
+      const list = document.getElementById("edge-node-list");
+      const summary = document.getElementById("edge-node-summary");
+      const caption = document.getElementById("edge-node-caption");
+
+      const onlineCount = edgeNodes.filter((node) => node.status === "online").length;
+      const streamCount = edgeNodes.reduce((total, node) => total + ((node.equipment_streams || []).length), 0);
+      summary.innerText = t("edge.summary", { online: onlineCount, total: edgeNodes.length });
+      caption.innerText = edgeNodes.length
+        ? t("edge.caption", { total: edgeNodes.length, streams: streamCount })
+        : t("edge.caption_empty");
+
+      if (!edgeNodes.length) {
+        list.innerHTML = `
+          <div class="empty-state" style="padding: 1.6rem 0.75rem;">
+            <p>${escapeHtml(t("edge.empty"))}</p>
+          </div>`;
+        return;
+      }
+
+      const sorted = [...edgeNodes].sort((a, b) => String(a.edge_node_id || "").localeCompare(String(b.edge_node_id || "")));
+      list.innerHTML = sorted.map((node) => {
+        const streams = node.equipment_streams || [];
+        const isOnline = node.status === "online";
+        const endpoint = node.ip || node.hostname || "--";
+        const streamLimit = metricNumber(node.max_ftms_connections, 5);
+        const channelText = `${metricNumber(node.available_channels, 2)} UART`;
+        const streamHtml = streams.length
+          ? streams.map((stream) => {
+              const channel = stream.antenna_channel ? ` · ${escapeHtml(stream.antenna_channel)}` : "";
+              return `
+                <span class="stream-pill" title="${escapeHtml(stream.node_id || "")}">
+                  <strong>${escapeHtml(stream.equipment_id || stream.node_id || "UNBOUND")}</strong>
+                  <span>${escapeHtml(stream.status || "unknown")}${channel}</span>
+                </span>`;
+            }).join("")
+          : `<span class="stream-pill"><strong>0 streams</strong><span>${escapeHtml(t("edge.unbound"))}</span></span>`;
+
+        return `
+          <div class="edge-node-card ${isOnline ? "" : "offline"}">
+            <div class="edge-node-head">
+              <div class="edge-node-title">
+                <span class="node-status-dot ${isOnline ? "online" : ""}" aria-label="${isOnline ? "online" : "offline"}"></span>
+                <div>
+                  <div class="edge-node-name">${escapeHtml(node.edge_node_id || "unknown-edge")}</div>
+                  <div class="edge-node-meta">${escapeHtml(endpoint)} · ${channelText} · last ${formatRelativeAge(node.last_seen_epoch_ms)}</div>
+                </div>
+              </div>
+              <div class="stream-count">${streams.length}/${streamLimit}</div>
+            </div>
+            <div class="edge-streams">${streamHtml}</div>
+          </div>`;
+      }).join("");
+    }
+    window.renderEdgeNodes = renderEdgeNodes;
+
     function isLeaderboardFinal(raceType, nodes) {
       if (!nodes.length) return false;
       if (raceType === "distance" || raceType === "calories") {
@@ -959,9 +1306,9 @@
     }
 
     function getMedalMeta(rank) {
-      if (rank === 1) return { className: "medal-gold", label: "🥇", title: "金牌" };
-      if (rank === 2) return { className: "medal-silver", label: "🥈", title: "銀牌" };
-      if (rank === 3) return { className: "medal-bronze", label: "🥉", title: "銅牌" };
+      if (rank === 1) return { className: "medal-gold", label: "🥇", title: t("podium.gold") };
+      if (rank === 2) return { className: "medal-silver", label: "🥈", title: t("podium.silver") };
+      if (rank === 3) return { className: "medal-bronze", label: "🥉", title: t("podium.bronze") };
       return null;
     }
 
@@ -970,29 +1317,29 @@
         if (node.finished_time_ms) {
           return {
             value: `${(metricNumber(node.finished_time_ms) / 1000).toFixed(1)}s`,
-            label: raceType === "distance" ? "Finish Time" : "Complete Time"
+            label: t("metric.finish_time")
           };
         }
         return {
           value: `${metricNumber(node.progress_percent).toFixed(1)}%`,
-          label: "Progress"
+          label: t("metric.progress")
         };
       }
       if (raceType === "time") {
         return {
           value: `${metricNumber(node.distance_m).toFixed(0)}m`,
-          label: "Distance"
+          label: t("metric.distance")
         };
       }
       if (raceType === "max_power" || raceType === "watts") {
         return {
           value: `${metricNumber(node.max_power_watts).toFixed(0)}W`,
-          label: "Max Power"
+          label: t("metric.max_power")
         };
       }
       return {
         value: `${metricNumber(node.progress_percent).toFixed(1)}%`,
-        label: "Progress"
+        label: t("metric.progress")
       };
     }
 
@@ -1153,7 +1500,7 @@
       if (nodes.length === 0) {
         container.innerHTML = `
           <div class="empty-state">
-            <p>等待運動節點數據...</p>
+            <p>${escapeHtml(t("leaderboard.waiting_data"))}</p>
           </div>`;
         leaderboardNodes = [];
         leaderboardRankByNode = new Map();
@@ -1172,10 +1519,21 @@
         const previousRank = leaderboardRankByNode.get(node.node_id);
         const rankDelta = previousRank ? previousRank - currentRank : 0;
         const rankClass = rankDelta > 0 ? "rank-up" : rankDelta < 0 ? "rank-down" : "";
-        const medalMeta = leaderboardFinal ? getMedalMeta(currentRank) : null;
-        const medalHtml = medalMeta
-          ? `<span class="medal-mark ${medalMeta.className}" title="${medalMeta.title}">${medalMeta.label}</span>`
-          : "";
+        let rankDisplayHtml = '';
+        if (currentRank === 1) {
+          rankDisplayHtml = `<span class="rank-champion" title="冠軍">👑</span>`;
+        } else if (currentRank === 2) {
+          rankDisplayHtml = `<span class="rank-silver" title="亞軍">🥈</span>`;
+        } else if (currentRank === 3) {
+          rankDisplayHtml = `<span class="rank-bronze" title="季軍">🥉</span>`;
+        } else {
+          rankDisplayHtml = `<span>${currentRank}</span>`;
+        }
+
+        let cardExtraClass = "";
+        if (currentRank === 1) {
+          cardExtraClass = leaderboardFinal ? "champion-final" : "";
+        }
         const stationBadge = node.station_number 
           ? `<span class="station-pill">STATION ${escapeHtml(node.station_number)}</span>`
           : '';
@@ -1198,16 +1556,16 @@
           const progressText = node.finished_time_ms 
             ? `<span class="score-primary">${(metricNumber(node.finished_time_ms) / 1000.0).toFixed(1)}s</span>`
             : `${metricNumber(node.progress_percent).toFixed(1)}%`;
-          const progressLabel = node.finished_time_ms ? "完賽時間" : "進度";
+          const progressLabel = node.finished_time_ms ? t("metric.finish_time") : t("metric.progress");
 
           metricCols = `
             <div class="metric-group">
               <div class="metric-val">${powerDisplay}</div>
-              <div class="metric-lbl">功率 (W)</div>
+              <div class="metric-lbl">${escapeHtml(t("metric.power"))}</div>
             </div>
             <div class="metric-group">
               <div class="metric-val score-primary">${calDisplay}</div>
-              <div class="metric-lbl">卡路里 (kcal)</div>
+              <div class="metric-lbl">${escapeHtml(t("metric.calories"))}</div>
             </div>
             <div class="metric-group">
               <div class="metric-val">${progressText}</div>
@@ -1222,15 +1580,15 @@
           metricCols = `
             <div class="metric-group">
               <div class="metric-val">${powerDisplay}</div>
-              <div class="metric-lbl">當前功率 (W)</div>
+              <div class="metric-lbl">${escapeHtml(t("metric.current_power"))}</div>
             </div>
             <div class="metric-group">
               <div class="metric-val score-primary">${maxPowerDisplay}</div>
-              <div class="metric-lbl">最大功率 (W)</div>
+              <div class="metric-lbl">${escapeHtml(t("metric.max_power"))}</div>
             </div>
             <div class="metric-group">
               <div class="metric-val">${progressText}</div>
-              <div class="metric-lbl">時間進度</div>
+              <div class="metric-lbl">${escapeHtml(t("metric.time_progress"))}</div>
             </div>
           `;
         } else if (raceType === 'time') {
@@ -1241,15 +1599,15 @@
           metricCols = `
             <div class="metric-group">
               <div class="metric-val">${speedDisplay}</div>
-              <div class="metric-lbl">速度 (kph)</div>
+              <div class="metric-lbl">${escapeHtml(t("metric.speed"))}</div>
             </div>
             <div class="metric-group">
               <div class="metric-val score-primary">${distDisplay}</div>
-              <div class="metric-lbl">距離 (m)</div>
+              <div class="metric-lbl">${escapeHtml(t("metric.distance"))}</div>
             </div>
             <div class="metric-group">
               <div class="metric-val">${progressText}</div>
-              <div class="metric-lbl">時間進度</div>
+              <div class="metric-lbl">${escapeHtml(t("metric.time_progress"))}</div>
             </div>
           `;
         } else { // distance
@@ -1258,16 +1616,16 @@
           const progressText = node.finished_time_ms 
             ? `<span class="score-primary">${(metricNumber(node.finished_time_ms) / 1000.0).toFixed(1)}s</span>`
             : `${metricNumber(node.progress_percent).toFixed(1)}%`;
-          const progressLabel = node.finished_time_ms ? "完賽時間" : "進度";
+          const progressLabel = node.finished_time_ms ? t("metric.finish_time") : t("metric.progress");
 
           metricCols = `
             <div class="metric-group">
               <div class="metric-val">${speedDisplay}</div>
-              <div class="metric-lbl">速度 (kph)</div>
+              <div class="metric-lbl">${escapeHtml(t("metric.speed"))}</div>
             </div>
             <div class="metric-group">
               <div class="metric-val score-primary">${distDisplay}</div>
-              <div class="metric-lbl">距離 (m)</div>
+              <div class="metric-lbl">${escapeHtml(t("metric.distance"))}</div>
             </div>
             <div class="metric-group">
               <div class="metric-val">${progressText}</div>
@@ -1277,8 +1635,8 @@
         }
 
         html += `
-          <div class="leaderboard-item ${rankClass}" id="node-${escapeHtml(node.node_id)}" data-node-id="${escapeHtml(node.node_id)}">
-            <div class="rank">${currentRank}${medalHtml}</div>
+          <div class="leaderboard-item ${rankClass} ${cardExtraClass}" id="node-${escapeHtml(node.node_id)}" data-node-id="${escapeHtml(node.node_id)}">
+            <div class="rank">${rankDisplayHtml}</div>
             <div class="athlete-info">
               ${avatarHtml}
               <div style="display: flex; flex-direction: column;">
@@ -1322,6 +1680,16 @@
       }
     }
 
+    async function fetchNodes() {
+      try {
+        const res = await fetch(`/api/nodes?t=${Date.now()}`);
+        const data = await res.json();
+        renderEdgeNodes(data.nodes || []);
+      } catch (err) {
+        console.error("Failed to fetch nodes:", err);
+      }
+    }
+
     function renderStations(data) {
       const listContainer = document.getElementById("station-list-container");
 
@@ -1329,7 +1697,7 @@
       const stations = data.stations;
       const snKeys = Object.keys(stations).sort((a, b) => a - b);
       if (snKeys.length === 0 && data.unassigned_nodes.length === 0) {
-        listContainer.innerHTML = '<p style="color: var(--text-muted); text-align: center;">等待設備發現...</p>';
+        listContainer.innerHTML = `<p style="color: var(--text-muted); text-align: center;">${escapeHtml(t("stations.waiting"))}</p>`;
         return;
       }
 
@@ -1341,34 +1709,34 @@
       
       // List active unassigned nodes first
       if (data.unassigned_nodes.length > 0) {
-        html += '<div style="font-size: 0.75rem; color: var(--hazard-amber); font-weight: 700;">未指派設備 (Active Unassigned):</div>';
+        html += `<div style="font-size: 0.75rem; color: var(--hazard-amber); font-weight: 700;">${escapeHtml(t("stations.unassigned"))}:</div>`;
         data.unassigned_nodes.forEach(node => {
           html += `
             <div style="background: rgba(245, 158, 11, 0.05); border: 1px dashed var(--hazard-amber); padding: 0.4rem; border-radius: 4px; display: flex; justify-content: space-between; align-items: center;">
-              <span>🔌 ${node}</span>
-              <span style="font-size: 0.7rem; color: var(--text-muted);">未指定站位</span>
+              <span>🔌 ${escapeHtml(node)}</span>
+              <span style="font-size: 0.7rem; color: var(--text-muted);">${escapeHtml(t("stations.unassigned"))}</span>
             </div>
           `;
         });
       }
 
       if (snKeys.length > 0) {
-        html += '<div style="font-size: 0.75rem; color: var(--volt-yellow); font-weight: 700; margin-top: 0.25rem;">已指派站位 (Stations):</div>';
+        html += `<div style="font-size: 0.75rem; color: var(--volt-yellow); font-weight: 700; margin-top: 0.25rem;">${escapeHtml(t("stations.assigned"))}:</div>`;
         snKeys.forEach(sn => {
           const info = stations[sn];
           
           html += `
             <div style="background: rgba(0, 0, 0, 0.2); padding: 0.6rem; border: 1px solid var(--steel-border); border-radius: 4px; display: flex; flex-direction: column; gap: 0.3rem;">
               <div style="display: flex; justify-content: space-between; align-items: center;">
-                <strong style="color: var(--volt-yellow); font-family: 'Oswald', sans-serif; font-size: 0.95rem;">STATION ${sn}</strong>
+                <strong style="color: var(--volt-yellow); font-family: 'Oswald', sans-serif; font-size: 0.95rem;">${escapeHtml(t("stations.station"))} ${sn}</strong>
                 <div style="display: flex; align-items: center; gap: 0.4rem;">
-                  <span style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">${info.equipment_type || '無設備'}</span>
-                  <button onclick="directUnassign(${sn})" style="background: none; border: 1px solid #ef4444; color: #ef4444; font-size: 0.65rem; padding: 0.05rem 0.25rem; border-radius: 2px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='#ef4444'; this.style.color='#fff';" onmouseout="this.style.background='none'; this.style.color='#ef4444';">解除</button>
+                  <span style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase;">${escapeHtml(info.equipment_type || t("edge.unbound"))}</span>
+                  <button onclick="directUnassign(${sn})" style="background: none; border: 1px solid #ef4444; color: #ef4444; font-size: 0.65rem; padding: 0.05rem 0.25rem; border-radius: 2px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='#ef4444'; this.style.color='#fff';" onmouseout="this.style.background='none'; this.style.color='#ef4444';">${escapeHtml(t("stations.unassign"))}</button>
                 </div>
               </div>
-              <div style="font-size: 0.75rem; color: var(--text-muted);">設備 ID: ${info.node_id || '無'}</div>
+              <div style="font-size: 0.75rem; color: var(--text-muted);">${escapeHtml(t("stations.equipment_id"))}: ${escapeHtml(info.node_id || "--")}</div>
               <div style="font-size: 0.8rem; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 0.3rem; margin-top: 0.2rem;">
-                選手: <strong style="color: var(--text-main);">${info.athlete_name || '未報名'}${info.team_name ? ` (${info.team_name})` : ''}</strong>
+                ${escapeHtml(t("stations.athlete"))}: <strong style="color: var(--text-main);">${escapeHtml(info.athlete_name || t("stations.not_registered"))}${info.team_name ? ` (${escapeHtml(info.team_name)})` : ''}</strong>
               </div>
             </div>
           `;
@@ -1382,7 +1750,7 @@
 
 
     async function directUnassign(sn) {
-      if (!confirm(`確定要解除 STATION ${sn} 的設備與報名資訊嗎？`)) {
+      if (!confirm(t("confirm.unassign", { station: sn }))) {
         return;
       }
       try {
@@ -1400,10 +1768,10 @@
           fetchState();
         } else {
           const err = await res.json();
-          alert("解除失敗: " + (err.detail || "伺服器錯誤"));
+          alert(`${t("alert.reset_failed")}: ${err.detail || t("alert.server_error")}`);
         }
       } catch (err) {
-        alert("解除失敗: " + err);
+        alert(`${t("alert.reset_failed")}: ${err}`);
       }
     }
 
@@ -1431,21 +1799,21 @@
 
       if (currentConfig) {
         if (currentConfig.race_type === "distance") {
-          configDesc.innerText = `距離賽：目標 ${currentConfig.target_value} 公尺`;
-          typeIndicator.innerText = `賽制: 距離賽 (${currentConfig.target_value}m)`;
+          configDesc.innerText = `${t("race.distance")}: ${currentConfig.target_value}m`;
+          typeIndicator.innerText = `${t("race.distance")} (${currentConfig.target_value}m)`;
         } else if (currentConfig.race_type === "calories") {
-          configDesc.innerText = `卡路里賽：目標 ${currentConfig.target_value} kcal`;
-          typeIndicator.innerText = `賽制: 卡路里賽 (${currentConfig.target_value} kcal)`;
+          configDesc.innerText = `${t("race.calories")}: ${currentConfig.target_value} kcal`;
+          typeIndicator.innerText = `${t("race.calories")} (${currentConfig.target_value} kcal)`;
         } else if (currentConfig.race_type === "time") {
-          configDesc.innerText = `時間賽：限制 ${currentConfig.duration_sec} 秒`;
-          typeIndicator.innerText = `賽制: 時間賽 (${currentConfig.duration_sec}s)`;
+          configDesc.innerText = `${t("race.time")}: ${currentConfig.duration_sec}s`;
+          typeIndicator.innerText = `${t("race.time")} (${currentConfig.duration_sec}s)`;
         } else if (currentConfig.race_type === "max_power" || currentConfig.race_type === "watts") {
-          configDesc.innerText = `最大功率賽：限時 ${currentConfig.duration_sec} 秒`;
-          typeIndicator.innerText = `賽制: 最大瓦特賽 (${currentConfig.duration_sec}s)`;
+          configDesc.innerText = `${t("race.max_power")}: ${currentConfig.duration_sec}s`;
+          typeIndicator.innerText = `${t("race.max_power")} (${currentConfig.duration_sec}s)`;
         }
       } else {
-        configDesc.innerText = "無賽事配置";
-        typeIndicator.innerText = "賽制: 未配置";
+        configDesc.innerText = t("status.no_config");
+        typeIndicator.innerText = t("race.unconfigured");
       }
 
       // Stopwatch Display control
@@ -1476,6 +1844,7 @@
       document.getElementById("btn-start").disabled = (currentState !== "READY");
       document.getElementById("btn-stop").disabled = (currentState !== "RUNNING");
       document.getElementById("btn-reset").disabled = (currentState === "RUNNING");
+      updatePowerButtonState();
 
       // Configure button & dynamic status tip control
       const btnConfigure = document.getElementById("btn-configure");
@@ -1483,15 +1852,15 @@
       if (currentState === "RUNNING") {
         btnConfigure.disabled = true;
         configTip.style.color = "var(--crimson-red)";
-        configTip.innerText = "⚠️ 賽事進行中，無法變更配置。";
+        configTip.innerText = `⚠️ ${t("config.tip.running")}`;
       } else if (currentState === "STOPPED") {
         btnConfigure.disabled = false;
         configTip.style.color = "var(--hazard-amber)";
-        configTip.innerText = "ℹ️ 送出新配置將自動重置前次賽事紀錄。";
+        configTip.innerText = `ℹ️ ${t("config.tip.stopped")}`;
       } else {
         btnConfigure.disabled = false;
         configTip.style.color = "var(--text-muted)";
-        configTip.innerText = "ℹ️ 狀態可行：隨時可以送出新配置。";
+        configTip.innerText = `ℹ️ ${t("config.tip.default")}`;
       }
 
       if (currentState === "STOPPED") {
@@ -1523,6 +1892,7 @@
 
       autoResetSecondsLeft = delaySeconds;
       document.getElementById("auto-reset-countdown").innerText = autoResetSecondsLeft;
+      document.getElementById("auto-reset-text").innerText = t("auto_reset.banner", { seconds: autoResetSecondsLeft });
       document.getElementById("auto-reset-banner").style.display = "block";
 
       autoResetInterval = setInterval(() => {
@@ -1534,6 +1904,7 @@
           resetRace();
         } else {
           document.getElementById("auto-reset-countdown").innerText = autoResetSecondsLeft;
+          document.getElementById("auto-reset-text").innerText = t("auto_reset.banner", { seconds: autoResetSecondsLeft });
         }
       }, 1000);
     }
@@ -1624,10 +1995,10 @@
         if (res.ok) {
           updateUIState(data);
         } else {
-          alert("配置失敗: " + (data.detail || "伺服器錯誤"));
+          alert(`${t("alert.configure_failed")}: ${data.detail || t("alert.server_error")}`);
         }
       } catch (err) {
-        alert("配置失敗: " + err);
+        alert(`${t("alert.configure_failed")}: ${err}`);
       }
     }
 
@@ -1638,10 +2009,10 @@
         if (res.ok) {
           updateUIState(data);
         } else {
-          alert("啟動失敗: " + (data.detail || "伺服器錯誤"));
+          alert(`${t("alert.start_failed")}: ${data.detail || t("alert.server_error")}`);
         }
       } catch (err) {
-        alert("啟動失敗: " + err);
+        alert(`${t("alert.start_failed")}: ${err}`);
       }
     }
 
@@ -1652,10 +2023,10 @@
         if (res.ok) {
           updateUIState(data);
         } else {
-          alert("停止失敗: " + (data.detail || "伺服器錯誤"));
+          alert(`${t("alert.stop_failed")}: ${data.detail || t("alert.server_error")}`);
         }
       } catch (err) {
-        alert("停止失敗: " + err);
+        alert(`${t("alert.stop_failed")}: ${err}`);
       }
     }
 
@@ -1670,20 +2041,88 @@
               <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M15.362 5.214A8.252 8.252 0 0 1 12 21 8.25 8.25 0 0 1 6.038 7.047 8.287 8.287 0 0 0 9 9.601a8.983 8.983 0 0 1 3.361-6.867 8.21 8.21 0 0 0 3 2.48z" />
               </svg>
-              <p>等待賽事啟動與連線節點傳送數據...</p>
+              <p>${escapeHtml(t("leaderboard.empty"))}</p>
             </div>`;
           fetchStations(); // Refresh athletes
         } else {
-          alert("重置失敗: " + (data.detail || "伺服器錯誤"));
+          alert(`${t("alert.reset_failed")}: ${data.detail || t("alert.server_error")}`);
         }
       } catch (err) {
-        alert("重置失敗: " + err);
+        alert(`${t("alert.reset_failed")}: ${err}`);
       }
     }
 
-    window.onload = () => {
-      connectWebSocket();
+    function updatePowerButtonState() {
+      const disabled = currentState !== "IDLE";
+      ["btn-power-restart", "btn-power-reboot", "btn-power-shutdown"].forEach((id) => {
+        const button = document.getElementById(id);
+        if (button) button.disabled = disabled;
+      });
+      const tip = document.getElementById("power-status-tip");
+      if (!tip) return;
+      if (disabled) {
+        tip.style.color = "var(--hazard-amber)";
+        tip.innerText = `Power controls locked while race state is ${currentState}.`;
+      } else {
+        tip.style.color = "var(--text-muted)";
+        tip.innerText = "Ready. Production hardware requires admin token and explicit command enablement.";
+      }
+    }
+
+    function showPowerStatus(message, isError = false) {
+      const tip = document.getElementById("power-status-tip");
+      if (!tip) return;
+      tip.style.color = isError ? "var(--crimson-red)" : "var(--volt-yellow)";
+      tip.innerText = message;
+    }
+
+    async function performPowerAction(action) {
+      let body = {};
+      if (action === "reboot") {
+        if (!confirm("Reboot Central Hub? This is allowed only while the race is idle.")) return;
+        body = { confirmation: "REBOOT" };
+      } else if (action === "shutdown") {
+        if (!confirm("Shutdown Central Hub? You will need physical access to power it on again.")) return;
+        body = { confirmation: "SHUTDOWN" };
+      }
+
+      try {
+        const res = await fetch(`/api/system/power/${action}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          showPowerStatus(data.detail || "Power action failed.", true);
+          return;
+        }
+        const suffix = data.dry_run ? " (dry-run, no command executed)" : "";
+        showPowerStatus(`${data.action} accepted${suffix}.`, false);
+      } catch (err) {
+        showPowerStatus(`Power action failed: ${err}`, true);
+      }
+    }
+
+    async function loadHubVersion() {
+      const versionEl = document.getElementById("hub-version");
+      if (!versionEl) return;
+      try {
+        const res = await fetch("/health", { cache: "no-store" });
+        const data = await res.json();
+        if (!res.ok || !data.version) return;
+        versionEl.innerText = `v${data.version}`;
+      } catch (err) {
+        versionEl.innerText = "v--";
+      }
+    }
+
+    window.onload = async () => {
+      await loadLocale(currentLocale);
       toggleConfigFields();
+      loadHubVersion();
+      connectWebSocket();
+      fetchNodes();
 
       // Initialize general registration QR Code on the right side of the hero bar
       const hubIp = window.location.hostname;

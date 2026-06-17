@@ -1,7 +1,80 @@
 {
-  "node_id": "treadmill-01",
-  "equipment_id": "TREAD_01",
-  "equipment_type": "treadmill",
-  "mqtt_host": "localhost",
-  "mqtt_port": 1883
+  "node_id": "fitrace-edge-01",
+  "mqtt_host": "192.168.0.129",
+  "mqtt_port": 1883,
+  "max_ftms_connections": 10,
+  "available_channels": 2,
+  "antenna_protocol_version": "pending-hardware",
+  "equipment_bindings": [
+    {
+      "node_id": "fitrace-edge-01-01",
+      "equipment_id": "TREAD_01",
+      "equipment_type": "treadmill",
+      "ble_target": "TREAD_01_TARGET",
+      "antenna_channel": "mock-1"
+    },
+    {
+      "node_id": "fitrace-edge-01-02",
+      "equipment_id": "TREAD_02",
+      "equipment_type": "treadmill",
+      "ble_target": "TREAD_02_TARGET",
+      "antenna_channel": "mock-2"
+    },
+    {
+      "node_id": "fitrace-edge-01-03",
+      "equipment_id": "TREAD_03",
+      "equipment_type": "treadmill",
+      "ble_target": "TREAD_03_TARGET",
+      "antenna_channel": "mock-3"
+    },
+    {
+      "node_id": "fitrace-edge-01-04",
+      "equipment_id": "TREAD_04",
+      "equipment_type": "treadmill",
+      "ble_target": "TREAD_04_TARGET",
+      "antenna_channel": "mock-4"
+    },
+    {
+      "node_id": "fitrace-edge-01-05",
+      "equipment_id": "TREAD_05",
+      "equipment_type": "treadmill",
+      "ble_target": "TREAD_05_TARGET",
+      "antenna_channel": "mock-5"
+    },
+    {
+      "node_id": "fitrace-edge-01-06",
+      "equipment_id": "TREAD_06",
+      "equipment_type": "treadmill",
+      "ble_target": "TREAD_06_TARGET",
+      "antenna_channel": "mock-6"
+    },
+    {
+      "node_id": "fitrace-edge-01-07",
+      "equipment_id": "TREAD_07",
+      "equipment_type": "treadmill",
+      "ble_target": "TREAD_07_TARGET",
+      "antenna_channel": "mock-7"
+    },
+    {
+      "node_id": "fitrace-edge-01-08",
+      "equipment_id": "TREAD_08",
+      "equipment_type": "treadmill",
+      "ble_target": "TREAD_08_TARGET",
+      "antenna_channel": "mock-8"
+    },
+    {
+      "node_id": "fitrace-edge-01-09",
+      "equipment_id": "TREAD_09",
+      "equipment_type": "treadmill",
+      "ble_target": "TREAD_09_TARGET",
+      "antenna_channel": "mock-9"
+    },
+    {
+      "node_id": "fitrace-edge-01-10",
+      "equipment_id": "TREAD_10",
+      "equipment_type": "treadmill",
+      "ble_target": "TREAD_10_TARGET",
+      "antenna_channel": "mock-10"
+    }
+  ]
 }

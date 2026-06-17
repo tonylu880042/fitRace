@@ -1,0 +1,1197 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FitRaceStudio - 設備模擬與數據生成中心</title>
+  <meta name="description" content="FitRace Studio 健身設備管理、模擬與數據生成面板">
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@700&family=Outfit:wght@400;600;800&family=Noto+Sans+TC:wght@500;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-color: #09090b;
+      --card-bg: #18181b;
+      --steel-border: #27272a;
+      --volt-yellow: #e2ff3b;
+      --crimson-red: #f43f5e;
+      --text-main: #fafafa;
+      --text-muted: #a1a1aa;
+      --badge-active: #10b981;
+      --badge-inactive: #6b7280;
+      --blue-accent: #3b82f6;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Outfit', 'Noto Sans TC', sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      min-height: 100vh;
+      padding: 2rem;
+      overflow-y: auto;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-image: radial-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 0);
+      background-size: 24px 24px;
+      pointer-events: none;
+      z-index: -1;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 2rem;
+      border-bottom: 1px solid var(--steel-border);
+      padding-bottom: 1.5rem;
+    }
+
+    .logo {
+      font-family: 'Oswald', sans-serif;
+      font-size: 2.2rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+    }
+
+    .logo span {
+      color: var(--volt-yellow);
+    }
+
+    .subtitle {
+      font-size: 0.95rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      margin-top: 0.25rem;
+    }
+
+    .nav-links a {
+      color: var(--volt-yellow);
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 0.95rem;
+      border: 1px solid var(--volt-yellow);
+      padding: 0.5rem 1rem;
+      border-radius: 4px;
+      transition: all 0.2s;
+    }
+
+    .nav-links a:hover {
+      background: rgba(226, 255, 59, 0.1);
+      box-shadow: 0 0 10px rgba(226, 255, 59, 0.2);
+    }
+
+    .grid-container {
+      display: grid;
+      grid-template-columns: 1fr 1.5fr;
+      gap: 2rem;
+    }
+
+    @media (max-width: 1024px) {
+      .grid-container {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--steel-border);
+      border-radius: 8px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    }
+
+    .card-title {
+      font-size: 1.25rem;
+      font-weight: bold;
+      margin-bottom: 1.25rem;
+      border-left: 4px solid var(--volt-yellow);
+      padding-left: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .form-group {
+      margin-bottom: 1.25rem;
+    }
+
+    label {
+      display: block;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-bottom: 0.5rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .form-control {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid var(--steel-border);
+      border-radius: 4px;
+      color: var(--text-main);
+      font-family: inherit;
+      font-size: 0.95rem;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .form-control:focus {
+      outline: none;
+      border-color: var(--volt-yellow);
+      box-shadow: 0 0 8px rgba(226, 255, 59, 0.15);
+    }
+
+    .row {
+      display: flex;
+      gap: 1rem;
+    }
+
+    .row .form-group {
+      flex: 1;
+    }
+
+    .btn {
+      display: inline-flex;
+      justify-content: center;
+      align-items: center;
+      padding: 0.75rem 1.25rem;
+      font-family: 'Oswald', sans-serif;
+      font-size: 1rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s;
+      gap: 0.5rem;
+    }
+
+    .btn-primary {
+      background: var(--volt-yellow);
+      color: #000;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background: #eaff54;
+      box-shadow: 0 0 10px rgba(226, 255, 59, 0.3);
+    }
+
+    .btn-danger {
+      background: var(--crimson-red);
+      color: var(--text-main);
+    }
+
+    .btn-danger:hover:not(:disabled) {
+      background: #f43f5ecc;
+      box-shadow: 0 0 10px rgba(244, 63, 94, 0.3);
+    }
+
+    .btn-secondary {
+      background: transparent;
+      border: 1px solid var(--steel-border);
+      color: var(--text-main);
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: var(--text-muted);
+    }
+
+    .btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .device-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 0.75rem;
+      max-height: 250px;
+      overflow-y: auto;
+      border: 1px solid var(--steel-border);
+      padding: 0.75rem;
+      border-radius: 4px;
+      background: rgba(0, 0, 0, 0.2);
+    }
+
+    .device-tag {
+      background: rgba(24, 24, 27, 0.8);
+      border: 1px solid var(--steel-border);
+      border-radius: 4px;
+      padding: 0.5rem;
+      font-size: 0.8rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      position: relative;
+    }
+
+    .device-tag.assigned {
+      border-color: var(--blue-accent);
+      background: rgba(59, 130, 246, 0.05);
+    }
+
+    .device-tag .name {
+      font-weight: bold;
+    }
+
+    .device-tag .type {
+      color: var(--text-muted);
+      font-size: 0.75rem;
+    }
+
+    .device-tag .status-dot {
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--badge-active);
+      position: absolute;
+      top: 0.5rem;
+      right: 0.5rem;
+    }
+
+    .stations-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1.25rem;
+    }
+
+    @media (max-width: 640px) {
+      .stations-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .station-card {
+      border: 1px solid var(--steel-border);
+      border-radius: 6px;
+      padding: 1rem;
+      background: rgba(0, 0, 0, 0.2);
+      transition: all 0.2s;
+    }
+
+    .station-card.has-athlete {
+      border-color: var(--blue-accent);
+      background: rgba(59, 130, 246, 0.03);
+    }
+
+    .station-num {
+      font-size: 1.1rem;
+      font-family: 'Oswald', sans-serif;
+      margin-bottom: 0.75rem;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .station-num span {
+      background: var(--blue-accent);
+      color: #fff;
+      padding: 0.1rem 0.5rem;
+      font-size: 0.75rem;
+      border-radius: 3px;
+    }
+
+    .station-card.has-athlete .station-num span {
+      background: var(--volt-yellow);
+      color: #000;
+    }
+
+    .info-item {
+      font-size: 0.85rem;
+      margin-bottom: 0.4rem;
+    }
+
+    .info-item span:first-child {
+      color: var(--text-muted);
+    }
+
+    .info-item span:last-child {
+      font-weight: 600;
+    }
+
+    .sim-stats {
+      font-family: monospace;
+      background: rgba(0, 0, 0, 0.5);
+      border: 1px solid var(--steel-border);
+      padding: 1rem;
+      border-radius: 4px;
+      height: 180px;
+      overflow-y: auto;
+      font-size: 0.8rem;
+      line-height: 1.4;
+      color: #34d399;
+    }
+
+    .progress-bar-container {
+      background: rgba(255, 255, 255, 0.1);
+      height: 4px;
+      border-radius: 2px;
+      margin-top: 0.75rem;
+      overflow: hidden;
+    }
+
+    .progress-bar-fill {
+      background: var(--volt-yellow);
+      height: 100%;
+      width: 0%;
+      transition: width 0.3s;
+    }
+
+    .badge-state {
+      padding: 0.25rem 0.75rem;
+      font-size: 0.85rem;
+      font-weight: bold;
+      border-radius: 4px;
+      text-transform: uppercase;
+      font-family: 'Oswald', sans-serif;
+      letter-spacing: 0.5px;
+    }
+
+    .state-idle { background: #374151; color: #f3f4f6; }
+    .state-ready { background: #d97706; color: #fff; }
+    .state-running { background: var(--badge-active); color: #fff; }
+    .state-stopped { background: var(--crimson-red); color: #fff; }
+
+    .help-text {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 0.25rem;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div>
+      <div class="logo">FitRace<span>Studio</span></div>
+      <div class="subtitle">健身設備模擬器與數據生成中心</div>
+    </div>
+    <div class="nav-links">
+      <a href="/static/index.html" target="_blank">打開現場大畫面排行榜 ↗</a>
+    </div>
+  </header>
+
+  <div class="grid-container">
+    <!-- Left Column: Device Pool & Simulator Controls -->
+    <div>
+      <!-- Gym Configuration Card -->
+      <div class="card">
+        <div class="card-title">
+          1. 健身房設備庫設定
+          <button class="btn btn-secondary" style="font-size: 0.75rem; padding: 0.3rem 0.6rem;" onclick="quickGenerateGym()">一鍵配置場館 ⚡</button>
+        </div>
+        <div class="row">
+          <div class="form-group">
+            <label for="device-type">設備類型</label>
+            <select id="device-type" class="form-control">
+              <option value="fan_bike">風扇車 (Fan Bike)</option>
+              <option value="spin_bike">飛輪車 (Spin Bike)</option>
+              <option value="treadmill">跑步機 (Treadmill)</option>
+              <option value="rower">划船器 (Rowing Machine)</option>
+              <option value="ski_erg">滑雪機 (Ski Machine)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="device-count">生成數量</label>
+            <input type="number" id="device-count" class="form-control" value="1" min="1" max="10">
+          </div>
+        </div>
+        <div class="row">
+          <div class="form-group">
+            <label for="device-prefix">設備 ID 字首</label>
+            <input type="text" id="device-prefix" class="form-control" placeholder="例如: bike- 或 tm-">
+            <div class="help-text">若留空將依設備類型自動生成編號</div>
+          </div>
+        </div>
+        <button class="btn btn-primary" onclick="addMockDevices()">向 Hub 註冊這些設備並上線</button>
+
+        <div style="margin-top: 1.5rem;">
+          <label>目前已發現的裝置清單 (Active Nodes)</label>
+          <div class="device-list" id="device-pool-list">
+            <div style="color: var(--text-muted); font-size: 0.85rem; padding: 1rem; width: 100%; text-align: center;">尚未上線任何模擬裝置</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Race Configuration & Telemetry Stream Controller -->
+      <div class="card">
+        <div class="card-title">
+          3. 賽事控制與數據發射器
+          <span class="badge-state state-idle" id="race-state-badge">IDLE</span>
+        </div>
+        <div class="row">
+          <div class="form-group">
+            <label for="race-challenge-type">挑戰項目</label>
+            <select id="race-challenge-type" class="form-control" onchange="toggleRaceTypeInputs()">
+              <option value="distance">距離挑戰 (Distance)</option>
+              <option value="calories">卡路里挑戰 (Calories)</option>
+              <option value="time">計時挑戰 (Time)</option>
+              <option value="max_power">最大功率挑戰 (Max Power)</option>
+            </select>
+          </div>
+          <div class="form-group" id="target-value-group">
+            <label id="target-value-label">目標值 (公尺)</label>
+            <input type="number" id="race-target-value" class="form-control" value="500" min="1">
+          </div>
+        </div>
+        <button class="btn btn-secondary" style="width: 100%; margin-bottom: 1rem;" onclick="configureRace()">儲存賽事配置</button>
+
+        <div class="row" style="margin-bottom: 1.5rem;">
+          <button class="btn btn-primary" style="flex: 1;" id="btn-start" onclick="startRace()" disabled>開始比賽</button>
+          <button class="btn btn-danger" style="flex: 1;" id="btn-stop" onclick="stopRace()" disabled>停止</button>
+          <button class="btn btn-secondary" style="flex: 1;" id="btn-reset" onclick="resetRace()">重置</button>
+        </div>
+
+        <div>
+          <label style="display: flex; justify-content: space-between; align-items: center;">
+            賽事遙測數據即時發射器 (Simulator Loop)
+            <span id="sim-loop-status" style="color: var(--text-muted); font-size: 0.8rem;">已停止</span>
+          </label>
+          <div class="row" style="margin-top: 0.5rem; margin-bottom: 1rem;">
+            <button class="btn btn-primary" style="flex: 2; font-size: 0.9rem; padding: 0.6rem;" id="btn-toggle-sim" onclick="toggleSimulation()" disabled>
+              ▶ 啟動遙測發送模擬
+            </button>
+            <button class="btn btn-secondary" style="flex: 1; font-size: 0.9rem; padding: 0.6rem;" onclick="resetSimulationMetrics()">清除累計</button>
+          </div>
+          <div class="sim-stats" id="sim-log">
+            [系統] 數據發射器準備就緒。請先設定賽事並點擊「開始比賽」，接著啟動遙測模擬。
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Column: Physical Station & Athlete Mapping -->
+    <div>
+      <div class="card">
+        <div class="card-title">2. 站位配置與選手報名</div>
+        <div class="stations-grid" id="stations-container">
+          <!-- 4 Station Cards will be rendered here -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let activeNodes = [];     // List of strings (discovered node IDs)
+    let stationsStatus = {};  // Object returned by /api/stations
+    let raceState = "idle";
+    let simulationTimer = null;
+    let isSimulating = false;
+
+    // Simulation metrics for each active station
+    let simMetrics = {
+      // "bike-01": { distance_m: 0.0, calories: 0.0, elapsed_ms: 0, finished: false }
+    };
+
+    // Equipment properties for telemetry calculation
+    const equipmentSpecs = {
+      fan_bike:   { minKph: 24, maxKph: 36, minWatts: 160, maxWatts: 280, calFactor: 8.5 },
+      spin_bike:  { minKph: 26, maxKph: 42, minWatts: 140, maxWatts: 260, calFactor: 7.2 },
+      treadmill:  { minKph: 8,  maxKph: 16, minWatts: 100, maxWatts: 200, calFactor: 9.0 },
+      rower:      { minKph: 12, maxKph: 18, minWatts: 120, maxWatts: 220, calFactor: 7.8 },
+      ski_erg:    { minKph: 10, maxKph: 16, minWatts: 110, maxWatts: 200, calFactor: 8.0 }
+    };
+
+    const firstNames = ["王", "李", "張", "劉", "陳", "林", "黃", "吳", "許", "許", "蔡", "曾"];
+    const lastNames = ["小明", "志強", "雅婷", "美玲", "小華", "冠宇", "欣妤", "家豪", "俊傑", "怡君", "泰山", "建國"];
+    const teamNames = ["閃電隊", "旋風隊", "泰山隊", "狂飆小組", "野狼社", "鋼鐵意志", "破風行者", "重力組"];
+
+    function randomAthlete() {
+      const name = firstNames[Math.floor(Math.random() * firstNames.length)] + lastNames[Math.floor(Math.random() * lastNames.length)];
+      const team = teamNames[Math.floor(Math.random() * teamNames.length)];
+      return { name, team };
+    }
+
+    function connectWebSocket() {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/ws/dashboard`;
+      const ws = new WebSocket(wsUrl);
+
+      ws.onmessage = async (event) => {
+        try {
+          const data = JSON.parse(event.data);
+
+          if (data.type === "state_change") {
+            const state = data.state.toLowerCase();
+            raceState = state;
+            updateRaceStateUI(data);
+            await getStations();
+            logSystemInfo(`賽事狀態已同步更新為: ${state.toUpperCase()}`);
+
+            if (state === "running") {
+              await ensureSimulationMetricsReady();
+            }
+          }
+          else if (data.type === "registration_success") {
+            await getStations();
+            logSystemInfo(`選手報名更新：站位 ${data.station_number} - ${data.athlete_name}`);
+          }
+          else if (data && !data.type) {
+            // Process live progress telemetry updates
+            Object.keys(data).forEach(nid => {
+              if (simMetrics[nid]) {
+                simMetrics[nid].progress_percent = data[nid].progress_percent;
+                simMetrics[nid].distance_m = data[nid].distance_m;
+                simMetrics[nid].calories = data[nid].calories;
+                simMetrics[nid].finished = (data[nid].finished_time_ms !== null);
+              }
+            });
+            renderStations();
+          }
+        } catch (e) {
+          console.error("Error processing websocket message:", e);
+        }
+      };
+
+      ws.onclose = () => {
+        console.log("WebSocket disconnected. Reconnecting in 3s...");
+        setTimeout(connectWebSocket, 3000);
+      };
+    }
+
+    async function init() {
+      await getRaceState();
+      await getStations();
+      if (raceState === "running") {
+        await ensureSimulationMetricsReady();
+      }
+      renderStations();
+      renderDevicePool();
+      connectWebSocket();
+    }
+
+    // Toggle target inputs based on type
+    function toggleRaceTypeInputs() {
+      const type = document.getElementById("race-challenge-type").value;
+      const valGroup = document.getElementById("target-value-group");
+      const valLabel = document.getElementById("target-value-label");
+      const valInput = document.getElementById("race-target-value");
+
+      if (type === "distance") {
+        valGroup.style.display = "block";
+        valLabel.innerText = "目標值 (公尺)";
+        valInput.value = 500;
+      } else if (type === "calories") {
+        valGroup.style.display = "block";
+        valLabel.innerText = "目標值 (卡路里 kcal)";
+        valInput.value = 30;
+      } else if (type === "time" || type === "max_power") {
+        valGroup.style.display = "block";
+        valLabel.innerText = "挑戰時限 (秒)";
+        valInput.value = 60;
+      }
+    }
+
+    // Call Central APIs
+    async function getRaceState() {
+      try {
+        const res = await fetch("/api/race/state");
+        if (res.ok) {
+          const data = await res.json();
+          raceState = data.state.toLowerCase();
+          updateRaceStateUI(data);
+        }
+      } catch (err) {
+        logSystemError("無法獲取賽事狀態，請檢查伺服器是否連線");
+      }
+    }
+
+    async function getStations() {
+      try {
+        const res = await fetch("/api/stations");
+        if (res.ok) {
+          const data = await res.json();
+          stationsStatus = data.stations;
+          activeNodes = Object.keys(data.stations)
+            .map(sn => data.stations[sn].node_id)
+            .filter(nid => nid !== null)
+            .concat(data.unassigned_nodes);
+
+          // Remove duplicates
+          activeNodes = [...new Set(activeNodes)];
+
+          if (raceState === "running" && Object.keys(simMetrics).length === 0) {
+            initializeSimulationMetricsFromStations(true);
+          }
+
+          renderStations();
+          renderDevicePool();
+        }
+      } catch (err) {
+        logSystemError("無法獲取站位狀態");
+      }
+    }
+
+    function updateRaceStateUI(data) {
+      const state = data.state.toLowerCase();
+      const badge = document.getElementById("race-state-badge");
+      badge.innerText = state.toUpperCase();
+      badge.className = `badge-state state-${state}`;
+
+      // Enable/disable buttons based on state
+      document.getElementById("btn-start").disabled = (state !== "ready");
+      document.getElementById("btn-stop").disabled = (state !== "running");
+      document.getElementById("btn-toggle-sim").disabled = (state !== "running");
+
+      if (state !== "running" && isSimulating) {
+        stopSimulationLoop();
+      }
+    }
+
+    function initializeSimulationMetricsFromStations(preserveExisting = true) {
+      const nextMetrics = {};
+
+      Object.keys(stationsStatus).forEach(sn => {
+        const st = stationsStatus[sn];
+        if (!st.node_id) return;
+
+        const existing = preserveExisting ? simMetrics[st.node_id] : null;
+        nextMetrics[st.node_id] = {
+          distance_m: existing?.distance_m || 0.0,
+          calories: existing?.calories || 0.0,
+          elapsed_ms: existing?.elapsed_ms || 0,
+          finished: existing?.finished || false,
+          progress_percent: existing?.progress_percent || 0.0,
+          station_number: parseInt(sn),
+          athlete_name: st.athlete_name || `Station ${sn}`,
+          equipment_type: st.equipment_type || "fan_bike"
+        };
+      });
+
+      simMetrics = nextMetrics;
+      return Object.keys(simMetrics).length;
+    }
+
+    async function ensureSimulationMetricsReady() {
+      if (Object.keys(stationsStatus).length === 0) {
+        await getStations();
+      }
+
+      const metricCount = initializeSimulationMetricsFromStations(true);
+      if (metricCount === 0) {
+        logSystemError("目前沒有任何已綁定裝置的站位，無法啟動遙測模擬。請先在站位中指派設備。");
+        return false;
+      }
+
+      logSystemInfo(`遙測模擬目標已同步：${metricCount} 個已綁定站位。`);
+      renderStations();
+      return true;
+    }
+
+    // Render registered device pool
+    function renderDevicePool() {
+      const container = document.getElementById("device-pool-list");
+      container.innerHTML = "";
+
+      if (activeNodes.length === 0) {
+        container.innerHTML = `<div style="color: var(--text-muted); font-size: 0.85rem; padding: 1rem; width: 100%; text-align: center;">尚未上線任何模擬裝置</div>`;
+        return;
+      }
+
+      // Check which nodes are assigned
+      const assignedNodes = new Set();
+      Object.keys(stationsStatus).forEach(sn => {
+        if (stationsStatus[sn].node_id) {
+          assignedNodes.add(stationsStatus[sn].node_id);
+        }
+      });
+
+      activeNodes.forEach(nid => {
+        const isAssigned = assignedNodes.has(nid);
+        const type = nid.includes("treadmill") ? "跑步機" : nid.includes("spin") ? "飛輪車" : nid.includes("rower") ? "划船器" : nid.includes("ski") ? "滑雪機" : "風扇車";
+        const div = document.createElement("div");
+        div.className = `device-tag ${isAssigned ? 'assigned' : ''}`;
+        div.innerHTML = `
+          <span class="status-dot"></span>
+          <span class="name">${nid}</span>
+          <span class="type">${type}</span>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    // Render physical station grid (1-4)
+    function renderStations() {
+      const container = document.getElementById("stations-container");
+      container.innerHTML = "";
+
+      // Ensure we render at least stations 1 to 4
+      for (let sn = 1; sn <= 4; sn++) {
+        const st = stationsStatus[sn] || { node_id: null, athlete_name: null, team_name: null };
+        const hasAthlete = !!st.athlete_name;
+
+        const card = document.createElement("div");
+        card.className = `station-card ${hasAthlete ? 'has-athlete' : ''}`;
+
+        let selectOptions = `<option value="">-- 選擇未分配裝置 --</option>`;
+
+        // Find nodes that are not assigned to any station
+        const assignedNodes = new Set();
+        Object.keys(stationsStatus).forEach(sNum => {
+          if (stationsStatus[sNum].node_id && parseInt(sNum) !== sn) {
+            assignedNodes.add(stationsStatus[sNum].node_id);
+          }
+        });
+
+        activeNodes.forEach(nid => {
+          if (!assignedNodes.has(nid)) {
+            const isSelected = (st.node_id === nid) ? "selected" : "";
+            selectOptions += `<option value="${nid}" ${isSelected}>${nid}</option>`;
+          }
+        });
+
+        const progressPercent = (st.node_id && simMetrics[st.node_id]) ? simMetrics[st.node_id].progress_percent || 0.0 : 0.0;
+
+        if (hasAthlete) {
+          card.innerHTML = `
+            <div class="station-num">
+              站位 ${sn} <span>已報名選手</span>
+            </div>
+            <div class="info-item"><span>綁定裝置:</span> <span>${st.node_id || '無感應器'}</span></div>
+            <div class="info-item"><span>選手姓名:</span> <span>${st.athlete_name}</span></div>
+            <div class="info-item"><span>隊伍名稱:</span> <span>${st.team_name || '無'}</span></div>
+            <div class="progress-bar-container">
+              <div class="progress-bar-fill" style="width: ${progressPercent}%"></div>
+            </div>
+            <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
+              <button class="btn btn-danger" style="padding: 0.4rem 0.8rem; font-size: 0.8rem; flex: 1;" onclick="unassignStation(${sn})">解除分配</button>
+            </div>
+          `;
+        } else {
+          card.innerHTML = `
+            <div class="station-num">
+              站位 ${sn} <span>閒置空站</span>
+            </div>
+            <div class="form-group" style="margin-bottom: 0.75rem;">
+              <label>配對感應器</label>
+              <select class="form-control" id="select-node-${sn}" style="padding: 0.5rem;">
+                ${selectOptions}
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom: 0.75rem;">
+              <label>選手姓名</label>
+              <input type="text" class="form-control" id="ath-name-${sn}" style="padding: 0.5rem;" placeholder="輸入姓名...">
+            </div>
+            <div class="form-group" style="margin-bottom: 0.75rem;">
+              <label>隊伍/場館 (選填)</label>
+              <input type="text" class="form-control" id="ath-team-${sn}" style="padding: 0.5rem;" placeholder="輸入隊伍...">
+            </div>
+            <div style="display: flex; gap: 0.5rem;">
+              <button class="btn btn-secondary" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;" onclick="fillRandom(${sn})">隨機填寫 🎲</button>
+              <button class="btn btn-primary" style="padding: 0.4rem 0.8rem; font-size: 0.8rem; flex: 1;" onclick="registerStationAthlete(${sn})">報名並指派</button>
+            </div>
+          `;
+        }
+
+        container.appendChild(card);
+      }
+    }
+
+    // Quick fill with random names
+    function fillRandom(sn) {
+      const rand = randomAthlete();
+      document.getElementById(`ath-name-${sn}`).value = rand.name;
+      document.getElementById(`ath-team-${sn}`).value = rand.team;
+    }
+
+    // Register devices in simulator pool
+    async function addMockDevices() {
+      const type = document.getElementById("device-type").value;
+      const count = parseInt(document.getElementById("device-count").value) || 1;
+      let prefix = document.getElementById("device-prefix").value.trim();
+
+      if (!prefix) {
+        prefix = type === "fan_bike" ? "bike-" : type === "spin_bike" ? "spin-" : type === "treadmill" ? "treadmill-" : type === "rower" ? "rower-" : "ski-";
+      }
+
+      logSystemInfo(`開始註冊 ${count} 台 ${type} 模擬設備...`);
+
+      for (let i = 1; i <= count; i++) {
+        // Find next index to avoid duplicate ID
+        let index = i;
+        let node_id = `${prefix}${String(index).padStart(2, '0')}`;
+        while (activeNodes.includes(node_id)) {
+          index++;
+          node_id = `${prefix}${String(index).padStart(2, '0')}`;
+        }
+
+        try {
+          await fetch("/api/test/telemetry", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              node_id: node_id,
+              equipment_type: type,
+              distance_m: 0.0,
+              elapsed_time_ms: 0,
+              timestamp_epoch_ms: Date.now()
+            })
+          });
+          logSystemInfo(`已啟動並發現設備：${node_id}`);
+        } catch (err) {
+          logSystemError(`上線設備 ${node_id} 失敗`);
+        }
+      }
+
+      await getStations();
+    }
+
+    // Quick generate a full gym setup
+    async function quickGenerateGym() {
+      logSystemInfo("一鍵配置健身房設備中...");
+      const mockSetups = [
+        { type: "fan_bike", prefix: "bike-", count: 2 },
+        { type: "spin_bike", prefix: "spin-", count: 1 },
+        { type: "treadmill", prefix: "treadmill-", count: 1 },
+        { type: "rower", prefix: "rower-", count: 1 }
+      ];
+
+      for (let setup of mockSetups) {
+        for (let i = 1; i <= setup.count; i++) {
+          const node_id = `${setup.prefix}${String(i).padStart(2, '0')}`;
+          try {
+            await fetch("/api/test/telemetry", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                node_id: node_id,
+                equipment_type: setup.type,
+                distance_m: 0.0,
+                elapsed_time_ms: 0,
+                timestamp_epoch_ms: Date.now()
+              })
+            });
+          } catch (e) {}
+        }
+      }
+
+      logSystemInfo("健身房設備已就緒：2台風扇車、1台飛輪車、1台跑步機、1台划船器。");
+      await getStations();
+    }
+
+    // Assign device and register athlete
+    async function registerStationAthlete(sn) {
+      const node_id = document.getElementById(`select-node-${sn}`).value || null;
+      const name = document.getElementById(`ath-name-${sn}`).value.trim();
+      const team = document.getElementById(`ath-team-${sn}`).value.trim() || null;
+
+      if (!name) {
+        alert("請輸入選手姓名！");
+        return;
+      }
+
+      logSystemInfo(`正在報名站位 ${sn}，選手: ${name}...`);
+
+      try {
+        // 1. Assign device node if chosen
+        if (node_id) {
+          const assignRes = await fetch("/api/stations/assign", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ station_number: sn, node_id })
+          });
+          if (!assignRes.ok) throw new Error("裝置指派失敗");
+        }
+
+        // 2. Register athlete
+        const regRes = await fetch("/api/race/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ station_number: sn, athlete_name: name, team_name: team })
+        });
+
+        if (regRes.ok) {
+          logSystemInfo(`站位 ${sn} 報名成功！`);
+          await getStations();
+        } else {
+          logSystemError(`站位 ${sn} 報名失敗`);
+        }
+      } catch (err) {
+        logSystemError(`設定站位時出錯: ${err.message}`);
+      }
+    }
+
+    // Unassign station
+    async function unassignStation(sn) {
+      logSystemInfo(`正在解除站位 ${sn} 分配...`);
+      try {
+        const res = await fetch("/api/stations/assign", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ station_number: sn, node_id: null })
+        });
+        if (res.ok) {
+          logSystemInfo(`站位 ${sn} 已解除分配並還原為空閒狀態。`);
+          await getStations();
+        } else {
+          logSystemError(`解除分配失敗`);
+        }
+      } catch (err) {
+        logSystemError(`解除分配出錯: ${err.message}`);
+      }
+    }
+
+    // Configure Race
+    async function configureRace() {
+      const type = document.getElementById("race-challenge-type").value;
+      const targetVal = parseFloat(document.getElementById("race-target-value").value) || 0;
+
+      let payload = {
+        race_type: type,
+        target_value: 0.0,
+        duration_sec: 0
+      };
+
+      if (type === "distance" || type === "calories") {
+        payload.target_value = targetVal;
+      } else if (type === "time" || type === "max_power") {
+        payload.duration_sec = parseInt(targetVal);
+      }
+
+      logSystemInfo(`正在儲存賽事配置: ${type}，目標/時限: ${targetVal}...`);
+
+      try {
+        const res = await fetch("/api/race/configure", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          logSystemInfo(`賽事配置儲存成功！賽事目前狀態: ${data.state.toUpperCase()}`);
+          await getRaceState();
+        } else {
+          const errData = await res.json();
+          logSystemError(`賽事配置失敗: ${errData.detail || '未知錯誤'}`);
+        }
+      } catch (err) {
+        logSystemError(`配置請求錯誤: ${err.message}`);
+      }
+    }
+
+    // Start Race
+    async function startRace() {
+      logSystemInfo("發送開賽指令...");
+      try {
+        const res = await fetch("/api/race/start", { method: "POST" });
+        if (res.ok) {
+          logSystemInfo("賽事已開始 (RUNNING)！正在初始化模擬指標...");
+
+          initializeSimulationMetricsFromStations(false);
+
+          await getRaceState();
+          // Auto start simulation
+          await startSimulationLoop();
+        } else {
+          logSystemError("啟動賽事失敗");
+        }
+      } catch (err) {
+        logSystemError(`開賽指令錯誤: ${err.message}`);
+      }
+    }
+
+    // Stop Race
+    async function stopRace() {
+      logSystemInfo("發送停止賽事指令...");
+      try {
+        const res = await fetch("/api/race/stop", { method: "POST" });
+        if (res.ok) {
+          logSystemInfo("賽事已停止 (STOPPED)。");
+          await getRaceState();
+          stopSimulationLoop();
+        } else {
+          logSystemError("停止賽事失敗");
+        }
+      } catch (err) {
+        logSystemError(`停止指令錯誤: ${err.message}`);
+      }
+    }
+
+    // Reset Race
+    async function resetRace() {
+      logSystemInfo("重置賽事狀態與報名...");
+      try {
+        const res = await fetch("/api/race/reset", { method: "POST" });
+        if (res.ok) {
+          logSystemInfo("賽事已重置為 IDLE。選手及綁定配置已清除。");
+          simMetrics = {};
+          await init();
+          stopSimulationLoop();
+        } else {
+          logSystemError("重置失敗");
+        }
+      } catch (err) {
+        logSystemError(`重置指令錯誤: ${err.message}`);
+      }
+    }
+
+    // Reset accumulated simulation metrics
+    function resetSimulationMetrics() {
+      initializeSimulationMetricsFromStations(false);
+      logSystemInfo("模擬遙測進度計量已清除為 0。");
+      renderStations();
+    }
+
+    // Telemetry Sim Loop Controller
+    async function toggleSimulation() {
+      if (isSimulating) {
+        stopSimulationLoop();
+      } else {
+        await startSimulationLoop();
+      }
+    }
+
+    async function startSimulationLoop() {
+      if (isSimulating) return;
+      if (raceState !== "running") {
+        await getRaceState();
+      }
+
+      if (raceState !== "running") {
+        logSystemError("賽事尚未開始，請先啟動比賽後再發送遙測。");
+        return;
+      }
+
+      const ready = await ensureSimulationMetricsReady();
+      if (!ready) return;
+
+      isSimulating = true;
+      document.getElementById("btn-toggle-sim").innerText = "⏸ 暫停遙測發送模擬";
+      document.getElementById("btn-toggle-sim").className = "btn btn-danger";
+      document.getElementById("sim-loop-status").innerText = "發送中 (1Hz)";
+      document.getElementById("sim-loop-status").style.color = "var(--badge-active)";
+
+      logSystemInfo(">>> 遙測模擬迴圈已啟動 (頻率: 1Hz) <<<");
+
+      simulationTimer = setInterval(async () => {
+        const timestamp = Date.now();
+        const activeSubscribers = Object.keys(simMetrics);
+
+        if (activeSubscribers.length === 0) {
+          logSimOutput("[警告] 沒有任何已指派綁定裝置的站位可以模擬發送數據。");
+          return;
+        }
+
+        // Loop over each device simulating metrics
+        for (let nid of activeSubscribers) {
+          const athlete = simMetrics[nid];
+          if (athlete.finished) continue;
+
+          athlete.elapsed_ms += 1000;
+          const specs = equipmentSpecs[athlete.equipment_type] || equipmentSpecs.fan_bike;
+
+          // Generate random realistic metrics
+          const speed = specs.minKph + (Math.random() * (specs.maxKph - specs.minKph));
+          const watts = Math.floor(specs.minWatts + (Math.random() * (specs.maxWatts - specs.minWatts)));
+
+          // Increment distance: (Speed in km/h) * 1000m / 3600s
+          athlete.distance_m += (speed * 1000 / 3600);
+
+          // Increment calories: Cal = Watts * elapsed_sec * conversion_factor
+          athlete.calories += (watts * 1 / 1000) * (specs.calFactor / 10.0);
+
+          logSimOutput(`[傳送] ${athlete.athlete_name} (${nid}): ${athlete.distance_m.toFixed(1)}m, ${speed.toFixed(1)}km/h, ${watts}W, ${athlete.calories.toFixed(1)}kcal`);
+
+          try {
+            const res = await fetch("/api/test/telemetry", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                node_id: nid,
+                equipment_type: athlete.equipment_type,
+                distance_m: athlete.distance_m,
+                elapsed_time_ms: athlete.elapsed_ms,
+                instantaneous_speed_kph: speed,
+                power_watts: watts,
+                calories: athlete.calories,
+                timestamp_epoch_ms: timestamp
+              })
+            });
+
+            if (res.ok) {
+              const resData = await res.json();
+              // Check if finished (if returning stopped or finished flags)
+              if (resData[nid] && resData[nid].finished_time_ms) {
+                athlete.finished = true;
+                logSystemInfo(`🎉 選手 ${athlete.athlete_name} 在 ${resData[nid].finished_time_ms / 1000}秒 時抵達終點！`);
+              }
+            }
+          } catch (e) {
+            logSimOutput(`[錯誤] 傳送遙測數據失敗 (${nid})`);
+          }
+        }
+
+        // Pull stations again to sync progress bar visual
+        await getRaceState();
+        renderStations();
+
+        // If race stopped automatically, stop the simulator loop
+        if (raceState === "stopped") {
+          logSystemInfo("賽事已全部完賽，模擬發射器自動停止。");
+          stopSimulationLoop();
+        }
+
+      }, 1000);
+    }
+
+    function stopSimulationLoop() {
+      if (!isSimulating) return;
+      isSimulating = false;
+      clearInterval(simulationTimer);
+      simulationTimer = null;
+      document.getElementById("btn-toggle-sim").innerText = "▶ 啟動遙測發送模擬";
+      document.getElementById("btn-toggle-sim").className = "btn btn-primary";
+      document.getElementById("sim-loop-status").innerText = "已暫停";
+      document.getElementById("sim-loop-status").style.color = "var(--text-muted)";
+      logSystemInfo(">>> 遙測模擬迴圈已暫停 <<<");
+    }
+
+    // Logger helpers
+    function logSystemInfo(msg) {
+      const log = document.getElementById("sim-log");
+      const time = new Date().toLocaleTimeString();
+      log.innerHTML = `<span style="color: #60a5fa;">[${time}] ${msg}</span>\n` + log.innerHTML;
+    }
+
+    function logSystemError(msg) {
+      const log = document.getElementById("sim-log");
+      const time = new Date().toLocaleTimeString();
+      log.innerHTML = `<span style="color: #f87171;">[${time}] 錯誤: ${msg}</span>\n` + log.innerHTML;
+    }
+
+    function logSimOutput(msg) {
+      const log = document.getElementById("sim-log");
+      // Keep logs list trimmed to avoid huge DOM
+      const lines = log.innerHTML.split("\n");
+      if (lines.length > 150) {
+        log.innerHTML = lines.slice(0, 100).join("\n");
+      }
+      log.innerHTML = `${msg}\n` + log.innerHTML;
+    }
+
+    // Run on startup
+    window.onload = init;
+  </script>
+</body>
+</html>

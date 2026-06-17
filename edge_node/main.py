@@ -3,15 +3,20 @@ import json
 import asyncio
 import logging
 import signal
+import socket
+import time
+from edge_node.domain.models import EdgeNodeConfig, EquipmentBinding
 from edge_node.infrastructure.mqtt.client import AsyncMqttClient
 from edge_node.adapters.mqtt_publisher import MqttPublisher
 from edge_node.usecases.mock_generator import generate_mock_telemetry
 from edge_node.infrastructure.ble.bleak_client import BleakTelemetryClient, BLEAK_AVAILABLE
+from edge_node.usecases.multi_ftms_manager import MultiFtmsManager
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 )
 logger = logging.getLogger("edge_node.main")
+NODE_STATUS_INTERVAL_SEC = 5.0
 
 
 async def shutdown(loop, signal=None):
@@ -41,13 +46,16 @@ def main():
             "mqtt_port": 1883,
         }
 
-    node_id = config.get("node_id", "treadmill-01")
-    equipment_id = config.get("equipment_id", "TREAD_01")
-    equipment_type = config.get("equipment_type", "treadmill")
-    mqtt_host = config.get("mqtt_host", "localhost")
-    mqtt_port = config.get("mqtt_port", 1883)
+    edge_config = _build_edge_config(config)
+    node_id = edge_config.node_id
+    mqtt_host = edge_config.mqtt_host
+    mqtt_port = edge_config.mqtt_port
 
-    logger.info(f"Starting Edge Node: {node_id} ({equipment_type})")
+    logger.info(
+        "Starting Edge Node: %s with %s FTMS binding(s)",
+        node_id,
+        len(edge_config.equipment_bindings),
+    )
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
@@ -78,77 +86,91 @@ def main():
             mqtt_client = None
 
         publisher = MqttPublisher(mqtt_client) if mqtt_client else None
-
-        # Topic
-        topic = f"gym/telemetry/{node_id}"
-
-        ble_target = config.get("ble_mac") or config.get("ble_name")
-
-        if ble_target and BLEAK_AVAILABLE:
-            logger.info(f"Configuring Edge Node to connect to BLE machine: {ble_target}")
-            
-            async def on_telemetry(telemetry):
-                logger.info(
-                    f"BLE Telemetry: Speed={telemetry.instantaneous_speed_kph}kph, "
-                    f"Dist={telemetry.distance_m}m, Power={telemetry.power_watts}W, "
-                    f"Cadence={telemetry.cadence_rpm}rpm, HR={telemetry.heart_rate_bpm}bpm"
-                )
-                if publisher:
-                    try:
-                        await publisher.publish_telemetry(topic, telemetry)
-                    except Exception as e:
-                        logger.error(f"Failed to publish telemetry: {e}")
-            
-            ble_client = BleakTelemetryClient(
-                node_id=node_id,
-                equipment_id=equipment_id,
-                equipment_type=equipment_type,
-                target_device=ble_target,
-                on_telemetry=on_telemetry
-            )
-            
-            try:
-                await ble_client.start()
-                # Run forever until cancelled
-                while True:
-                    await asyncio.sleep(1.0)
-            except asyncio.CancelledError:
-                logger.info("BLE telemetry task cancelled")
-            finally:
-                await ble_client.stop()
-                if mqtt_client:
-                    await mqtt_client.disconnect()
-        else:
-            if ble_target and not BLEAK_AVAILABLE:
-                logger.warning("BLE configured but bleak is not installed. Falling back to Mock generator.")
-            
-            # Generator
-            generator = generate_mock_telemetry(
-                node_id=node_id,
-                equipment_id=equipment_id,
-                equipment_type=equipment_type,
-                interval_sec=0.5,
+        heartbeat_task = None
+        if publisher:
+            heartbeat_task = asyncio.create_task(
+                _run_node_status_heartbeat(publisher, edge_config)
             )
 
-            logger.info("Mock telemetry generation task started")
-
-            try:
-                async for telemetry in generator:
+        try:
+            if edge_config.equipment_bindings and BLEAK_AVAILABLE:
+                async def on_telemetry(telemetry):
                     logger.info(
-                        f"Telemetry: Speed={telemetry.instantaneous_speed_kph}kph, "
-                        f"Dist={telemetry.distance_m}m, Power={telemetry.power_watts}W, "
-                        f"Cadence={telemetry.cadence_rpm}rpm, HR={telemetry.heart_rate_bpm}bpm"
+                        "BLE Telemetry [%s/%s]: Speed=%skph, Dist=%sm, Power=%sW, Cadence=%srpm, HR=%sbpm",
+                        telemetry.edge_node_id,
+                        telemetry.node_id,
+                        telemetry.instantaneous_speed_kph,
+                        telemetry.distance_m,
+                        telemetry.power_watts,
+                        telemetry.cadence_rpm,
+                        telemetry.heart_rate_bpm,
                     )
                     if publisher:
                         try:
+                            topic = f"gym/telemetry/{telemetry.node_id}"
                             await publisher.publish_telemetry(topic, telemetry)
                         except Exception as e:
                             logger.error(f"Failed to publish telemetry: {e}")
-            except asyncio.CancelledError:
-                logger.info("Telemetry generation loop cancelled")
-            finally:
-                if mqtt_client:
-                    await mqtt_client.disconnect()
+
+                def make_client(binding, telemetry_callback):
+                    return BleakTelemetryClient(
+                        node_id=binding.node_id,
+                        edge_node_id=edge_config.node_id,
+                        equipment_id=binding.equipment_id,
+                        equipment_type=binding.equipment_type,
+                        target_device=binding.ble_target,
+                        on_telemetry=telemetry_callback,
+                    )
+
+                ftms_manager = MultiFtmsManager(
+                    edge_node_id=edge_config.node_id,
+                    bindings=edge_config.equipment_bindings,
+                    client_factory=make_client,
+                    on_telemetry=on_telemetry,
+                    max_connections=edge_config.max_ftms_connections,
+                )
+
+                try:
+                    await ftms_manager.start()
+                    # Run forever until cancelled
+                    while True:
+                        await asyncio.sleep(1.0)
+                except asyncio.CancelledError:
+                    logger.info("Multi-FTMS telemetry task cancelled")
+                finally:
+                    await ftms_manager.stop()
+            else:
+                if edge_config.equipment_bindings and not BLEAK_AVAILABLE:
+                    logger.warning("BLE configured but bleak is not installed. Falling back to Mock generator.")
+
+                mock_bindings = edge_config.equipment_bindings or [
+                    EquipmentBinding(
+                        node_id=node_id,
+                        equipment_id=config.get("equipment_id", "TREAD_01"),
+                        equipment_type=config.get("equipment_type", "treadmill"),
+                        ble_target="mock",
+                    )
+                ]
+                logger.info(
+                    "Mock telemetry generation started for %s stream(s)",
+                    len(mock_bindings),
+                )
+
+                try:
+                    await asyncio.gather(
+                        *(
+                            _run_mock_telemetry_stream(binding, publisher)
+                            for binding in mock_bindings
+                        )
+                    )
+                except asyncio.CancelledError:
+                    logger.info("Telemetry generation tasks cancelled")
+        finally:
+            if heartbeat_task:
+                heartbeat_task.cancel()
+                await asyncio.gather(heartbeat_task, return_exceptions=True)
+            if mqtt_client:
+                await mqtt_client.disconnect()
 
     try:
         loop.create_task(run_app())
@@ -158,6 +180,116 @@ def main():
     finally:
         loop.close()
         logger.info("Edge Node stopped")
+
+
+def _build_edge_config(config: dict) -> EdgeNodeConfig:
+    if "equipment_bindings" in config:
+        return EdgeNodeConfig.model_validate(config)
+
+    ble_target = config.get("ble_target") or config.get("ble_mac") or config.get("ble_name")
+    bindings = []
+    if ble_target:
+        bindings.append(
+            {
+                "node_id": config.get("telemetry_node_id") or config.get("node_id", "treadmill-01"),
+                "equipment_id": config.get("equipment_id", "TREAD_01"),
+                "equipment_type": config.get("equipment_type", "treadmill"),
+                "ble_target": ble_target,
+            }
+        )
+
+    return EdgeNodeConfig(
+        node_id=config.get("edge_node_id") or config.get("node_id", "treadmill-01"),
+        mqtt_host=config.get("mqtt_host", "localhost"),
+        mqtt_port=config.get("mqtt_port", 1883),
+        max_ftms_connections=config.get("max_ftms_connections", 5),
+        available_channels=config.get("available_channels", 2),
+        software_version=config.get("software_version"),
+        antenna_protocol_version=config.get("antenna_protocol_version"),
+        equipment_bindings=[EquipmentBinding.model_validate(binding) for binding in bindings],
+    )
+
+
+def _build_node_status(
+    edge_config: EdgeNodeConfig,
+    now_ms=None,
+    hostname: str | None = None,
+    ip_address: str | None = None,
+) -> dict:
+    now = now_ms or (lambda: int(time.time() * 1000))
+    return {
+        "edge_node_id": edge_config.node_id,
+        "hostname": hostname or socket.gethostname(),
+        "ip": ip_address or _get_lan_ip(),
+        "status": "online",
+        "software_version": edge_config.software_version,
+        "antenna_protocol_version": edge_config.antenna_protocol_version,
+        "max_ftms_connections": edge_config.max_ftms_connections,
+        "available_channels": edge_config.available_channels,
+        "last_seen_epoch_ms": now(),
+        "equipment_streams": [
+            {
+                "node_id": binding.node_id,
+                "equipment_id": binding.equipment_id,
+                "equipment_type": binding.equipment_type,
+                "status": "configured",
+                "antenna_channel": binding.antenna_channel,
+                "rssi": None,
+                "last_telemetry_epoch_ms": None,
+                "error_code": None,
+            }
+            for binding in edge_config.equipment_bindings
+        ],
+    }
+
+
+async def _run_node_status_heartbeat(
+    publisher: MqttPublisher,
+    edge_config: EdgeNodeConfig,
+    interval_sec: float = NODE_STATUS_INTERVAL_SEC,
+):
+    while True:
+        status = _build_node_status(edge_config)
+        try:
+            await publisher.publish_node_status(edge_config.node_id, status)
+        except Exception as e:
+            logger.error("Failed to publish node status heartbeat: %s", e)
+        await asyncio.sleep(interval_sec)
+
+
+async def _run_mock_telemetry_stream(binding: EquipmentBinding, publisher: MqttPublisher | None):
+    topic = f"gym/telemetry/{binding.node_id}"
+    generator = generate_mock_telemetry(
+        node_id=binding.node_id,
+        equipment_id=binding.equipment_id,
+        equipment_type=binding.equipment_type,
+        interval_sec=0.5,
+    )
+
+    async for telemetry in generator:
+        logger.info(
+            "Telemetry [%s]: Speed=%skph, Dist=%sm, Power=%sW, Cadence=%srpm, HR=%sbpm",
+            telemetry.node_id,
+            telemetry.instantaneous_speed_kph,
+            telemetry.distance_m,
+            telemetry.power_watts,
+            telemetry.cadence_rpm,
+            telemetry.heart_rate_bpm,
+        )
+        if publisher:
+            try:
+                await publisher.publish_telemetry(topic, telemetry)
+            except Exception as e:
+                logger.error("Failed to publish telemetry for %s: %s", binding.node_id, e)
+
+
+def _get_lan_ip() -> str | None:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect(("8.8.8.8", 80))
+            return sock.getsockname()[0]
+    except OSError:
+        return None
 
 
 if __name__ == "__main__":

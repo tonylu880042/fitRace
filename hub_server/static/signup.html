@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="zh-Hant">
+<html lang="en-US">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>FitRaceStudio - 自助掃碼報名</title>
-  <meta name="description" content="選手自助掃碼報名綁定設備站位">
+  <title>FitRaceStudio - Athlete Self-Registration</title>
+  <meta name="description" content="Athlete self-registration for FitRaceStudio station binding">
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@700&family=Outfit:wght@400;600;800&family=Noto+Sans+TC:wght@500;800&display=swap" rel="stylesheet">
   <style>
     :root {
@@ -12,6 +12,7 @@
       --card-bg: #18181b;
       --steel-border: #27272a;
       --volt-yellow: #e2ff3b;
+      --hazard-amber: #f59e0b;
       --crimson-red: #f43f5e;
       --text-main: #fafafa;
       --text-muted: #a1a1aa;
@@ -30,10 +31,11 @@
       min-height: 100vh;
       display: flex;
       justify-content: center;
-      align-items: center;
+      align-items: flex-start;
       padding: 1.5rem;
       position: relative;
-      overflow: hidden;
+      overflow-x: hidden;
+      overflow-y: auto;
     }
 
     /* Industrial grid overlay */
@@ -59,6 +61,7 @@
       padding: 2.5rem 2rem;
       position: relative;
       box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+      margin: auto 0;
     }
 
     /* Top hazard accent line */
@@ -101,6 +104,19 @@
       letter-spacing: 1.5px;
       text-align: center;
       margin-bottom: 2rem;
+    }
+
+    .language-row {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 1rem;
+    }
+
+    .language-select {
+      width: auto;
+      min-width: 150px;
+      padding: 0.5rem 0.65rem;
+      font-size: 0.85rem;
     }
 
     .station-badge {
@@ -182,6 +198,175 @@
     .btn:disabled {
       opacity: 0.4;
       cursor: not-allowed;
+      box-shadow: none;
+    }
+
+    .btn-secondary {
+      background: transparent;
+      color: var(--text-main);
+      border: 1px solid var(--steel-border);
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: var(--text-muted);
+      box-shadow: none;
+    }
+
+    .btn-danger {
+      background: var(--crimson-red);
+      color: #fff;
+    }
+
+    .btn-danger:hover {
+      background: #fb7185;
+      box-shadow: 0 0 12px rgba(244, 63, 94, 0.35);
+    }
+
+    .btn-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.65rem;
+    }
+
+    .admin-entry {
+      margin-top: 1.25rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--steel-border);
+    }
+
+    .race-admin-panel {
+      display: none;
+      margin-top: 1.25rem;
+      padding: 1rem;
+      border: 1px solid var(--steel-border);
+      border-radius: 6px;
+      background: rgba(0, 0, 0, 0.24);
+      text-align: left;
+    }
+
+    .race-admin-panel.active {
+      display: block;
+    }
+
+    .admin-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+      font-family: 'Oswald', sans-serif;
+      font-size: 1.1rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .race-state-pill {
+      padding: 0.25rem 0.55rem;
+      border-radius: 3px;
+      border: 1px solid var(--steel-border);
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      font-family: 'Oswald', sans-serif;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+    }
+
+    .race-state-pill.ready,
+    .race-state-pill.running {
+      color: var(--volt-yellow);
+      border-color: var(--volt-yellow);
+      background: rgba(226, 255, 59, 0.08);
+    }
+
+    .race-state-pill.stopped {
+      color: var(--hazard-amber);
+      border-color: var(--hazard-amber);
+      background: rgba(245, 158, 11, 0.08);
+    }
+
+    .admin-help {
+      margin: -0.5rem 0 1rem;
+      color: var(--text-muted);
+      font-size: 0.78rem;
+      line-height: 1.45;
+    }
+
+    .admin-msg {
+      display: none;
+      margin-top: 0.85rem;
+      padding: 0.65rem;
+      border-radius: 4px;
+      font-size: 0.82rem;
+      text-align: center;
+    }
+
+    .admin-msg.show {
+      display: block;
+    }
+
+    .admin-msg.ok {
+      border: 1px solid var(--volt-yellow);
+      color: var(--volt-yellow);
+      background: rgba(226, 255, 59, 0.08);
+    }
+
+    .admin-msg.error {
+      border: 1px solid var(--crimson-red);
+      color: var(--crimson-red);
+      background: rgba(244, 63, 94, 0.08);
+    }
+
+    .password-modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      padding: 1.5rem;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.72);
+      backdrop-filter: blur(6px);
+    }
+
+    .password-modal.active {
+      display: flex;
+    }
+
+    .password-dialog {
+      width: 100%;
+      max-width: 360px;
+      padding: 1.5rem;
+      border: 2px solid var(--steel-border);
+      border-radius: 8px;
+      background: var(--card-bg);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.45);
+    }
+
+    .password-dialog h2 {
+      margin-bottom: 0.35rem;
+      font-family: 'Oswald', sans-serif;
+      font-size: 1.35rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .password-dialog p {
+      margin-bottom: 1rem;
+      color: var(--text-muted);
+      font-size: 0.86rem;
+      line-height: 1.45;
+    }
+
+    @media (max-width: 480px) {
+      .signup-container {
+        padding: 2.2rem 1.2rem;
+      }
+
+      .btn-row {
+        grid-template-columns: 1fr;
+      }
     }
 
     .msg {
@@ -231,39 +416,49 @@
     <div style="display: flex; justify-content: center; margin-bottom: 1rem;">
       <img src="/static/icon.png" style="width: 70px; height: 70px; border-radius: 12px; border: 2px solid var(--steel-border); box-shadow: 0 4px 10px rgba(0,0,0,0.4);" alt="Logo">
     </div>
+    <div class="language-row">
+      <select id="language-select" class="form-control language-select" aria-label="System language">
+        <option value="en-US">English</option>
+        <option value="zh-TW">繁體中文</option>
+        <option value="it">Italiano</option>
+        <option value="fr">Français</option>
+        <option value="de-CH">Deutsch (Schweiz)</option>
+        <option value="sv">Svenska</option>
+      </select>
+    </div>
     <div class="logo">FitRace<span>Studio</span></div>
-    <div class="subtitle">Athlete Self-Registration</div>
+    <div class="subtitle" data-i18n="signup.subtitle">Athlete Self-Registration</div>
 
     <center>
-      <div class="station-badge" id="station-lbl">Station: 未指定</div>
+      <div class="station-badge" id="station-lbl">Station: Not selected</div>
     </center>
 
     <form id="signup-form" onsubmit="submitForm(event)">
       <div class="form-group" style="text-align: center;">
-        <label>選手頭像 / Athlete Avatar</label>
+        <label data-i18n="signup.avatar">Athlete Avatar</label>
         <div class="avatar-options" style="display: flex; justify-content: space-around; margin-top: 0.75rem; gap: 0.75rem;">
           <div class="avatar-option active" data-type="default" style="display: flex; flex-direction: column; align-items: center; cursor: pointer;">
             <div class="avatar-circle" style="width: 50px; height: 50px; border-radius: 50%; border: 2px solid var(--volt-yellow); background: #3f3f46; display: flex; justify-content: center; align-items: center; font-size: 1.5rem; transition: all 0.2s; box-shadow: 0 0 10px rgba(226, 255, 59, 0.4);">👤</div>
-            <span style="font-size: 0.75rem; color: var(--volt-yellow); margin-top: 0.35rem; font-weight: 600;">預設</span>
+            <span style="font-size: 0.75rem; color: var(--volt-yellow); margin-top: 0.35rem; font-weight: 600;" data-i18n="avatar.default">Default</span>
           </div>
           <div class="avatar-option" data-type="male" style="display: flex; flex-direction: column; align-items: center; cursor: pointer;">
             <div class="avatar-circle" style="width: 50px; height: 50px; border-radius: 50%; border: 2px solid var(--steel-border); background: #1e3a8a; display: flex; justify-content: center; align-items: center; font-size: 1.5rem; transition: all 0.2s;">👨</div>
-            <span style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.35rem;">男生</span>
+            <span style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.35rem;" data-i18n="avatar.male">Male</span>
           </div>
           <div class="avatar-option" data-type="female" style="display: flex; flex-direction: column; align-items: center; cursor: pointer;">
             <div class="avatar-circle" style="width: 50px; height: 50px; border-radius: 50%; border: 2px solid var(--steel-border); background: #701a75; display: flex; justify-content: center; align-items: center; font-size: 1.5rem; transition: all 0.2s;">👩</div>
-            <span style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.35rem;">女生</span>
+            <span style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.35rem;" data-i18n="avatar.female">Female</span>
           </div>
           <div class="avatar-option" data-type="custom" id="custom-option" style="display: flex; flex-direction: column; align-items: center; cursor: pointer;">
             <div class="avatar-circle" id="custom-preview-circle" style="width: 50px; height: 50px; border-radius: 50%; border: 2px dashed var(--steel-border); background: rgba(0,0,0,0.4); display: flex; justify-content: center; align-items: center; font-size: 1.3rem; transition: all 0.2s; background-size: cover; background-position: center;">📷</div>
-            <span style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.35rem;">上傳</span>
+            <span style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.35rem;" data-i18n="avatar.upload">Upload</span>
           </div>
         </div>
         <input type="file" id="avatar-file" accept="image/*" style="display: none;">
       </div>
 
       <div class="form-group" id="station-select-group" style="display: none;">
-        <label for="station-select">選擇設備站位 / Select Station</label>
+        <label for="station-select" data-i18n="signup.station_select">Select Station</label>
         <select id="station-select" class="form-control">
           <option value="1">Station 1</option>
           <option value="2">Station 2</option>
@@ -289,23 +484,78 @@
       </div>
 
       <div class="form-group">
-        <label for="athlete-name">選手姓名 / Athlete Name</label>
-        <input type="text" id="athlete-name" class="form-control" placeholder="請輸入姓名..." required maxlength="20">
+        <label for="athlete-name" data-i18n="signup.athlete_name">Athlete Name</label>
+        <input type="text" id="athlete-name" class="form-control" placeholder="Enter name..." data-i18n-placeholder="signup.athlete_placeholder" required maxlength="20">
       </div>
 
       <div class="form-group">
-        <label for="team-name">組別隊伍 (選填) / Team (Optional)</label>
-        <input type="text" id="team-name" class="form-control" placeholder="例如: RD, 紅隊, 17Fit..." maxlength="10">
+        <label for="team-name" data-i18n="signup.team">Team (Optional)</label>
+        <input type="text" id="team-name" class="form-control" placeholder="Example: RD, Red Team, 17Fit..." data-i18n-placeholder="signup.team_placeholder" maxlength="10">
       </div>
 
       <button type="submit" class="btn" id="submit-btn">
-        <span id="btn-text">確認報名 / REGISTER</span>
+        <span id="btn-text" data-i18n="signup.submit">Register</span>
         <div class="spinner" id="btn-spinner"></div>
       </button>
 
-      <div class="msg msg-success" id="success-msg">報名成功！請至現場大螢幕確認您的站位。</div>
-      <div class="msg msg-error" id="error-msg">報名失敗，請稍後再試。</div>
+      <div class="msg msg-success" id="success-msg" data-i18n="signup.success">Registration complete. Please check the venue screen for your station.</div>
+      <div class="msg msg-error" id="error-msg" data-i18n="signup.error">Registration failed. Please try again.</div>
     </form>
+
+    <div class="admin-entry">
+      <button type="button" class="btn btn-secondary" id="open-admin-btn" onclick="openAdminPassword()" data-i18n="admin.open">Race Control</button>
+    </div>
+
+    <section class="race-admin-panel" id="race-admin-panel" aria-label="Race control panel">
+      <div class="admin-title">
+        <span data-i18n="admin.title">Race Control</span>
+        <span class="race-state-pill" id="admin-race-state">IDLE</span>
+      </div>
+      <div class="admin-help" data-i18n="admin.help">Configure, start, stop, and reset the race. Staff only.</div>
+
+      <div class="form-group">
+        <label for="admin-race-type" data-i18n="admin.race_type">Race Type</label>
+        <select id="admin-race-type" class="form-control" onchange="toggleAdminRaceTypeInputs()">
+          <option value="distance" data-i18n="race.distance">Distance Challenge (m)</option>
+          <option value="calories" data-i18n="race.calories">Calories Challenge (kcal)</option>
+          <option value="time" data-i18n="race.time">Time Challenge (s)</option>
+          <option value="max_power" data-i18n="race.max_power">Max Power Challenge (W)</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label id="admin-target-label" for="admin-race-target">Target distance (m)</label>
+        <input type="number" id="admin-race-target" class="form-control" value="500" min="1">
+      </div>
+
+      <button type="button" class="btn btn-secondary" id="admin-configure-btn" onclick="configureRaceFromSignup()" data-i18n="admin.save">Save Race Settings</button>
+
+      <div class="btn-row" style="margin-top: 0.65rem;">
+        <button type="button" class="btn" id="admin-start-btn" onclick="startRaceFromSignup()" disabled data-i18n="admin.start">Start Race</button>
+        <button type="button" class="btn btn-danger" id="admin-stop-btn" onclick="stopRaceFromSignup()" disabled data-i18n="admin.stop">Stop Race</button>
+      </div>
+      <button type="button" class="btn btn-secondary" id="admin-reset-btn" onclick="resetRaceFromSignup()" style="margin-top: 0.65rem;" data-i18n="admin.reset">Reset Race</button>
+
+      <div class="admin-msg" id="admin-msg"></div>
+    </section>
+  </div>
+
+  <div class="password-modal" id="admin-password-modal" role="dialog" aria-modal="true" aria-labelledby="admin-password-title">
+    <div class="password-dialog">
+      <form onsubmit="event.preventDefault(); unlockRaceAdmin();">
+        <h2 id="admin-password-title" data-i18n="password.title">Admin Password</h2>
+        <p data-i18n="password.help">Enter the staff password to open race setup and control.</p>
+        <div class="form-group">
+          <label for="admin-password-input">Password</label>
+          <input type="password" id="admin-password-input" class="form-control" autocomplete="off" onkeydown="handleAdminPasswordKey(event)">
+        </div>
+        <div class="btn-row">
+          <button type="submit" class="btn" data-i18n="password.confirm">Confirm</button>
+          <button type="button" class="btn btn-secondary" onclick="closeAdminPassword()" data-i18n="password.cancel">Cancel</button>
+        </div>
+        <div class="admin-msg error" id="admin-password-error" data-i18n="password.error">Incorrect password. Please try again.</div>
+      </form>
+    </div>
   </div>
 
   <script>
@@ -324,8 +574,242 @@
     const errorMsg = document.getElementById('error-msg');
     const btnText = document.getElementById('btn-text');
     const btnSpinner = document.getElementById('btn-spinner');
+    const ADMIN_PASSWORD = urlParams.get('admin_password') || localStorage.getItem('fitrace.adminPassword') || '';
+    const languageSelect = document.getElementById('language-select');
+    const adminPanel = document.getElementById('race-admin-panel');
+    const adminPasswordModal = document.getElementById('admin-password-modal');
+    const adminPasswordInput = document.getElementById('admin-password-input');
+    const adminPasswordError = document.getElementById('admin-password-error');
+    const adminMsg = document.getElementById('admin-msg');
+    const adminRaceState = document.getElementById('admin-race-state');
+    const adminStartBtn = document.getElementById('admin-start-btn');
+    const adminStopBtn = document.getElementById('admin-stop-btn');
+    const adminResetBtn = document.getElementById('admin-reset-btn');
+    const adminConfigureBtn = document.getElementById('admin-configure-btn');
 
     let avatarBase64 = null;
+    let raceAdminUnlocked = sessionStorage.getItem('fitraceRaceAdminUnlocked') === '1';
+    let currentLocale = localStorage.getItem('fitrace.locale') || 'en-US';
+    let signupMessages = {};
+
+    const fallbackMessages = {
+      "signup.subtitle": "Athlete Self-Registration",
+      "signup.avatar": "Athlete Avatar",
+      "avatar.default": "Default",
+      "avatar.male": "Male",
+      "avatar.female": "Female",
+      "avatar.upload": "Upload",
+      "signup.station_select": "Select Station",
+      "signup.athlete_name": "Athlete Name",
+      "signup.athlete_placeholder": "Enter name...",
+      "signup.team": "Team (Optional)",
+      "signup.team_placeholder": "Example: RD, Red Team, 17Fit...",
+      "signup.submit": "Register",
+      "signup.success": "Registration complete. Please check the venue screen for your station.",
+      "signup.error": "Registration failed. Please try again.",
+      "signup.error_detail": "Registration failed: {detail}",
+      "signup.connection_error": "Connection error. Please check the network.",
+      "signup.station_unspecified": "Station: Not selected",
+      "signup.station_unconfigured": "unconfigured",
+      "signup.station_unassigned": "unassigned equipment",
+      "signup.station_registered": "registered: {name}",
+      "signup.device_bound": "Device: {node}",
+      "signup.device_unbound": "No device bound",
+      "signup.overwrite_warning": "Warning: station already has athlete \"{name}\". Submitting will overwrite it.",
+      "equipment.fan_bike": "Fan Bike",
+      "equipment.spin_bike": "Spin Bike",
+      "equipment.treadmill": "Treadmill",
+      "equipment.rower": "Rowing Machine",
+      "equipment.ski_erg": "Ski Machine",
+      "admin.open": "Race Control",
+      "admin.title": "Race Control",
+      "admin.help": "Configure, start, stop, and reset the race. Staff only.",
+      "admin.race_type": "Race Type",
+      "race.distance": "Distance Challenge (m)",
+      "race.calories": "Calories Challenge (kcal)",
+      "race.time": "Time Challenge (s)",
+      "race.max_power": "Max Power Challenge (W)",
+      "admin.target.distance": "Target distance (m)",
+      "admin.target.calories": "Target calories (kcal)",
+      "admin.target.time": "Time limit (s)",
+      "admin.target.max_power": "Challenge time (s)",
+      "admin.save": "Save Race Settings",
+      "admin.start": "Start Race",
+      "admin.stop": "Stop Race",
+      "admin.reset": "Reset Race",
+      "admin.read_failed": "Unable to read race state. Please check Hub connection.",
+      "admin.invalid_target": "Enter a target value greater than 0.",
+      "admin.invalid_seconds": "Enter seconds greater than 0.",
+      "admin.save_failed": "Race setup failed: {detail}",
+      "admin.saved": "Race settings saved. Ready to start.",
+      "admin.start_failed": "Start failed: {detail}",
+      "admin.started": "Race started.",
+      "admin.stop_failed": "Stop failed: {detail}",
+      "admin.stopped": "Race stopped.",
+      "admin.reset_confirm": "Reset race? Current race and athlete registrations will be cleared.",
+      "admin.reset_failed": "Reset failed: {detail}",
+      "admin.reset_done": "Race reset.",
+      "password.title": "Admin Password",
+      "password.help": "Enter the staff password to open race setup and control.",
+      "password.confirm": "Confirm",
+      "password.cancel": "Cancel",
+      "password.error": "Incorrect password. Please try again."
+    };
+
+    const signupLocaleOverrides = {
+      "zh-TW": {
+        "signup.subtitle": "選手自助報名",
+        "signup.avatar": "選手頭像",
+        "avatar.default": "預設",
+        "avatar.male": "男生",
+        "avatar.female": "女生",
+        "avatar.upload": "上傳",
+        "signup.station_select": "選擇設備站位",
+        "signup.athlete_name": "選手姓名",
+        "signup.athlete_placeholder": "請輸入姓名...",
+        "signup.team": "組別隊伍（選填）",
+        "signup.team_placeholder": "例如：RD、紅隊、17Fit...",
+        "signup.submit": "確認報名",
+        "signup.success": "報名成功！請至現場大螢幕確認您的站位。",
+        "signup.error": "報名失敗，請稍後再試。",
+        "signup.error_detail": "報名失敗：{detail}",
+        "signup.connection_error": "連線錯誤，請確認網路連線。",
+        "signup.station_unspecified": "Station: 未指定",
+        "signup.station_unconfigured": "未配置",
+        "signup.station_unassigned": "未指派設備",
+        "signup.station_registered": "已登記：{name}",
+        "signup.device_bound": "裝置：{node}",
+        "signup.device_unbound": "未綁定裝置",
+        "signup.overwrite_warning": "注意：此站位已有選手「{name}」登記，送出將會覆蓋！",
+        "equipment.fan_bike": "風扇車",
+        "equipment.spin_bike": "飛輪車",
+        "equipment.treadmill": "跑步機",
+        "equipment.rower": "划船器",
+        "equipment.ski_erg": "滑雪機",
+        "admin.open": "賽事管理",
+        "admin.title": "比賽設定",
+        "admin.help": "此區可設定比賽、啟動賽事、暫停/停止與重置。請由現場工作人員操作。",
+        "admin.race_type": "比賽類型",
+        "race.distance": "距離挑戰賽 (m)",
+        "race.calories": "卡路里挑戰賽 (kcal)",
+        "race.time": "時間挑戰賽 (s)",
+        "race.max_power": "最大瓦特挑戰賽 (W)",
+        "admin.target.distance": "目標距離 (公尺)",
+        "admin.target.calories": "目標卡路里 (kcal)",
+        "admin.target.time": "限制時間 (秒)",
+        "admin.target.max_power": "挑戰時間 (秒)",
+        "admin.save": "儲存比賽設定",
+        "admin.start": "啟動比賽",
+        "admin.stop": "暫停 / 停止",
+        "admin.reset": "重置比賽",
+        "admin.read_failed": "無法讀取比賽狀態，請確認 Hub 連線。",
+        "admin.invalid_target": "請輸入大於 0 的目標值。",
+        "admin.invalid_seconds": "請輸入大於 0 的秒數。",
+        "admin.save_failed": "比賽設定失敗：{detail}",
+        "admin.saved": "比賽設定已儲存，可以啟動比賽。",
+        "admin.start_failed": "啟動比賽失敗：{detail}",
+        "admin.started": "比賽已啟動。",
+        "admin.stop_failed": "暫停 / 停止失敗：{detail}",
+        "admin.stopped": "比賽已暫停 / 停止。",
+        "admin.reset_confirm": "確定要重置比賽？目前比賽與選手報名狀態將被清除。",
+        "admin.reset_failed": "重置比賽失敗：{detail}",
+        "admin.reset_done": "比賽已重置。",
+        "password.title": "管理密碼",
+        "password.help": "請輸入現場工作人員密碼以開啟比賽設定與控制功能。",
+        "password.confirm": "確認",
+        "password.cancel": "取消",
+        "password.error": "密碼錯誤，請重新輸入。"
+      },
+      "it": {
+        "signup.subtitle": "Registrazione atleta",
+        "signup.avatar": "Avatar atleta",
+        "signup.station_select": "Seleziona postazione",
+        "signup.athlete_name": "Nome atleta",
+        "signup.athlete_placeholder": "Inserisci il nome...",
+        "signup.team": "Team (opzionale)",
+        "signup.submit": "Registrati",
+        "admin.open": "Controllo gara",
+        "admin.title": "Controllo gara",
+        "admin.save": "Salva impostazioni gara",
+        "admin.start": "Avvia gara",
+        "admin.stop": "Ferma gara",
+        "admin.reset": "Reimposta gara"
+      },
+      "fr": {
+        "signup.subtitle": "Inscription athlète",
+        "signup.avatar": "Avatar athlète",
+        "signup.station_select": "Sélectionner un poste",
+        "signup.athlete_name": "Nom de l'athlète",
+        "signup.athlete_placeholder": "Saisir le nom...",
+        "signup.team": "Équipe (facultatif)",
+        "signup.submit": "S'inscrire",
+        "admin.open": "Contrôle de course",
+        "admin.title": "Contrôle de course",
+        "admin.save": "Enregistrer la course",
+        "admin.start": "Démarrer",
+        "admin.stop": "Arrêter",
+        "admin.reset": "Réinitialiser"
+      },
+      "de-CH": {
+        "signup.subtitle": "Athleten-Registrierung",
+        "signup.avatar": "Athletenbild",
+        "signup.station_select": "Station wählen",
+        "signup.athlete_name": "Name",
+        "signup.athlete_placeholder": "Name eingeben...",
+        "signup.team": "Team (optional)",
+        "signup.submit": "Registrieren",
+        "admin.open": "Rennsteuerung",
+        "admin.title": "Rennsteuerung",
+        "admin.save": "Rennen speichern",
+        "admin.start": "Rennen starten",
+        "admin.stop": "Rennen stoppen",
+        "admin.reset": "Rennen zurücksetzen"
+      },
+      "sv": {
+        "signup.subtitle": "Deltagarregistrering",
+        "signup.avatar": "Deltagarbild",
+        "signup.station_select": "Välj station",
+        "signup.athlete_name": "Deltagarens namn",
+        "signup.athlete_placeholder": "Ange namn...",
+        "signup.team": "Lag (valfritt)",
+        "signup.submit": "Registrera",
+        "admin.open": "Tävlingskontroll",
+        "admin.title": "Tävlingskontroll",
+        "admin.save": "Spara tävlingsinställningar",
+        "admin.start": "Starta tävling",
+        "admin.stop": "Stoppa tävling",
+        "admin.reset": "Återställ tävling"
+      }
+    };
+
+    function interpolate(template, values = {}) {
+      return String(template).replace(/\{(\w+)\}/g, (_, key) => values[key] ?? "");
+    }
+
+    function t(key, values = {}) {
+      return interpolate(signupMessages[key] || fallbackMessages[key] || key, values);
+    }
+
+    async function loadLocale(locale) {
+      const normalized = signupLocaleOverrides[locale] || locale === 'en-US' ? locale : 'en-US';
+      currentLocale = normalized;
+      localStorage.setItem('fitrace.locale', normalized);
+      document.documentElement.lang = normalized;
+      if (languageSelect) languageSelect.value = normalized;
+      signupMessages = { ...fallbackMessages, ...(signupLocaleOverrides[normalized] || {}) };
+      applyTranslations();
+      toggleAdminRaceTypeInputs();
+      await initStations();
+    }
+
+    function applyTranslations() {
+      document.querySelectorAll('[data-i18n]').forEach((el) => {
+        el.innerText = t(el.dataset.i18n);
+      });
+      document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
+        el.placeholder = t(el.dataset.i18nPlaceholder);
+      });
+    }
 
     const MALE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
   <circle cx="64" cy="64" r="64" fill="#1e3a8a"/>
@@ -392,12 +876,12 @@
           canvas.width = 128;
           canvas.height = 128;
           const ctx = canvas.getContext('2d');
-          
+
           const size = Math.min(img.width, img.height);
           const sx = (img.width - size) / 2;
           const sy = (img.height - size) / 2;
           ctx.drawImage(img, sx, sy, size, size, 0, 0, 128, 128);
-          
+
           avatarBase64 = canvas.toDataURL('image/webp', 0.85);
           customPreview.style.backgroundImage = `url(${avatarBase64})`;
           customPreview.innerText = '';
@@ -408,17 +892,358 @@
       reader.readAsDataURL(file);
     });
 
+    const equipmentNames = {
+      fan_bike: "equipment.fan_bike",
+      spin_bike: "equipment.spin_bike",
+      treadmill: "equipment.treadmill",
+      rower: "equipment.rower",
+      ski_erg: "equipment.ski_erg"
+    };
+
     const hasQueryStation = !isNaN(station) && station > 0;
+
+    function openAdminPassword() {
+      if (raceAdminUnlocked) {
+        showRaceAdminPanel();
+        return;
+      }
+      adminPasswordError.classList.remove('show');
+      adminPasswordInput.value = '';
+      adminPasswordModal.classList.add('active');
+      setTimeout(() => adminPasswordInput.focus(), 0);
+    }
+
+    function closeAdminPassword() {
+      adminPasswordModal.classList.remove('active');
+      adminPasswordInput.value = '';
+    }
+
+    function handleAdminPasswordKey(event) {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        unlockRaceAdmin();
+      } else if (event.key === 'Escape') {
+        closeAdminPassword();
+      }
+    }
+
+    function unlockRaceAdmin() {
+      if (!ADMIN_PASSWORD) {
+        adminPasswordError.classList.add('show');
+        return;
+      }
+      if (adminPasswordInput.value !== ADMIN_PASSWORD) {
+        adminPasswordError.classList.add('show');
+        adminPasswordInput.select();
+        return;
+      }
+
+      raceAdminUnlocked = true;
+      sessionStorage.setItem('fitraceRaceAdminUnlocked', '1');
+      closeAdminPassword();
+      showRaceAdminPanel();
+    }
+
+    function showRaceAdminPanel() {
+      adminPanel.classList.add('active');
+      adminPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      toggleAdminRaceTypeInputs();
+      fetchRaceStateForAdmin();
+    }
+
+    function showAdminMessage(message, isError = false) {
+      adminMsg.innerText = message;
+      adminMsg.className = `admin-msg show ${isError ? 'error' : 'ok'}`;
+    }
+
+    function setAdminBusy(isBusy) {
+      adminConfigureBtn.disabled = isBusy;
+      adminResetBtn.disabled = isBusy;
+      if (isBusy) {
+        adminStartBtn.disabled = true;
+        adminStopBtn.disabled = true;
+      }
+    }
+
+    function toggleAdminRaceTypeInputs() {
+      const type = document.getElementById('admin-race-type').value;
+      const label = document.getElementById('admin-target-label');
+      const input = document.getElementById('admin-race-target');
+
+      if (type === 'distance') {
+        label.innerText = t('admin.target.distance');
+        input.value = input.value || 500;
+      } else if (type === 'calories') {
+        label.innerText = t('admin.target.calories');
+        input.value = input.value || 50;
+      } else if (type === 'time') {
+        label.innerText = t('admin.target.time');
+        input.value = input.value || 60;
+      } else if (type === 'max_power') {
+        label.innerText = t('admin.target.max_power');
+        input.value = input.value || 30;
+      }
+    }
+
+    function updateAdminRaceStateUI(data) {
+      const state = (data && data.state) ? data.state : 'IDLE';
+      adminRaceState.innerText = state;
+      adminRaceState.className = `race-state-pill ${state.toLowerCase()}`;
+
+      adminStartBtn.disabled = state !== 'READY';
+      adminStopBtn.disabled = state !== 'RUNNING';
+      adminResetBtn.disabled = state === 'RUNNING';
+      adminConfigureBtn.disabled = state === 'RUNNING';
+
+      if (data && data.config) {
+        const config = data.config;
+        document.getElementById('admin-race-type').value = config.race_type || 'distance';
+        toggleAdminRaceTypeInputs();
+        if (config.race_type === 'distance' || config.race_type === 'calories') {
+          document.getElementById('admin-race-target').value = config.target_value || 0;
+        } else {
+          document.getElementById('admin-race-target').value = config.duration_sec || 0;
+        }
+      }
+    }
+
+    async function fetchRaceStateForAdmin() {
+      if (!raceAdminUnlocked) return;
+      try {
+        const res = await fetch(`/api/race/state?t=${Date.now()}`);
+        if (!res.ok) throw new Error(t('admin.read_failed'));
+        const data = await res.json();
+        updateAdminRaceStateUI(data);
+      } catch (err) {
+        showAdminMessage(t('admin.read_failed'), true);
+      }
+    }
+
+    async function configureRaceFromSignup() {
+      const type = document.getElementById('admin-race-type').value;
+      const targetVal = parseFloat(document.getElementById('admin-race-target').value) || 0;
+      const payload = {
+        race_type: type,
+        target_value: 0.0,
+        duration_sec: 0
+      };
+
+      if (type === 'distance' || type === 'calories') {
+        payload.target_value = targetVal;
+      } else {
+        payload.duration_sec = parseInt(targetVal, 10) || 0;
+      }
+
+      if ((type === 'distance' || type === 'calories') && payload.target_value <= 0) {
+        showAdminMessage(t('admin.invalid_target'), true);
+        return;
+      }
+      if ((type === 'time' || type === 'max_power') && payload.duration_sec <= 0) {
+        showAdminMessage(t('admin.invalid_seconds'), true);
+        return;
+      }
+
+      setAdminBusy(true);
+      try {
+        const res = await fetch('/api/race/configure', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'setup failed');
+
+        updateAdminRaceStateUI(data);
+        showAdminMessage(t('admin.saved'));
+      } catch (err) {
+        showAdminMessage(t('admin.save_failed', { detail: err.message }), true);
+      } finally {
+        setAdminBusy(false);
+        fetchRaceStateForAdmin();
+      }
+    }
+
+    async function startRaceFromSignup() {
+      setAdminBusy(true);
+      try {
+        const res = await fetch('/api/race/start', { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'start failed');
+
+        updateAdminRaceStateUI(data);
+        showAdminMessage(t('admin.started'));
+      } catch (err) {
+        showAdminMessage(t('admin.start_failed', { detail: err.message }), true);
+      } finally {
+        setAdminBusy(false);
+        fetchRaceStateForAdmin();
+      }
+    }
+
+    async function stopRaceFromSignup() {
+      setAdminBusy(true);
+      try {
+        const res = await fetch('/api/race/stop', { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'stop failed');
+
+        updateAdminRaceStateUI(data);
+        showAdminMessage(t('admin.stopped'));
+      } catch (err) {
+        showAdminMessage(t('admin.stop_failed', { detail: err.message }), true);
+      } finally {
+        setAdminBusy(false);
+        fetchRaceStateForAdmin();
+      }
+    }
+
+    async function resetRaceFromSignup() {
+      if (!confirm(t('admin.reset_confirm'))) {
+        return;
+      }
+
+      setAdminBusy(true);
+      try {
+        const res = await fetch('/api/race/reset', { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'reset failed');
+
+        updateAdminRaceStateUI(data);
+        showAdminMessage(t('admin.reset_done'));
+        initStations();
+      } catch (err) {
+        showAdminMessage(t('admin.reset_failed', { detail: err.message }), true);
+      } finally {
+        setAdminBusy(false);
+        fetchRaceStateForAdmin();
+      }
+    }
+
+    // Create alert element under the station badge
+    const warningDiv = document.createElement('div');
+    warningDiv.id = 'overwrite-warning';
+    warningDiv.style.cssText = 'display: none; color: var(--volt-yellow); font-size: 0.85rem; margin-top: 0.5rem; font-weight: bold; background: rgba(226, 255, 59, 0.08); border: 1px solid var(--volt-yellow); padding: 0.5rem; border-radius: 4px; text-align: center; max-width: 320px; margin-left: auto; margin-right: auto;';
+    stationLbl.parentNode.insertBefore(warningDiv, stationLbl.nextSibling);
+
+    async function initStations() {
+      try {
+        const res = await fetch(`/api/stations?t=${Date.now()}`);
+        if (!res.ok) throw new Error("Fetch failed");
+        const data = await res.json();
+
+        const stations = data.stations || {};
+
+        if (hasQueryStation) {
+          // Display specific station label with equipment info
+          const st = stations[station] || {};
+          const eqType = st.equipment_type ? t(equipmentNames[st.equipment_type] || st.equipment_type) : null;
+          const nodeInfo = st.node_id ? ` (${t('signup.device_bound', { node: st.node_id })})` : ` (${t('signup.device_unbound')})`;
+
+          stationLbl.innerText = `Station ${station}${eqType ? ' - ' + eqType : ''}${nodeInfo}`;
+
+          if (st.athlete_name) {
+            warningDiv.innerText = t('signup.overwrite_warning', { name: st.athlete_name });
+            warningDiv.style.display = 'block';
+          } else {
+            warningDiv.style.display = 'none';
+          }
+        } else {
+          // Populate select dropdown dynamically
+          stationLbl.style.display = 'none';
+          const selectGroup = document.getElementById('station-select-group');
+          selectGroup.style.display = 'block';
+
+          const select = document.getElementById('station-select');
+          select.innerHTML = '';
+
+          const snKeys = Object.keys(stations).sort((a, b) => a - b);
+
+          if (snKeys.length === 0) {
+            // Fallback: if no active stations exist, show standard 1-10 choices
+            for (let i = 1; i <= 10; i++) {
+              const opt = document.createElement('option');
+              opt.value = i;
+              opt.innerText = `Station ${i} (${t('signup.station_unconfigured')})`;
+              select.appendChild(opt);
+            }
+          } else {
+            // Populate dynamically
+            snKeys.forEach(sn => {
+              const st = stations[sn];
+              const opt = document.createElement('option');
+              opt.value = sn;
+
+              const eqType = st.equipment_type ? t(equipmentNames[st.equipment_type] || st.equipment_type) : t('signup.station_unassigned');
+              const nodeInfo = st.node_id ? ` (${st.node_id})` : "";
+              const athInfo = st.athlete_name ? ` [${t('signup.station_registered', { name: st.athlete_name })}]` : "";
+
+              opt.innerText = `Station ${sn} - ${eqType}${nodeInfo}${athInfo}`;
+              select.appendChild(opt);
+            });
+
+            // Check warning for initial selection
+            const firstStation = select.value;
+            if (firstStation && stations[firstStation] && stations[firstStation].athlete_name) {
+              warningDiv.innerText = t('signup.overwrite_warning', { name: stations[firstStation].athlete_name });
+              warningDiv.style.display = 'block';
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Failed to initialize stations:", err);
+        // Fallback to hardcoded list in case of network issue
+        if (!hasQueryStation) {
+          stationLbl.style.display = 'none';
+          document.getElementById('station-select-group').style.display = 'block';
+          const select = document.getElementById('station-select');
+          if (select.children.length === 0) {
+            for (let i = 1; i <= 10; i++) {
+              const opt = document.createElement('option');
+              opt.value = i;
+              opt.innerText = `Station ${i}`;
+              select.appendChild(opt);
+            }
+          }
+        }
+      }
+    }
+
+    async function initializeSignupPage() {
+      await loadLocale(currentLocale);
+      if (raceAdminUnlocked) {
+        showRaceAdminPanel();
+      } else if (urlParams.get('admin') === '1') {
+        openAdminPassword();
+      }
+    }
+
+    // If dropdown select changes, check if that station has a registered athlete and show warning
     if (!hasQueryStation) {
-      stationLbl.style.display = 'none';
-      document.getElementById('station-select-group').style.display = 'block';
-    } else {
-      stationLbl.innerText = `Station ${station}`;
+      document.getElementById('station-select').addEventListener('change', async function() {
+        const selectedStation = this.value;
+        if (!selectedStation) {
+          warningDiv.style.display = 'none';
+          return;
+        }
+        try {
+          const res = await fetch(`/api/stations?t=${Date.now()}`);
+          if (res.ok) {
+            const data = await res.json();
+            const st = (data.stations || {})[selectedStation] || {};
+            if (st.athlete_name) {
+              warningDiv.innerText = t('signup.overwrite_warning', { name: st.athlete_name });
+              warningDiv.style.display = 'block';
+            } else {
+              warningDiv.style.display = 'none';
+            }
+          }
+        } catch (e) {}
+      });
     }
 
     async function submitForm(event) {
       event.preventDefault();
-      
+
       const name = athleteNameInput.value.trim();
       if (!name) return;
       const team = teamNameInput.value.trim() || null;
@@ -462,11 +1287,11 @@
           customPreview.innerText = '📷';
         } else {
           const errData = await response.json();
-          errorMsg.innerText = `報名失敗: ${errData.detail || '請洽現場裁判'}`;
+          errorMsg.innerText = t('signup.error_detail', { detail: errData.detail || t('signup.error') });
           errorMsg.style.display = 'block';
         }
       } catch (err) {
-        errorMsg.innerText = `連線錯誤，請確認網路連線。`;
+        errorMsg.innerText = t('signup.connection_error');
         errorMsg.style.display = 'block';
       } finally {
         // Hide loading
@@ -475,6 +1300,9 @@
         btnSpinner.style.display = 'none';
       }
     }
+
+    languageSelect.addEventListener('change', () => loadLocale(languageSelect.value));
+    initializeSignupPage();
   </script>
 </body>
 </html>

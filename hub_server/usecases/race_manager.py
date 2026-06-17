@@ -209,17 +209,18 @@ class RaceManager:
                 "finished_time_ms": None,
             }
             
-        # 2. Initialize from station assignments
-        for station_number, node_id in self._stations.items():
-            if node_id not in self._progress:
-                athlete_name = self._station_registrations.get(station_number, f"Athlete {node_id}")
+        # 2. Initialize from station registrations
+        for station_number, athlete_name in self._station_registrations.items():
+            node_id = self._stations.get(station_number)
+            key = node_id if node_id else f"station-{station_number}"
+            if key not in self._progress:
                 team_name = self._station_teams.get(station_number)
                 has_avatar = self._station_has_avatar.get(station_number, False)
                 import time
                 avatar_url = f"/static/avatars/station_{station_number}.webp?t={int(time.time())}" if has_avatar else None
                 
-                self._progress[node_id] = {
-                    "node_id": node_id,
+                self._progress[key] = {
+                    "node_id": node_id or key,
                     "athlete_name": athlete_name,
                     "station_number": station_number,
                     "team_name": team_name,
@@ -242,6 +243,9 @@ class RaceManager:
         self._state = RaceState.STOPPED
         import time
         self._end_time_epoch_ms = int(time.time() * 1000)
+
+    def close_race(self):
+        self.stop_race()
 
     def reset_race(self):
         self._state = RaceState.IDLE
@@ -287,6 +291,12 @@ class RaceManager:
             avatar_url = f"/static/avatars/station_{station_number}.webp?t={int(time.time())}" if has_avatar else None
         else:
             athlete_name = self._registered_nodes.get(node_id, f"Athlete {node_id}")
+
+        # Clean up placeholder key if device is dynamically bound/discovered
+        if station_number is not None:
+            placeholder_key = f"station-{station_number}"
+            if placeholder_key in self._progress:
+                del self._progress[placeholder_key]
 
         prev_progress = self._progress.get(node_id, {})
         prev_finished_time = prev_progress.get("finished_time_ms")
@@ -347,6 +357,8 @@ class RaceManager:
         if self._progress:
             all_finished = True
             for nid, p in self._progress.items():
+                if nid.startswith("station-"):
+                    continue
                 if self._config.race_type in ("distance", "calories"):
                     if p.get("finished_time_ms") is None:
                         all_finished = False
@@ -361,4 +373,3 @@ class RaceManager:
                 self._end_time_epoch_ms = int(time.time() * 1000)
 
         return self._progress
-

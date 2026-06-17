@@ -186,6 +186,31 @@ def test_race_auto_stop_on_completion():
     assert manager._end_time_epoch_ms is not None
 
 
+def test_close_race_keeps_unfinished_progress_for_awards():
+    manager = RaceManager()
+    config = RaceConfig(race_type="distance", target_value=100.0)
+    manager.configure(config)
+    manager.register_node("node-01", "Runner A")
+    manager.register_node("node-02", "Runner B")
+    manager.start_race()
+
+    progress = manager.update_telemetry({
+        "node_id": "node-01",
+        "distance_m": 100.0,
+        "elapsed_time_ms": 15000,
+    })
+    assert progress["node-01"]["finished_time_ms"] == 15000
+    assert progress["node-02"]["finished_time_ms"] is None
+    assert manager.get_state() == RaceState.RUNNING
+
+    manager.close_race()
+
+    assert manager.get_state() == RaceState.STOPPED
+    assert manager._end_time_epoch_ms is not None
+    assert manager.get_leaderboard_progress()["node-01"]["finished_time_ms"] == 15000
+    assert manager.get_leaderboard_progress()["node-02"]["finished_time_ms"] is None
+
+
 def test_configure_from_stopped_state():
     manager = RaceManager()
     config1 = RaceConfig(race_type="distance", target_value=100.0)
@@ -210,5 +235,55 @@ def test_configure_from_stopped_state():
     assert manager.get_config().target_value == 50.0
     # Confirm old results/registrations are reset
     assert len(manager.get_registered_nodes()) == 0
+
+
+def test_unbound_station_start_and_telemetry():
+    manager = RaceManager()
+    config = RaceConfig(race_type="distance", target_value=100.0)
+    manager.configure(config)
+
+    # Station 1: bound to "bike-01"
+    manager.assign_station(1, "bike-01")
+    manager.register_athlete(1, "Athlete Bound")
+
+    # Station 2: unbound (no device node assigned)
+    manager.register_athlete(2, "Athlete Unbound")
+
+    # Check READY state leaderboard
+    ready_leaderboard = manager.get_leaderboard_progress()
+    assert "bike-01" in ready_leaderboard
+    assert "station-2" in ready_leaderboard
+    assert ready_leaderboard["bike-01"]["athlete_name"] == "Athlete Bound"
+    assert ready_leaderboard["station-2"]["athlete_name"] == "Athlete Unbound"
+
+    # Start race
+    manager.start_race()
+    assert manager.get_state() == RaceState.RUNNING
+
+    # Check RUNNING state leaderboard
+    running_leaderboard = manager.get_leaderboard_progress()
+    assert "bike-01" in running_leaderboard
+    assert "station-2" in running_leaderboard
+    assert running_leaderboard["station-2"]["progress_percent"] == 0.0
+
+    # Send telemetry for Station 1
+    progress = manager.update_telemetry({
+        "node_id": "bike-01",
+        "distance_m": 50.0,
+        "elapsed_time_ms": 5000,
+    })
+    assert progress["bike-01"]["progress_percent"] == 50.0
+    assert progress["station-2"]["progress_percent"] == 0.0
+    assert manager.get_state() == RaceState.RUNNING
+
+    # Send finished telemetry for Station 1
+    progress = manager.update_telemetry({
+        "node_id": "bike-01",
+        "distance_m": 100.0,
+        "elapsed_time_ms": 10000,
+    })
+    # Since only Station 1 is bound and active, it should auto-stop the race (ignoring unbound Station 2)
+    assert manager.get_state() == RaceState.STOPPED
+    assert progress["bike-01"]["finished_time_ms"] == 10000
 
 

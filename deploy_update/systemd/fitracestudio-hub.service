@@ -1,0 +1,22 @@
+[Unit]
+Description=FitRaceStudio Central Hub runtime
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=fitrace
+Group=fitrace
+WorkingDirectory=/opt/fitracestudio/current
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONPATH=/opt/fitracestudio/current
+Environment=FITRACE_UPDATE_CACHE_DIR=/opt/fitracestudio/update-cache
+Environment=FITRACE_RELEASE_ROOT=/opt/fitracestudio/releases
+Environment=FITRACE_CURRENT_LINK=/opt/fitracestudio/current
+Environment=FITRACE_HUB_UPDATER_SERVICE=fitracestudio-hub-updater.service
+ExecStart=/usr/bin/python3 -m hub_server.main
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

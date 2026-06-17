@@ -9,8 +9,8 @@
 ```text
 +-----------------------+      +-----------------------+      +-----------------------+      +-----------------------+
 |  Phase 1: 本地模擬    | ---> |  Phase 2: 場館原型    | ---> |  Phase 3: 現場試點    | ---> |  Phase 4: 產品化部署  |
-|  - Mock Telemetry     |      |  - Real BLE/FTMS      |      |  - 積分排行榜邏輯     |      |  - systemd 系統服務   |
-|  - MQTT Telemetry     |      |  - Central Soft AP    |      |  - SQLite 數據儲存    |      |  - 安全性硬化 (Auth)  |
+|  - Mock Telemetry     |      |  - UART 天線板整合    |      |  - 積分排行榜邏輯     |      |  - systemd 系統服務   |
+|  - MQTT Telemetry     |      |  - Shipped AP Network |      |  - SQLite 數據儲存    |      |  - 安全性硬化 (Auth)  |
 |  - WebSockets Stream  |      |  - Setup App 原型     |      |  - 競賽結果導出       |      |  - OTA 自動更新機制   |
 +-----------------------+      +-----------------------+      +-----------------------+      +-----------------------+
 ```
@@ -100,38 +100,58 @@
 ## Phase 2: 場館原型階段 (Studio Prototype)
 
 ### 2.1 階段目標
-連接真實的 BLE 有氧設備，並在 Central Hub 啟動本地設定熱點 (Soft AP)，允許技術人員透過設定 App 進行設備綁定與 Wi-Fi 連線設定。
+連接真實的 FTMS 有氧設備，並使用隨系統出貨的專業 AP 作為現場網路基礎。Central Hub、Edge Nodes、技術人員手機或平板都連線到預先設定好的 `fitRace26` AP；Edge Node 設定由手機直接開啟該 Node 的本機 Web 服務完成。
+
+> 2026-06 架構更新：Edge Node 不再直接透過 RPi Linux BLE stack / USB BLE dongle 與 FTMS 設備連線。正式方向改為等待天線板完成，天線板提供兩個 UART Channel，分別控制板上兩個藍牙模組。RPi 透過 UART 命令要求天線板進行掃描、連線、訂閱 FTMS、取值與斷線/重連。既有 BLE dongle 掃描與 bleak client 原型暫停，不作為產品化主路徑。
 
 ### 2.2 主節點 (Central Hub) 產出細化
-* **SoftAP 設定與配置**：
-  - 實作 `hub_server/infrastructure/network/soft_ap.py` 在設定模式下開啟 `FitRaceStudio_Setup` 本地 Wi-Fi 熱點。
-  - 提供 `http://192.168.50.1/setup` 作為配置管理中心，接收來自 App 的 Studio Wi-Fi 設定、綁定設定。
+* **出貨 AP 網路整合**：
+  - Central Hub 出貨前預設連線到專業 AP `fitRace26`。
+  - Hub 透過 `fitRace26` LAN 接收 Edge Node MQTT 遙測、提供看板與賽事控制 API。
+  - 保留 Hub 端站位指派與比賽控制，但 Wi-Fi SSID/密碼不再由 Hub 下發給 Edge Nodes。
 * **運動節點連線狀態回報與監控**：
-  - 實作 `hub_server/usecases/node_monitor.py` 持續接收並監控運動節點的線上狀態（Online Heartbeat）。
-  - 當節點無資料更新或失去 Heartbeat 超過設定時間（如 5 秒），自動將節點狀態標記為 `offline` 並推播至大螢幕。
+  - 已建立 `hub_server/usecases/node_registry.py` 作為 Central Hub 的 Edge Node 狀態登錄表。
+  - Central Hub 訂閱 `fitrace/nodes/+/status`，接收每台 Edge Node 的 heartbeat、IP、hostname、天線板 channel 數、最多 FTMS 連線數與每條 equipment stream 狀態。
+  - 提供 `GET /api/nodes` 讓 Race Control / Dashboard 查詢目前已知 Edge Nodes；MQTT 收到狀態更新時透過 WebSocket 廣播 `node_status`。
+  - 當節點失去 Heartbeat 超過設定時間（目前預設 10 秒），Central Hub 查詢時將節點狀態標記為 `offline`。
 
 ### 2.3 運動器材連線節點 (Edge Node) 產出細化
 * **連線狀態管理**：
-  - 實作 `edge_node/infrastructure/mqtt/client.py` 維持 MQTT 連線狀態，並定時發送 Node 存活心跳（Heartbeat）。
+  - 實作 `edge_node/infrastructure/mqtt/client.py` 維持 MQTT 連線狀態，並定時發送 Node 存活心跳（Heartbeat）到 `fitrace/nodes/{edge_node_id}/status`。
+  - Heartbeat payload 已包含 `max_ftms_connections: 5`、`available_channels: 2`、`antenna_protocol_version` 與各 equipment stream 的 `status` / `antenna_channel` / `last_telemetry_epoch_ms` 欄位，天線板完成後可直接補上真實 channel 狀態與錯誤碼。
   - 實作斷線自動重連機制。
 * **連線運動器材設定**：
-  - 支援讀取來自本地或 Central Hub 下發的設備連線設定檔（例如指定連接的 FTMS 藍牙 MAC 位址或設備名稱）。
-* **連線取值 (真實 BLE / FTMS)**：
-  - 實作 `edge_node/infrastructure/ble/bleak_client.py` 建立與有氧器材的 BLE 連接。
-  - 訂閱並解析 FTMS 服務（如 Indoor Bike Data, Treadmill Data）特徵值，實時提取實際運動數據。
+  - 支援讀取由 Edge Node 本機 Web 設定服務寫入的 `config.json`。單台 Edge Node 透過天線板最多綁定 5 台 FTMS 運動設備。
+  - 設定檔需區分實體 Edge Node `node_id` 與每台設備的 telemetry stream `equipment_bindings[*].node_id`，讓 Central Hub 能將每台設備獨立站位與排名。
+  - Edge Node 出貨前預設連線到 `fitRace26` AP；現場設定只處理節點身分、器材綁定與測試，不處理場館 Wi-Fi 佈署。
+* **天線板 UART 控制層（等待硬體完成後實作）**：
+  - 暫停 RPi 直接 BLE 連線功能，改為設計 `edge_node/infrastructure/antenna_board/uart_client.py`。
+  - 天線板提供兩個 UART Channel，對應兩個板上藍牙模組；RPi 只透過 UART 命令控制掃描、連線、訂閱 FTMS characteristic、取值、斷線與重連。
+  - 需要定義 UART 命令協議：`SCAN_START`、`SCAN_RESULT`、`CONNECT`、`SUBSCRIBE_FTMS`、`TELEMETRY`、`DISCONNECT`、`STATUS`、`ERROR`、`RESET_CHANNEL`。
+  - Edge Node 需管理 5 台設備到 2 個 UART/BLE channel 的排程策略；任何單台設備斷線不得影響其他設備 telemetry stream。
+  - 原始 FTMS payload 若由天線板透傳，解析仍由 RPi 端 `edge_node/usecases/ble_ftms_parser.py` 完成；若天線板已輸出標準化數據，RPi 端需做 schema 驗證與轉換。
+* **本機 Web 設定服務**：
+  - 實作 Edge Node 本機 HTTP 設定服務，手機連上 `fitRace26` 後可直接開啟該 Node 的設定頁。
+  - 提供儲存與讀取設定的 API，例如 `GET /api/config`、`POST /api/config`、`GET /api/status`、`POST /api/restart`。
+  - 天線板完成前，設定頁保留設備綁定與 mock 狀態管理；天線板完成後再接上 UART 掃描、連線測試與 channel 狀態頁。
 
 ### 2.4 設定 App (Setup App) 產出細化
-* **手機 App 藍牙配置 Edge Node**：
-  - 現場部署人員利用手機 App，透過藍牙直接與未配置的 Edge Node（樹莓派）建立連線。
-  - 樹莓派在偵測到本地無設定檔時，自動啟動為 BLE Peripheral 廣播（名稱如 `FitRaceEdge_Setup`）。
-  - 技術人員在手機 App 上設定並下發配置資訊（包括 `node_id`、`equipment_id`、`equipment_type`、器材的 `ble_target` 以及場館 WiFi SSID 與密碼）。
-  - Edge Node 接收後將設定寫入本地 `config.json`，隨即重啟套用並進入正常工作模式（連接器材並透過 MQTT 發送數據）。
+* **手機直接連線 Edge Node Web 設定**：
+  - 現場部署人員先將手機或平板連到隨貨 AP `fitRace26`。
+  - 技術人員透過節點清單、QR Code、mDNS 主機名或固定 IP 開啟指定 Edge Node 的本機設定頁。
+  - 設定頁寫入 `node_id`、`equipment_id`、`equipment_type`、天線板 channel / 設備目標、Hub/MQTT 位址等資訊；不再傳送場館 Wi-Fi SSID 與密碼。
+  - Edge Node 接收後將設定寫入本地 `config.json`，隨即重啟或熱載入套用並進入正常工作模式（透過天線板連接器材並透過 MQTT 發送數據）。
 * **取值測試與狀態監控**：
-  - 提供即時訊號測試頁面，App 可實時「取值」並顯示當前綁定運動節點的藍牙訊號強度 (RSSI) 與實時遙測數值，以驗證裝機正確性。
+  - 提供即時訊號測試頁面，App 可實時「取值」並顯示當前綁定運動節點的天線板 channel、連線狀態、RSSI、最後取值時間與實時遙測數值，以驗證裝機正確性。
 
 ### 2.5 TDD 測試與驗證物
 - `tests/unit/edge/test_ble_ftms_parser.py`: 使用 Mock 藍牙數據包，驗證風扇車/跑步機的二進位特徵值轉譯器是否能正確解出實時運動數據。
-- `tests/unit/hub/test_soft_ap_config.py`: 測試 Hub 接收 App 的 Wi-Fi 配置後，寫入配置檔案並自動套用的邏輯。
+- `tests/unit/edge/test_antenna_uart_protocol.py`: 使用 Mock UART frame，驗證天線板命令編碼、回應解析、錯誤碼與 timeout 行為。
+- `tests/unit/edge/test_antenna_channel_scheduler.py`: 驗證 5 台 FTMS 設備在 2 個 UART/BLE channel 下的排程、重連與狀態隔離。
+- `tests/unit/edge/test_web_config.py`: 測試 Edge Node 本機 Web 設定 API 能驗證、寫入並讀回 `config.json`。
+- `tests/unit/hub/test_node_registry.py`: 驗證 Central Hub 接收 Edge heartbeat、維護 last-seen、逾時標記 offline。
+- `tests/unit/edge/test_node_status.py`: 驗證 Edge Node 從設定檔產生 heartbeat payload，並包含 5 台設備 / 2 UART channel 架構需要的欄位。
+- `tests/integration/test_shipped_ap_network.py`: 測試 Hub 與 Edge Node 在 `fitRace26` LAN 假設下能完成節點發現、MQTT 連線與狀態回報。
 
 ---
 
@@ -188,9 +208,36 @@
 - **系統服務化 (Systemd Services)**：
   - 封裝主節點服務 (`fitracestudio-hub.service`) 與運動節點服務 (`fitracestudio-edge.service`) 為系統守護進程，確保 RPi 開機自動啟動並內建崩潰自動重啟機制。
 - **安全性硬化**：
-  - 實作 API 安全權限機制，避免未授權用戶發送比賽控制指令或覆蓋 SoftAP 配置。
+  - 實作 API 安全權限機制，避免未授權用戶發送比賽控制指令、覆蓋 Edge Node 設定或修改出貨 AP 網路參數。
 - **OTA 自動更新**：
-  - 實作 RPi 的靜默 OTA (Over-the-Air) 版本更新檢驗機制。
+  - 依據 `OTA_UPDATE.md` 實作 Hub-led OTA 更新機制。
+  - Central Hub 有外網時檢查 signed manifest，下載 Hub 與 Edge Node artifacts。
+  - Central Hub 先完成自我更新與健康檢查，再透過 `fitRace26` LAN 逐台協調 Edge Node 更新。
+  - Edge Node 透過 heartbeat 回報 `software_version` 與 update state。
+  - 所有更新需支援 checksum 驗證、簽章驗證、安裝前 idle 檢查與上一版 rollback。
+- **管理系統電源控制**：
+  - 新增 Central Hub 管理 UI 的服務重啟、整機重開與關機功能。
+  - 新增 Edge Node 的服務重啟、整機重開與關機指令。
+  - 電源控制需透過受限 privileged helper 或 systemd command service 執行，不可由 Web API 任意執行 shell command。
+  - 比賽進行中、更新進行中或未通過 local admin 驗證時必須拒絕操作。
+
+### 4.3 目前進展紀錄 (2026-06-17)
+- **已完成：Hub systemd runtime 整理與實機啟動驗證**
+  - 已新增正式 `fitracestudio-hub.service`，以 `/opt/fitracestudio/current` 作為實際 runtime path。
+  - 已新增/整理 `fitracestudio-hub-updater.service`，使用 `/opt/fitracestudio/update-cache`、`/opt/fitracestudio/releases` 與 `/opt/fitracestudio/current` 進行 Hub 自更新切版。
+  - 已在 RPi `192.168.0.129` 實機安裝並啟用 Hub service；`systemctl is-enabled fitracestudio-hub.service` 回報 `enabled`，`systemctl is-active fitracestudio-hub.service` 回報 `active`。
+  - 實機 Hub health check 已通過：`http://192.168.0.129:8000/health` 回報 `{"status":"ok","version":"0.1.1"}`。
+- **已完成：Dashboard 版本可視化**
+  - HeroBar 已新增目前 Hub 版本號顯示，前端由 `/health` 讀取版本。
+  - 實機頁面已驗證 HeroBar 顯示 `v0.1.1`，便於現場確認目前 active release。
+- **已完成：雲端更新檢查與簽章驗證**
+  - 實機 `GET /api/updates/status` 已確認可讀取 CloudFront stable manifest。
+  - manifest signature 驗證通過，`signature_verified: true`。
+  - 目前實機 `current_version` 與雲端 `latest_hub_version` 都是 `0.1.1`，因此狀態為 `current`，不會觸發下載與 staged install。
+- **待驗證：新版本下載、解壓、切版與重啟**
+  - 因目前實機已是雲端 stable 最新版 `0.1.1`，`/opt/fitracestudio/update-cache` 尚未出現正式下載與解壓後的 staged release。
+  - 下一步需發布高於 `0.1.1` 的測試版本，例如 `0.1.2`，再依序驗證 `POST /api/updates/check`、`POST /api/updates/download`、`POST /api/updates/install/hub`、`POST /api/updates/apply/hub`。
+  - 驗收標準：`/opt/fitracestudio/update-cache/{version}` 出現下載 artifact，`/opt/fitracestudio/update-cache/installed/hub-{version}` 出現解壓內容，`/opt/fitracestudio/current` 切到 `/opt/fitracestudio/releases/hub-{version}`，重啟後 `/health` 回報新版本。
 
 ---
 

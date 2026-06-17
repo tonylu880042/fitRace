@@ -27,7 +27,7 @@
 ```text
        +---------------------------------------------+
        |           Frameworks & Drivers              |
-       |  (FastAPI, Bleak BLE, Mosquitto MQTT, DB)   |
+       |  (FastAPI, Bleak FTMS, Local Web, MQTT, DB) |
        |       +-------------------------------------+
        |       |          Interface Adapters         |
        |       |      (Controllers, Gateways)        |
@@ -60,14 +60,15 @@
 ├── adapters/             # 3. Interface Adapters 層：介面與傳輸協議轉譯
 │   ├── __init__.py
 │   ├── mqtt_presenter.py # 格式化為 MQTT Payload
-│   ├── ble_controller.py # 接收並轉譯 BLE 廣播
+│   ├── ftms_controller.py # 接收並轉譯 FTMS 遙測
 │   └── repositories.py   # 資料庫/狀態暫存之適配器
 │
 └── infrastructure/       # 4. Frameworks & Drivers 層：具體框架與第三方庫
     ├── __init__.py
     ├── fastapi/          # Web 伺服器與路由
     ├── locales/          # i18n 語言翻譯包字典 (如 zh_tw.json, en.json)
-    ├── ble/              # bleak 實際藍牙掃描驅動
+    ├── ble/              # bleak 實際 FTMS 取值驅動
+    ├── web/              # Edge Node 本機 Web 設定服務
     ├── mqtt/             # gmqtt/paho-mqtt 實際連線客戶端
     └── database/         # 資料庫連線與 SQL 實作
 ```

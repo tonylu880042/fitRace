@@ -37,7 +37,7 @@ def test_telemetry_data_dict_serialization():
         elapsed_time_ms=60000,
         timestamp_epoch_ms=123456789,
     )
-    data_dict = data.to_dict()
+    data_dict = data.model_dump()
     assert data_dict["node_id"] == "fanbike-01"
     assert data_dict["equipment_type"] == "fan_bike"
     assert data_dict["instantaneous_speed_kph"] == 12.0

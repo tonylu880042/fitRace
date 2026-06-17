@@ -1,0 +1,14 @@
+[Unit]
+Description=FitRaceStudio Hub updater
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/fitracestudio/current
+Environment=PYTHONPATH=/opt/fitracestudio/current
+Environment=FITRACE_UPDATE_CACHE_DIR=/opt/fitracestudio/update-cache
+Environment=FITRACE_RELEASE_ROOT=/opt/fitracestudio/releases
+Environment=FITRACE_CURRENT_LINK=/opt/fitracestudio/current
+Environment=FITRACE_HUB_SERVICE=fitracestudio-hub.service
+ExecStart=/usr/bin/python3 -m hub_server.usecases.hub_update_applier

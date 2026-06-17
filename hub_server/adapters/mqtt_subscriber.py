@@ -7,7 +7,7 @@ logger = logging.getLogger("hub_server.mqtt_subscriber")
 
 
 class MqttSubscriber:
-    def __init__(self, async_mqtt_client, race_manager, ws_manager):
+    def __init__(self, async_mqtt_client, race_manager, ws_manager, node_registry=None):
         """
         :param async_mqtt_client: An instance of our AsyncMqttClient.
         :param race_manager: Instance of RaceManager.
@@ -16,15 +16,17 @@ class MqttSubscriber:
         self._mqtt_client = async_mqtt_client
         self._race_manager = race_manager
         self._ws_manager = ws_manager
+        self._node_registry = node_registry
         self._loop = asyncio.get_event_loop()
 
     def start_listening(self):
         """
-        Configures callbacks and subscribes to the telemetry topic.
+        Configures callbacks and subscribes to telemetry and node status topics.
         """
-        logger.info("Setting up MQTT subscription for gym/telemetry/#")
+        logger.info("Setting up MQTT subscriptions")
         self._mqtt_client._client.on_message = self._on_message
         self._mqtt_client._client.subscribe("gym/telemetry/#")
+        self._mqtt_client._client.subscribe("fitrace/nodes/+/status")
 
     def _on_message(self, client, userdata, message):
         """
@@ -33,13 +35,30 @@ class MqttSubscriber:
         try:
             payload_str = message.payload.decode("utf-8")
             payload = json.loads(payload_str)
+            topic = getattr(message, "topic", "")
 
-            # Dispatch async handling to the main asyncio event loop thread-safely
-            asyncio.run_coroutine_threadsafe(
-                self._handle_telemetry(payload), self._loop
-            )
+            if topic.startswith("fitrace/nodes/") and topic.endswith("/status"):
+                edge_node_id = topic.removeprefix("fitrace/nodes/").removesuffix("/status")
+                future = self._handle_node_status(payload, edge_node_id)
+            else:
+                future = self._handle_telemetry(payload)
+
+            asyncio.run_coroutine_threadsafe(future, self._loop)
         except Exception as e:
             logger.error(f"Failed to process incoming MQTT payload: {e}")
+
+    async def _handle_node_status(self, payload: dict, edge_node_id: str):
+        if not self._node_registry:
+            return
+
+        status = self._node_registry.update_status(payload, edge_node_id=edge_node_id)
+        await self._ws_manager.broadcast(
+            {
+                "type": "node_status",
+                "node": status.model_dump(),
+                "nodes": self._node_registry.list_nodes(),
+            }
+        )
 
     async def _handle_telemetry(self, payload: dict):
         node_id = payload.get("node_id")

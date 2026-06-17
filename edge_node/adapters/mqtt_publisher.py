@@ -13,5 +13,9 @@ class MqttPublisher:
         """
         Serializes and publishes telemetry data over MQTT.
         """
-        payload = json.dumps(telemetry_data.to_dict())
+        payload = json.dumps(telemetry_data.model_dump())
         await self._mqtt_client.publish(topic, payload)
+
+    async def publish_node_status(self, edge_node_id: str, status: dict):
+        payload = json.dumps(status)
+        await self._mqtt_client.publish(f"fitrace/nodes/{edge_node_id}/status", payload)

@@ -9,7 +9,7 @@ The system is designed for indoor fitness competitions, aerobic group challenges
 
 ## 1. Project Overview
 
-FitRaceStudio connects multiple aerobic fitness machines through local Edge Nodes. Each Edge Node captures equipment telemetry via **BLE / FTMS**, publishes the data through **Wi-Fi / MQTT**, and sends it to a **Central Hub** for real-time aggregation, race state management, and dashboard visualization.
+FitRaceStudio connects multiple aerobic fitness machines through local Edge Nodes. Each Edge Node controls an antenna board over **UART**; the antenna board handles **BLE / FTMS** equipment links, while the Edge Node publishes normalized telemetry through **Wi-Fi / MQTT** to a **Central Hub** for real-time aggregation, race state management, and dashboard visualization.
 
 Typical supported equipment includes:
 
@@ -20,6 +20,8 @@ Typical supported equipment includes:
 * Other FTMS-compatible aerobic equipment
 
 The system is designed to operate inside a local studio network without depending on external cloud services during live race operation.
+
+Deployment network, hostname, mDNS, and Edge Node discovery rules are documented in [DEPLOYMENT.md](DEPLOYMENT.md). Normalized Edge-to-Hub telemetry is documented in [TELEMETRY_SPEC.md](TELEMETRY_SPEC.md). Hub-led OTA update design is documented in [OTA_UPDATE.md](OTA_UPDATE.md). AWS cloud requirements for update distribution are documented in [AWS_CLOUD_REQUIREMENTS.md](AWS_CLOUD_REQUIREMENTS.md). Cloud update validation is documented in [CLOUD_UPDATE_TEST_PLAN.md](CLOUD_UPDATE_TEST_PLAN.md).
 
 ---
 
@@ -35,10 +37,11 @@ FitRaceStudio follows these architectural principles:
 
 3. **Clear communication separation**
 
-   * BLE / FTMS: equipment-to-edge telemetry capture
+   * UART antenna board + BLE / FTMS: equipment-to-edge telemetry capture
    * Wi-Fi / MQTT: edge-to-hub data transport
    * WebSocket: hub-to-dashboard real-time visualization
-   * Soft AP: initial setup and local network bootstrapping
+   * Shipped AP `fitRace26`: preconfigured local network for Hub, Edge Nodes, setup phones, and dashboard devices
+   * Edge Node Web Setup: per-node configuration through each Edge Node's local web service
 
 4. **Edge data capture, hub data orchestration**
    Edge Nodes focus on equipment telemetry collection.
@@ -56,6 +59,10 @@ Aerobic Equipment
     |
     | BLE / FTMS
     v
+Antenna Board
+    |
+    | UART
+    v
 Equipment Data Capture Node
     |
     | Wi-Fi / MQTT
@@ -72,7 +79,7 @@ Race Dashboard Screen
 ```text
 FitRaceStudio/
 ├── edge_node/
-│   ├── BLE / FTMS equipment capture
+│   ├── UART antenna board orchestration
 │   ├── local configuration receiver
 │   ├── MQTT telemetry publisher
 │   └── mock telemetry generator
@@ -85,7 +92,7 @@ FitRaceStudio/
 │   └── dashboard frontend
 │
 └── setup_app/
-    └── mobile or web-based configuration interface
+    └── mobile or web-based configuration interface for Edge Node local web setup
 ```
 
 ---
@@ -94,12 +101,12 @@ FitRaceStudio/
 
 FitRaceStudio uses different communication channels for different system responsibilities.
 
-### 4.1 BLE / FTMS
+### 4.1 UART Antenna Board + BLE / FTMS
 
-Used between aerobic equipment and the Edge Node.
+Used between aerobic equipment, the antenna board, and the Edge Node.
 
 ```text
-Fitness Equipment → Edge Node
+Fitness Equipment → BLE / FTMS → Antenna Board → UART → Edge Node
 ```
 
 Purpose:
@@ -110,9 +117,9 @@ Purpose:
 * Capture distance
 * Capture elapsed time
 * Capture heart rate if available
-* Receive FTMS notifications from compatible equipment
+* Receive FTMS notifications from compatible equipment through the antenna board
 
-BLE / FTMS should only be used for equipment-side telemetry capture.
+BLE / FTMS should only be used for equipment-side telemetry capture. The Edge Node product path controls this through the antenna board UART protocol, not direct RPi USB Bluetooth dongles.
 It should not be used for race dashboard streaming or multi-node coordination.
 
 ---
@@ -136,7 +143,7 @@ Recommended MQTT topic structure:
 
 ```text
 gym/telemetry/{node_id}
-gym/status/{node_id}
+fitrace/nodes/{edge_node_id}/status
 gym/config/{node_id}
 gym/race/state
 ```
@@ -192,53 +199,67 @@ Dashboard endpoint:
 
 ---
 
-### 4.4 Soft AP
+### 4.4 Shipped AP Network
 
-Soft AP is used for device setup and local network bootstrapping.
+FitRaceStudio is shipped with a professional access point that is configured before delivery.
 
-The **Central Hub** should act as the primary Soft AP node during initial deployment.
+All system devices join the same dedicated LAN:
 
 ```text
-Setup App → Central Hub Soft AP → System Configuration
+SSID: fitRace26
+Central Hub → fitRace26 AP
+Edge Nodes → fitRace26 AP
+Setup phone/tablet → fitRace26 AP
+Dashboard screen → fitRace26 AP
 ```
 
-Recommended Soft AP behavior:
+Recommended shipped AP behavior:
 
-* Central Hub starts a local Wi-Fi access point during setup mode.
-* Setup App connects to the Central Hub AP.
-* User configures:
+* The AP is part of the delivered hardware package.
+* SSID `fitRace26` and credentials are configured before shipment.
+* Central Hub and all Edge Nodes are provisioned to join `fitRace26` automatically.
+* Edge Node Wi-Fi credentials are not configured in the field during normal installation.
+* The technician connects a phone or tablet to `fitRace26` and opens each Edge Node's local web setup service.
 
-  * Studio Wi-Fi SSID
-  * Studio Wi-Fi password
-  * Race setup profile
-  * Equipment list
-  * Edge Node binding
-  * Node naming
-* Central Hub distributes configuration to Edge Nodes.
-* After setup, devices switch to the configured studio Wi-Fi network.
+Field setup focuses on:
 
-Example Soft AP SSID:
+* Node identity
+* Equipment type
+* FTMS target device binding
+* Hub or MQTT address
+* Station mapping and telemetry test
+
+### 4.5 Edge Node Web Setup
+
+Edge Node configuration is performed through a local web service hosted by each Edge Node.
+
+The technician workflow is:
 
 ```text
-FitRaceStudio_Setup
+1. Connect phone/tablet to AP SSID: fitRace26
+2. Open the target Edge Node setup URL
+3. Configure node_id, equipment_id, equipment_type, FTMS target, and Hub/MQTT address
+4. Save configuration to the Edge Node local config.json
+5. Restart or reload the Edge Node service
+6. Verify FTMS and MQTT status from the setup page
 ```
 
-Example default local setup URL:
+Possible Edge Node setup URL patterns:
 
 ```text
-http://192.168.50.1/setup
+http://fitrace-edge-01.local/
+http://<edge_node_ip>/
 ```
 
-Recommended Soft AP IP:
+The exact discovery mechanism can be fixed IP reservation, QR code labels, mDNS, or a Hub-side node list.
+
+Recommended Edge Node setup API:
 
 ```text
-192.168.50.1
-```
-
-Recommended DHCP range:
-
-```text
-192.168.50.100 - 192.168.50.200
+GET  /api/config
+POST /api/config
+GET  /api/status
+POST /api/restart
 ```
 
 ---
@@ -267,8 +288,8 @@ Recommended responsibilities:
 * Run WebSocket server
 * Run race state machine
 * Host dashboard frontend
-* Manage setup mode
-* Provide Soft AP during initial setup
+* Connect to the shipped `fitRace26` AP or wired LAN
+* Monitor Edge Node status on the local LAN
 * Store race configuration
 * Optionally cache local race results
 
@@ -293,19 +314,20 @@ Recommended Central Hub software:
 * MQTT broker, such as Mosquitto
 * MQTT client bridge
 * WebSocket dashboard service
-* Soft AP service
 * Local configuration service
+* Local update manager for Hub and Edge Node software updates
+* Local admin power controls for service restart, reboot, and shutdown
 
 ---
 
 ### 5.2 Edge Node
 
-Each aerobic machine should have one nearby Edge Node.
+Each Edge Node controls a two-channel antenna board over UART. The antenna board owns the BLE radio modules used to connect to nearby FTMS aerobic machines. The supported product limit is 5 FTMS devices per Edge Node.
 
 Recommended hardware type:
 
-* Compact BLE-enabled IoT gateway
-* Custom enclosure with BLE and Wi-Fi
+* Compact equipment telemetry gateway
+* Custom enclosure with antenna board, Wi-Fi, and UART wiring
 * Linux-based edge device
 * Industrial embedded controller
 
@@ -313,12 +335,12 @@ Each Edge Node should appear as a proprietary equipment data capture module rath
 
 Recommended responsibilities:
 
-* Connect to fitness equipment through BLE / FTMS
+* Connect to up to 5 fitness machines through the UART-controlled antenna board
 * Capture real-time equipment telemetry
 * Convert FTMS packets into normalized telemetry JSON
 * Publish telemetry to Central Hub through Wi-Fi / MQTT
 * Maintain local configuration
-* Reconnect automatically after BLE or Wi-Fi interruption
+* Reconnect each FTMS equipment independently after antenna board, BLE, or Wi-Fi interruption
 * Optionally buffer short telemetry gaps
 
 Suggested Edge Node hardware specifications:
@@ -327,7 +349,7 @@ Suggested Edge Node hardware specifications:
 | --------- | -------------------------------------- |
 | CPU       | ARM Linux device                       |
 | RAM       | 1 GB minimum, 2 GB preferred           |
-| BLE       | BLE 5.0 preferred                      |
+| Antenna   | 2 UART channels, BLE modules on board  |
 | Wi-Fi     | 2.4 GHz / 5 GHz supported              |
 | OS        | Linux                                  |
 | Power     | USB-C or DC input                      |
@@ -336,13 +358,14 @@ Suggested Edge Node hardware specifications:
 
 ---
 
-### 5.3 BLE Adapter Strategy
+### 5.3 Antenna Board Strategy
 
-The initial engineering design may use two BLE roles:
+BLE is reserved for equipment telemetry capture through FTMS. Edge Node setup must not depend on BLE Peripheral mode or USB Bluetooth dongle control in the product path.
 
 ```text
-hci0: BLE peripheral role for setup/configuration
-hci1: BLE central role for FTMS equipment capture
+UART channel 1: antenna board BLE module 1
+UART channel 2: antenna board BLE module 2
+edge web service: HTTP setup/configuration over fitRace26 LAN
 ```
 
 However, in the customer-facing system concept, this should be abstracted as:
@@ -355,17 +378,17 @@ Do not expose internal BLE adapter details in sales or customer-facing materials
 
 Engineering role separation:
 
-| Adapter | Role       | Purpose                       |
-| ------- | ---------- | ----------------------------- |
-| hci0    | Peripheral | Setup / configuration channel |
-| hci1    | Central    | FTMS equipment connection     |
+| Interface        | Role    | Purpose                         |
+| ---------------- | ------- | ------------------------------- |
+| BLE adapter      | Central | FTMS equipment connection       |
+| Wi-Fi / Ethernet | LAN     | MQTT telemetry and web setup    |
 
 Production simplification:
 
-* BLE setup can eventually move to Soft AP or Wi-Fi setup.
+* BLE setup is removed from the architecture.
+* Edge setup is done through each node's local web service on `fitRace26`.
 * FTMS capture should remain BLE central mode.
-* If hardware supports stable multi-role BLE, the extra dongle may be removed.
-* If stability is more important, dual-adapter design is recommended.
+* A second BLE adapter is only needed if field testing proves FTMS capture stability requires it, not for setup.
 
 ---
 
@@ -546,12 +569,13 @@ The Edge Node service.
 ### Responsibilities
 
 * Load local configuration
-* Start BLE peripheral setup placeholder
+* Start local web setup service
 * Start BLE central FTMS capture task
 * Generate mock telemetry during development
 * Publish telemetry to MQTT
 * Maintain reconnect loops
 * Keep BLE and MQTT logic separated
+* Keep setup web service, BLE capture, and MQTT publishing separated
 
 ### Main modules
 
@@ -563,7 +587,7 @@ edge_node/
 │   ├── config.py
 │   ├── mqtt_client.py
 │   ├── ble_central.py
-│   ├── ble_peripheral.py
+│   ├── web_config.py
 │   ├── mock_ftms.py
 │   └── types.py
 └── config.json
@@ -594,7 +618,7 @@ Edge Node orchestration module.
 Responsibilities:
 
 * Initialize MQTT publisher
-* Initialize BLE peripheral configuration server
+* Initialize local web configuration server
 * Initialize FTMS source
 * Choose mock mode or real BLE mode
 * Publish normalized telemetry
@@ -612,6 +636,7 @@ Responsibilities:
 * Validate node settings
 * Define MQTT parameters
 * Define BLE adapter settings
+* Define local web setup parameters
 * Define equipment identity
 * Define mock mode
 
@@ -619,12 +644,25 @@ Example config fields:
 
 ```json
 {
-  "node_id": "treadmill-01",
-  "equipment_id": "TREAD_01",
-  "equipment_type": "treadmill",
-  "mock_mode": true
+  "node_id": "fitrace-edge-01",
+  "mqtt_host": "192.168.26.10",
+  "mqtt_port": 1883,
+  "max_ftms_connections": 5,
+  "available_channels": 2,
+  "antenna_protocol_version": "pending-hardware",
+  "equipment_bindings": [
+    {
+      "node_id": "fitrace-edge-01-01",
+      "equipment_id": "BIKE_01",
+      "equipment_type": "fan_bike",
+      "ble_target": "BIKE_01_4A21",
+      "antenna_channel": "uart-1"
+    }
+  ]
 }
 ```
+
+The top-level `node_id` is the physical Edge Node identity. Each `equipment_bindings[*].node_id` is a telemetry stream identity that Central Hub can rank and bind to a station independently.
 
 ---
 
@@ -667,24 +705,26 @@ Future implementation:
 
 ---
 
-#### `ble_peripheral.py`
+#### `web_config.py`
 
-BLE peripheral setup placeholder.
+Edge Node local web setup service.
 
 Responsibilities:
 
-* Expose local setup interface through BLE peripheral mode
-* Accept setup configuration from mobile app
-* Support Wi-Fi credentials and equipment binding
+* Expose HTTP configuration UI and API on the `fitRace26` LAN
+* Accept setup configuration from technician phone/tablet
+* Support node identity, equipment binding, FTMS target, and Hub/MQTT address
+* Validate and write local `config.json`
+* Expose status for FTMS connection, MQTT connection, and last telemetry timestamp
 
 Current implementation:
 
-* Placeholder async background task
+* Placeholder local setup service
 
 Future direction:
 
-* Setup flow may be migrated primarily to Central Hub Soft AP
-* Edge BLE peripheral setup may remain as fallback or technician mode
+* Support QR-code or mDNS based node discovery.
+* Support authenticated technician access before writing configuration.
 
 ---
 
@@ -748,9 +788,9 @@ It may be implemented as:
 
 ### Setup App Responsibilities
 
-* Connect to Central Hub Soft AP
-* Configure studio Wi-Fi
-* Register Edge Nodes
+* Connect phone/tablet to the shipped `fitRace26` AP
+* Open each Edge Node's local web setup service
+* Configure Edge Node identity
 * Bind equipment to nodes
 * Assign station names
 * Test telemetry signal
@@ -765,10 +805,10 @@ It may be implemented as:
 Fields:
 
 ```text
-SSID
-Password
+AP SSID: fitRace26
 Connection Status
 Signal Strength
+Hub Reachability
 ```
 
 #### 2. Node Discovery
@@ -810,98 +850,85 @@ Race Control Online
 
 ---
 
-## 8. Soft AP Design
+## 8. Shipped AP and Edge Web Setup Design
 
-The Central Hub should act as the setup authority.
+This section documents the shipped AP architecture used for field installation and maintenance.
 
-### Why Soft AP Should Be Defined on the Central Hub
+### Shipped Professional AP
 
-Soft AP should be hosted by the Central Hub rather than every Edge Node because:
+The system ships with a professional AP configured before delivery.
 
-1. **Simpler user experience**
-   User connects to one setup Wi-Fi only.
-
-2. **Centralized configuration**
-   Hub manages all equipment nodes and race configuration.
-
-3. **Cleaner installation flow**
-   Installer does not need to connect to each Edge Node separately.
-
-4. **Better customer expectation**
-   The system feels like a single studio solution, not a collection of independent devices.
-
-5. **Reduced support complexity**
-   Network setup, node binding, and race setup are controlled from one place.
+```text
+SSID: fitRace26
+Purpose: Dedicated local LAN for FitRaceStudio Hub, Edge Nodes, setup phones/tablets, and dashboard devices
+Provisioning: Configured before shipment
+Field Wi-Fi setup: Not part of normal installation
+```
 
 ---
 
-### Recommended Soft AP Mode
+### Network Responsibilities
 
-```text
-SSID: FitRaceStudio_Setup
-Gateway IP: 192.168.50.1
-Setup URL: http://192.168.50.1/setup
-DHCP Range: 192.168.50.100 - 192.168.50.200
-```
+1. **Professional AP**
+   Provides the dedicated `fitRace26` LAN used by the Central Hub, Edge Nodes, setup devices, and dashboard screens.
+
+2. **Central Hub**
+   Runs MQTT integration, race state, dashboard, admin APIs, and node monitoring.
+
+3. **Edge Nodes**
+   Publish telemetry and expose local web setup services on the shipped LAN.
+
+4. **Field support**
+   Troubleshoots AP availability, DHCP reservations, device provisioning, and service health on the LAN.
 
 ### Setup Flow
 
 ```text
-1. Central Hub boots in Setup Mode
-2. Central Hub starts Soft AP: FitRaceStudio_Setup
-3. Technician connects phone/tablet to Soft AP
-4. Technician opens setup page or app
-5. Technician enters studio Wi-Fi credentials
-6. Technician scans or registers Edge Nodes
-7. Technician binds equipment to each Edge Node
-8. Central Hub saves configuration
-9. Central Hub distributes configuration to Edge Nodes
-10. System switches to normal operating mode
-11. Edge Nodes publish telemetry to Central Hub through Wi-Fi / MQTT
-12. Race dashboard becomes available
+1. Professional AP boots with SSID fitRace26
+2. Central Hub joins fitRace26
+3. Edge Nodes join fitRace26
+4. Technician connects phone/tablet to fitRace26
+5. Technician opens the target Edge Node local web setup page
+6. Technician configures node identity, equipment type, antenna channel / FTMS target, and Hub/MQTT address
+7. Edge Node saves config.json and restarts or reloads services
+8. Edge Node commands the antenna board over UART to connect to FTMS equipment
+9. Edge Node publishes telemetry to Central Hub through Wi-Fi / MQTT
+10. Central Hub shows node status in the dashboard and race control desk
 ```
 
 ---
 
 ### Normal Operation Mode
 
-After setup, the system should use the studio LAN.
+The system operates on the shipped AP LAN.
 
 ```text
-Edge Nodes → Studio Wi-Fi → Central Hub → Dashboard Screen
+Edge Nodes → fitRace26 AP → Central Hub → Dashboard Screen / Race Control Desk
 ```
-
-The Central Hub may keep a hidden or disabled Soft AP depending on product policy.
 
 Recommended options:
 
-| Mode             | Behavior                                  |
-| ---------------- | ----------------------------------------- |
-| Setup Mode       | Soft AP enabled                           |
-| Normal Mode      | Soft AP disabled                          |
-| Maintenance Mode | Soft AP enabled temporarily               |
-| Recovery Mode    | Soft AP enabled if Wi-Fi connection fails |
+| Mode             | Behavior                                                   |
+| ---------------- | ---------------------------------------------------------- |
+| Setup Mode       | Phone/tablet connects to `fitRace26`; Edge web setup opens |
+| Normal Mode      | Hub and Edge Nodes communicate through `fitRace26` LAN     |
+| Maintenance Mode | Technician uses Edge web setup and Hub admin UI on LAN     |
+| Recovery Mode    | Use AP/admin tooling or wired service access               |
 
 ---
 
 ### Recovery Mode
 
-If the Central Hub cannot connect to the configured studio Wi-Fi, it should automatically enter recovery setup mode.
+If Central Hub or Edge Nodes cannot join `fitRace26`, recovery should focus on AP availability, device provisioning, and wired/local service access. Devices should not automatically create their own setup SSIDs unless a future hardware support policy explicitly adds that mode.
 
 Recovery behavior:
 
 ```text
-1. Try configured studio Wi-Fi
-2. If failed after timeout, start FitRaceStudio_Setup Soft AP
-3. Allow technician to reconnect and update Wi-Fi settings
-4. Save new configuration
+1. Verify fitRace26 AP is powered and broadcasting
+2. Verify device Wi-Fi provisioning for SSID fitRace26
+3. Use wired access, local console, or AP admin panel if the node is unreachable
+4. Reapply device network provisioning if needed
 5. Restart network services
-```
-
-Recommended timeout:
-
-```text
-60 - 120 seconds
 ```
 
 ---
@@ -1089,7 +1116,7 @@ Used when physical machines are not available.
 ### Studio Test Mode
 
 ```text
-Real Equipment → BLE / FTMS → Edge Node → Wi-Fi / MQTT → Central Hub → Dashboard
+Up to 5 Real Equipment → BLE / FTMS → Antenna Board → UART → Edge Node → Wi-Fi / MQTT → Central Hub → Dashboard
 ```
 
 Used during field testing.
@@ -1097,7 +1124,7 @@ Used during field testing.
 ### Production Mode
 
 ```text
-Multiple Edge Nodes → Studio Wi-Fi → Central Hub → Display + Race Control Desk
+Multiple Edge Nodes → fitRace26 AP → Central Hub → Display + Race Control Desk
 ```
 
 Used in real gym deployment.
@@ -1109,10 +1136,9 @@ Used in real gym deployment.
 ### Central Hub Services
 
 ```text
-fitracestudio-hub-api.service
+fitracestudio-hub.service
+fitracestudio-hub-updater.service
 fitracestudio-mqtt.service
-fitracestudio-softap.service
-fitracestudio-dashboard.service
 ```
 
 ### Edge Node Services
@@ -1121,6 +1147,7 @@ fitracestudio-dashboard.service
 fitracestudio-edge.service
 fitracestudio-ble.service
 fitracestudio-mqtt-publisher.service
+fitracestudio-edge-web-config.service
 ```
 
 ---
@@ -1161,7 +1188,7 @@ The Central Hub should handle:
 * WebSocket client disconnect
 * Dashboard browser refresh
 * Race state recovery
-* Soft AP recovery mode
+* Shipped AP network outage
 * Local storage persistence
 
 Required behavior:
@@ -1184,11 +1211,12 @@ Support graceful shutdown
 Recommended baseline:
 
 * WPA2/WPA3 Wi-Fi
-* Strong Soft AP password
+* Strong `fitRace26` AP password
 * Setup mode timeout
-* Disable Soft AP during normal operation
 * Local admin PIN or token
 * No open unauthenticated configuration endpoint in production
+* No open unauthenticated reboot or shutdown endpoint in production
+* Keep power actions in dry-run unless `FITRACE_POWER_COMMANDS_ENABLED=1` is set on deployed hardware
 
 ### MQTT Security
 
@@ -1204,7 +1232,7 @@ Recommended baseline:
 Recommended baseline:
 
 * Require technician login or local setup PIN
-* Mask Wi-Fi password
+* Do not expose AP credentials in ordinary setup screens
 * Validate device identity
 * Prevent unauthorized node rebinding
 * Store credentials securely
@@ -1226,7 +1254,8 @@ Recommended baseline:
 
 * Real BLE / FTMS integration
 * Multi-node testing
-* Central Hub Soft AP setup flow
+* Shipped AP `fitRace26` network integration
+* Edge Node local web setup flow
 * Setup App prototype
 * Live dashboard UI
 * Node heartbeat and status monitoring
@@ -1286,7 +1315,8 @@ FitRaceStudio 是一套面向健身房與運動場館的本地端 IoT 有氧競�
 | BLE               | Bluetooth Low Energy                             |
 | FTMS              | Fitness Machine Service                          |
 | MQTT              | Lightweight publish-subscribe messaging protocol |
-| Soft AP           | Software Access Point used for setup             |
+| Shipped AP        | Dedicated professional access point shipped with the system; SSID `fitRace26` |
+| Edge Web Setup    | Local Edge Node web service used for device configuration |
 | Dashboard         | Large-screen live race visualization interface   |
 | Race Control Node | Control desk or kiosk for timing and ranking     |
 | Telemetry         | Real-time equipment data stream                  |
@@ -1307,8 +1337,8 @@ Wi-Fi / MQTT telemetry transport
 Central Hub local aggregation
 Race state management
 WebSocket dashboard streaming
-Soft AP setup flow
-Setup App configuration
+Shipped AP fitRace26 network
+Edge Node Web Setup configuration
 Live race visualization
 ```
 

@@ -1,8 +1,14 @@
-from pydantic import BaseModel, Field
+from typing import Optional
+
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class TelemetryData(BaseModel):
-    node_id: str = Field(..., description="Unique identity of the Edge Node")
+    node_id: str = Field(..., description="Unique identity of the telemetry stream")
+    edge_node_id: Optional[str] = Field(
+        None,
+        description="Physical Edge Node that produced this telemetry stream",
+    )
     equipment_id: str = Field(..., description="Identity of the bound equipment")
     equipment_type: str = Field(
         ...,
@@ -16,5 +22,57 @@ class TelemetryData(BaseModel):
     elapsed_time_ms: int = Field(0, ge=0)
     timestamp_epoch_ms: int = Field(..., description="Epoch timestamp in milliseconds")
 
-    def to_dict(self) -> dict:
-        return self.model_dump()
+
+class FtmsDevice(BaseModel):
+    address: str = Field(..., description="Bluetooth address or platform-specific BLE identifier")
+    name: str | None = Field(None, description="Advertised BLE device name")
+    rssi: int | None = Field(None, description="Received signal strength in dBm")
+    service_uuids: list[str] = Field(default_factory=list)
+    matched_services: list[str] = Field(default_factory=list)
+
+
+class EquipmentBinding(BaseModel):
+    node_id: str = Field(
+        ...,
+        description="Telemetry stream identity for this connected equipment",
+    )
+    equipment_id: str
+    equipment_type: str
+    ble_target: str = Field(..., description="BLE MAC address or advertised name")
+    antenna_channel: str | None = Field(
+        None,
+        description="Antenna board UART channel assigned to this equipment stream",
+    )
+
+    @field_validator("node_id", "equipment_id", "equipment_type", "ble_target")
+    @classmethod
+    def require_non_blank(cls, value: str) -> str:
+        if not value or not value.strip():
+            raise ValueError("value cannot be blank")
+        return value.strip()
+
+
+class EdgeNodeConfig(BaseModel):
+    node_id: str = Field(..., description="Physical Edge Node identity")
+    mqtt_host: str = "localhost"
+    mqtt_port: int = 1883
+    max_ftms_connections: int = Field(5, ge=1, le=10)
+    available_channels: int = Field(2, ge=1)
+    software_version: str | None = None
+    antenna_protocol_version: str | None = None
+    equipment_bindings: list[EquipmentBinding] = Field(default_factory=list)
+
+    @field_validator("node_id", "mqtt_host")
+    @classmethod
+    def require_non_blank(cls, value: str) -> str:
+        if not value or not value.strip():
+            raise ValueError("value cannot be blank")
+        return value.strip()
+
+    @model_validator(mode="after")
+    def validate_binding_limit(self):
+        if len(self.equipment_bindings) > self.max_ftms_connections:
+            raise ValueError("equipment_bindings cannot exceed max_ftms_connections")
+        if len(self.equipment_bindings) > 10:
+            raise ValueError("equipment_bindings cannot exceed 10 devices")
+        return self
