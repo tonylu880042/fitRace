@@ -1,0 +1,9 @@
+# FitRaceStudio system labwc autostart.
+#
+# Raspberry Pi OS runs this system autostart in addition to the user's labwc
+# autostart. Keep only display arrangement here; the user autostart launches the
+# FitRaceStudio kiosk. Do not start pcmanfm, wf-panel-pi, or
+# lxsession-xdg-autostart in kiosk mode.
+
+/usr/bin/kanshi &
+

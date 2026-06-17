@@ -1,0 +1,9 @@
+# FitRaceStudio kiosk autostart for Raspberry Pi OS Bookworm labwc.
+#
+# This file intentionally replaces the stock autostart that launches pcmanfm
+# desktop and wf-panel-pi. Keeping those processes disabled prevents users from
+# navigating back to the regular desktop during normal operation.
+
+/usr/bin/kanshi &
+/usr/bin/lwrespawn /usr/local/bin/fitracestudio-kiosk &
+

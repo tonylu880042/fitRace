@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<openbox_config xmlns="http://openbox.org/3.4/rc">
+  <theme>
+    <name>PiXflat</name>
+    <cornerRadius>0</cornerRadius>
+    <keepBorder>no</keepBorder>
+    <titlebar>
+      <layout></layout>
+    </titlebar>
+  </theme>
+
+  <keyboard>
+    <numlock>off</numlock>
+  </keyboard>
+
+  <mouse>
+    <context name="Root">
+      <mousebind button="Left" action="Press"></mousebind>
+      <mousebind button="Middle" action="Press"></mousebind>
+      <mousebind button="Right" action="Press"></mousebind>
+    </context>
+    <context name="Title">
+      <mousebind button="Left" action="Press"></mousebind>
+      <mousebind button="Middle" action="Press"></mousebind>
+      <mousebind button="Right" action="Press"></mousebind>
+    </context>
+  </mouse>
+
+  <snapping>
+    <range>0</range>
+    <topMaximize>no</topMaximize>
+  </snapping>
+
+  <windowSwitcher show="no" preview="no" outlines="no" allWorkspaces="no" />
+</openbox_config>
+

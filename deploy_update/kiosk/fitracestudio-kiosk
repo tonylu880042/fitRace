@@ -1,0 +1,38 @@
+#!/bin/sh
+set -eu
+
+ENV_FILE="${FITRACE_KIOSK_ENV_FILE:-$HOME/.config/fitracestudio/kiosk.env}"
+if [ -f "$ENV_FILE" ]; then
+  # shellcheck disable=SC1090
+  . "$ENV_FILE"
+fi
+
+URL="${FITRACE_KIOSK_URL:-http://127.0.0.1:8000/static/index.html}"
+HEALTH_URL="${FITRACE_KIOSK_HEALTH_URL:-http://127.0.0.1:8000/health}"
+PROFILE_DIR="${FITRACE_KIOSK_PROFILE_DIR:-$HOME/.config/fitracestudio/chromium-kiosk}"
+
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}"
+
+mkdir -p "$PROFILE_DIR"
+
+i=0
+while [ "$i" -lt 90 ]; do
+  if curl -fsS "$HEALTH_URL" >/dev/null 2>&1; then
+    break
+  fi
+  i=$((i + 1))
+  sleep 1
+done
+
+exec chromium-browser \
+  --kiosk "$URL" \
+  --no-first-run \
+  --no-default-browser-check \
+  --disable-infobars \
+  --disable-session-crashed-bubble \
+  --disable-translate \
+  --password-store=basic \
+  --overscroll-history-navigation=0 \
+  --autoplay-policy=no-user-gesture-required \
+  --user-data-dir="$PROFILE_DIR"
