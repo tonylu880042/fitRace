@@ -32,6 +32,11 @@ class RaceManager:
 
     def get_state_snapshot(self) -> Dict[str, Any]:
         config = self.get_config()
+        team_leaderboard = (
+            self.get_team_leaderboard_progress()
+            if config and config.competition_mode == "team"
+            else []
+        )
         return {
             "state": self.get_state().value,
             "config": config.model_dump() if config else None,
@@ -39,6 +44,7 @@ class RaceManager:
             "start_time_epoch_ms": self.get_start_time_epoch_ms(),
             "end_time_epoch_ms": self.get_end_time_epoch_ms(),
             "leaderboard": self.get_leaderboard_progress(),
+            "team_leaderboard": team_leaderboard,
         }
 
     def get_leaderboard_progress(self) -> Dict[str, Dict[str, Any]]:
@@ -95,6 +101,189 @@ class RaceManager:
                     "finished_time_ms": None,
                 }
         return progress
+
+    def get_team_leaderboard_progress(self) -> list[Dict[str, Any]]:
+        config = self.get_config()
+        if not config or config.competition_mode != "team":
+            return []
+
+        teams: Dict[str, Dict[str, Any]] = {}
+        for node in self.get_leaderboard_progress().values():
+            team_name = (node.get("team_name") or "").strip() or "Unassigned"
+            team = teams.setdefault(
+                team_name,
+                {
+                    "team_name": team_name,
+                    "member_count": 0,
+                    "finished_count": 0,
+                    "distance_m": 0.0,
+                    "calories": 0.0,
+                    "power_watts": 0,
+                    "max_power_watts": 0,
+                    "elapsed_time_ms": 0,
+                    "progress_total": 0.0,
+                    "team_finished_time_ms": None,
+                    "members": [],
+                },
+            )
+
+            progress_percent = self._metric_number(node.get("progress_percent"))
+            team_progress_percent = (
+                min(100.0, progress_percent)
+                if config.team_completion_policy == "all_members" and config.race_type in ("distance", "calories")
+                else progress_percent
+            )
+            distance_m = self._metric_number(node.get("distance_m"))
+            calories = self._metric_number(node.get("calories"))
+            power_watts = int(self._metric_number(node.get("power_watts")))
+            max_power_watts = int(self._metric_number(node.get("max_power_watts")))
+            elapsed_time_ms = int(self._metric_number(node.get("elapsed_time_ms")))
+
+            team["member_count"] += 1
+            team["finished_count"] += 1 if node.get("finished_time_ms") is not None else 0
+            team["distance_m"] += distance_m
+            team["calories"] += calories
+            team["power_watts"] += power_watts
+            team["max_power_watts"] += max_power_watts
+            team["elapsed_time_ms"] = max(team["elapsed_time_ms"], elapsed_time_ms)
+            team["progress_total"] += team_progress_percent
+            if node.get("finished_time_ms") is not None:
+                finished_time_ms = int(self._metric_number(node.get("finished_time_ms")))
+                team["team_finished_time_ms"] = max(
+                    team["team_finished_time_ms"] or 0,
+                    finished_time_ms,
+                )
+            team["members"].append(
+                {
+                    "node_id": node.get("node_id"),
+                    "athlete_name": node.get("athlete_name"),
+                    "station_number": node.get("station_number"),
+                    "avatar_url": node.get("avatar_url"),
+                    "distance_m": round(distance_m, 2),
+                    "calories": round(calories, 2),
+                    "power_watts": power_watts,
+                    "max_power_watts": max_power_watts,
+                    "elapsed_time_ms": elapsed_time_ms,
+                    "progress_percent": round(team_progress_percent, 2),
+                    "finished_time_ms": node.get("finished_time_ms"),
+                }
+            )
+
+        leaderboard = []
+        for team in teams.values():
+            member_count = team["member_count"] or 1
+            average_progress = team["progress_total"] / member_count
+            score_value, progress_percent, score_label = self._team_score(team, config)
+            team_finished = self._team_finished(team, config, progress_percent)
+            team_finished_time_ms = team["team_finished_time_ms"] if team_finished else None
+
+            team["members"].sort(
+                key=lambda member: self._metric_number(member.get("station_number"), 999)
+            )
+            leaderboard.append(
+                {
+                    "team_name": team["team_name"],
+                    "member_count": team["member_count"],
+                    "finished_count": team["finished_count"],
+                    "distance_m": round(team["distance_m"], 2),
+                    "calories": round(team["calories"], 2),
+                    "power_watts": team["power_watts"],
+                    "max_power_watts": team["max_power_watts"],
+                    "elapsed_time_ms": team["elapsed_time_ms"],
+                    "progress_percent": round(progress_percent, 2),
+                    "average_progress_percent": round(average_progress, 2),
+                    "score_value": round(score_value, 2),
+                    "score_label": score_label,
+                    "scoring_policy": config.team_scoring_policy,
+                    "completion_policy": config.team_completion_policy,
+                    "team_finished": team_finished,
+                    "team_finished_time_ms": team_finished_time_ms,
+                    "members": team["members"],
+                }
+            )
+
+        self._sort_team_leaderboard(leaderboard, config)
+        return leaderboard
+
+    def _team_score(self, team: Dict[str, Any], config: RaceConfig) -> tuple[float, float, str]:
+        member_count = team["member_count"] or 1
+        policy = config.team_scoring_policy
+
+        if config.race_type == "distance":
+            if config.team_completion_policy == "all_members":
+                score = team["progress_total"] / member_count
+                return score, score, "progress"
+            if policy == "total":
+                score = team["distance_m"]
+                progress = (team["distance_m"] / config.target_value) * 100.0
+            else:
+                score = team["progress_total"] / member_count
+                progress = score
+            return score, progress, "distance_m"
+
+        if config.race_type == "calories":
+            if config.team_completion_policy == "all_members":
+                score = team["progress_total"] / member_count
+                return score, score, "progress"
+            if policy == "total":
+                score = team["calories"]
+                progress = (team["calories"] / config.target_value) * 100.0
+            else:
+                score = team["progress_total"] / member_count
+                progress = score
+            return score, progress, "calories"
+
+        if config.race_type == "time":
+            if policy == "total":
+                score = team["distance_m"]
+            else:
+                score = team["distance_m"] / member_count
+            return score, team["progress_total"] / member_count, "distance_m"
+
+        if config.race_type in ("max_power", "watts"):
+            if policy == "total":
+                score = team["max_power_watts"]
+            else:
+                score = team["max_power_watts"] / member_count
+            return score, team["progress_total"] / member_count, "max_power_watts"
+
+        return team["progress_total"] / member_count, team["progress_total"] / member_count, "progress"
+
+    def _team_finished(self, team: Dict[str, Any], config: RaceConfig, progress_percent: float) -> bool:
+        if config.team_completion_policy == "all_members" and config.race_type in ("distance", "calories"):
+            return team["member_count"] > 0 and team["finished_count"] == team["member_count"]
+        if config.race_type in ("distance", "calories"):
+            return progress_percent >= 100.0
+        return self._state == RaceState.STOPPED
+
+    def _sort_team_leaderboard(self, leaderboard: list[Dict[str, Any]], config: RaceConfig):
+        if config.team_completion_policy == "all_members" and config.race_type in ("distance", "calories"):
+            leaderboard.sort(
+                key=lambda team: (
+                    0 if team.get("team_finished") else 1,
+                    self._metric_number(team.get("team_finished_time_ms"), float("inf")),
+                    -self._metric_number(team.get("average_progress_percent")),
+                    str(team.get("team_name") or ""),
+                )
+            )
+            return
+
+        leaderboard.sort(
+            key=lambda team: (
+                -self._metric_number(team.get("score_value")),
+                -self._metric_number(team.get("average_progress_percent")),
+                -self._metric_number(team.get("finished_count")),
+                str(team.get("team_name") or ""),
+            )
+        )
+
+    @staticmethod
+    def _metric_number(value: Any, fallback: float = 0.0) -> float:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return fallback
+        return number
 
     def get_registered_nodes(self) -> Dict[str, str]:
         # Merge stations and registered nodes to maintain backward compatibility

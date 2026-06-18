@@ -274,6 +274,10 @@
     .status-text.warn { color: var(--warn); }
     .status-text.error { color: var(--danger); }
 
+    .field.is-hidden {
+      display: none;
+    }
+
     .race-state {
       color: var(--accent);
       border-color: rgba(226,255,59,0.75);
@@ -344,6 +348,48 @@
 
     .row-meta {
       margin-top: 4px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.35;
+    }
+
+    .readiness {
+      display: grid;
+      gap: 8px;
+      margin-top: 14px;
+      margin-bottom: 14px;
+    }
+
+    .readiness-card {
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: rgba(0,0,0,0.22);
+      padding: 12px;
+    }
+
+    .readiness-card.warn {
+      border-color: rgba(245,158,11,0.65);
+    }
+
+    .readiness-card.ok {
+      border-color: rgba(52,211,153,0.55);
+    }
+
+    .readiness-main {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .readiness-title {
+      font-weight: 800;
+      letter-spacing: 0.02em;
+    }
+
+    .readiness-meta {
+      margin-top: 5px;
       color: var(--muted);
       font-size: 13px;
       line-height: 1.35;
@@ -487,6 +533,27 @@
                 <option value="max_power">Max Power Challenge</option>
               </select>
             </div>
+            <div class="field">
+              <label for="competition-mode">Competition</label>
+              <select id="competition-mode" onchange="syncCompetitionFields(); renderStations();">
+                <option value="individual">Individual Race</option>
+                <option value="team">Team Race</option>
+              </select>
+            </div>
+            <div class="field" id="team-scoring-field">
+              <label for="team-scoring-policy">Team Scoring</label>
+              <select id="team-scoring-policy" onchange="renderStations()">
+                <option value="average">Average Progress</option>
+                <option value="total">Team Total</option>
+              </select>
+            </div>
+            <div class="field" id="team-completion-field">
+              <label for="team-completion-policy">Completion Rule</label>
+              <select id="team-completion-policy" onchange="renderStations()">
+                <option value="aggregate">Aggregate Progress</option>
+                <option value="all_members">All Members Finish</option>
+              </select>
+            </div>
             <div class="field" id="target-field">
               <label for="race-target" id="race-target-label">Target Distance (m)</label>
               <input type="number" id="race-target" min="1" value="500">
@@ -496,7 +563,6 @@
               <select id="auto-refresh">
                 <option value="2000">Every 2 seconds</option>
                 <option value="5000" selected>Every 5 seconds</option>
-                <option value="0">Manual</option>
               </select>
             </div>
           </div>
@@ -616,6 +682,12 @@
       if (type === "max_power") label.textContent = "Challenge Time (s)";
     }
 
+    function syncCompetitionFields() {
+      const isTeamRace = $("competition-mode").value === "team";
+      $("team-scoring-field").classList.toggle("is-hidden", !isTeamRace);
+      $("team-completion-field").classList.toggle("is-hidden", !isTeamRace);
+    }
+
     async function fetchJson(url, options = {}) {
       const response = await fetch(url, options);
       const text = await response.text();
@@ -681,7 +753,11 @@
       const config = race.config;
       if (config) {
         $("race-type").value = config.race_type || "distance";
+        $("competition-mode").value = config.competition_mode || "individual";
+        $("team-scoring-policy").value = config.team_scoring_policy || "average";
+        $("team-completion-policy").value = config.team_completion_policy || "aggregate";
         syncRaceFields();
+        syncCompetitionFields();
         $("race-target").value = (config.race_type === "distance" || config.race_type === "calories")
           ? metricNumber(config.target_value, 0)
           : metricNumber(config.duration_sec, 0);
@@ -732,15 +808,72 @@
         `;
       }).join("");
 
-      list.innerHTML = `${unassigned}${assigned}`;
+      list.innerHTML = `${renderTeamReadiness(stations, keys)}${unassigned}${assigned}`;
+    }
+
+    function renderTeamReadiness(stations, keys) {
+      if ($("competition-mode").value !== "team") return "";
+
+      const athletes = keys
+        .map((key) => ({ stationNumber: key, ...(stations[key] || {}) }))
+        .filter((station) => station.athlete_name);
+      const teamCounts = new Map();
+      const unassignedAthletes = [];
+
+      athletes.forEach((station) => {
+        const teamName = (station.team_name || "").trim();
+        if (!teamName) {
+          unassignedAthletes.push(station);
+          return;
+        }
+        teamCounts.set(teamName, (teamCounts.get(teamName) || 0) + 1);
+      });
+
+      const teamList = [...teamCounts.entries()]
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([teamName, count]) => `${escapeHtml(teamName)}: ${count}`)
+        .join(" · ");
+      const teamCount = teamCounts.size;
+      const hasWarning = teamCount < 2 || unassignedAthletes.length > 0;
+      const title = hasWarning ? "Team Race Needs Review" : "Team Race Ready";
+      const completionText = $("team-completion-policy").selectedOptions[0].textContent;
+      const meta = [
+        `${teamCount} teams`,
+        `${athletes.length} athletes`,
+        unassignedAthletes.length ? `${unassignedAthletes.length} without team` : "",
+        completionText,
+        teamList,
+      ].filter(Boolean).join(" · ");
+
+      return `
+        <div class="readiness" aria-live="polite">
+          <div class="readiness-card ${hasWarning ? "warn" : "ok"}">
+            <div class="readiness-main">
+              <div class="readiness-title">${title}</div>
+              <span class="pill">${escapeHtml($("team-scoring-policy").selectedOptions[0].textContent)}</span>
+            </div>
+            <div class="readiness-meta">${escapeHtml(meta || "Register athletes with team names before starting.")}</div>
+          </div>
+        </div>
+      `;
     }
 
 
 
     async function configureRace() {
       const type = $("race-type").value;
+      const competitionMode = $("competition-mode").value;
+      const teamScoringPolicy = $("team-scoring-policy").value;
+      const teamCompletionPolicy = $("team-completion-policy").value;
       const value = Number($("race-target").value);
-      const payload = { race_type: type, target_value: 0, duration_sec: 0 };
+      const payload = {
+        race_type: type,
+        competition_mode: competitionMode,
+        team_scoring_policy: teamScoringPolicy,
+        team_completion_policy: teamCompletionPolicy,
+        target_value: 0,
+        duration_sec: 0,
+      };
       if (type === "distance" || type === "calories") payload.target_value = value;
       else payload.duration_sec = Math.round(value);
       if (value <= 0) {
@@ -835,6 +968,7 @@
     });
 
     syncRaceFields();
+    syncCompetitionFields();
     connectWebSocket();
     refreshAll();
   </script>

@@ -97,6 +97,9 @@ power_manager = PowerManager(
 
 class ConfigurePayload(BaseModel):
     race_type: str
+    competition_mode: str = "individual"
+    team_scoring_policy: str = "average"
+    team_completion_policy: str = "aggregate"
     target_value: float = 0.0
     duration_sec: int = 0
 
@@ -465,6 +468,9 @@ async def configure_race(payload: ConfigurePayload):
     try:
         config = RaceConfig(
             race_type=payload.race_type,
+            competition_mode=payload.competition_mode,
+            team_scoring_policy=payload.team_scoring_policy,
+            team_completion_policy=payload.team_completion_policy,
             target_value=payload.target_value,
             duration_sec=payload.duration_sec,
         )

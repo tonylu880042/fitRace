@@ -15,6 +15,16 @@ class RaceConfig(BaseModel):
     race_type: Literal["distance", "time", "calories", "max_power", "watts"] = Field(
         ..., description="Type of race"
     )
+    competition_mode: Literal["individual", "team"] = Field(
+        "individual", description="Whether rankings are scored by athlete or team"
+    )
+    team_scoring_policy: Literal["average", "total"] = Field(
+        "average", description="How team scores are aggregated when competition_mode is team"
+    )
+    team_completion_policy: Literal["aggregate", "all_members"] = Field(
+        "aggregate",
+        description="Whether target-based team races finish by aggregate progress or every member target completion",
+    )
     target_value: float = Field(
         0.0,
         ge=0.0,

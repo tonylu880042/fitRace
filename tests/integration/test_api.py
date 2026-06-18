@@ -54,6 +54,9 @@ def test_signup_page_has_language_switcher_defaulting_to_english():
 def test_management_controls_are_split_by_admin_role():
     response_index = client.get("/static/index.html")
     assert response_index.status_code == 200
+    assert "renderTeamLeaderboard" in response_index.text
+    assert "competition_mode === \"team\"" in response_index.text
+    assert "team-leaderboard-item" in response_index.text
     assert "System Power" not in response_index.text
 
     response_signup = client.get("/static/signup.html")
@@ -74,6 +77,14 @@ def test_management_controls_are_split_by_admin_role():
     assert response_game_admin.status_code == 200
     assert "Race Control" in response_game_admin.text
     assert "Station Status" in response_game_admin.text
+    assert 'id="competition-mode"' in response_game_admin.text
+    assert 'id="team-scoring-policy"' in response_game_admin.text
+    assert 'id="team-completion-policy"' in response_game_admin.text
+    assert "competition_mode: competitionMode" in response_game_admin.text
+    assert "team_scoring_policy: teamScoringPolicy" in response_game_admin.text
+    assert "team_completion_policy: teamCompletionPolicy" in response_game_admin.text
+    assert "renderTeamReadiness" in response_game_admin.text
+    assert '<option value="0">Manual</option>' not in response_game_admin.text
     assert "Station Assignment" not in response_game_admin.text
     assert "Assign Stream" not in response_game_admin.text
     assert "Unassign Station" not in response_game_admin.text
@@ -332,6 +343,75 @@ def test_race_workflow_via_api():
     res = client.post("/api/race/reset")
     assert res.status_code == 200
     assert res.json()["state"] == "IDLE"
+
+
+def test_team_race_state_exposes_team_leaderboard(monkeypatch):
+    monkeypatch.setenv("TESTING", "1")
+    client.post("/api/race/reset")
+    for station_number in (1, 2, 3):
+        client.post(
+            "/api/stations/assign",
+            json={"station_number": station_number, "node_id": None},
+        )
+    client.post("/api/stations/assign", json={"station_number": 1, "node_id": "node-01"})
+    client.post("/api/stations/assign", json={"station_number": 2, "node_id": "node-02"})
+    client.post("/api/stations/assign", json={"station_number": 3, "node_id": "node-03"})
+    client.post(
+        "/api/race/register",
+        json={"station_number": 1, "athlete_name": "Runner A", "team_name": "Volt"},
+    )
+    client.post(
+        "/api/race/register",
+        json={"station_number": 2, "athlete_name": "Runner B", "team_name": "Volt"},
+    )
+    client.post(
+        "/api/race/register",
+        json={"station_number": 3, "athlete_name": "Runner C", "team_name": "Apex"},
+    )
+
+    res = client.post(
+        "/api/race/configure",
+        json={
+            "race_type": "distance",
+            "target_value": 100,
+            "duration_sec": 0,
+            "competition_mode": "team",
+            "team_scoring_policy": "total",
+            "team_completion_policy": "all_members",
+        },
+    )
+    assert res.status_code == 200
+    assert res.json()["config"]["competition_mode"] == "team"
+
+    client.post("/api/race/start")
+    client.post(
+        "/api/test/telemetry",
+        json={"node_id": "node-01", "distance_m": 80, "elapsed_time_ms": 10000},
+    )
+    client.post(
+        "/api/test/telemetry",
+        json={"node_id": "node-02", "distance_m": 40, "elapsed_time_ms": 10000},
+    )
+    client.post(
+        "/api/test/telemetry",
+        json={"node_id": "node-03", "distance_m": 50, "elapsed_time_ms": 10000},
+    )
+
+    state = client.get("/api/race/state").json()
+
+    assert state["config"]["team_scoring_policy"] == "total"
+    assert state["config"]["team_completion_policy"] == "all_members"
+    assert [team["team_name"] for team in state["team_leaderboard"]] == ["Volt", "Apex"]
+    assert state["team_leaderboard"][0]["team_finished"] is False
+    assert state["team_leaderboard"][0]["score_value"] == 60.0
+    assert state["team_leaderboard"][0]["member_count"] == 2
+    assert [member["station_number"] for member in state["team_leaderboard"][0]["members"]] == [1, 2]
+    client.post("/api/race/reset")
+    for station_number in (1, 2, 3):
+        client.post(
+            "/api/stations/assign",
+            json={"station_number": station_number, "node_id": None},
+        )
 
 
 def test_race_configure_rejects_invalid_config_and_keeps_idle_state():

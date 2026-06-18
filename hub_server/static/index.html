@@ -523,6 +523,105 @@
       animation: progressSweep 1.8s linear infinite;
     }
 
+    .team-leaderboard-list {
+      display: grid;
+      gap: 0.9rem;
+      position: relative;
+    }
+
+    .team-leaderboard-item {
+      display: grid;
+      grid-template-columns: 54px minmax(220px, 1.4fr) repeat(3, minmax(94px, 0.5fr));
+      gap: 1rem;
+      align-items: center;
+      padding: 1rem 1.2rem;
+      background: rgba(0, 0, 0, 0.25);
+      border: 1px solid var(--steel-border);
+      border-radius: 4px;
+      position: relative;
+      overflow: hidden;
+      transition:
+        transform 0.38s cubic-bezier(0.2, 0.9, 0.22, 1),
+        border-color 0.25s ease,
+        background 0.25s ease,
+        box-shadow 0.25s ease;
+      will-change: transform;
+    }
+
+    .team-leaderboard-item:nth-child(1) {
+      border: 2px solid var(--volt-yellow);
+      background: linear-gradient(90deg, rgba(226, 255, 59, 0.14), rgba(0, 0, 0, 0.28) 46%);
+      box-shadow: 0 0 28px rgba(226, 255, 59, 0.22), inset 0 0 10px rgba(226, 255, 59, 0.08);
+    }
+
+    .team-leaderboard-item.rank-up {
+      animation: rankUpPulse 0.75s ease-out;
+    }
+
+    .team-leaderboard-item.rank-down {
+      animation: rankDownPulse 0.75s ease-out;
+    }
+
+    .team-main {
+      min-width: 0;
+    }
+
+    .team-name {
+      font-weight: 800;
+      font-size: 1.35rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      line-height: 1.1;
+    }
+
+    .team-meta {
+      margin-top: 0.25rem;
+      color: var(--text-muted);
+      font-family: 'Oswald', sans-serif;
+      font-size: 0.76rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .team-member-strip {
+      grid-column: 1 / -1;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+      margin-top: 0.25rem;
+    }
+
+    .team-member-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      min-height: 28px;
+      max-width: 100%;
+      padding: 0.25rem 0.5rem;
+      border: 1px solid var(--steel-border);
+      border-radius: 2px;
+      background: rgba(255,255,255,0.035);
+      color: var(--text-muted);
+      font-size: 0.74rem;
+      font-weight: 700;
+      line-height: 1.1;
+    }
+
+    .team-member-chip strong {
+      color: var(--text-main);
+      font-weight: 800;
+    }
+
+    .team-member-station {
+      color: #09090b;
+      background: var(--volt-yellow);
+      padding: 0.08rem 0.24rem;
+      border-radius: 2px;
+      font-family: 'Oswald', sans-serif;
+      font-size: 0.66rem;
+      font-weight: 800;
+    }
+
     @keyframes progressSweep {
       from { background-position: -160px 0, 0 0; }
       to { background-position: 160px 0, 0 0; }
@@ -589,12 +688,31 @@
 
     @media (prefers-reduced-motion: reduce) {
       .leaderboard-item,
+      .team-leaderboard-item,
       .progress-fill,
       .podium-card.place-1,
       .celebration-flash,
       .confetti-piece {
         animation: none !important;
         transition: none !important;
+      }
+    }
+
+    @media (max-width: 760px) {
+      .leaderboard-item,
+      .team-leaderboard-item {
+        grid-template-columns: 44px minmax(0, 1fr);
+      }
+
+      .metric-group {
+        text-align: left;
+      }
+
+      .team-main,
+      .metric-group,
+      .progress-track,
+      .team-member-strip {
+        grid-column: 1 / -1;
       }
     }
 
@@ -1031,6 +1149,7 @@
     let raceStartTime = null;
     let leaderboardNodes = [];
     let leaderboardRankByNode = new Map();
+    let teamLeaderboardRows = [];
     let celebrationShownForRaceKey = null;
     let autoResetInterval = null;
     let autoResetSecondsLeft = 0;
@@ -1351,6 +1470,211 @@
       return `<div class="podium-panel" aria-label="Race winners">${cards}</div>`;
     }
 
+    function formatTeamScore(team, raceType) {
+      const scoreLabel = team.score_label || "progress";
+      if (raceType === "distance") {
+        return scoreLabel === "distance_m"
+          ? { value: `${metricNumber(team.score_value).toFixed(0)}m`, label: "Team distance" }
+          : { value: `${metricNumber(team.score_value).toFixed(1)}%`, label: "Avg progress" };
+      }
+      if (raceType === "calories") {
+        return scoreLabel === "calories"
+          ? { value: `${metricNumber(team.score_value).toFixed(1)}`, label: "Team kcal" }
+          : { value: `${metricNumber(team.score_value).toFixed(1)}%`, label: "Avg progress" };
+      }
+      if (raceType === "time") {
+        return { value: `${metricNumber(team.score_value).toFixed(0)}m`, label: "Team distance" };
+      }
+      if (raceType === "max_power" || raceType === "watts") {
+        return { value: `${metricNumber(team.score_value).toFixed(0)}W`, label: "Team power" };
+      }
+      return { value: `${metricNumber(team.score_value).toFixed(1)}%`, label: "Team score" };
+    }
+
+    function renderTeamPodium(teams, raceType) {
+      const topThree = teams.slice(0, 3);
+      if (topThree.length === 0) return "";
+
+      const podiumOrder = topThree.length >= 3 ? [1, 0, 2] : topThree.map((_, index) => index);
+      const cards = podiumOrder.map((teamIndex) => {
+        const team = topThree[teamIndex];
+        if (!team) return "";
+        const rank = teamIndex + 1;
+        const medal = getMedalMeta(rank);
+        const score = formatTeamScore(team, raceType);
+        return `
+          <div class="podium-card place-${rank}">
+            <div class="podium-place">
+              <span class="medal-mark ${medal.className}" title="${medal.title}">${medal.label}</span>
+              <span>#${rank} ${medal.title}</span>
+            </div>
+            <div class="podium-name">${escapeHtml(team.team_name || "Team")}</div>
+            <div class="podium-score">${score.value}</div>
+            <div class="podium-sub">${score.label} · ${metricNumber(team.member_count).toFixed(0)} athletes</div>
+          </div>
+        `;
+      }).join("");
+
+      return `<div class="podium-panel" aria-label="Team race winners">${cards}</div>`;
+    }
+
+    function aggregateTeamLeaderboard(progressData, raceType) {
+      const teams = new Map();
+      Object.values(progressData || {}).forEach((node) => {
+        const teamName = String(node.team_name || "").trim() || "Unassigned";
+        if (!teams.has(teamName)) {
+          teams.set(teamName, {
+            team_name: teamName,
+            member_count: 0,
+            finished_count: 0,
+            distance_m: 0,
+            calories: 0,
+            power_watts: 0,
+            max_power_watts: 0,
+            elapsed_time_ms: 0,
+            progress_total: 0,
+            team_finished_time_ms: null,
+            members: [],
+          });
+        }
+
+        const team = teams.get(teamName);
+        const progressPercent = metricNumber(node.progress_percent);
+        const distanceM = metricNumber(node.distance_m);
+        const calories = metricNumber(node.calories);
+        const powerWatts = metricNumber(node.power_watts);
+        const maxPowerWatts = metricNumber(node.max_power_watts);
+        const elapsedMs = metricNumber(node.elapsed_time_ms);
+        const completionPolicy = currentConfig?.team_completion_policy || "aggregate";
+        const teamProgressPercent = completionPolicy === "all_members" && (raceType === "distance" || raceType === "calories")
+          ? Math.min(100, progressPercent)
+          : progressPercent;
+
+        team.member_count += 1;
+        team.finished_count += node.finished_time_ms ? 1 : 0;
+        team.distance_m += distanceM;
+        team.calories += calories;
+        team.power_watts += powerWatts;
+        team.max_power_watts += maxPowerWatts;
+        team.elapsed_time_ms = Math.max(team.elapsed_time_ms, elapsedMs);
+        team.progress_total += teamProgressPercent;
+        if (node.finished_time_ms) {
+          team.team_finished_time_ms = Math.max(
+            team.team_finished_time_ms || 0,
+            metricNumber(node.finished_time_ms)
+          );
+        }
+        team.members.push({
+          node_id: node.node_id,
+          athlete_name: node.athlete_name,
+          station_number: node.station_number,
+          distance_m: distanceM,
+          calories,
+          power_watts: powerWatts,
+          max_power_watts: maxPowerWatts,
+          elapsed_time_ms: elapsedMs,
+          progress_percent: teamProgressPercent,
+          finished_time_ms: node.finished_time_ms,
+        });
+      });
+
+      const policy = currentConfig?.team_scoring_policy || "average";
+      const completionPolicy = currentConfig?.team_completion_policy || "aggregate";
+      const rows = [...teams.values()].map((team) => {
+        const memberCount = team.member_count || 1;
+        const averageProgress = team.progress_total / memberCount;
+        let scoreValue = averageProgress;
+        let progressPercent = averageProgress;
+        let scoreLabel = "progress";
+
+        if (raceType === "distance") {
+          if (completionPolicy === "all_members") {
+            scoreValue = averageProgress;
+          } else if (policy === "total") {
+            scoreValue = team.distance_m;
+            progressPercent = currentConfig?.target_value ? (team.distance_m / currentConfig.target_value) * 100 : 0;
+            scoreLabel = "distance_m";
+          }
+        } else if (raceType === "calories") {
+          if (completionPolicy === "all_members") {
+            scoreValue = averageProgress;
+          } else if (policy === "total") {
+            scoreValue = team.calories;
+            progressPercent = currentConfig?.target_value ? (team.calories / currentConfig.target_value) * 100 : 0;
+            scoreLabel = "calories";
+          }
+        } else if (raceType === "time") {
+          scoreValue = policy === "total" ? team.distance_m : team.distance_m / memberCount;
+          scoreLabel = "distance_m";
+        } else if (raceType === "max_power" || raceType === "watts") {
+          scoreValue = policy === "total" ? team.max_power_watts : team.max_power_watts / memberCount;
+          scoreLabel = "max_power_watts";
+        }
+
+        const targetBasedAllMembers = completionPolicy === "all_members" && (raceType === "distance" || raceType === "calories");
+        const teamFinished = targetBasedAllMembers
+          ? team.member_count > 0 && team.finished_count === team.member_count
+          : progressPercent >= 100;
+        team.members.sort((a, b) => metricNumber(a.station_number, 999) - metricNumber(b.station_number, 999));
+        return {
+          team_name: team.team_name,
+          member_count: team.member_count,
+          finished_count: team.finished_count,
+          distance_m: team.distance_m,
+          calories: team.calories,
+          power_watts: team.power_watts,
+          max_power_watts: team.max_power_watts,
+          elapsed_time_ms: team.elapsed_time_ms,
+          progress_percent: progressPercent,
+          average_progress_percent: averageProgress,
+          score_value: scoreValue,
+          score_label: scoreLabel,
+          scoring_policy: policy,
+          completion_policy: completionPolicy,
+          team_finished: teamFinished,
+          team_finished_time_ms: teamFinished ? team.team_finished_time_ms : null,
+          members: team.members,
+        };
+      });
+
+      return sortTeamLeaderboardRows(rows);
+    }
+
+    function sortTeamLeaderboardRows(rows) {
+      const targetBasedAllMembers = currentConfig?.team_completion_policy === "all_members" &&
+        (currentConfig?.race_type === "distance" || currentConfig?.race_type === "calories");
+      if (targetBasedAllMembers) {
+        return rows.sort((a, b) => {
+          if (Boolean(a.team_finished) !== Boolean(b.team_finished)) return a.team_finished ? -1 : 1;
+          const finishDiff = metricNumber(a.team_finished_time_ms, Infinity) - metricNumber(b.team_finished_time_ms, Infinity);
+          if (finishDiff !== 0) return finishDiff;
+          const progressDiff = metricNumber(b.average_progress_percent) - metricNumber(a.average_progress_percent);
+          if (progressDiff !== 0) return progressDiff;
+          return String(a.team_name || "").localeCompare(String(b.team_name || ""));
+        });
+      }
+      return rows.sort((a, b) => {
+        const scoreDiff = metricNumber(b.score_value) - metricNumber(a.score_value);
+        if (scoreDiff !== 0) return scoreDiff;
+        const progressDiff = metricNumber(b.average_progress_percent) - metricNumber(a.average_progress_percent);
+        if (progressDiff !== 0) return progressDiff;
+        const finishedDiff = metricNumber(b.finished_count) - metricNumber(a.finished_count);
+        if (finishedDiff !== 0) return finishedDiff;
+        return String(a.team_name || "").localeCompare(String(b.team_name || ""));
+      });
+    }
+
+    function isTeamLeaderboardFinal(raceType, teams) {
+      if (!teams.length) return false;
+      if (raceType === "distance" || raceType === "calories") {
+        if (currentConfig?.team_completion_policy === "all_members") {
+          return teams.every((team) => Boolean(team.team_finished));
+        }
+        return teams.every((team) => metricNumber(team.progress_percent) >= 100);
+      }
+      return currentState === "STOPPED";
+    }
+
     function triggerFinishCelebration(nodes) {
       const raceKey = `${raceEndTime || raceStartTime || "race"}:${nodes.map((node) => node.node_id).join("|")}`;
       if (celebrationShownForRaceKey === raceKey) return;
@@ -1442,7 +1766,7 @@
     }
 
     function animateLeaderboardReorder(previousRects) {
-      const items = document.querySelectorAll(".leaderboard-item");
+      const items = document.querySelectorAll(".leaderboard-item, .team-leaderboard-item");
       items.forEach((item) => {
         const nodeId = item.dataset.nodeId;
         const previousRect = previousRects.get(nodeId);
@@ -1463,12 +1787,114 @@
       });
 
       window.setTimeout(() => {
-        document.querySelectorAll(".leaderboard-item.rank-up, .leaderboard-item.rank-down")
+        document.querySelectorAll(".leaderboard-item.rank-up, .leaderboard-item.rank-down, .team-leaderboard-item.rank-up, .team-leaderboard-item.rank-down")
           .forEach((item) => item.classList.remove("rank-up", "rank-down"));
       }, 900);
     }
 
-    function renderLeaderboard(progressData) {
+    function renderTeamLeaderboard(progressData, teamData = null) {
+      const container = document.getElementById("leaderboard-container");
+      const previousRects = new Map();
+      container.querySelectorAll(".team-leaderboard-item").forEach((item) => {
+        previousRects.set(item.dataset.nodeId, item.getBoundingClientRect());
+      });
+
+      const raceType = (currentConfig && currentConfig.race_type) || 'distance';
+      const teams = sortTeamLeaderboardRows(
+        Array.isArray(teamData) && teamData.length
+          ? teamData.map((team) => ({ ...team, members: [...(team.members || [])] }))
+          : aggregateTeamLeaderboard(progressData, raceType)
+      );
+
+      if (teams.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <p>${escapeHtml(t("leaderboard.waiting_data"))}</p>
+          </div>`;
+        leaderboardNodes = [];
+        teamLeaderboardRows = [];
+        leaderboardRankByNode = new Map();
+        return;
+      }
+
+      teamLeaderboardRows = teams;
+      leaderboardNodes = Object.values(progressData || {});
+      const leaderboardFinal = isTeamLeaderboardFinal(raceType, teams);
+
+      let html = leaderboardFinal ? renderTeamPodium(teams, raceType) : '';
+      html += '<div class="team-leaderboard-list">';
+      teams.forEach((team, index) => {
+        const currentRank = index + 1;
+        const teamKey = team.team_name || `team-${index + 1}`;
+        const previousRank = leaderboardRankByNode.get(teamKey);
+        const rankDelta = previousRank ? previousRank - currentRank : 0;
+        const rankClass = rankDelta > 0 ? "rank-up" : rankDelta < 0 ? "rank-down" : "";
+        let rankDisplayHtml = '';
+        if (currentRank === 1) {
+          rankDisplayHtml = `<span class="rank-champion" title="冠軍">👑</span>`;
+        } else if (currentRank === 2) {
+          rankDisplayHtml = `<span class="rank-silver" title="亞軍">🥈</span>`;
+        } else if (currentRank === 3) {
+          rankDisplayHtml = `<span class="rank-bronze" title="季軍">🥉</span>`;
+        } else {
+          rankDisplayHtml = `<span>${currentRank}</span>`;
+        }
+
+        const score = formatTeamScore(team, raceType);
+        const progressText = `${metricNumber(team.progress_percent).toFixed(1)}%`;
+        const completionLabel = team.completion_policy === "all_members" ? "all members finish" : "aggregate finish";
+        const members = (team.members || []).map((member) => {
+          const station = member.station_number ? `<span class="team-member-station">S${escapeHtml(member.station_number)}</span>` : "";
+          return `
+            <span class="team-member-chip">
+              ${station}
+              <strong>${escapeHtml(member.athlete_name || "Athlete")}</strong>
+              ${metricNumber(member.progress_percent).toFixed(0)}%
+            </span>
+          `;
+        }).join("");
+
+        html += `
+          <div class="team-leaderboard-item ${rankClass}" data-node-id="${escapeHtml(teamKey)}">
+            <div class="rank">${rankDisplayHtml}</div>
+            <div class="team-main">
+              <div class="team-name">${escapeHtml(team.team_name || "Team")}</div>
+              <div class="team-meta">${metricNumber(team.member_count).toFixed(0)} athletes · ${escapeHtml(team.scoring_policy || "average")} scoring · ${completionLabel}</div>
+            </div>
+            <div class="metric-group">
+              <div class="metric-val score-primary">${score.value}</div>
+              <div class="metric-lbl">${escapeHtml(score.label)}</div>
+            </div>
+            <div class="metric-group">
+              <div class="metric-val">${progressText}</div>
+              <div class="metric-lbl">Team progress</div>
+            </div>
+            <div class="metric-group">
+              <div class="metric-val">${metricNumber(team.finished_count).toFixed(0)}/${metricNumber(team.member_count).toFixed(0)}</div>
+              <div class="metric-lbl">Finished</div>
+            </div>
+            <div class="progress-track">
+              <div class="progress-fill" style="width: ${Math.min(100, metricNumber(team.progress_percent))}%"></div>
+            </div>
+            <div class="team-member-strip">${members}</div>
+          </div>
+        `;
+      });
+      html += '</div>';
+      container.innerHTML = html;
+      leaderboardRankByNode = new Map(teams.map((team, index) => [team.team_name || `team-${index + 1}`, index + 1]));
+      animateLeaderboardReorder(previousRects);
+      if (leaderboardFinal) {
+        triggerFinishCelebration(teams.map((team) => ({ node_id: team.team_name })));
+      }
+    }
+
+    function renderLeaderboard(progressData, teamData = null) {
+      if (currentConfig && currentConfig.competition_mode === "team") {
+        renderTeamLeaderboard(progressData, teamData);
+        return;
+      }
+
       const container = document.getElementById("leaderboard-container");
       const previousRects = new Map();
       container.querySelectorAll(".leaderboard-item").forEach((item) => {
@@ -1483,6 +1909,7 @@
             <p>${escapeHtml(t("leaderboard.waiting_data"))}</p>
           </div>`;
         leaderboardNodes = [];
+        teamLeaderboardRows = [];
         leaderboardRankByNode = new Map();
         return;
       }
@@ -1770,7 +2197,7 @@
       raceEndTime = data.end_time_epoch_ms || null;
 
       if (data.leaderboard) {
-        renderLeaderboard(data.leaderboard);
+        renderLeaderboard(data.leaderboard, data.team_leaderboard || null);
       }
 
       document.getElementById("current-state-lbl").innerText = currentState;
@@ -1779,18 +2206,19 @@
       const typeIndicator = document.getElementById("race-type-indicator");
 
       if (currentConfig) {
+        const competitionLabel = currentConfig.competition_mode === "team" ? "Team" : "Individual";
         if (currentConfig.race_type === "distance") {
-          configDesc.innerText = `${t("race.distance")}: ${currentConfig.target_value}m`;
-          typeIndicator.innerText = `${t("race.distance")} (${currentConfig.target_value}m)`;
+          configDesc.innerText = `${competitionLabel} · ${t("race.distance")}: ${currentConfig.target_value}m`;
+          typeIndicator.innerText = `${competitionLabel} · ${t("race.distance")} (${currentConfig.target_value}m)`;
         } else if (currentConfig.race_type === "calories") {
-          configDesc.innerText = `${t("race.calories")}: ${currentConfig.target_value} kcal`;
-          typeIndicator.innerText = `${t("race.calories")} (${currentConfig.target_value} kcal)`;
+          configDesc.innerText = `${competitionLabel} · ${t("race.calories")}: ${currentConfig.target_value} kcal`;
+          typeIndicator.innerText = `${competitionLabel} · ${t("race.calories")} (${currentConfig.target_value} kcal)`;
         } else if (currentConfig.race_type === "time") {
-          configDesc.innerText = `${t("race.time")}: ${currentConfig.duration_sec}s`;
-          typeIndicator.innerText = `${t("race.time")} (${currentConfig.duration_sec}s)`;
+          configDesc.innerText = `${competitionLabel} · ${t("race.time")}: ${currentConfig.duration_sec}s`;
+          typeIndicator.innerText = `${competitionLabel} · ${t("race.time")} (${currentConfig.duration_sec}s)`;
         } else if (currentConfig.race_type === "max_power" || currentConfig.race_type === "watts") {
-          configDesc.innerText = `${t("race.max_power")}: ${currentConfig.duration_sec}s`;
-          typeIndicator.innerText = `${t("race.max_power")} (${currentConfig.duration_sec}s)`;
+          configDesc.innerText = `${competitionLabel} · ${t("race.max_power")}: ${currentConfig.duration_sec}s`;
+          typeIndicator.innerText = `${competitionLabel} · ${t("race.max_power")} (${currentConfig.duration_sec}s)`;
         }
       } else {
         configDesc.innerText = t("status.no_config");
