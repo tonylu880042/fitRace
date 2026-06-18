@@ -51,16 +51,47 @@ def test_signup_page_has_language_switcher_defaulting_to_english():
     assert "canvas.toDataURL('image/webp', 0.85)" in response.text
 
 
-def test_dashboard_does_not_include_system_power_controls_but_signup_does():
+def test_management_controls_are_split_by_admin_role():
     response_index = client.get("/static/index.html")
     assert response_index.status_code == 200
     assert "System Power" not in response_index.text
 
     response_signup = client.get("/static/signup.html")
     assert response_signup.status_code == 200
-    assert "System Power" in response_signup.text
-    assert "Restart Hub Service" in response_signup.text
-    assert "Shutdown Hub" in response_signup.text
+    assert "Race Control" not in response_signup.text
+    assert "System Power" not in response_signup.text
+    assert "Restart Hub Service" not in response_signup.text
+    assert "Shutdown Hub" not in response_signup.text
+
+    response_admin = client.get("/static/admin.html")
+    assert response_admin.status_code == 200
+    assert "Game Admin" in response_admin.text
+    assert "System Admin" in response_admin.text
+    assert "Race Control" not in response_admin.text
+    assert "System Power" not in response_admin.text
+
+    response_game_admin = client.get("/static/gameAdmin.html")
+    assert response_game_admin.status_code == 200
+    assert "Race Control" in response_game_admin.text
+    assert "Station Status" in response_game_admin.text
+    assert "Station Assignment" not in response_game_admin.text
+    assert "Assign Stream" not in response_game_admin.text
+    assert "Unassign Station" not in response_game_admin.text
+    assert "System Power" not in response_game_admin.text
+    assert "Restart Hub Service" not in response_game_admin.text
+
+    response_system_admin = client.get("/static/systemAdmin.html")
+    assert response_system_admin.status_code == 200
+    assert "Edge Nodes" in response_system_admin.text
+    assert "Station Assignment" in response_system_admin.text
+    assert "Assign Stream" in response_system_admin.text
+    assert "Unassign Station" in response_system_admin.text
+    assert "Updates" in response_system_admin.text
+    assert "System Power" in response_system_admin.text
+    assert "Race Control" not in response_system_admin.text
+
+    assert client.get("/gameAdmin", follow_redirects=False).headers["location"] == "/static/gameAdmin.html"
+    assert client.get("/systemAdmin", follow_redirects=False).headers["location"] == "/static/systemAdmin.html"
 
 
 def test_nodes_endpoint_returns_registered_edge_nodes():

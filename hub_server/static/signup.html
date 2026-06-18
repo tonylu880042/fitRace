@@ -223,149 +223,9 @@
       box-shadow: 0 0 12px rgba(244, 63, 94, 0.35);
     }
 
-    .btn-row {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 0.65rem;
-    }
-
-    .admin-entry {
-      margin-top: 1.25rem;
-      padding-top: 1rem;
-      border-top: 1px solid var(--steel-border);
-    }
-
-    .race-admin-panel {
-      display: none;
-      margin-top: 1.25rem;
-      padding: 1rem;
-      border: 1px solid var(--steel-border);
-      border-radius: 6px;
-      background: rgba(0, 0, 0, 0.24);
-      text-align: left;
-    }
-
-    .race-admin-panel.active {
-      display: block;
-    }
-
-    .admin-title {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 0.75rem;
-      margin-bottom: 1rem;
-      font-family: 'Oswald', sans-serif;
-      font-size: 1.1rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-    }
-
-    .race-state-pill {
-      padding: 0.25rem 0.55rem;
-      border-radius: 3px;
-      border: 1px solid var(--steel-border);
-      color: var(--text-muted);
-      font-size: 0.75rem;
-      font-family: 'Oswald', sans-serif;
-      font-weight: 700;
-      letter-spacing: 0.08em;
-    }
-
-    .race-state-pill.ready,
-    .race-state-pill.running {
-      color: var(--volt-yellow);
-      border-color: var(--volt-yellow);
-      background: rgba(226, 255, 59, 0.08);
-    }
-
-    .race-state-pill.stopped {
-      color: var(--hazard-amber);
-      border-color: var(--hazard-amber);
-      background: rgba(245, 158, 11, 0.08);
-    }
-
-    .admin-help {
-      margin: -0.5rem 0 1rem;
-      color: var(--text-muted);
-      font-size: 0.78rem;
-      line-height: 1.45;
-    }
-
-    .admin-msg {
-      display: none;
-      margin-top: 0.85rem;
-      padding: 0.65rem;
-      border-radius: 4px;
-      font-size: 0.82rem;
-      text-align: center;
-    }
-
-    .admin-msg.show {
-      display: block;
-    }
-
-    .admin-msg.ok {
-      border: 1px solid var(--volt-yellow);
-      color: var(--volt-yellow);
-      background: rgba(226, 255, 59, 0.08);
-    }
-
-    .admin-msg.error {
-      border: 1px solid var(--crimson-red);
-      color: var(--crimson-red);
-      background: rgba(244, 63, 94, 0.08);
-    }
-
-    .password-modal {
-      display: none;
-      position: fixed;
-      inset: 0;
-      z-index: 20;
-      padding: 1.5rem;
-      align-items: center;
-      justify-content: center;
-      background: rgba(0, 0, 0, 0.72);
-      backdrop-filter: blur(6px);
-    }
-
-    .password-modal.active {
-      display: flex;
-    }
-
-    .password-dialog {
-      width: 100%;
-      max-width: 360px;
-      padding: 1.5rem;
-      border: 2px solid var(--steel-border);
-      border-radius: 8px;
-      background: var(--card-bg);
-      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.45);
-    }
-
-    .password-dialog h2 {
-      margin-bottom: 0.35rem;
-      font-family: 'Oswald', sans-serif;
-      font-size: 1.35rem;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-    }
-
-    .password-dialog p {
-      margin-bottom: 1rem;
-      color: var(--text-muted);
-      font-size: 0.86rem;
-      line-height: 1.45;
-    }
-
     @media (max-width: 480px) {
       .signup-container {
         padding: 2.2rem 1.2rem;
-      }
-
-      .btn-row {
-        grid-template-columns: 1fr;
       }
     }
 
@@ -502,72 +362,6 @@
       <div class="msg msg-error" id="error-msg" data-i18n="signup.error">Registration failed. Please try again.</div>
     </form>
 
-    <div class="admin-entry">
-      <button type="button" class="btn btn-secondary" id="open-admin-btn" onclick="openAdminPassword()" data-i18n="admin.open">Race Control</button>
-    </div>
-
-    <section class="race-admin-panel" id="race-admin-panel" aria-label="Race control panel">
-      <div class="admin-title">
-        <span data-i18n="admin.title">Race Control</span>
-        <span class="race-state-pill" id="admin-race-state">IDLE</span>
-      </div>
-      <div class="admin-help" data-i18n="admin.help">Configure, start, stop, and reset the race. Staff only.</div>
-
-      <div class="form-group">
-        <label for="admin-race-type" data-i18n="admin.race_type">Race Type</label>
-        <select id="admin-race-type" class="form-control" onchange="toggleAdminRaceTypeInputs()">
-          <option value="distance" data-i18n="race.distance">Distance Challenge (m)</option>
-          <option value="calories" data-i18n="race.calories">Calories Challenge (kcal)</option>
-          <option value="time" data-i18n="race.time">Time Challenge (s)</option>
-          <option value="max_power" data-i18n="race.max_power">Max Power Challenge (W)</option>
-        </select>
-      </div>
-
-      <div class="form-group">
-        <label id="admin-target-label" for="admin-race-target">Target distance (m)</label>
-        <input type="number" id="admin-race-target" class="form-control" value="500" min="1">
-      </div>
-
-      <button type="button" class="btn btn-secondary" id="admin-configure-btn" onclick="configureRaceFromSignup()" data-i18n="admin.save">Save Race Settings</button>
-
-      <div class="btn-row" style="margin-top: 0.65rem;">
-        <button type="button" class="btn" id="admin-start-btn" onclick="startRaceFromSignup()" disabled data-i18n="admin.start">Start Race</button>
-        <button type="button" class="btn btn-danger" id="admin-stop-btn" onclick="stopRaceFromSignup()" disabled data-i18n="admin.stop">Stop Race</button>
-      </div>
-      <button type="button" class="btn btn-secondary" id="admin-reset-btn" onclick="resetRaceFromSignup()" style="margin-top: 0.65rem;" data-i18n="admin.reset">Reset Race</button>
-
-      <div class="admin-msg" id="admin-msg"></div>
-
-      <!-- System Power Section -->
-      <div class="system-power-section" style="margin-top: 1.25rem; border-top: 1px solid var(--steel-border); padding-top: 1rem;">
-        <div class="admin-title" style="margin-bottom: 0.5rem;" data-i18n="power.title">System Power</div>
-        <button type="button" class="btn btn-secondary" id="btn-power-restart" onclick="performPowerAction('restart-service')" style="margin-top: 0.45rem; width: 100%;" data-i18n="power.restart">Restart Hub Service</button>
-        <button type="button" class="btn btn-secondary" id="btn-power-reboot" onclick="performPowerAction('reboot')" style="margin-top: 0.45rem; width: 100%;" data-i18n="power.reboot">Reboot Hub</button>
-        <button type="button" class="btn btn-danger" id="btn-power-shutdown" onclick="performPowerAction('shutdown')" style="margin-top: 0.45rem; width: 100%;" data-i18n="power.shutdown">Shutdown Hub</button>
-        <button type="button" class="btn btn-danger" id="btn-power-shutdown-system" onclick="performPowerAction('shutdown-system')" style="margin-top: 0.45rem; width: 100%;" data-i18n="power.shutdown_system">Shutdown System</button>
-        <div id="power-status-tip" style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem; line-height: 1.3;" data-i18n="power.status_tip">
-          Power actions are available only while race state is IDLE.
-        </div>
-      </div>
-    </section>
-  </div>
-
-  <div class="password-modal" id="admin-password-modal" role="dialog" aria-modal="true" aria-labelledby="admin-password-title">
-    <div class="password-dialog">
-      <form onsubmit="event.preventDefault(); unlockRaceAdmin();">
-        <h2 id="admin-password-title" data-i18n="password.title">Admin Password</h2>
-        <p data-i18n="password.help">Enter the staff password to open race setup and control.</p>
-        <div class="form-group">
-          <label for="admin-password-input">Password</label>
-          <input type="password" id="admin-password-input" class="form-control" autocomplete="off" onkeydown="handleAdminPasswordKey(event)">
-        </div>
-        <div class="btn-row">
-          <button type="submit" class="btn" data-i18n="password.confirm">Confirm</button>
-          <button type="button" class="btn btn-secondary" onclick="closeAdminPassword()" data-i18n="password.cancel">Cancel</button>
-        </div>
-        <div class="admin-msg error" id="admin-password-error" data-i18n="password.error">Incorrect password. Please try again.</div>
-      </form>
-    </div>
   </div>
 
   <script>
@@ -586,21 +380,9 @@
     const errorMsg = document.getElementById('error-msg');
     const btnText = document.getElementById('btn-text');
     const btnSpinner = document.getElementById('btn-spinner');
-    const ADMIN_PASSWORD = urlParams.get('admin_password') || localStorage.getItem('fitrace.adminPassword') || 'fitRace26';
     const languageSelect = document.getElementById('language-select');
-    const adminPanel = document.getElementById('race-admin-panel');
-    const adminPasswordModal = document.getElementById('admin-password-modal');
-    const adminPasswordInput = document.getElementById('admin-password-input');
-    const adminPasswordError = document.getElementById('admin-password-error');
-    const adminMsg = document.getElementById('admin-msg');
-    const adminRaceState = document.getElementById('admin-race-state');
-    const adminStartBtn = document.getElementById('admin-start-btn');
-    const adminStopBtn = document.getElementById('admin-stop-btn');
-    const adminResetBtn = document.getElementById('admin-reset-btn');
-    const adminConfigureBtn = document.getElementById('admin-configure-btn');
 
     let avatarBase64 = null;
-    let raceAdminUnlocked = sessionStorage.getItem('fitraceRaceAdminUnlocked') === '1';
     let currentLocale = localStorage.getItem('fitrace.locale') || 'en-US';
     let signupMessages = {};
 
@@ -632,47 +414,7 @@
       "equipment.spin_bike": "Spin Bike",
       "equipment.treadmill": "Treadmill",
       "equipment.rower": "Rowing Machine",
-      "equipment.ski_erg": "Ski Machine",
-      "admin.open": "Race Control",
-      "admin.title": "Race Control",
-      "admin.help": "Configure, start, stop, and reset the race. Staff only.",
-      "admin.race_type": "Race Type",
-      "race.distance": "Distance Challenge (m)",
-      "race.calories": "Calories Challenge (kcal)",
-      "race.time": "Time Challenge (s)",
-      "race.max_power": "Max Power Challenge (W)",
-      "admin.target.distance": "Target distance (m)",
-      "admin.target.calories": "Target calories (kcal)",
-      "admin.target.time": "Time limit (s)",
-      "admin.target.max_power": "Challenge time (s)",
-      "admin.save": "Save Race Settings",
-      "admin.start": "Start Race",
-      "admin.stop": "Stop Race",
-      "admin.reset": "Reset Race",
-      "admin.read_failed": "Unable to read race state. Please check Hub connection.",
-      "admin.invalid_target": "Enter a target value greater than 0.",
-      "admin.invalid_seconds": "Enter seconds greater than 0.",
-      "admin.save_failed": "Race setup failed: {detail}",
-      "admin.saved": "Race settings saved. Ready to start.",
-      "admin.start_failed": "Start failed: {detail}",
-      "admin.started": "Race started.",
-      "admin.stop_failed": "Stop failed: {detail}",
-      "admin.stopped": "Race stopped.",
-      "admin.reset_confirm": "Reset race? Current race and athlete registrations will be cleared.",
-      "admin.reset_failed": "Reset failed: {detail}",
-      "admin.reset_done": "Race reset.",
-      "password.title": "Admin Password",
-      "password.help": "Enter the staff password to open race setup and control.",
-      "password.confirm": "Confirm",
-      "password.cancel": "Cancel",
-      "password.error": "Incorrect password. Please try again.",
-      "power.title": "System Power",
-      "power.restart": "Restart Hub Service",
-      "power.reboot": "Reboot Hub",
-      "power.shutdown": "Shutdown Hub",
-      "power.shutdown_system": "Shutdown System",
-      "power.status_tip": "Power actions are available only while race state is IDLE.",
-      "power.status_locked": "Power controls locked while race state is {state}."
+      "equipment.ski_erg": "Ski Machine"
     };
 
     const signupLocaleOverrides = {
@@ -704,47 +446,7 @@
         "equipment.spin_bike": "飛輪車",
         "equipment.treadmill": "跑步機",
         "equipment.rower": "划船器",
-        "equipment.ski_erg": "滑雪機",
-        "admin.open": "賽事管理",
-        "admin.title": "比賽設定",
-        "admin.help": "此區可設定比賽、啟動賽事、暫停/停止與重置。請由現場工作人員操作。",
-        "admin.race_type": "比賽類型",
-        "race.distance": "距離挑戰賽 (m)",
-        "race.calories": "卡路里挑戰賽 (kcal)",
-        "race.time": "時間挑戰賽 (s)",
-        "race.max_power": "最大瓦特挑戰賽 (W)",
-        "admin.target.distance": "目標距離 (公尺)",
-        "admin.target.calories": "目標卡路里 (kcal)",
-        "admin.target.time": "限制時間 (秒)",
-        "admin.target.max_power": "挑戰時間 (秒)",
-        "admin.save": "儲存比賽設定",
-        "admin.start": "啟動比賽",
-        "admin.stop": "暫停 / 停止",
-        "admin.reset": "重置比賽",
-        "admin.read_failed": "無法讀取比賽狀態，請確認 Hub 連線。",
-        "admin.invalid_target": "請輸入大於 0 的目標值。",
-        "admin.invalid_seconds": "請輸入大於 0 的秒數。",
-        "admin.save_failed": "比賽設定失敗：{detail}",
-        "admin.saved": "比賽設定已儲存，可以啟動比賽。",
-        "admin.start_failed": "啟動比賽失敗：{detail}",
-        "admin.started": "比賽已啟動。",
-        "admin.stop_failed": "暫停 / 停止失敗：{detail}",
-        "admin.stopped": "比賽已暫停 / 停止。",
-        "admin.reset_confirm": "確定要重置比賽？目前比賽與選手報名狀態將被清除。",
-        "admin.reset_failed": "重置比賽失敗：{detail}",
-        "admin.reset_done": "比賽已重置。",
-        "password.title": "管理密碼",
-        "password.help": "請輸入現場工作人員密碼以開啟比賽設定與控制功能。",
-        "password.confirm": "確認",
-        "password.cancel": "取消",
-        "password.error": "密碼錯誤，請重新輸入。",
-        "power.title": "系統電源",
-        "power.restart": "重啟 Hub 服務",
-        "power.reboot": "重啟 Hub",
-        "power.shutdown": "關閉 Hub",
-        "power.shutdown_system": "系統關機 (含周邊)",
-        "power.status_tip": "電源操作僅在賽事為空閒 (IDLE) 時可用。",
-        "power.status_locked": "賽事狀態為 {state}，電源操作已鎖定。"
+        "equipment.ski_erg": "滑雪機"
       },
       "it": {
         "signup.subtitle": "Registrazione atleta",
@@ -753,20 +455,7 @@
         "signup.athlete_name": "Nome atleta",
         "signup.athlete_placeholder": "Inserisci il nome...",
         "signup.team": "Team (opzionale)",
-        "signup.submit": "Registrati",
-        "admin.open": "Controllo gara",
-        "admin.title": "Controllo gara",
-        "admin.save": "Salva impostazioni gara",
-        "admin.start": "Avvia gara",
-        "admin.stop": "Ferma gara",
-        "admin.reset": "Reimposta gara",
-        "power.title": "System Power",
-        "power.restart": "Restart Hub Service",
-        "power.reboot": "Reboot Hub",
-        "power.shutdown": "Shutdown Hub",
-        "power.shutdown_system": "Shutdown System",
-        "power.status_tip": "Power actions are available only while race state is IDLE.",
-        "power.status_locked": "Power controls locked while race state is {state}."
+        "signup.submit": "Registrati"
       },
       "fr": {
         "signup.subtitle": "Inscription athlète",
@@ -775,20 +464,7 @@
         "signup.athlete_name": "Nom de l'athlète",
         "signup.athlete_placeholder": "Saisir le nom...",
         "signup.team": "Équipe (facultatif)",
-        "signup.submit": "S'inscrire",
-        "admin.open": "Contrôle de course",
-        "admin.title": "Contrôle de course",
-        "admin.save": "Enregistrer la course",
-        "admin.start": "Démarrer",
-        "admin.stop": "Arrêter",
-        "admin.reset": "Réinitialiser",
-        "power.title": "System Power",
-        "power.restart": "Restart Hub Service",
-        "power.reboot": "Reboot Hub",
-        "power.shutdown": "Shutdown Hub",
-        "power.shutdown_system": "Shutdown System",
-        "power.status_tip": "Power actions are available only while race state is IDLE.",
-        "power.status_locked": "Power controls locked while race state is {state}."
+        "signup.submit": "S'inscrire"
       },
       "de-CH": {
         "signup.subtitle": "Athleten-Registrierung",
@@ -797,20 +473,7 @@
         "signup.athlete_name": "Name",
         "signup.athlete_placeholder": "Name eingeben...",
         "signup.team": "Team (optional)",
-        "signup.submit": "Registrieren",
-        "admin.open": "Rennsteuerung",
-        "admin.title": "Rennsteuerung",
-        "admin.save": "Rennen speichern",
-        "admin.start": "Rennen starten",
-        "admin.stop": "Rennen stoppen",
-        "admin.reset": "Rennen zurücksetzen",
-        "power.title": "System Power",
-        "power.restart": "Restart Hub Service",
-        "power.reboot": "Reboot Hub",
-        "power.shutdown": "Shutdown Hub",
-        "power.shutdown_system": "Shutdown System",
-        "power.status_tip": "Power actions are available only while race state is IDLE.",
-        "power.status_locked": "Power controls locked while race state is {state}."
+        "signup.submit": "Registrieren"
       },
       "sv": {
         "signup.subtitle": "Deltagarregistrering",
@@ -819,20 +482,7 @@
         "signup.athlete_name": "Deltagarens namn",
         "signup.athlete_placeholder": "Ange namn...",
         "signup.team": "Lag (valfritt)",
-        "signup.submit": "Registrera",
-        "admin.open": "Tävlingskontroll",
-        "admin.title": "Tävlingskontroll",
-        "admin.save": "Spara tävlingsinställningar",
-        "admin.start": "Starta tävling",
-        "admin.stop": "Stoppa tävling",
-        "admin.reset": "Återställ tävling",
-        "power.title": "System Power",
-        "power.restart": "Restart Hub Service",
-        "power.reboot": "Reboot Hub",
-        "power.shutdown": "Shutdown Hub",
-        "power.shutdown_system": "Shutdown System",
-        "power.status_tip": "Power actions are available only while race state is IDLE.",
-        "power.status_locked": "Power controls locked while race state is {state}."
+        "signup.submit": "Registrera"
       }
     };
 
@@ -852,7 +502,6 @@
       if (languageSelect) languageSelect.value = normalized;
       signupMessages = { ...fallbackMessages, ...(signupLocaleOverrides[normalized] || {}) };
       applyTranslations();
-      toggleAdminRaceTypeInputs();
       await initStations();
     }
 
@@ -980,280 +629,6 @@
 
     const hasQueryStation = !isNaN(station) && station > 0;
 
-    function openAdminPassword() {
-      if (raceAdminUnlocked) {
-        showRaceAdminPanel();
-        return;
-      }
-      adminPasswordError.classList.remove('show');
-      adminPasswordInput.value = '';
-      adminPasswordModal.classList.add('active');
-      setTimeout(() => adminPasswordInput.focus(), 0);
-    }
-
-    function closeAdminPassword() {
-      adminPasswordModal.classList.remove('active');
-      adminPasswordInput.value = '';
-    }
-
-    function handleAdminPasswordKey(event) {
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        unlockRaceAdmin();
-      } else if (event.key === 'Escape') {
-        closeAdminPassword();
-      }
-    }
-
-    function unlockRaceAdmin() {
-      if (!ADMIN_PASSWORD) {
-        adminPasswordError.classList.add('show');
-        return;
-      }
-      if (adminPasswordInput.value !== ADMIN_PASSWORD) {
-        adminPasswordError.classList.add('show');
-        adminPasswordInput.select();
-        return;
-      }
-
-      raceAdminUnlocked = true;
-      sessionStorage.setItem('fitraceRaceAdminUnlocked', '1');
-      closeAdminPassword();
-      showRaceAdminPanel();
-    }
-
-    function showRaceAdminPanel() {
-      adminPanel.classList.add('active');
-      adminPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      toggleAdminRaceTypeInputs();
-      fetchRaceStateForAdmin();
-    }
-
-    function showAdminMessage(message, isError = false) {
-      adminMsg.innerText = message;
-      adminMsg.className = `admin-msg show ${isError ? 'error' : 'ok'}`;
-    }
-
-    function setAdminBusy(isBusy) {
-      adminConfigureBtn.disabled = isBusy;
-      adminResetBtn.disabled = isBusy;
-      if (isBusy) {
-        adminStartBtn.disabled = true;
-        adminStopBtn.disabled = true;
-      }
-    }
-
-    function toggleAdminRaceTypeInputs() {
-      const type = document.getElementById('admin-race-type').value;
-      const label = document.getElementById('admin-target-label');
-      const input = document.getElementById('admin-race-target');
-
-      if (type === 'distance') {
-        label.innerText = t('admin.target.distance');
-        input.value = input.value || 500;
-      } else if (type === 'calories') {
-        label.innerText = t('admin.target.calories');
-        input.value = input.value || 50;
-      } else if (type === 'time') {
-        label.innerText = t('admin.target.time');
-        input.value = input.value || 60;
-      } else if (type === 'max_power') {
-        label.innerText = t('admin.target.max_power');
-        input.value = input.value || 30;
-      }
-    }
-
-    function updateAdminRaceStateUI(data) {
-      const state = (data && data.state) ? data.state : 'IDLE';
-      adminRaceState.innerText = state;
-      adminRaceState.className = `race-state-pill ${state.toLowerCase()}`;
-
-      adminStartBtn.disabled = state !== 'READY';
-      adminStopBtn.disabled = state !== 'RUNNING';
-      adminResetBtn.disabled = state === 'RUNNING';
-      adminConfigureBtn.disabled = state === 'RUNNING';
-
-      // Update power button states
-      const disabled = state !== 'IDLE';
-      ["btn-power-restart", "btn-power-reboot", "btn-power-shutdown", "btn-power-shutdown-system"].forEach((id) => {
-        const button = document.getElementById(id);
-        if (button) button.disabled = disabled;
-      });
-      const tip = document.getElementById("power-status-tip");
-      if (tip) {
-        if (disabled) {
-          tip.style.color = "var(--hazard-amber)";
-          tip.innerText = t("power.status_locked", { state: state });
-        } else {
-          tip.style.color = "var(--text-muted)";
-          tip.innerText = t("power.status_tip");
-        }
-      }
-
-      if (data && data.config) {
-        const config = data.config;
-        document.getElementById('admin-race-type').value = config.race_type || 'distance';
-        toggleAdminRaceTypeInputs();
-        if (config.race_type === 'distance' || config.race_type === 'calories') {
-          document.getElementById('admin-race-target').value = config.target_value || 0;
-        } else {
-          document.getElementById('admin-race-target').value = config.duration_sec || 0;
-        }
-      }
-    }
-
-    async function fetchRaceStateForAdmin() {
-      if (!raceAdminUnlocked) return;
-      try {
-        const res = await fetch(`/api/race/state?t=${Date.now()}`);
-        if (!res.ok) throw new Error(t('admin.read_failed'));
-        const data = await res.json();
-        updateAdminRaceStateUI(data);
-      } catch (err) {
-        showAdminMessage(t('admin.read_failed'), true);
-      }
-    }
-
-    async function configureRaceFromSignup() {
-      const type = document.getElementById('admin-race-type').value;
-      const targetVal = parseFloat(document.getElementById('admin-race-target').value) || 0;
-      const payload = {
-        race_type: type,
-        target_value: 0.0,
-        duration_sec: 0
-      };
-
-      if (type === 'distance' || type === 'calories') {
-        payload.target_value = targetVal;
-      } else {
-        payload.duration_sec = parseInt(targetVal, 10) || 0;
-      }
-
-      if ((type === 'distance' || type === 'calories') && payload.target_value <= 0) {
-        showAdminMessage(t('admin.invalid_target'), true);
-        return;
-      }
-      if ((type === 'time' || type === 'max_power') && payload.duration_sec <= 0) {
-        showAdminMessage(t('admin.invalid_seconds'), true);
-        return;
-      }
-
-      setAdminBusy(true);
-      try {
-        const res = await fetch('/api/race/configure', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'setup failed');
-
-        updateAdminRaceStateUI(data);
-        showAdminMessage(t('admin.saved'));
-      } catch (err) {
-        showAdminMessage(t('admin.save_failed', { detail: err.message }), true);
-      } finally {
-        setAdminBusy(false);
-        fetchRaceStateForAdmin();
-      }
-    }
-
-    async function startRaceFromSignup() {
-      setAdminBusy(true);
-      try {
-        const res = await fetch('/api/race/start', { method: 'POST' });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'start failed');
-
-        updateAdminRaceStateUI(data);
-        showAdminMessage(t('admin.started'));
-      } catch (err) {
-        showAdminMessage(t('admin.start_failed', { detail: err.message }), true);
-      } finally {
-        setAdminBusy(false);
-        fetchRaceStateForAdmin();
-      }
-    }
-
-    async function stopRaceFromSignup() {
-      setAdminBusy(true);
-      try {
-        const res = await fetch('/api/race/stop', { method: 'POST' });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'stop failed');
-
-        updateAdminRaceStateUI(data);
-        showAdminMessage(t('admin.stopped'));
-      } catch (err) {
-        showAdminMessage(t('admin.stop_failed', { detail: err.message }), true);
-      } finally {
-        setAdminBusy(false);
-        fetchRaceStateForAdmin();
-      }
-    }
-
-    async function resetRaceFromSignup() {
-      if (!confirm(t('admin.reset_confirm'))) {
-        return;
-      }
-
-      setAdminBusy(true);
-      try {
-        const res = await fetch('/api/race/reset', { method: 'POST' });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'reset failed');
-
-        updateAdminRaceStateUI(data);
-        showAdminMessage(t('admin.reset_done'));
-        initStations();
-      } catch (err) {
-        showAdminMessage(t('admin.reset_failed', { detail: err.message }), true);
-      } finally {
-        setAdminBusy(false);
-        fetchRaceStateForAdmin();
-      }
-    }
-
-    function showPowerStatus(message, isError = false) {
-      const tip = document.getElementById("power-status-tip");
-      if (!tip) return;
-      tip.style.color = isError ? "var(--crimson-red)" : "var(--volt-yellow)";
-      tip.innerText = message;
-    }
-
-    async function performPowerAction(action) {
-      let body = {};
-      if (action === "reboot") {
-        if (!confirm("Reboot Central Hub? This is allowed only while the race is idle.")) return;
-        body = { confirmation: "REBOOT" };
-      } else if (action === "shutdown") {
-        if (!confirm("Shutdown Central Hub? You will need physical access to power it on again.")) return;
-        body = { confirmation: "SHUTDOWN" };
-      } else if (action === "shutdown-system") {
-        body = {};
-      }
-
-      try {
-        const res = await fetch(`/api/system/power/${action}`, {
-          method: "POST",
-          headers: { 
-            "Content-Type": "application/json",
-            "X-FitRace-Admin-Token": ADMIN_PASSWORD
-          },
-          body: JSON.stringify(body),
-        });
-        const data = await res.json();
-        if (!res.ok) {
-          showPowerStatus(data.detail || "Power action failed.", true);
-          return;
-        }
-        const suffix = data.dry_run ? " (dry-run, no command executed)" : "";
-        showPowerStatus(`${data.action} accepted${suffix}.`, false);
-      } catch (err) {
-        showPowerStatus(`Power action failed: ${err}`, true);
-      }
-    }
-
     // Create alert element under the station badge
     const warningDiv = document.createElement('div');
     warningDiv.id = 'overwrite-warning';
@@ -1345,10 +720,9 @@
 
     async function initializeSignupPage() {
       await loadLocale(currentLocale);
-      if (raceAdminUnlocked) {
-        showRaceAdminPanel();
-      } else if (urlParams.get('admin') === '1') {
-        openAdminPassword();
+      if (urlParams.get('admin') === '1') {
+        window.location.href = '/admin';
+        return;
       }
     }
 

@@ -1,12 +1,12 @@
 # FitRaceStudio Feature Overview
 
-Updated: 2026-06-17
+Updated: 2026-06-18
 
 ## What FitRaceStudio Does
 
-FitRaceStudio is a real-time fitness race system for studios, gyms, events, and group training sessions. It turns connected cardio equipment into a live competition experience with athlete self-registration, station assignment, race control, and a large-screen leaderboard.
+FitRaceStudio is a real-time fitness race system for studios, gyms, events, and group training sessions. It turns connected cardio equipment into a live competition experience with athlete self-registration, role-based administration, station assignment, race control, device monitoring, and a large-screen leaderboard.
 
-The system is designed for in-studio use. Coaches, staff, and event operators can set up stations, register athletes, start a race, and display progress on a shared dashboard.
+The system is designed for in-studio use. Coaches and event operators can run races from a dedicated Game Admin page, while technical staff manage Edge Nodes, station mappings, updates, and power controls from a separate System Admin page.
 
 ## Main User Benefits
 
@@ -14,7 +14,9 @@ The system is designed for in-studio use. Coaches, staff, and event operators ca
 - Show athlete progress on a large screen in real time.
 - Let athletes register from their phones by station.
 - Assign equipment to numbered stations for clear on-site operation.
+- Separate coach race controls from technical device administration.
 - Support multiple equipment types in one race.
+- Monitor Edge Node status and discovered telemetry streams from the Hub.
 - Provide a local Edge setup screen for equipment discovery and signal checks.
 - Switch interface language for international environments.
 
@@ -38,9 +40,17 @@ The dashboard is designed for a studio display or event screen. It highlights th
 
 ![Live Race Dashboard](output/pdf/assets/dashboard.png)
 
+### Game Admin
+
+The Game Admin page is for coaches and on-site operators. It focuses on race setup, start/stop/reset actions, and a read-only station status view so staff can confirm which stations are ready without changing technical mappings.
+
+### System Admin
+
+The System Admin page is for technical staff. It centralizes Edge Node status, telemetry stream discovery, station assignment, software update actions, and Hub/system power controls.
+
 ### Athlete Self-Registration
 
-Athletes can register from a mobile-friendly page. They can choose or upload an avatar, enter their name, add an optional team name, and submit registration for the selected station.
+Athletes can register from a mobile-friendly page. They can choose or upload an avatar, enter their name, add an optional team name, and submit registration for the selected station. The signup page no longer contains race or system management controls.
 
 ![Athlete Self-Registration](output/pdf/assets/signup.png)
 
@@ -59,19 +69,28 @@ The Edge Node setup screen helps staff check local signal status and discover ne
 - Highlights the leading participant.
 - Updates the race state and timer on the main display.
 
-### Race Setup
+### Game Admin Race Control
 
 - Select race type.
 - Set target distance, time, calories, or challenge duration.
 - Start, stop, close, or reset a race.
-- Keep the operator workflow simple for event staff.
+- View station readiness without changing equipment mappings.
+- Keep the coach workflow simple for event staff.
 
-### Station Management
+### System Admin Device and Station Management
 
 - Assign connected devices to numbered stations.
 - View which stations already have athletes registered.
 - See unassigned equipment before the race starts.
 - Keep physical equipment layout aligned with the screen.
+- Monitor Edge Node online/offline state and discovered equipment streams.
+
+### System Maintenance
+
+- Check available software update status.
+- Download and stage Hub updates.
+- Restart the Hub service when required.
+- Reboot or shut down the Hub/system with confirmation controls.
 
 ### Athlete Registration
 
@@ -95,13 +114,14 @@ The Edge Node setup screen helps staff check local signal status and discover ne
 
 ## Typical Event Flow
 
-1. Staff open the operator screen and prepare available equipment.
-2. Equipment is assigned to numbered stations.
-3. Athletes scan a station QR code or open the registration page.
-4. Athletes enter their name, team, and avatar.
-5. Staff select a race type and target.
-6. The race starts and the dashboard updates live.
-7. The leaderboard shows ranking, progress, and final results.
+1. Technical staff open System Admin during installation or maintenance.
+2. Edge Nodes and equipment streams are checked.
+3. Equipment streams are assigned to numbered stations.
+4. Athletes scan a station QR code or open the registration page.
+5. Athletes enter their name, team, and avatar.
+6. Coaches open Game Admin, select a race type, and set the target.
+7. The race starts and the dashboard updates live.
+8. The leaderboard shows ranking, progress, and final results.
 
 ## Ideal Use Cases
 
@@ -114,6 +134,6 @@ The Edge Node setup screen helps staff check local signal status and discover ne
 
 ## Current Product Status
 
-The current application includes the main dashboard, registration flow, station assignment, Edge setup screen, race state display, multilingual interface, and live race presentation screens.
+The current application includes the main dashboard, registration flow, Game Admin race control, System Admin device and station management, Edge setup screen, race state display, multilingual interface, update controls, power controls, and live race presentation screens.
 
-Some hardware-specific production features, such as final equipment board integration and over-the-air update rollout, are planned as part of the productization phase.
+Some hardware-specific production features, such as final equipment board integration and fully automated over-the-air update rollout, are planned as part of the productization phase.

@@ -11,6 +11,8 @@
   "status.title": "Stato",
   "status.no_config": "Nessuna gara configurata",
   "settings.title": "Impostazioni",
+  "game_admin.title": "Game Admin",
+  "game_admin.scan_to_manage": "Scansiona per aprire impostazioni gara e controlli coach.",
   "settings.language": "Lingua sistema",
   "settings.language_help": "La lingua predefinita è English (en-US). Questa impostazione resta nel browser.",
   "race_type.label": "Tipo gara",

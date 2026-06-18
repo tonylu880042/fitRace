@@ -24,6 +24,23 @@ class RaceManager:
     def get_config(self) -> Optional[RaceConfig]:
         return self._config
 
+    def get_start_time_epoch_ms(self) -> Optional[int]:
+        return self._start_time_epoch_ms
+
+    def get_end_time_epoch_ms(self) -> Optional[int]:
+        return self._end_time_epoch_ms
+
+    def get_state_snapshot(self) -> Dict[str, Any]:
+        config = self.get_config()
+        return {
+            "state": self.get_state().value,
+            "config": config.model_dump() if config else None,
+            "registered_nodes": self.get_registered_nodes(),
+            "start_time_epoch_ms": self.get_start_time_epoch_ms(),
+            "end_time_epoch_ms": self.get_end_time_epoch_ms(),
+            "leaderboard": self.get_leaderboard_progress(),
+        }
+
     def get_leaderboard_progress(self) -> Dict[str, Dict[str, Any]]:
         if self._state in (RaceState.RUNNING, RaceState.STOPPED):
             return self._progress
@@ -115,6 +132,49 @@ class RaceManager:
 
     def update_active_node(self, node_id: str, equipment_type: str):
         self._active_nodes[node_id] = equipment_type
+
+    def get_station_equipment_type(self, station_number: int) -> str:
+        node_id = self._stations.get(station_number)
+        if not node_id:
+            return "unknown"
+        return self._active_nodes.get(node_id, "unknown")
+
+    def ensure_running_node_registered(self, node_id: str):
+        if node_id in self.get_registered_nodes():
+            return
+
+        athlete_name = f"Athlete {node_id}"
+        self._registered_nodes[node_id] = athlete_name
+        if node_id not in self._progress:
+            self._progress[node_id] = {
+                "node_id": node_id,
+                "athlete_name": athlete_name,
+                "station_number": None,
+                "team_name": None,
+                "avatar_url": None,
+                "distance_m": 0.0,
+                "elapsed_time_ms": 0,
+                "instantaneous_speed_kph": 0.0,
+                "progress_percent": 0.0,
+                "calories": 0.0,
+                "power_watts": 0,
+                "max_power_watts": 0,
+                "finished_time_ms": None,
+            }
+
+    def ingest_telemetry(self, payload: Dict[str, Any]) -> Optional[Dict[str, Dict[str, Any]]]:
+        node_id = payload.get("node_id")
+        if not node_id:
+            return None
+
+        equipment_type = payload.get("equipment_type", "unknown")
+        self.update_active_node(node_id, equipment_type)
+
+        if self.get_state() != RaceState.RUNNING:
+            return None
+
+        self.ensure_running_node_registered(node_id)
+        return self.update_telemetry(payload)
 
     def assign_station(self, station_number: int, node_id: Optional[str]):
         # Unassign if node_id is empty or None

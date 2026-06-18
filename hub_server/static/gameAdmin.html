@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="en-US">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FitRaceStudio Game Admin</title>
+  <meta name="description" content="FitRaceStudio Hub administration console">
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;700&family=Outfit:wght@400;600;800&family=Noto+Sans+TC:wght@500;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #09090b;
+      --surface: #18181b;
+      --surface-2: #111113;
+      --border: #27272a;
+      --border-strong: #3f3f46;
+      --text: #fafafa;
+      --muted: #a1a1aa;
+      --accent: #e2ff3b;
+      --warn: #f59e0b;
+      --danger: #f43f5e;
+      --ok: #34d399;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Outfit", "Noto Sans TC", sans-serif;
+      padding: 24px;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background-image: radial-gradient(rgba(255,255,255,0.018) 1px, transparent 0);
+      background-size: 24px 24px;
+      pointer-events: none;
+      z-index: -1;
+    }
+
+    button,
+    input,
+    select {
+      font: inherit;
+    }
+
+    button {
+      min-height: 42px;
+      border: 1px solid var(--border-strong);
+      border-radius: 4px;
+      background: var(--surface-2);
+      color: var(--text);
+      cursor: pointer;
+      font-family: "Oswald", sans-serif;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 0 14px;
+    }
+
+    button:hover:not(:disabled) {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #09090b;
+    }
+
+    .primary:hover:not(:disabled) {
+      color: #09090b;
+      filter: brightness(1.08);
+    }
+
+    .danger {
+      border-color: rgba(244, 63, 94, 0.7);
+      color: var(--danger);
+    }
+
+    .danger:hover:not(:disabled) {
+      background: rgba(244, 63, 94, 0.12);
+      color: #fb7185;
+    }
+
+    input,
+    select {
+      width: 100%;
+      height: 42px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: rgba(0,0,0,0.32);
+      color: var(--text);
+      padding: 0 12px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 7px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .shell {
+      width: min(1480px, 100%);
+      margin: 0 auto;
+      display: grid;
+      gap: 18px;
+    }
+
+    .topbar {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 16px;
+      align-items: center;
+      padding: 22px 24px;
+      border: 2px solid var(--border);
+      border-radius: 4px;
+      background: linear-gradient(180deg, rgba(24,24,27,0.92), rgba(17,17,19,0.94));
+      position: relative;
+      overflow: hidden;
+    }
+
+    .topbar::before {
+      content: "";
+      position: absolute;
+      inset: 0 0 auto 0;
+      height: 4px;
+      background: repeating-linear-gradient(-45deg, var(--accent), var(--accent) 8px, #000 8px, #000 16px);
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-family: "Oswald", sans-serif;
+      font-size: clamp(28px, 3.2vw, 44px);
+      line-height: 1;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .brand h1 span { color: var(--accent); }
+
+    .brand p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .top-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 34px;
+      padding: 0 11px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: rgba(0,0,0,0.24);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--danger);
+      box-shadow: 0 0 10px rgba(244,63,94,0.55);
+    }
+
+    .dot.online {
+      background: var(--accent);
+      box-shadow: 0 0 10px rgba(226,255,59,0.48);
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 1.12fr 0.88fr;
+      gap: 18px;
+      align-items: start;
+    }
+
+    .game-layout {
+      grid-template-columns: 1fr;
+    }
+
+    .column {
+      display: grid;
+      gap: 18px;
+    }
+
+    .panel {
+      border: 2px solid var(--border);
+      border-radius: 4px;
+      background: var(--surface);
+      padding: 18px;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding-bottom: 12px;
+      margin-bottom: 14px;
+      border-bottom: 2px solid var(--border);
+    }
+
+    .panel-title {
+      margin: 0;
+      font-family: "Oswald", sans-serif;
+      font-size: 22px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .field {
+      min-width: 0;
+    }
+
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .status-text {
+      min-height: 20px;
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.35;
+    }
+
+    .status-text.ok { color: var(--ok); }
+    .status-text.warn { color: var(--warn); }
+    .status-text.error { color: var(--danger); }
+
+    .race-state {
+      color: var(--accent);
+      border-color: rgba(226,255,59,0.75);
+    }
+
+    .race-state.RUNNING {
+      color: var(--ok);
+      border-color: rgba(52,211,153,0.7);
+    }
+
+    .race-state.STOPPED {
+      color: var(--warn);
+      border-color: rgba(245,158,11,0.7);
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .metric {
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: rgba(0,0,0,0.22);
+      padding: 13px;
+    }
+
+    .metric-value {
+      font-family: "Oswald", sans-serif;
+      font-size: 28px;
+      line-height: 1;
+      color: var(--accent);
+    }
+
+    .metric-label {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .row-card {
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: rgba(0,0,0,0.22);
+      padding: 12px;
+    }
+
+    .row-main {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .row-name {
+      font-weight: 800;
+      letter-spacing: 0.02em;
+    }
+
+    .row-meta {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.35;
+    }
+
+    .stream-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      margin-top: 10px;
+    }
+
+    .stream {
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 6px 8px;
+      color: var(--muted);
+      font-size: 12px;
+      background: rgba(255,255,255,0.03);
+    }
+
+    .stream strong {
+      display: block;
+      color: var(--text);
+      font-size: 12px;
+    }
+
+    .empty {
+      border: 1px dashed var(--border-strong);
+      border-radius: 4px;
+      padding: 20px;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .login {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: rgba(0,0,0,0.74);
+      backdrop-filter: blur(6px);
+    }
+
+    .login.show { display: flex; }
+
+    .login-box {
+      width: min(390px, 100%);
+      border: 2px solid var(--border);
+      border-radius: 4px;
+      background: var(--surface);
+      padding: 22px;
+    }
+
+    .login-box h2 {
+      margin: 0 0 8px;
+      font-family: "Oswald", sans-serif;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .login-box p {
+      margin: 0 0 16px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.4;
+    }
+
+    @media (max-width: 1100px) {
+      body { padding: 14px; }
+      .layout,
+      .topbar {
+        grid-template-columns: 1fr;
+      }
+      .top-actions {
+        justify-content: flex-start;
+      }
+      .summary-grid,
+      .grid-3 {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 640px) {
+      .grid-2,
+      .grid-3,
+      .summary-grid {
+        grid-template-columns: 1fr;
+      }
+      .button-row button {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <h1>FitRace<span>Studio</span> Game Admin</h1>
+        <p>Race setup and coach-operated event control</p>
+      </div>
+      <div class="top-actions">
+        <div class="pill"><span class="dot" id="ws-dot"></span><span id="ws-label">Offline</span></div>
+        <div class="pill" id="version-pill">Hub v--</div>
+        <button type="button" onclick="window.location.href='/'">Dashboard</button>
+        <button type="button" onclick="window.location.href='/systemAdmin'">System Admin</button>
+        <button type="button" onclick="window.location.href='/static/signup.html'">Signup</button>
+        <button type="button" onclick="openLogin()">Admin Token</button>
+      </div>
+    </header>
+
+    <section class="summary-grid" aria-label="System summary">
+      <div class="metric">
+        <div class="metric-value" id="summary-state">IDLE</div>
+        <div class="metric-label">Race State</div>
+      </div>
+      <div class="metric">
+        <div class="metric-value" id="summary-stations">0</div>
+        <div class="metric-label">Stations</div>
+      </div>
+    </section>
+
+    <main class="layout game-layout">
+      <div class="column">
+        <section class="panel" aria-labelledby="race-title">
+          <div class="panel-header">
+            <h2 class="panel-title" id="race-title">Race Control</h2>
+            <span class="pill race-state" id="race-state-pill">IDLE</span>
+          </div>
+          <div class="grid-3">
+            <div class="field">
+              <label for="race-type">Race Type</label>
+              <select id="race-type" onchange="syncRaceFields()">
+                <option value="distance">Distance Challenge</option>
+                <option value="calories">Calories Challenge</option>
+                <option value="time">Time Challenge</option>
+                <option value="max_power">Max Power Challenge</option>
+              </select>
+            </div>
+            <div class="field" id="target-field">
+              <label for="race-target" id="race-target-label">Target Distance (m)</label>
+              <input type="number" id="race-target" min="1" value="500">
+            </div>
+            <div class="field">
+              <label for="auto-refresh">Refresh</label>
+              <select id="auto-refresh">
+                <option value="2000">Every 2 seconds</option>
+                <option value="5000" selected>Every 5 seconds</option>
+                <option value="0">Manual</option>
+              </select>
+            </div>
+          </div>
+          <div class="button-row">
+            <button type="button" class="primary" id="btn-configure" onclick="configureRace()">Save Settings</button>
+            <button type="button" id="btn-start" onclick="startRace()">Start Race</button>
+            <button type="button" class="danger" id="btn-stop" onclick="stopRace()">Stop Race</button>
+            <button type="button" class="danger" id="btn-reset" onclick="resetRace()">Reset Race</button>
+          </div>
+          <div class="status-text" id="race-message"></div>
+        </section>
+
+        <section class="panel" aria-labelledby="station-title">
+          <div class="panel-header">
+            <h2 class="panel-title" id="station-title">Station Status</h2>
+            <button type="button" onclick="refreshAll()">Refresh</button>
+          </div>
+          <div class="list" id="station-list" style="margin-top: 14px;"></div>
+        </section>
+      </div>
+
+    </main>
+  </div>
+
+  <div class="login" id="login-modal" role="dialog" aria-modal="true" aria-labelledby="login-title">
+    <div class="login-box">
+      <h2 id="login-title">Admin Token</h2>
+      <p>The token is sent with maintenance actions. Race and station actions will also include it for forward compatibility.</p>
+      <div class="field">
+        <label for="admin-token">Token</label>
+        <input type="password" id="admin-token" autocomplete="off">
+      </div>
+      <div class="button-row">
+        <button type="button" class="primary" onclick="saveAdminToken()">Save</button>
+        <button type="button" onclick="closeLogin()">Cancel</button>
+      </div>
+      <div class="status-text" id="login-message"></div>
+    </div>
+  </div>
+
+  <script>
+    const state = {
+      race: null,
+      stations: { stations: {}, unassigned_nodes: [] },
+      nodes: [],
+      update: null,
+      refreshTimer: null,
+      adminToken: localStorage.getItem("fitrace.adminPassword") || localStorage.getItem("fitrace.adminToken") || "",
+    };
+
+    function $(id) {
+      return document.getElementById(id);
+    }
+
+    function adminHeaders(extra = {}) {
+      const headers = { ...extra };
+      if (state.adminToken) {
+        headers["X-FitRace-Admin-Token"] = state.adminToken;
+      }
+      return headers;
+    }
+
+    function setMessage(id, text, kind = "") {
+      const node = $(id);
+      node.textContent = text || "";
+      node.className = `status-text ${kind}`;
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    function metricNumber(value, fallback = 0) {
+      const number = Number(value);
+      return Number.isFinite(number) ? number : fallback;
+    }
+
+    function formatAge(epochMs) {
+      const timestamp = Number(epochMs);
+      if (!Number.isFinite(timestamp) || timestamp <= 0) return "--";
+      const diff = Math.max(0, Math.round((Date.now() - timestamp) / 1000));
+      if (diff < 2) return "now";
+      if (diff < 60) return `${diff}s ago`;
+      return `${Math.floor(diff / 60)}m ago`;
+    }
+
+    function openLogin() {
+      $("admin-token").value = state.adminToken;
+      $("login-modal").classList.add("show");
+      $("admin-token").focus();
+    }
+
+    function closeLogin() {
+      $("login-modal").classList.remove("show");
+      setMessage("login-message", "");
+    }
+
+    function saveAdminToken() {
+      state.adminToken = $("admin-token").value.trim();
+      localStorage.setItem("fitrace.adminToken", state.adminToken);
+      localStorage.setItem("fitrace.adminPassword", state.adminToken);
+      setMessage("login-message", "Token saved.", "ok");
+      window.setTimeout(closeLogin, 400);
+    }
+
+    function syncRaceFields() {
+      const type = $("race-type").value;
+      const label = $("race-target-label");
+      if (type === "distance") label.textContent = "Target Distance (m)";
+      if (type === "calories") label.textContent = "Target Calories (kcal)";
+      if (type === "time") label.textContent = "Time Limit (s)";
+      if (type === "max_power") label.textContent = "Challenge Time (s)";
+    }
+
+    async function fetchJson(url, options = {}) {
+      const response = await fetch(url, options);
+      const text = await response.text();
+      const payload = text ? JSON.parse(text) : {};
+      if (!response.ok) {
+        throw new Error(payload.detail || response.statusText || "Request failed");
+      }
+      return payload;
+    }
+
+    async function refreshState() {
+      state.race = await fetchJson(`/api/race/state?t=${Date.now()}`);
+      renderRace();
+    }
+
+    async function refreshStations() {
+      state.stations = await fetchJson(`/api/stations?t=${Date.now()}`);
+      renderStations();
+    }
+
+    async function refreshNodes() {
+      state.nodes = (await fetchJson(`/api/nodes?t=${Date.now()}`)).nodes || [];
+    }
+
+
+    async function refreshHealth() {
+      try {
+        const health = await fetchJson(`/health?t=${Date.now()}`);
+        $("version-pill").textContent = `Hub v${health.version || "--"}`;
+      } catch (_) {
+        $("version-pill").textContent = "Hub v--";
+      }
+    }
+
+    async function refreshAll() {
+      await Promise.allSettled([
+        refreshHealth(),
+        refreshState(),
+        refreshStations(),
+        refreshNodes(),
+      ]);
+      scheduleRefresh();
+    }
+
+    function scheduleRefresh() {
+      if (state.refreshTimer) {
+        window.clearTimeout(state.refreshTimer);
+        state.refreshTimer = null;
+      }
+      const interval = parseInt($("auto-refresh").value, 10);
+      if (interval > 0) {
+        state.refreshTimer = window.setTimeout(refreshAll, interval);
+      }
+    }
+
+    function renderRace() {
+      const race = state.race || {};
+      const raceState = race.state || "IDLE";
+      $("summary-state").textContent = raceState;
+      $("race-state-pill").textContent = raceState;
+      $("race-state-pill").className = `pill race-state ${raceState}`;
+
+      const config = race.config;
+      if (config) {
+        $("race-type").value = config.race_type || "distance";
+        syncRaceFields();
+        $("race-target").value = (config.race_type === "distance" || config.race_type === "calories")
+          ? metricNumber(config.target_value, 0)
+          : metricNumber(config.duration_sec, 0);
+      }
+
+      $("btn-start").disabled = raceState !== "READY";
+      $("btn-stop").disabled = raceState !== "RUNNING";
+      $("btn-reset").disabled = raceState === "RUNNING";
+      $("btn-configure").disabled = raceState === "RUNNING";
+
+    }
+
+    function renderStations() {
+      const stations = state.stations.stations || {};
+      const keys = Object.keys(stations).sort((a, b) => Number(a) - Number(b));
+      $("summary-stations").textContent = keys.length;
+
+      const list = $("station-list");
+      if (!keys.length && !(state.stations.unassigned_nodes || []).length) {
+        list.innerHTML = `<div class="empty">No configured station is available.</div>`;
+        return;
+      }
+
+      const unassigned = (state.stations.unassigned_nodes || []).map((nodeId) => `
+        <div class="row-card">
+          <div class="row-main">
+            <div>
+              <div class="row-name">${escapeHtml(nodeId)}</div>
+              <div class="row-meta">Unassigned telemetry stream. Configure it in System Admin.</div>
+            </div>
+          </div>
+        </div>
+      `).join("");
+
+      const assigned = keys.map((key) => {
+        const station = stations[key] || {};
+        const signupUrl = `${window.location.origin}/static/signup.html?station=${encodeURIComponent(key)}`;
+        return `
+          <div class="row-card">
+            <div class="row-main">
+              <div>
+                <div class="row-name">Station ${escapeHtml(key)} · ${escapeHtml(station.equipment_type || "unbound")}</div>
+                <div class="row-meta">${escapeHtml(station.node_id || "No telemetry stream")} · ${escapeHtml(station.athlete_name || "No athlete")}${station.team_name ? ` (${escapeHtml(station.team_name)})` : ""}</div>
+                <div class="row-meta">${escapeHtml(signupUrl)}</div>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      list.innerHTML = `${unassigned}${assigned}`;
+    }
+
+
+
+    async function configureRace() {
+      const type = $("race-type").value;
+      const value = Number($("race-target").value);
+      const payload = { race_type: type, target_value: 0, duration_sec: 0 };
+      if (type === "distance" || type === "calories") payload.target_value = value;
+      else payload.duration_sec = Math.round(value);
+      if (value <= 0) {
+        setMessage("race-message", "Enter a value greater than 0.", "error");
+        return;
+      }
+      try {
+        state.race = await fetchJson("/api/race/configure", {
+          method: "POST",
+          headers: adminHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify(payload),
+        });
+        renderRace();
+        setMessage("race-message", "Race settings saved.", "ok");
+      } catch (error) {
+        setMessage("race-message", error.message, "error");
+      }
+    }
+
+    async function startRace() {
+      await raceCommand("/api/race/start", "Race started.");
+    }
+
+    async function stopRace() {
+      await raceCommand("/api/race/stop", "Race stopped.");
+    }
+
+    async function resetRace() {
+      if (!window.confirm("Reset race and clear current athlete registrations?")) return;
+      await raceCommand("/api/race/reset", "Race reset.");
+      await refreshStations();
+    }
+
+    async function raceCommand(url, successMessage) {
+      try {
+        state.race = await fetchJson(url, {
+          method: "POST",
+          headers: adminHeaders(),
+        });
+        renderRace();
+        setMessage("race-message", successMessage, "ok");
+      } catch (error) {
+        setMessage("race-message", error.message, "error");
+      }
+    }
+
+
+
+
+
+
+
+    function connectWebSocket() {
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const socket = new WebSocket(`${protocol}//${window.location.host}/ws/dashboard`);
+      socket.onopen = () => {
+        $("ws-dot").className = "dot online";
+        $("ws-label").textContent = "Online";
+        refreshAll();
+      };
+      socket.onclose = () => {
+        $("ws-dot").className = "dot";
+        $("ws-label").textContent = "Offline";
+        window.setTimeout(connectWebSocket, 3000);
+      };
+      socket.onmessage = (event) => {
+        const payload = JSON.parse(event.data);
+        if (payload.type === "state_change") {
+          state.race = payload;
+          renderRace();
+          refreshStations();
+          return;
+        }
+        if (payload.type === "node_status") {
+          state.nodes = payload.nodes || (payload.node ? [payload.node] : []);
+          return;
+        }
+        if (payload.type === "registration_success") {
+          refreshStations();
+          return;
+        }
+      };
+    }
+
+    $("auto-refresh").addEventListener("change", scheduleRefresh);
+    $("login-modal").addEventListener("click", (event) => {
+      if (event.target.id === "login-modal") closeLogin();
+    });
+    $("admin-token").addEventListener("keydown", (event) => {
+      if (event.key === "Enter") saveAdminToken();
+      if (event.key === "Escape") closeLogin();
+    });
+
+    syncRaceFields();
+    connectWebSocket();
+    refreshAll();
+  </script>
+</body>
+</html>

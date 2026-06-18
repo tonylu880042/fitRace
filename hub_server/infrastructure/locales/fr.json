@@ -11,6 +11,8 @@
   "status.title": "État",
   "status.no_config": "Aucune course configurée",
   "settings.title": "Paramètres",
+  "game_admin.title": "Game Admin",
+  "game_admin.scan_to_manage": "Scanner pour ouvrir la configuration de course et les contrôles coach.",
   "settings.language": "Langue système",
   "settings.language_help": "La langue par défaut est English (en-US). Ce réglage est enregistré dans ce navigateur.",
   "race_type.label": "Type de course",

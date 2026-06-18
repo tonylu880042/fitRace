@@ -11,6 +11,8 @@
   "status.title": "Status",
   "status.no_config": "Kein Rennen konfiguriert",
   "settings.title": "Einstellungen",
+  "game_admin.title": "Game Admin",
+  "game_admin.scan_to_manage": "Scannen, um Rennsetup und Coach-Steuerung zu öffnen.",
   "settings.language": "Systemsprache",
   "settings.language_help": "Standardsprache ist English (en-US). Diese Einstellung wird im Browser gespeichert.",
   "race_type.label": "Rennentyp",

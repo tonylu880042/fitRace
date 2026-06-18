@@ -11,6 +11,8 @@
   "status.title": "Status",
   "status.no_config": "No race configured",
   "settings.title": "Settings",
+  "game_admin.title": "Game Admin",
+  "game_admin.scan_to_manage": "Scan to open race setup and coach controls.",
   "settings.language": "System language",
   "settings.language_help": "Default language is English (en-US). This setting is saved in this browser.",
   "race_type.label": "Race type",

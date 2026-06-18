@@ -3,7 +3,13 @@ import asyncio
 import logging
 from hub_server.infrastructure.mqtt.client import AsyncMqttClient
 from hub_server.adapters.mqtt_subscriber import MqttSubscriber
-from hub_server.infrastructure.fastapi.app import app, race_manager, ws_manager, node_registry
+from hub_server.infrastructure.fastapi.app import (
+    app,
+    race_manager,
+    ws_manager,
+    node_registry,
+    race_event_engine,
+)
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
@@ -25,7 +31,9 @@ async def main_async():
     subscriber = None
     try:
         await mqtt_client.connect()
-        subscriber = MqttSubscriber(mqtt_client, race_manager, ws_manager, node_registry)
+        subscriber = MqttSubscriber(
+            mqtt_client, race_manager, ws_manager, node_registry, race_event_engine
+        )
         subscriber.start_listening()
     except Exception as e:
         logger.error(

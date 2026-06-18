@@ -35,10 +35,11 @@
   - 進展紀錄：前端報名頁會將手機上傳照片與預設 SVG 頭像裁切轉成 WebP 再送出；後端使用嚴格 base64 decode、256KB 大小限制與 RIFF/WEBP header 驗證後才寫檔。
 
 ### P1: RaceManager 狀態邊界整理
-- **停止從 API/MQTT adapter 直接修改 private fields**：
+- **已完成：停止從 API/MQTT adapter 直接修改 private fields**：
   - 目前 `app.py` 與 `mqtt_subscriber.py` 直接操作 `RaceManager._registered_nodes`、`_progress`、`_stations`、`_active_nodes`。
   - 改善方向：在 `RaceManager` 新增 public methods，例如 `record_active_node()`、`ensure_node_registered()`、`ingest_telemetry()`，讓所有狀態轉換集中在 usecase 層。
   - 驗證標準：API 與 MQTT adapter 不再直接存取 `_` 開頭欄位；既有 race state、station、avatar、websocket tests 全部通過。
+  - 進展紀錄：已新增 `get_state_snapshot()`、`get_station_equipment_type()`、`ensure_running_node_registered()`、`ingest_telemetry()` 等 public methods；FastAPI 與 MQTT adapter 已改為只透過 public API 操作 RaceManager。
 - **已完成：補齊 RaceConfig 驗證**：
   - 目前 `race_type` 接受任意字串，未知賽制可能導致進度計算與自動停止邏輯不一致。
   - 改善方向：將 `race_type` 改為 enum 或 `Literal["distance", "time", "calories", "max_power", "watts"]`，並依賽制驗證 `target_value` 或 `duration_sec` 必填且大於 0。
