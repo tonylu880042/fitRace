@@ -274,6 +274,85 @@
     .status-text.warn { color: var(--warn); }
     .status-text.error { color: var(--danger); }
 
+    .guidance-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 14px;
+    }
+
+    .guidance-card {
+      min-height: 122px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: rgba(0,0,0,0.22);
+      padding: 12px;
+    }
+
+    .guidance-title {
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .guidance-body {
+      margin-top: 7px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .mode-preview {
+      display: grid;
+      gap: 7px;
+      margin-top: 10px;
+    }
+
+    .mode-preview-row {
+      display: grid;
+      grid-template-columns: 42px minmax(0, 1fr) 42px;
+      gap: 8px;
+      align-items: center;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .mode-preview-track {
+      height: 8px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: rgba(255,255,255,0.05);
+      overflow: hidden;
+    }
+
+    .mode-preview-fill {
+      height: 100%;
+      background: var(--accent);
+    }
+
+    .countdown-banner {
+      display: none;
+      margin-top: 14px;
+      border: 1px solid rgba(245,158,11,0.7);
+      border-radius: 4px;
+      background: rgba(245,158,11,0.1);
+      color: var(--warn);
+      padding: 11px 12px;
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+    }
+
+    .countdown-banner.show {
+      display: block;
+    }
+
     .field.is-hidden {
       display: none;
     }
@@ -471,6 +550,7 @@
         justify-content: flex-start;
       }
       .summary-grid,
+      .guidance-grid,
       .grid-3 {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
@@ -479,6 +559,7 @@
     @media (max-width: 640px) {
       .grid-2,
       .grid-3,
+      .guidance-grid,
       .summary-grid {
         grid-template-columns: 1fr;
       }
@@ -501,7 +582,7 @@
         <button type="button" onclick="window.location.href='/'">Dashboard</button>
         <button type="button" onclick="window.location.href='/systemAdmin'">System Admin</button>
         <button type="button" onclick="window.location.href='/static/signup.html'">Signup</button>
-        <button type="button" onclick="openLogin()">Admin Token</button>
+        <button type="button" onclick="openLogin()">Operator Unlock</button>
       </div>
     </header>
 
@@ -542,14 +623,14 @@
             </div>
             <div class="field" id="team-scoring-field">
               <label for="team-scoring-policy">Team Scoring</label>
-              <select id="team-scoring-policy" onchange="renderStations()">
+              <select id="team-scoring-policy" onchange="updateControlGuidance(); renderStations()">
                 <option value="average">Average Progress</option>
                 <option value="total">Team Total</option>
               </select>
             </div>
             <div class="field" id="team-completion-field">
               <label for="team-completion-policy">Completion Rule</label>
-              <select id="team-completion-policy" onchange="renderStations()">
+              <select id="team-completion-policy" onchange="updateControlGuidance(); renderStations()">
                 <option value="aggregate">Aggregate Progress</option>
                 <option value="all_members">All Members Finish</option>
               </select>
@@ -567,7 +648,7 @@
             </div>
             <div class="field">
               <label for="leaderboard-display-mode">Leaderboard View</label>
-              <select id="leaderboard-display-mode" onchange="setLeaderboardDisplayMode(this.value)">
+              <select id="leaderboard-display-mode" onchange="updateControlGuidance(); setLeaderboardDisplayMode(this.value)">
                 <option value="classic">Classic</option>
                 <option value="race_track">Race Track</option>
                 <option value="team_battle">Team Battle</option>
@@ -576,12 +657,28 @@
             </div>
             <div class="field">
               <label for="start-sound-enabled">Start Sound</label>
-              <select id="start-sound-enabled" onchange="setStartCountdownSound(this.value === 'true')">
+              <select id="start-sound-enabled" onchange="updateControlGuidance(); setStartCountdownSound(this.value === 'true')">
                 <option value="true" selected>Play 3, 2, 1, Go</option>
                 <option value="false">Silent Start</option>
               </select>
             </div>
           </div>
+          <div class="guidance-grid" aria-label="Race setup guidance">
+            <div class="guidance-card">
+              <div class="guidance-title">Team Rule</div>
+              <div class="guidance-body" id="team-rule-summary">Individual race. Team rules are not applied.</div>
+            </div>
+            <div class="guidance-card">
+              <div class="guidance-title">Leaderboard Preview</div>
+              <div class="guidance-body" id="leaderboard-mode-summary">Classic ranking list for clear results.</div>
+              <div class="mode-preview" id="leaderboard-mode-preview" aria-hidden="true"></div>
+            </div>
+            <div class="guidance-card">
+              <div class="guidance-title">Start Flow</div>
+              <div class="guidance-body" id="start-flow-summary">Start Race sends the countdown to the Dashboard. The race timer begins on Go.</div>
+            </div>
+          </div>
+          <div class="countdown-banner" id="countdown-status" aria-live="polite">Countdown active on Dashboard. Race starts on Go.</div>
           <div class="button-row">
             <button type="button" class="primary" id="btn-configure" onclick="configureRace()">Save Settings</button>
             <button type="button" id="btn-start" onclick="startRace()">Start Race</button>
@@ -605,10 +702,10 @@
 
   <div class="login" id="login-modal" role="dialog" aria-modal="true" aria-labelledby="login-title">
     <div class="login-box">
-      <h2 id="login-title">Admin Token</h2>
-      <p>The token is sent with maintenance actions. Race and station actions will also include it for forward compatibility.</p>
+      <h2 id="login-title">Operator Unlock</h2>
+      <p>Enter the operator access code for protected race actions. Local test systems can leave this blank until protection is enabled.</p>
       <div class="field">
-        <label for="admin-token">Token</label>
+        <label for="admin-token">Access Code</label>
         <input type="password" id="admin-token" autocomplete="off">
       </div>
       <div class="button-row">
@@ -686,7 +783,7 @@
       state.adminToken = $("admin-token").value.trim();
       localStorage.setItem("fitrace.adminToken", state.adminToken);
       localStorage.setItem("fitrace.adminPassword", state.adminToken);
-      setMessage("login-message", "Token saved.", "ok");
+      setMessage("login-message", "Access code saved.", "ok");
       window.setTimeout(closeLogin, 400);
     }
 
@@ -697,16 +794,62 @@
       if (type === "calories") label.textContent = "Target Calories (kcal)";
       if (type === "time") label.textContent = "Time Limit (s)";
       if (type === "max_power") label.textContent = "Challenge Time (s)";
+      updateControlGuidance();
     }
 
     function syncCompetitionFields() {
       const isTeamRace = $("competition-mode").value === "team";
       $("team-scoring-field").classList.toggle("is-hidden", !isTeamRace);
       $("team-completion-field").classList.toggle("is-hidden", !isTeamRace);
+      updateControlGuidance();
     }
 
     function normalizeLeaderboardDisplayMode(mode) {
       return ["classic", "race_track", "team_battle", "sprint_board"].includes(mode) ? mode : "classic";
+    }
+
+    function updateControlGuidance() {
+      const isTeamRace = $("competition-mode").value === "team";
+      const scoring = $("team-scoring-policy").value;
+      const completion = $("team-completion-policy").value;
+      const raceType = $("race-type").value;
+      const targetLabel = raceType === "calories" ? "calorie target" : raceType === "distance" ? "distance target" : "challenge window";
+      const soundEnabled = $("start-sound-enabled").value !== "false";
+      const mode = normalizeLeaderboardDisplayMode($("leaderboard-display-mode").value);
+      const modeText = {
+        classic: "Classic ranking list for clear results.",
+        race_track: "Race Track shows progress as lanes, best for distance or calorie targets.",
+        team_battle: "Team Battle emphasizes team-versus-team momentum and member finish count.",
+        sprint_board: "Sprint Board creates a compact high-energy board for short races.",
+      };
+      const previewRows = {
+        classic: [["#1", 92, "92%"], ["#2", 76, "76%"], ["#3", 61, "61%"]],
+        race_track: [["Lane 1", 92, "Finish"], ["Lane 2", 71, "Chase"], ["Lane 3", 48, "Push"]],
+        team_battle: [["Volt", 88, "3/4"], ["Apex", 72, "2/4"], ["Pulse", 54, "1/4"]],
+        sprint_board: [["P1", 96, "Fast"], ["P2", 84, "Hot"], ["P3", 68, "Next"]],
+      };
+
+      if (isTeamRace) {
+        const scoringText = scoring === "total"
+          ? "Team Total ranks teams by accumulated progress."
+          : "Average Progress ranks teams by normalized member average.";
+        const completionText = completion === "all_members"
+          ? `All Members Finish means every teammate must complete the ${targetLabel}; one unfinished member keeps the team unfinished.`
+          : "Aggregate Progress lets the team finish when the team score reaches the target.";
+        $("team-rule-summary").textContent = `${scoringText} ${completionText}`;
+      } else {
+        $("team-rule-summary").textContent = "Individual race. Team names can display on the leaderboard, but ranking is per athlete.";
+      }
+
+      $("leaderboard-mode-summary").textContent = modeText[mode];
+      $("leaderboard-mode-preview").innerHTML = previewRows[mode].map(([label, width, value]) => `
+        <div class="mode-preview-row">
+          <span>${escapeHtml(label)}</span>
+          <span class="mode-preview-track"><span class="mode-preview-fill" style="width:${width}%"></span></span>
+          <span>${escapeHtml(value)}</span>
+        </div>
+      `).join("");
+      $("start-flow-summary").textContent = `Start Race sends a 3, 2, 1, Go countdown to the Dashboard. Sound is ${soundEnabled ? "on by default" : "muted for this start"}; the race timer begins on Go.`;
     }
 
     async function fetchJson(url, options = {}) {
@@ -787,9 +930,12 @@
       }
 
       $("btn-start").disabled = raceState !== "READY" || state.countdownActive;
+      $("btn-start").textContent = state.countdownActive ? "Countdown Active" : "Start Race";
       $("btn-stop").disabled = raceState !== "RUNNING";
       $("btn-reset").disabled = raceState === "RUNNING";
       $("btn-configure").disabled = raceState === "RUNNING";
+      $("countdown-status").classList.toggle("show", state.countdownActive);
+      updateControlGuidance();
 
     }
 

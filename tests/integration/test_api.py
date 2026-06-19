@@ -62,6 +62,9 @@ def test_management_controls_are_split_by_admin_role():
     assert "team-leaderboard-item" in response_index.text
     assert "race-track-item" in response_index.text
     assert "team-battle-card" in response_index.text
+    assert "race-stage-banner" in response_index.text
+    assert "renderRaceStageBanner" in response_index.text
+    assert "team-battle-status" in response_index.text
     assert "sprint-board-card" in response_index.text
     assert "/static/audio/countdown_start.wav" in response_index.text
     assert "playDashboardRaceCountdown" in response_index.text
@@ -99,6 +102,14 @@ def test_management_controls_are_split_by_admin_role():
     assert 'id="start-sound-enabled"' in response_game_admin.text
     assert "/api/race/start-sound" in response_game_admin.text
     assert "setStartCountdownSound" in response_game_admin.text
+    assert "Team Rule" in response_game_admin.text
+    assert "Leaderboard Preview" in response_game_admin.text
+    assert "Start Flow" in response_game_admin.text
+    assert "Countdown Active" in response_game_admin.text
+    assert "All Members Finish means every teammate must complete" in response_game_admin.text
+    assert "Operator Unlock" in response_game_admin.text
+    assert "Access Code" in response_game_admin.text
+    assert "Admin Token" not in response_game_admin.text
     assert "/static/audio/countdown_start.wav" not in response_game_admin.text
     assert "playRaceStartCountdown" not in response_game_admin.text
     assert "competition_mode: competitionMode" in response_game_admin.text
@@ -120,6 +131,9 @@ def test_management_controls_are_split_by_admin_role():
     assert "Unassign Station" in response_system_admin.text
     assert "Updates" in response_system_admin.text
     assert "System Power" in response_system_admin.text
+    assert "Maintenance Unlock" in response_system_admin.text
+    assert "Access Code" in response_system_admin.text
+    assert "Admin Token" not in response_system_admin.text
     assert "Race Control" not in response_system_admin.text
 
     assert client.get("/gameAdmin", follow_redirects=False).headers["location"] == "/static/gameAdmin.html"

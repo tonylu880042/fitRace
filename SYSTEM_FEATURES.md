@@ -1,139 +1,180 @@
 # FitRaceStudio Feature Overview
 
-Updated: 2026-06-18
+Updated: 2026-06-19
 
-## What FitRaceStudio Does
+## Product Summary
 
-FitRaceStudio is a real-time fitness race system for studios, gyms, events, and group training sessions. It turns connected cardio equipment into a live competition experience with athlete self-registration, role-based administration, station assignment, race control, device monitoring, and a large-screen leaderboard.
+FitRaceStudio is a local-first fitness race system for studios, gyms, and event
+operators. It receives real-time telemetry from connected cardio equipment,
+scores individual or team races, and presents the competition on a large
+Dashboard screen.
 
-The system is designed for in-studio use. Coaches and event operators can run races from a dedicated Game Admin page, while technical staff manage Edge Nodes, station mappings, updates, and power controls from a separate System Admin page.
+The system is organized around clear on-site responsibilities:
 
-## Main User Benefits
+- Dashboard: display-only venue screen.
+- Game Admin: coach and operator race control.
+- System Admin: technical setup, station mapping, updates, and power actions.
+- Signup: athlete self-registration by station.
 
-- Run live cardio races in a studio or event space.
-- Show athlete progress on a large screen in real time.
-- Let athletes register from their phones by station.
-- Assign equipment to numbered stations for clear on-site operation.
-- Separate coach race controls from technical device administration.
-- Support multiple equipment types in one race.
-- Monitor Edge Node status and discovered telemetry streams from the Hub.
-- Provide a local Edge setup screen for equipment discovery and signal checks.
-- Switch interface language for international environments.
+## Dashboard
 
-## Supported Race Experience
+The Dashboard is designed for a screen that participants and spectators can see.
+It must not contain settings, toggles, start/stop buttons, sound controls, or
+leaderboard selectors.
 
-FitRaceStudio supports several competition formats:
+The Dashboard displays:
 
-- Distance challenge
-- Time challenge
-- Calories challenge
-- Max power challenge
-- Watt-based challenge
+- Race state and timer.
+- Individual or team leaderboard.
+- Athlete names, station numbers, team names, equipment labels, and avatars.
+- Progress, speed, power, distance, calories, and finish time where available.
+- QR code entry points for registration and Game Admin access.
+- Edge Node status for quick venue awareness.
+- Countdown overlay before the race starts.
+- Race stage banner for IDLE, READY, COUNTDOWN, RUNNING, and final result states.
+- Team Battle completion markers such as Finished, All In, and members still
+  required to finish.
 
-During a race, the dashboard shows the current race state, elapsed time, athlete ranking, speed, distance, and progress percentage.
+Dashboard behavior is driven by Central Hub state and WebSocket events. Operators
+change behavior from Game Admin or System Admin, not from the Dashboard itself.
 
-## System Screens
+## Game Admin
 
-### Live Race Dashboard
+Game Admin is the coach-operated race desk. It controls the live event without
+exposing technical station assignment or system power controls.
 
-The dashboard is designed for a studio display or event screen. It highlights the active race, leaderboard positions, station numbers, athlete names, teams, equipment labels, and progress.
+Game Admin supports:
 
-![Live Race Dashboard](output/pdf/assets/dashboard.png)
+- Race type selection:
+  - Distance Challenge
+  - Calories Challenge
+  - Time Challenge
+  - Max Power Challenge
+- Competition mode:
+  - Individual Race
+  - Team Race
+- Team scoring:
+  - Average Progress
+  - Team Total
+- Team completion:
+  - Aggregate Progress
+  - All Members Finish
+- Leaderboard presentation:
+  - Classic
+  - Race Track
+  - Team Battle
+  - Sprint Board
+- Start countdown sound:
+  - Play 3, 2, 1, Go
+  - Silent Start
+- Operator Unlock for protected race actions when access protection is enabled.
 
-### Game Admin
+The Start Race action uses the Dashboard countdown flow. Game Admin sends a
+countdown-start command, the Dashboard shows the countdown, and the race timer
+starts on Go. While the countdown is active, the Start button is locked and the
+operator sees a visible countdown status.
 
-The Game Admin page is for coaches and on-site operators. It focuses on race setup, start/stop/reset actions, and a read-only station status view so staff can confirm which stations are ready without changing technical mappings.
+## Team Race Rules
 
-### System Admin
+Team names are entered during athlete registration. A race becomes a team race
+when Game Admin selects `Team Race`.
 
-The System Admin page is for technical staff. It centralizes Edge Node status, telemetry stream discovery, station assignment, software update actions, and Hub/system power controls.
+Team scoring defines how progress is ranked:
 
-### Athlete Self-Registration
+- Average Progress ranks teams by normalized average progress across members.
+- Team Total ranks teams by accumulated team progress.
 
-Athletes can register from a mobile-friendly page. They can choose or upload an avatar, enter their name, add an optional team name, and submit registration for the selected station. The signup page no longer contains race or system management controls.
+Team completion defines when a team is considered finished:
 
-![Athlete Self-Registration](output/pdf/assets/signup.png)
+- Aggregate Progress lets the team finish when the team score reaches the target.
+- All Members Finish requires every teammate to complete the target.
 
-### Edge Node Setup
+For distance and calories races, All Members Finish means each team member must
+complete the full target distance or target calories. If one member has not
+finished, the team is not considered finished even if other teammates have strong
+scores.
 
-The Edge Node setup screen helps staff check local signal status and discover nearby fitness equipment before or during setup.
+## Leaderboard Modes
 
-![Edge Node Setup](output/pdf/assets/edge-setup.png)
+Classic is the default and remains the clearest result view. Additional modes
+make live races more engaging without changing the scoring rules.
 
-## Feature Summary
+- Classic: standard ranking list for clear final results.
+- Race Track: lane-style progress visualization, best for distance and calorie
+  races.
+- Team Battle: team cards that emphasize team-versus-team momentum and member
+  completion count.
+- Sprint Board: compact high-energy board for short races and quick challenges.
 
-### Live Leaderboard
+The selected mode is stored in Central Hub race state and broadcast to the
+Dashboard. The Dashboard only renders the selected view.
 
-- Displays current ranking during the race.
-- Shows athlete name, team, station number, equipment label, distance, speed, and progress.
-- Highlights the leading participant.
-- Updates the race state and timer on the main display.
+## Start Audio And Countdown
 
-### Game Admin Race Control
+The start sound defaults to on. Game Admin can choose whether the next start
+plays the human voice `3, 2, 1, Go` cue.
 
-- Select race type.
-- Set target distance, time, calories, or challenge duration.
-- Start, stop, close, or reset a race.
-- View station readiness without changing equipment mappings.
-- Keep the coach workflow simple for event staff.
+The audio is played from the Dashboard because that is the venue display attached
+to the main speaker. Game Admin does not play the start sound locally.
 
-### System Admin Device and Station Management
+The countdown flow improves fairness because participants do not need to watch
+the screen at the exact moment the operator presses Start Race. The timer begins
+after the countdown reaches Go.
 
-- Assign connected devices to numbered stations.
-- View which stations already have athletes registered.
-- See unassigned equipment before the race starts.
-- Keep physical equipment layout aligned with the screen.
-- Monitor Edge Node online/offline state and discovered equipment streams.
+The Dashboard also reflects the countdown and race lifecycle visually. During
+countdown it shows a dedicated event state, during the race it shows live timing
+and target context, and after completion it locks into a result state.
 
-### System Maintenance
+## System Admin
 
-- Check available software update status.
-- Download and stage Hub updates.
-- Restart the Hub service when required.
-- Reboot or shut down the Hub/system with confirmation controls.
+System Admin is for technical staff and installation work.
 
-### Athlete Registration
+System Admin supports:
 
-- Register by station.
-- Enter athlete name and optional team name.
-- Use default avatar options or upload a custom avatar.
-- Update the dashboard immediately after registration.
+- Edge Node online/offline monitoring.
+- Discovered telemetry stream review.
+- Station assignment and unassignment.
+- Software update status, download, install, and apply actions.
+- Hub/system power controls with confirmation.
+- Maintenance Unlock for protected system actions when access protection is enabled.
 
-### Equipment and Edge Setup
+These controls are intentionally kept out of Dashboard and Game Admin.
 
-- View local setup status for an Edge Node.
-- Check Wi-Fi signal status.
-- Scan for nearby FTMS-compatible fitness equipment.
-- Review discovered devices during installation or troubleshooting.
+## Athlete Signup
 
-### Multi-Language Interface
+Signup is the athlete-facing registration page.
 
-- The user interface supports multiple languages.
-- Operators can switch the dashboard language from the screen settings.
-- Registration screens are ready for international event use.
+Athletes can:
+
+- Open a station-specific signup link or QR code.
+- Enter athlete name.
+- Enter optional team name.
+- Select or upload an avatar.
+- Submit registration for their station.
+
+Signup does not include race controls or system controls.
 
 ## Typical Event Flow
 
-1. Technical staff open System Admin during installation or maintenance.
-2. Edge Nodes and equipment streams are checked.
-3. Equipment streams are assigned to numbered stations.
-4. Athletes scan a station QR code or open the registration page.
-5. Athletes enter their name, team, and avatar.
-6. Coaches open Game Admin, select a race type, and set the target.
-7. The race starts and the dashboard updates live.
-8. The leaderboard shows ranking, progress, and final results.
-
-## Ideal Use Cases
-
-- Gym floor challenges
-- Studio class competitions
-- Brand activation events
-- Corporate wellness races
-- Multi-station cardio tournaments
-- Coach-led performance sessions
+1. Technical staff open System Admin and confirm Edge Nodes are online.
+2. Equipment streams are assigned to station numbers.
+3. Athletes open the station signup page and register names, teams, and avatars.
+4. The coach opens Game Admin.
+5. The coach selects race type, competition mode, target, leaderboard view, and
+   start sound setting.
+6. The coach reviews station readiness and team rule guidance.
+7. The coach presses Start Race.
+8. Dashboard shows the countdown and plays 3, 2, 1, Go when enabled.
+9. Race scoring starts on Go.
+10. Dashboard presents the live leaderboard and final result.
 
 ## Current Product Status
 
-The current application includes the main dashboard, registration flow, Game Admin race control, System Admin device and station management, Edge setup screen, race state display, multilingual interface, update controls, power controls, and live race presentation screens.
+The current version includes role-separated screens, live Dashboard rendering,
+individual and team race scoring, multiple leaderboard visual modes, start
+countdown audio, athlete signup, station assignment, Edge Node monitoring,
+software update controls, and local-first race operation.
 
-Some hardware-specific production features, such as final equipment board integration and fully automated over-the-air update rollout, are planned as part of the productization phase.
+Planned productization work includes deeper hardware integration validation,
+more event sound cues, final-result export, and production update rollout
+automation.

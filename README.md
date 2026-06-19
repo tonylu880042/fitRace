@@ -444,9 +444,12 @@ Main endpoints:
 GET  /health
 GET  /api/race/state
 POST /api/race/configure
+POST /api/race/countdown-start
 POST /api/race/start
 POST /api/race/stop
 POST /api/race/reset
+POST /api/race/start-sound
+POST /api/leaderboard/display
 WS   /ws/dashboard
 ```
 
@@ -1006,23 +1009,33 @@ STOPPED
 
 ```text
 Configure Race
-Start Race
+Countdown Start Race
 Stop Race
 Reset Race
 ```
 
-### Future Race Modes
+Game Admin should use `POST /api/race/countdown-start` for live events. The
+endpoint broadcasts a Dashboard countdown event first, then starts the race when
+the countdown reaches Go. `POST /api/race/start` remains available for direct
+API workflows and tests that intentionally bypass the venue countdown.
 
-Possible race formats:
+### Supported Race Modes
+
+Supported race formats:
 
 * Time trial
 * Distance target
-* Relay race
 * Team challenge
-* Station rotation
-* Multi-equipment circuit
 * Calories target
 * Power challenge
+
+Competition mode can be `individual` or `team`. Team races support:
+
+* `Average Progress`: ranks teams by normalized member average.
+* `Team Total`: ranks teams by accumulated team progress.
+* `Aggregate Progress`: a team can finish when the team score reaches the target.
+* `All Members Finish`: every teammate must complete the distance or calorie
+  target before the team is considered finished.
 
 ---
 
@@ -1094,6 +1107,22 @@ operator controls, settings, toggles, sound enable buttons, race start/stop/rese
 actions, or leaderboard mode selectors. Runtime behavior changes for the
 dashboard must be driven by Central Hub state or WebSocket events configured from
 `/gameAdmin` or `/systemAdmin`.
+
+The dashboard should make the live event state visible without operator input:
+IDLE/READY setup state, COUNTDOWN before Go, RUNNING with live timing, and final
+result state after completion. Team Battle views should also surface team
+completion status, including all-members completion progress.
+
+Dashboard presentation modes are selected from Game Admin:
+
+* `Classic`: standard rank list for the clearest result view.
+* `Race Track`: lane-style progress visualization for distance and calorie races.
+* `Team Battle`: team-versus-team cards with member completion visibility.
+* `Sprint Board`: compact high-energy board for short challenges.
+
+Race start sound is also controlled from Game Admin. The default is sound on.
+The Dashboard receives a `race_countdown` WebSocket event, displays the countdown,
+plays the 3, 2, 1, Go audio when enabled, and starts showing race time after Go.
 
 ### Dashboard Data Source
 

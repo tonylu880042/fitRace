@@ -226,6 +226,107 @@
       border: 1px solid var(--steel-border);
     }
 
+    .race-stage-banner {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      gap: 1rem;
+      align-items: center;
+      margin-bottom: 1rem;
+      padding: 0.9rem 1rem;
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 4px;
+      background: rgba(0,0,0,0.24);
+    }
+
+    .race-stage-banner.ready {
+      border-color: rgba(226,255,59,0.55);
+      background: rgba(226,255,59,0.06);
+    }
+
+    .race-stage-banner.countdown {
+      border-color: rgba(245,158,11,0.7);
+      background: rgba(245,158,11,0.09);
+      box-shadow: 0 0 28px rgba(245,158,11,0.16);
+    }
+
+    .race-stage-banner.running {
+      border-color: rgba(52,211,153,0.55);
+      background: rgba(52,211,153,0.07);
+    }
+
+    .race-stage-banner.finished {
+      border-color: rgba(226,255,59,0.75);
+      background: rgba(226,255,59,0.08);
+      box-shadow: 0 0 30px rgba(226,255,59,0.2);
+    }
+
+    .race-stage-kicker {
+      color: var(--text-muted);
+      font-family: 'Oswald', sans-serif;
+      font-size: 0.8rem;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .race-stage-main {
+      color: var(--text-main);
+      font-family: 'Oswald', sans-serif;
+      font-size: clamp(1.25rem, 2.8vw, 2.15rem);
+      font-weight: 900;
+      line-height: 1;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      overflow-wrap: anywhere;
+    }
+
+    .race-stage-sub {
+      margin-top: 0.25rem;
+      color: var(--text-muted);
+      font-size: 0.86rem;
+      font-weight: 700;
+      line-height: 1.25;
+    }
+
+    .race-stage-pulse {
+      width: 16px;
+      height: 16px;
+      border-radius: 999px;
+      background: var(--text-muted);
+      box-shadow: 0 0 16px rgba(255,255,255,0.18);
+    }
+
+    .race-stage-banner.ready .race-stage-pulse,
+    .race-stage-banner.finished .race-stage-pulse {
+      background: var(--volt-yellow);
+      box-shadow: 0 0 20px rgba(226,255,59,0.75);
+    }
+
+    .race-stage-banner.countdown .race-stage-pulse {
+      background: var(--hazard-amber);
+      box-shadow: 0 0 22px rgba(245,158,11,0.8);
+      animation: stagePulse 0.7s ease-in-out infinite alternate;
+    }
+
+    .race-stage-banner.running .race-stage-pulse {
+      background: #34d399;
+      box-shadow: 0 0 22px rgba(52,211,153,0.72);
+      animation: stagePulse 0.9s ease-in-out infinite alternate;
+    }
+
+    .race-stage-timer {
+      color: var(--volt-yellow);
+      font-family: 'Oswald', sans-serif;
+      font-size: clamp(1.2rem, 2.5vw, 1.9rem);
+      font-weight: 900;
+      white-space: nowrap;
+    }
+
+    @keyframes stagePulse {
+      from { transform: scale(0.78); opacity: 0.65; }
+      to { transform: scale(1.12); opacity: 1; }
+    }
+
     /* Leaderboard list */
     .leaderboard-list {
       display: flex;
@@ -833,6 +934,31 @@
       box-shadow: 0 0 30px rgba(226, 255, 59, 0.22), inset 0 0 12px rgba(226, 255, 59, 0.08);
     }
 
+    .team-battle-card.finished {
+      border-color: rgba(52,211,153,0.8);
+      box-shadow: 0 0 28px rgba(52,211,153,0.18);
+    }
+
+    .team-battle-card.all-in {
+      border-color: rgba(226,255,59,0.9);
+    }
+
+    .team-battle-card::after {
+      content: "";
+      position: absolute;
+      inset: 0 0 auto 0;
+      height: 3px;
+      background: transparent;
+    }
+
+    .team-battle-card.leader::after {
+      background: var(--volt-yellow);
+    }
+
+    .team-battle-card.finished::after {
+      background: #34d399;
+    }
+
     .team-battle-rank {
       color: var(--text-muted);
       font-family: 'Oswald', sans-serif;
@@ -870,6 +996,36 @@
       letter-spacing: 0.08em;
     }
 
+    .team-battle-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      min-height: 28px;
+      margin-top: 0.75rem;
+      padding: 0.25rem 0.55rem;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 3px;
+      background: rgba(255,255,255,0.04);
+      color: var(--text-muted);
+      font-family: 'Oswald', sans-serif;
+      font-size: 0.82rem;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .team-battle-status.finished {
+      border-color: rgba(52,211,153,0.7);
+      background: rgba(52,211,153,0.1);
+      color: #34d399;
+    }
+
+    .team-battle-status.all-in {
+      border-color: rgba(226,255,59,0.7);
+      background: rgba(226,255,59,0.08);
+      color: var(--volt-yellow);
+    }
+
     .team-battle-meter {
       position: relative;
       height: 12px;
@@ -893,6 +1049,12 @@
       flex-wrap: wrap;
       gap: 0.4rem;
       margin-top: 0.9rem;
+    }
+
+    .race-track-chip.finished {
+      border-color: rgba(52,211,153,0.55);
+      color: #34d399;
+      background: rgba(52,211,153,0.08);
     }
 
     .team-battle-vs {
@@ -1195,6 +1357,14 @@
 
       .team-battle-arena {
         grid-template-columns: 1fr;
+      }
+
+      .race-stage-banner {
+        grid-template-columns: auto minmax(0, 1fr);
+      }
+
+      .race-stage-timer {
+        grid-column: 2;
       }
 
       .team-battle-vs {
@@ -1579,6 +1749,15 @@
           <div data-i18n="leaderboard.title">Live Leaderboard</div>
           <span id="race-type-indicator" data-i18n="race.unconfigured">Race: Not configured</span>
         </div>
+        <div class="race-stage-banner" id="race-stage-banner" aria-live="polite">
+          <div class="race-stage-pulse" aria-hidden="true"></div>
+          <div>
+            <div class="race-stage-kicker" id="race-stage-kicker">Venue Display</div>
+            <div class="race-stage-main" id="race-stage-main">Waiting for setup</div>
+            <div class="race-stage-sub" id="race-stage-sub">Configure the race from Game Admin.</div>
+          </div>
+          <div class="race-stage-timer" id="race-stage-timer">--:--</div>
+        </div>
 
         <div id="leaderboard-container">
           <div class="empty-state">
@@ -1660,6 +1839,8 @@
     let lastLeaderboardData = null;
     let lastTeamLeaderboardData = null;
     let celebrationShownForRaceKey = null;
+    let raceStageOverride = null;
+    let raceStageOverrideTimer = null;
     let autoResetInterval = null;
     let autoResetSecondsLeft = 0;
     let autoResetCancelled = false;
@@ -1773,6 +1954,7 @@
 
     async function playDashboardRaceCountdown(eventData = {}) {
       const durationMs = metricNumber(eventData.duration_ms, 3120);
+      setRaceStageOverride("countdown", durationMs + 260);
       showRaceCountdownOverlay(durationMs);
 
       if (eventData.play_sound === false) return;
@@ -1787,6 +1969,100 @@
       } catch (err) {
         console.warn("Dashboard countdown audio was blocked by the browser:", err);
       }
+    }
+
+    function formatElapsedTime(elapsed) {
+      const safeElapsed = Math.max(0, metricNumber(elapsed));
+      const totalTenths = Math.floor(safeElapsed / 100);
+      const tenths = totalTenths % 10;
+      const totalSeconds = Math.floor(safeElapsed / 1000);
+      const seconds = totalSeconds % 60;
+      const minutes = Math.floor(totalSeconds / 60);
+      return (
+        (minutes < 10 ? "0" + minutes : minutes) + ":" +
+        (seconds < 10 ? "0" + seconds : seconds) + "." +
+        tenths
+      );
+    }
+
+    function getRaceStageDetails(stage = currentState) {
+      const competition = currentConfig?.competition_mode === "team" ? "Team" : "Individual";
+      const raceType = currentConfig?.race_type || "";
+      const target = currentConfig
+        ? raceType === "distance"
+          ? `${metricNumber(currentConfig.target_value).toFixed(0)}m`
+          : raceType === "calories"
+            ? `${metricNumber(currentConfig.target_value).toFixed(0)} kcal`
+            : `${metricNumber(currentConfig.duration_sec).toFixed(0)}s`
+        : "";
+      if (stage === "countdown") {
+        return {
+          className: "countdown",
+          kicker: "Countdown",
+          main: "3, 2, 1, Go",
+          sub: "Race timer starts on Go. Sound follows the Game Admin setting.",
+          timer: "GO",
+        };
+      }
+      if (stage === "RUNNING") {
+        return {
+          className: "running",
+          kicker: "Live Race",
+          main: currentConfig ? `${competition} ${raceType.replace("_", " ")} race` : "Race in progress",
+          sub: target ? `Target ${target} · Ranking updates live from equipment telemetry.` : "Ranking updates live from equipment telemetry.",
+          timer: document.getElementById("stopwatch-lbl")?.innerText || "00:00.0",
+        };
+      }
+      if (stage === "STOPPED") {
+        return {
+          className: "finished",
+          kicker: "Result",
+          main: currentConfig?.competition_mode === "team" ? "Team result locked" : "Race result locked",
+          sub: "Final ranking is shown below.",
+          timer: document.getElementById("stopwatch-lbl")?.innerText || "FINAL",
+        };
+      }
+      if (stage === "READY") {
+        return {
+          className: "ready",
+          kicker: "Ready",
+          main: currentConfig ? `${competition} race ready` : "Ready for setup",
+          sub: target ? `Target ${target}. Waiting for Start Race from Game Admin.` : "Waiting for Start Race from Game Admin.",
+          timer: "READY",
+        };
+      }
+      return {
+        className: "idle",
+        kicker: "Venue Display",
+        main: "Waiting for setup",
+        sub: "Configure the race from Game Admin.",
+        timer: "--:--",
+      };
+    }
+
+    function renderRaceStageBanner() {
+      const banner = document.getElementById("race-stage-banner");
+      if (!banner) return;
+      const details = getRaceStageDetails(raceStageOverride || currentState);
+      banner.className = `race-stage-banner ${details.className}`;
+      document.getElementById("race-stage-kicker").innerText = details.kicker;
+      document.getElementById("race-stage-main").innerText = details.main;
+      document.getElementById("race-stage-sub").innerText = details.sub;
+      document.getElementById("race-stage-timer").innerText = details.timer;
+    }
+
+    function setRaceStageOverride(stage, durationMs) {
+      raceStageOverride = stage;
+      if (raceStageOverrideTimer) {
+        window.clearTimeout(raceStageOverrideTimer);
+        raceStageOverrideTimer = null;
+      }
+      renderRaceStageBanner();
+      raceStageOverrideTimer = window.setTimeout(() => {
+        raceStageOverride = null;
+        raceStageOverrideTimer = null;
+        renderRaceStageBanner();
+      }, Math.max(0, metricNumber(durationMs, 0)));
     }
 
     function connectWebSocket() {
@@ -2410,8 +2686,9 @@
     function renderMemberProgressChips(members, className = "race-track-chip") {
       return (members || []).map((member) => {
         const station = member.station_number ? `<span class="team-member-station">S${escapeHtml(member.station_number)}</span>` : "";
+        const finished = Boolean(member.finished_time_ms) || metricNumber(member.progress_percent) >= 100;
         return `
-          <span class="${className}">
+          <span class="${className} ${finished ? "finished" : ""}">
             ${station}
             <strong>${escapeHtml(member.athlete_name || "Athlete")}</strong>
             ${metricNumber(member.progress_percent).toFixed(0)}%
@@ -2553,13 +2830,25 @@
         const score = formatTeamScore(team, raceType);
         const progress = Math.max(0, Math.min(100, metricNumber(team.progress_percent)));
         const completionLabel = team.completion_policy === "all_members" ? "all members finish" : "aggregate finish";
+        const missingCount = Math.max(0, metricNumber(team.member_count) - metricNumber(team.finished_count));
+        const teamFinished = Boolean(team.team_finished);
+        const allMembersComplete = metricNumber(team.member_count) > 0 && missingCount === 0;
+        const statusClass = teamFinished ? "finished" : allMembersComplete ? "all-in" : "";
+        const statusLabel = teamFinished
+          ? "Finished"
+          : allMembersComplete
+            ? "All in"
+            : team.completion_policy === "all_members"
+              ? `${missingCount.toFixed(0)} member${missingCount === 1 ? "" : "s"} to finish`
+              : `${progress.toFixed(0)}% team progress`;
         const members = renderMemberProgressChips(team.members, "race-track-chip");
         return `
-          <div class="team-battle-card ${compact ? "compact" : ""} ${currentRank === 1 ? "leader" : ""} ${rankClass}" data-node-id="${escapeHtml(teamKey)}">
+          <div class="team-battle-card ${compact ? "compact" : ""} ${currentRank === 1 ? "leader" : ""} ${teamFinished ? "finished" : ""} ${allMembersComplete ? "all-in" : ""} ${rankClass}" data-node-id="${escapeHtml(teamKey)}">
             <div class="team-battle-rank">#${currentRank} · ${metricNumber(team.finished_count).toFixed(0)}/${metricNumber(team.member_count).toFixed(0)} finished</div>
             <div class="team-battle-name">${escapeHtml(team.team_name || "Team")}</div>
             <div class="team-battle-score">${escapeHtml(score.value)}</div>
             <div class="team-battle-meta">${escapeHtml(score.label)} · ${completionLabel}</div>
+            <div class="team-battle-status ${statusClass}">${escapeHtml(statusLabel)}</div>
             <div class="team-battle-meter">
               <div class="team-battle-fill" style="width: ${progress}%"></div>
             </div>
@@ -3128,6 +3417,13 @@
       raceStartTime = data.start_time_epoch_ms;
       raceEndTime = data.end_time_epoch_ms || null;
       applyLeaderboardDisplayMode(data.leaderboard_display_mode || "classic");
+      if (raceStageOverride && data.state === "RUNNING") {
+        raceStageOverride = null;
+        if (raceStageOverrideTimer) {
+          window.clearTimeout(raceStageOverrideTimer);
+          raceStageOverrideTimer = null;
+        }
+      }
 
       if (data.leaderboard) {
         renderLeaderboard(data.leaderboard, data.team_leaderboard || null);
@@ -3157,6 +3453,7 @@
         configDesc.innerText = t("status.no_config");
         typeIndicator.innerText = t("race.unconfigured");
       }
+      renderRaceStageBanner();
 
       // Stopwatch Display control
       if (currentState === "RUNNING") {
@@ -3337,18 +3634,10 @@
         }
       }
 
-      const totalTenths = Math.floor(elapsed / 100);
-      const tenths = totalTenths % 10;
-      const totalSeconds = Math.floor(elapsed / 1000);
-      const seconds = totalSeconds % 60;
-      const minutes = Math.floor(totalSeconds / 60);
-
-      const displayStr = 
-        (minutes < 10 ? "0" + minutes : minutes) + ":" + 
-        (seconds < 10 ? "0" + seconds : seconds) + "." + 
-        tenths;
+      const displayStr = formatElapsedTime(elapsed);
          
       document.getElementById("stopwatch-lbl").innerText = displayStr;
+      renderRaceStageBanner();
     }
 
     async function configureRace() {

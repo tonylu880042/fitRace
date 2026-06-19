@@ -455,7 +455,7 @@
         <button type="button" onclick="window.location.href='/'">Dashboard</button>
         <button type="button" onclick="window.location.href='/gameAdmin'">Game Admin</button>
         <button type="button" onclick="window.location.href='/static/signup.html'">Signup</button>
-        <button type="button" onclick="openLogin()">Admin Token</button>
+        <button type="button" onclick="openLogin()">Maintenance Unlock</button>
       </div>
     </header>
 
@@ -546,10 +546,10 @@
 
   <div class="login" id="login-modal" role="dialog" aria-modal="true" aria-labelledby="login-title">
     <div class="login-box">
-      <h2 id="login-title">Admin Token</h2>
-      <p>The token is sent with maintenance actions. Race and station actions will also include it for forward compatibility.</p>
+      <h2 id="login-title">Maintenance Unlock</h2>
+      <p>Enter the maintenance access code for protected system actions. Local test systems can leave this blank until protection is enabled.</p>
       <div class="field">
-        <label for="admin-token">Token</label>
+        <label for="admin-token">Access Code</label>
         <input type="password" id="admin-token" autocomplete="off">
       </div>
       <div class="button-row">
@@ -626,7 +626,7 @@
       state.adminToken = $("admin-token").value.trim();
       localStorage.setItem("fitrace.adminToken", state.adminToken);
       localStorage.setItem("fitrace.adminPassword", state.adminToken);
-      setMessage("login-message", "Token saved.", "ok");
+      setMessage("login-message", "Access code saved.", "ok");
       window.setTimeout(closeLogin, 400);
     }
 
