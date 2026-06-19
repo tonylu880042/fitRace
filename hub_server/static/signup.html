@@ -268,6 +268,22 @@
     #avatar-file {
       display: none;
     }
+
+    .avatar-note {
+      margin-top: 0.65rem;
+      color: var(--text-muted);
+      font-size: 0.76rem;
+      line-height: 1.35;
+      text-align: center;
+    }
+
+    .avatar-note.processing {
+      color: var(--hazard-amber);
+    }
+
+    .avatar-note.ok {
+      color: var(--volt-yellow);
+    }
   </style>
 </head>
 <body>
@@ -315,6 +331,7 @@
           </div>
         </div>
         <input type="file" id="avatar-file" accept="image/*" style="display: none;">
+        <div class="avatar-note" id="avatar-processing-msg" data-i18n="avatar.processing_hint">Photos are compressed on this phone before upload.</div>
       </div>
 
       <div class="form-group" id="station-select-group" style="display: none;">
@@ -376,15 +393,23 @@
     const avatarFileInput = document.getElementById('avatar-file');
     const customOption = document.getElementById('custom-option');
     const customPreview = document.getElementById('custom-preview-circle');
+    const avatarProcessingMsg = document.getElementById('avatar-processing-msg');
     const successMsg = document.getElementById('success-msg');
     const errorMsg = document.getElementById('error-msg');
     const btnText = document.getElementById('btn-text');
     const btnSpinner = document.getElementById('btn-spinner');
     const languageSelect = document.getElementById('language-select');
+    const defaultAvatarOption = document.querySelector('[data-type="default"]');
 
     let avatarBase64 = null;
+    let avatarProcessing = false;
     let currentLocale = localStorage.getItem('fitrace.locale') || 'en-US';
     let signupMessages = {};
+    const AVATAR_MAX_SOURCE_BYTES = 8 * 1024 * 1024;
+    const AVATAR_TARGET_SIZE = 96;
+    const AVATAR_MIN_SIZE = 64;
+    const AVATAR_MAX_OUTPUT_BYTES = 32 * 1024;
+    const AVATAR_QUALITY_STEPS = [0.72, 0.64, 0.56, 0.48];
 
     const fallbackMessages = {
       "signup.subtitle": "Athlete Self-Registration",
@@ -393,6 +418,11 @@
       "avatar.male": "Male",
       "avatar.female": "Female",
       "avatar.upload": "Upload",
+      "avatar.processing_hint": "Photos are compressed on this phone before upload.",
+      "avatar.processing": "Compressing photo on this phone...",
+      "avatar.ready": "Photo ready. Compressed before upload.",
+      "avatar.too_large": "Photo is too large. Please choose an image under 8MB.",
+      "avatar.compress_failed": "Could not prepare this photo. Please choose another image.",
       "signup.station_select": "Select Station",
       "signup.athlete_name": "Athlete Name",
       "signup.athlete_placeholder": "Enter name...",
@@ -425,6 +455,11 @@
         "avatar.male": "男生",
         "avatar.female": "女生",
         "avatar.upload": "上傳",
+        "avatar.processing_hint": "照片會先在手機上壓縮後再上傳。",
+        "avatar.processing": "正在手機上壓縮照片...",
+        "avatar.ready": "照片已準備完成，將以壓縮版本上傳。",
+        "avatar.too_large": "照片太大，請選擇 8MB 以下的圖片。",
+        "avatar.compress_failed": "無法處理此照片，請選擇另一張圖片。",
         "signup.station_select": "選擇設備站位",
         "signup.athlete_name": "選手姓名",
         "signup.athlete_placeholder": "請輸入姓名...",
@@ -552,52 +587,107 @@
       opt.querySelector('span').style.fontWeight = '600';
     }
 
-    function convertAvatarSourceToWebp(source) {
+    function setAvatarProcessing(isProcessing, messageKey = "avatar.processing_hint", className = "") {
+      avatarProcessing = isProcessing;
+      avatarProcessingMsg.innerText = t(messageKey);
+      avatarProcessingMsg.className = `avatar-note ${className}`.trim();
+      submitBtn.disabled = isProcessing;
+    }
+
+    function estimateDataUrlBytes(dataUrl) {
+      const base64Data = String(dataUrl).split(',')[1] || "";
+      const padding = base64Data.endsWith("==") ? 2 : base64Data.endsWith("=") ? 1 : 0;
+      return Math.floor((base64Data.length * 3) / 4) - padding;
+    }
+
+    function loadImage(source) {
       return new Promise((resolve, reject) => {
         const img = new Image();
-        img.onload = function() {
-          const canvas = document.createElement('canvas');
-          canvas.width = 128;
-          canvas.height = 128;
-          const ctx = canvas.getContext('2d');
-
-          const size = Math.min(img.width, img.height);
-          const sx = (img.width - size) / 2;
-          const sy = (img.height - size) / 2;
-          ctx.drawImage(img, sx, sy, size, size, 0, 0, 128, 128);
-
-          resolve(canvas.toDataURL('image/webp', 0.85));
-        };
+        img.onload = () => resolve(img);
         img.onerror = reject;
         img.src = source;
       });
     }
 
-    function convertAvatarFileToWebp(file) {
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = event => {
-          convertAvatarSourceToWebp(event.target.result).then(resolve).catch(reject);
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
+    function renderAvatarWebp(img, size, quality) {
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+
+      const sourceSize = Math.min(img.naturalWidth || img.width, img.naturalHeight || img.height);
+      const sx = ((img.naturalWidth || img.width) - sourceSize) / 2;
+      const sy = ((img.naturalHeight || img.height) - sourceSize) / 2;
+      ctx.drawImage(img, sx, sy, sourceSize, sourceSize, 0, 0, size, size);
+
+      return canvas.toDataURL('image/webp', quality);
+    }
+
+    async function convertAvatarSourceToWebp(source) {
+      const img = await loadImage(source);
+      const sizeSteps = [AVATAR_TARGET_SIZE, 80, AVATAR_MIN_SIZE];
+      let smallest = null;
+
+      for (const size of sizeSteps) {
+        for (const quality of AVATAR_QUALITY_STEPS) {
+          const dataUrl = renderAvatarWebp(img, size, quality);
+          const byteSize = estimateDataUrlBytes(dataUrl);
+          if (!smallest || byteSize < smallest.byteSize) {
+            smallest = { dataUrl, byteSize };
+          }
+          if (byteSize <= AVATAR_MAX_OUTPUT_BYTES) {
+            return dataUrl;
+          }
+        }
+      }
+
+      if (smallest && smallest.byteSize <= AVATAR_MAX_OUTPUT_BYTES * 1.25) {
+        return smallest.dataUrl;
+      }
+      throw new Error("Compressed avatar exceeds output budget");
+    }
+
+    async function convertAvatarFileToWebp(file) {
+      if (file.size > AVATAR_MAX_SOURCE_BYTES) {
+        throw new Error("Avatar source image is too large");
+      }
+      const objectUrl = URL.createObjectURL(file);
+      try {
+        return await convertAvatarSourceToWebp(objectUrl);
+      } finally {
+        URL.revokeObjectURL(objectUrl);
+      }
     }
 
     avatarOptions.forEach(opt => {
       opt.addEventListener('click', async () => {
-        if (submitBtn.disabled) return;
+        if (submitBtn.disabled || avatarProcessing) return;
 
         const type = opt.getAttribute('data-type');
         if (type === 'default') {
           avatarBase64 = null;
           setActiveAvatarOption(opt);
+          setAvatarProcessing(false);
         } else if (type === 'male') {
-          avatarBase64 = await convertAvatarSourceToWebp(maleBase64);
-          setActiveAvatarOption(opt);
+          try {
+            setAvatarProcessing(true, "avatar.processing", "processing");
+            avatarBase64 = await convertAvatarSourceToWebp(maleBase64);
+            setActiveAvatarOption(opt);
+            setAvatarProcessing(false, "avatar.ready", "ok");
+          } catch (err) {
+            console.error('Avatar conversion failed', err);
+            setAvatarProcessing(false, "avatar.compress_failed");
+          }
         } else if (type === 'female') {
-          avatarBase64 = await convertAvatarSourceToWebp(femaleBase64);
-          setActiveAvatarOption(opt);
+          try {
+            setAvatarProcessing(true, "avatar.processing", "processing");
+            avatarBase64 = await convertAvatarSourceToWebp(femaleBase64);
+            setActiveAvatarOption(opt);
+            setAvatarProcessing(false, "avatar.ready", "ok");
+          } catch (err) {
+            console.error('Avatar conversion failed', err);
+            setAvatarProcessing(false, "avatar.compress_failed");
+          }
         } else if (type === 'custom') {
           avatarFileInput.click();
         }
@@ -609,13 +699,25 @@
       if (!file) return;
 
       try {
+        if (file.size > AVATAR_MAX_SOURCE_BYTES) {
+          throw new Error("source-too-large");
+        }
+        setAvatarProcessing(true, "avatar.processing", "processing");
         avatarBase64 = await convertAvatarFileToWebp(file);
         customPreview.style.backgroundImage = `url(${avatarBase64})`;
         customPreview.innerText = '';
         setActiveAvatarOption(customOption);
+        setAvatarProcessing(false, "avatar.ready", "ok");
       } catch (err) {
         console.error('Avatar conversion failed', err);
-        showMessage(errorMsg, t('signup.error_detail', { detail: 'Invalid image' }));
+        avatarBase64 = null;
+        avatarFileInput.value = '';
+        const messageKey = err.message === "source-too-large" || err.message === "Avatar source image is too large"
+          ? "avatar.too_large"
+          : "avatar.compress_failed";
+        setAvatarProcessing(false, messageKey);
+        errorMsg.innerText = t(messageKey);
+        errorMsg.style.display = 'block';
       }
     });
 
@@ -752,6 +854,11 @@
 
     async function submitForm(event) {
       event.preventDefault();
+      if (avatarProcessing) {
+        errorMsg.innerText = t('avatar.processing');
+        errorMsg.style.display = 'block';
+        return;
+      }
 
       const name = athleteNameInput.value.trim();
       if (!name) return;
@@ -791,7 +898,8 @@
           athleteNameInput.value = '';
           teamNameInput.value = '';
           avatarBase64 = null;
-          document.querySelector('[data-type="default"]').click();
+          setActiveAvatarOption(defaultAvatarOption);
+          setAvatarProcessing(false);
           customPreview.style.backgroundImage = '';
           customPreview.innerText = '📷';
         } else {

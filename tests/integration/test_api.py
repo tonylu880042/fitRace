@@ -48,7 +48,12 @@ def test_signup_page_has_language_switcher_defaulting_to_english():
     assert 'Svenska' in response.text
     assert "function convertAvatarFileToWebp" in response.text
     assert "function convertAvatarSourceToWebp" in response.text
-    assert "canvas.toDataURL('image/webp', 0.85)" in response.text
+    assert "AVATAR_MAX_SOURCE_BYTES = 8 * 1024 * 1024" in response.text
+    assert "AVATAR_TARGET_SIZE = 96" in response.text
+    assert "AVATAR_MAX_OUTPUT_BYTES = 32 * 1024" in response.text
+    assert "estimateDataUrlBytes" in response.text
+    assert "avatarProcessing" in response.text
+    assert "canvas.toDataURL('image/webp', quality)" in response.text
 
 
 def test_management_controls_are_split_by_admin_role():

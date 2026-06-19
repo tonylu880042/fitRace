@@ -152,6 +152,12 @@ Athletes can:
 - Select or upload an avatar.
 - Submit registration for their station.
 
+Uploaded avatars are compressed on the athlete's phone before submission. The
+signup page rejects source photos larger than 8MB, crops to a square avatar,
+encodes a small WebP image, and targets a 32KB upload budget. The Hub validates
+the WebP payload and stores it, but does not perform image resizing or
+compression.
+
 Signup does not include race controls or system controls.
 
 ## Typical Event Flow
