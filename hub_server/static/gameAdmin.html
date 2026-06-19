@@ -565,6 +565,22 @@
                 <option value="5000" selected>Every 5 seconds</option>
               </select>
             </div>
+            <div class="field">
+              <label for="leaderboard-display-mode">Leaderboard View</label>
+              <select id="leaderboard-display-mode" onchange="setLeaderboardDisplayMode(this.value)">
+                <option value="classic">Classic</option>
+                <option value="race_track">Race Track</option>
+                <option value="team_battle">Team Battle</option>
+                <option value="sprint_board">Sprint Board</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="start-sound-enabled">Start Sound</label>
+              <select id="start-sound-enabled" onchange="setStartCountdownSound(this.value === 'true')">
+                <option value="true" selected>Play 3, 2, 1, Go</option>
+                <option value="false">Silent Start</option>
+              </select>
+            </div>
           </div>
           <div class="button-row">
             <button type="button" class="primary" id="btn-configure" onclick="configureRace()">Save Settings</button>
@@ -610,6 +626,7 @@
       nodes: [],
       update: null,
       refreshTimer: null,
+      countdownActive: false,
       adminToken: localStorage.getItem("fitrace.adminPassword") || localStorage.getItem("fitrace.adminToken") || "",
     };
 
@@ -688,6 +705,10 @@
       $("team-completion-field").classList.toggle("is-hidden", !isTeamRace);
     }
 
+    function normalizeLeaderboardDisplayMode(mode) {
+      return ["classic", "race_track", "team_battle", "sprint_board"].includes(mode) ? mode : "classic";
+    }
+
     async function fetchJson(url, options = {}) {
       const response = await fetch(url, options);
       const text = await response.text();
@@ -751,6 +772,8 @@
       $("race-state-pill").className = `pill race-state ${raceState}`;
 
       const config = race.config;
+      $("leaderboard-display-mode").value = normalizeLeaderboardDisplayMode(race.leaderboard_display_mode);
+      $("start-sound-enabled").value = race.start_countdown_sound_enabled === false ? "false" : "true";
       if (config) {
         $("race-type").value = config.race_type || "distance";
         $("competition-mode").value = config.competition_mode || "individual";
@@ -763,7 +786,7 @@
           : metricNumber(config.duration_sec, 0);
       }
 
-      $("btn-start").disabled = raceState !== "READY";
+      $("btn-start").disabled = raceState !== "READY" || state.countdownActive;
       $("btn-stop").disabled = raceState !== "RUNNING";
       $("btn-reset").disabled = raceState === "RUNNING";
       $("btn-configure").disabled = raceState === "RUNNING";
@@ -893,8 +916,50 @@
       }
     }
 
+    async function setLeaderboardDisplayMode(mode) {
+      const displayMode = normalizeLeaderboardDisplayMode(mode);
+      const previousMode = normalizeLeaderboardDisplayMode(state.race?.leaderboard_display_mode);
+      try {
+        state.race = await fetchJson("/api/leaderboard/display", {
+          method: "POST",
+          headers: adminHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({ mode: displayMode }),
+        });
+        renderRace();
+        setMessage("race-message", "Leaderboard view updated.", "ok");
+      } catch (error) {
+        $("leaderboard-display-mode").value = previousMode;
+        setMessage("race-message", error.message, "error");
+      }
+    }
+
+    async function setStartCountdownSound(enabled) {
+      const previousValue = state.race?.start_countdown_sound_enabled === false ? "false" : "true";
+      try {
+        state.race = await fetchJson("/api/race/start-sound", {
+          method: "POST",
+          headers: adminHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({ enabled }),
+        });
+        renderRace();
+        setMessage("race-message", enabled ? "Start sound enabled." : "Start sound disabled.", "ok");
+      } catch (error) {
+        $("start-sound-enabled").value = previousValue;
+        setMessage("race-message", error.message, "error");
+      }
+    }
+
     async function startRace() {
-      await raceCommand("/api/race/start", "Race started.");
+      if (state.countdownActive) return;
+      state.countdownActive = true;
+      renderRace();
+      setMessage("race-message", "Countdown playing on Dashboard. Race starts on Go.", "warn");
+      try {
+        await raceCommand("/api/race/countdown-start", "Race started after Dashboard countdown.");
+      } finally {
+        state.countdownActive = false;
+        renderRace();
+      }
     }
 
     async function stopRace() {

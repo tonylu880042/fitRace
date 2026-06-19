@@ -3,9 +3,18 @@ from hub_server.domain.models import RaceState, RaceConfig
 
 
 class RaceManager:
+    VALID_LEADERBOARD_DISPLAY_MODES = {
+        "classic",
+        "race_track",
+        "team_battle",
+        "sprint_board",
+    }
+
     def __init__(self):
         self._state: RaceState = RaceState.IDLE
         self._config: Optional[RaceConfig] = None
+        self._leaderboard_display_mode: str = "classic"
+        self._start_countdown_sound_enabled: bool = True
         self._registered_nodes: Dict[str, str] = {}  # node_id -> athlete_name (for legacy backward compatibility)
         self._progress: Dict[str, Dict[str, Any]] = {}  # node_id -> metrics dict
         
@@ -30,6 +39,22 @@ class RaceManager:
     def get_end_time_epoch_ms(self) -> Optional[int]:
         return self._end_time_epoch_ms
 
+    def get_leaderboard_display_mode(self) -> str:
+        return self._leaderboard_display_mode
+
+    def set_leaderboard_display_mode(self, mode: str) -> str:
+        if mode not in self.VALID_LEADERBOARD_DISPLAY_MODES:
+            raise ValueError(f"Unsupported leaderboard display mode: {mode}")
+        self._leaderboard_display_mode = mode
+        return self._leaderboard_display_mode
+
+    def get_start_countdown_sound_enabled(self) -> bool:
+        return self._start_countdown_sound_enabled
+
+    def set_start_countdown_sound_enabled(self, enabled: bool) -> bool:
+        self._start_countdown_sound_enabled = bool(enabled)
+        return self._start_countdown_sound_enabled
+
     def get_state_snapshot(self) -> Dict[str, Any]:
         config = self.get_config()
         team_leaderboard = (
@@ -43,6 +68,8 @@ class RaceManager:
             "registered_nodes": self.get_registered_nodes(),
             "start_time_epoch_ms": self.get_start_time_epoch_ms(),
             "end_time_epoch_ms": self.get_end_time_epoch_ms(),
+            "leaderboard_display_mode": self.get_leaderboard_display_mode(),
+            "start_countdown_sound_enabled": self.get_start_countdown_sound_enabled(),
             "leaderboard": self.get_leaderboard_progress(),
             "team_leaderboard": team_leaderboard,
         }

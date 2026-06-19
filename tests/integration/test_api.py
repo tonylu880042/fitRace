@@ -55,8 +55,20 @@ def test_management_controls_are_split_by_admin_role():
     response_index = client.get("/static/index.html")
     assert response_index.status_code == 200
     assert "renderTeamLeaderboard" in response_index.text
+    assert "renderRaceTrackLeaderboard" in response_index.text
+    assert "renderTeamBattleLeaderboard" in response_index.text
+    assert "renderSprintBoardLeaderboard" in response_index.text
     assert "competition_mode === \"team\"" in response_index.text
     assert "team-leaderboard-item" in response_index.text
+    assert "race-track-item" in response_index.text
+    assert "team-battle-card" in response_index.text
+    assert "sprint-board-card" in response_index.text
+    assert "/static/audio/countdown_start.wav" in response_index.text
+    assert "playDashboardRaceCountdown" in response_index.text
+    assert "race_countdown" in response_index.text
+    assert "enableDashboardSound" not in response_index.text
+    assert 'id="sound-control"' not in response_index.text
+    assert "id=\"leaderboard-display-mode\"" not in response_index.text
     assert "System Power" not in response_index.text
 
     response_signup = client.get("/static/signup.html")
@@ -80,6 +92,15 @@ def test_management_controls_are_split_by_admin_role():
     assert 'id="competition-mode"' in response_game_admin.text
     assert 'id="team-scoring-policy"' in response_game_admin.text
     assert 'id="team-completion-policy"' in response_game_admin.text
+    assert 'id="leaderboard-display-mode"' in response_game_admin.text
+    assert "setLeaderboardDisplayMode" in response_game_admin.text
+    assert "/api/leaderboard/display" in response_game_admin.text
+    assert "/api/race/countdown-start" in response_game_admin.text
+    assert 'id="start-sound-enabled"' in response_game_admin.text
+    assert "/api/race/start-sound" in response_game_admin.text
+    assert "setStartCountdownSound" in response_game_admin.text
+    assert "/static/audio/countdown_start.wav" not in response_game_admin.text
+    assert "playRaceStartCountdown" not in response_game_admin.text
     assert "competition_mode: competitionMode" in response_game_admin.text
     assert "team_scoring_policy: teamScoringPolicy" in response_game_admin.text
     assert "team_completion_policy: teamCompletionPolicy" in response_game_admin.text
@@ -343,6 +364,68 @@ def test_race_workflow_via_api():
     res = client.post("/api/race/reset")
     assert res.status_code == 200
     assert res.json()["state"] == "IDLE"
+
+
+def test_leaderboard_display_mode_can_be_controlled_from_game_admin():
+    client.post("/api/race/reset")
+
+    default_state = client.get("/api/race/state")
+    assert default_state.status_code == 200
+    assert default_state.json()["leaderboard_display_mode"] == "classic"
+
+    res = client.post("/api/leaderboard/display", json={"mode": "team_battle"})
+    assert res.status_code == 200
+    assert res.json()["leaderboard_display_mode"] == "team_battle"
+
+    state = client.get("/api/race/state")
+    assert state.json()["leaderboard_display_mode"] == "team_battle"
+
+    invalid = client.post("/api/leaderboard/display", json={"mode": "manual"})
+    assert invalid.status_code == 400
+    client.post("/api/leaderboard/display", json={"mode": "classic"})
+
+
+def test_countdown_start_delays_race_start_for_dashboard_audio(monkeypatch):
+    from hub_server.infrastructure.fastapi import app as hub_app
+
+    client.post("/api/race/reset")
+    monkeypatch.setattr(hub_app, "RACE_START_COUNTDOWN_DURATION_MS", 10)
+    broadcasts = []
+
+    async def capture_broadcast(payload):
+      broadcasts.append(payload)
+
+    monkeypatch.setattr(hub_app.ws_manager, "broadcast", capture_broadcast)
+    client.post(
+        "/api/race/configure",
+        json={"race_type": "distance", "target_value": 100, "duration_sec": 0},
+    )
+
+    res = client.post("/api/race/countdown-start")
+
+    assert res.status_code == 200
+    assert res.json()["state"] == "RUNNING"
+    assert any(
+        payload.get("type") == "race_countdown" and payload.get("play_sound") is True
+        for payload in broadcasts
+    )
+    client.post("/api/race/reset")
+
+
+def test_start_countdown_sound_defaults_on_and_can_be_controlled_from_game_admin():
+    client.post("/api/race/reset")
+
+    state = client.get("/api/race/state")
+    assert state.status_code == 200
+    assert state.json()["start_countdown_sound_enabled"] is True
+
+    disabled = client.post("/api/race/start-sound", json={"enabled": False})
+    assert disabled.status_code == 200
+    assert disabled.json()["start_countdown_sound_enabled"] is False
+
+    enabled = client.post("/api/race/start-sound", json={"enabled": True})
+    assert enabled.status_code == 200
+    assert enabled.json()["start_countdown_sound_enabled"] is True
 
 
 def test_team_race_state_exposes_team_leaderboard(monkeypatch):

@@ -32,6 +32,8 @@ HUB_UPDATER_SERVICE = os.getenv(
     "FITRACE_HUB_UPDATER_SERVICE", "fitracestudio-hub-updater.service"
 )
 MAX_AVATAR_BYTES = 256 * 1024
+RACE_START_COUNTDOWN_AUDIO_URL = "/static/audio/countdown_start.wav"
+RACE_START_COUNTDOWN_DURATION_MS = 3120
 
 
 def run_systemctl(command: list[str]):
@@ -69,6 +71,7 @@ race_manager = RaceManager()
 ws_manager = WebSocketManager()
 node_registry = NodeRegistry()
 race_event_engine = RaceEventEngine()
+race_start_countdown_lock = asyncio.Lock()
 update_checker = UpdateChecker(
     manifest_url=os.getenv(
         "FITRACE_UPDATE_MANIFEST_URL",
@@ -102,6 +105,14 @@ class ConfigurePayload(BaseModel):
     team_completion_policy: str = "aggregate"
     target_value: float = 0.0
     duration_sec: int = 0
+
+
+class LeaderboardDisplayPayload(BaseModel):
+    mode: str
+
+
+class StartCountdownSoundPayload(BaseModel):
+    enabled: bool
 
 
 class AssignStationPayload(BaseModel):
@@ -242,6 +253,21 @@ async def broadcast_race_state():
 @app.get("/api/race/state")
 async def get_race_state():
     return await get_race_state_data()
+
+
+@app.post("/api/leaderboard/display")
+async def set_leaderboard_display(payload: LeaderboardDisplayPayload):
+    try:
+        race_manager.set_leaderboard_display_mode(payload.mode)
+        return await broadcast_race_state()
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/race/start-sound")
+async def set_start_countdown_sound(payload: StartCountdownSoundPayload):
+    race_manager.set_start_countdown_sound_enabled(payload.enabled)
+    return await broadcast_race_state()
 
 
 @app.get("/api/nodes")
@@ -491,6 +517,35 @@ async def start_race():
         return await broadcast_race_state()
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/race/countdown-start")
+async def countdown_start_race():
+    if race_start_countdown_lock.locked():
+        raise HTTPException(status_code=409, detail="Race countdown is already active")
+    if race_manager.get_state() != RaceState.READY:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Race must be in READY state to start countdown; current state is {race_manager.get_state().value}",
+        )
+
+    async with race_start_countdown_lock:
+        await ws_manager.broadcast(
+            {
+                "type": "race_countdown",
+                "audio_url": RACE_START_COUNTDOWN_AUDIO_URL,
+                "duration_ms": RACE_START_COUNTDOWN_DURATION_MS,
+                "play_sound": race_manager.get_start_countdown_sound_enabled(),
+                "message": "Starting in 3, 2, 1, Go",
+            }
+        )
+        await asyncio.sleep(RACE_START_COUNTDOWN_DURATION_MS / 1000)
+        try:
+            race_manager.start_race()
+            race_event_engine.reset()
+            return await broadcast_race_state()
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.post("/api/race/stop")
