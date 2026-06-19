@@ -25,6 +25,19 @@ Deployment network, hostname, mDNS, and Edge Node discovery rules are documented
 
 ---
 
+## Development Verification
+
+```text
+.venv/bin/python -m pytest -q
+node scripts/verify_dashboard_ux.mjs
+```
+
+`scripts/verify_dashboard_ux.mjs` starts a local test Hub, seeds a team race,
+drives Dashboard state through READY, COUNTDOWN, RUNNING, Team Battle completion,
+and RESULT, then writes screenshots under `output/screenshots/dashboard-ux/`.
+
+---
+
 ## 2. Core Design Philosophy
 
 FitRaceStudio follows these architectural principles:

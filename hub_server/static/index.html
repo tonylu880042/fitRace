@@ -2804,6 +2804,21 @@
       }
     }
 
+    function getTeamBattleStatus(team, progress) {
+      const missingCount = Math.max(0, metricNumber(team.member_count) - metricNumber(team.finished_count));
+      const teamFinished = Boolean(team.team_finished);
+      const allMembersComplete = metricNumber(team.member_count) > 0 && missingCount === 0;
+      const statusClass = teamFinished ? "finished" : allMembersComplete ? "all-in" : "";
+      const statusLabel = teamFinished
+        ? "Finished"
+        : allMembersComplete
+          ? "All in"
+          : team.completion_policy === "all_members"
+            ? `${missingCount.toFixed(0)} member${missingCount === 1 ? "" : "s"} to finish`
+            : `${progress.toFixed(0)}% team progress`;
+      return { allMembersComplete, statusClass, statusLabel, teamFinished };
+    }
+
     function renderTeamBattleLeaderboard(progressData, teamData = null) {
       const container = document.getElementById("leaderboard-container");
       const previousRects = new Map();
@@ -2830,17 +2845,7 @@
         const score = formatTeamScore(team, raceType);
         const progress = Math.max(0, Math.min(100, metricNumber(team.progress_percent)));
         const completionLabel = team.completion_policy === "all_members" ? "all members finish" : "aggregate finish";
-        const missingCount = Math.max(0, metricNumber(team.member_count) - metricNumber(team.finished_count));
-        const teamFinished = Boolean(team.team_finished);
-        const allMembersComplete = metricNumber(team.member_count) > 0 && missingCount === 0;
-        const statusClass = teamFinished ? "finished" : allMembersComplete ? "all-in" : "";
-        const statusLabel = teamFinished
-          ? "Finished"
-          : allMembersComplete
-            ? "All in"
-            : team.completion_policy === "all_members"
-              ? `${missingCount.toFixed(0)} member${missingCount === 1 ? "" : "s"} to finish`
-              : `${progress.toFixed(0)}% team progress`;
+        const { allMembersComplete, statusClass, statusLabel, teamFinished } = getTeamBattleStatus(team, progress);
         const members = renderMemberProgressChips(team.members, "race-track-chip");
         return `
           <div class="team-battle-card ${compact ? "compact" : ""} ${currentRank === 1 ? "leader" : ""} ${teamFinished ? "finished" : ""} ${allMembersComplete ? "all-in" : ""} ${rankClass}" data-node-id="${escapeHtml(teamKey)}">
