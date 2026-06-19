@@ -9,7 +9,7 @@ client = TestClient(app)
 def test_health_check_endpoint():
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "version": "0.1.1"}
+    assert response.json() == {"status": "ok", "version": "0.1.2"}
 
 
 def test_locales_endpoint_defaults_to_english_and_lists_supported_locales():
