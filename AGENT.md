@@ -19,6 +19,12 @@
 
 為了確保系統的**高可測試性**、**低耦合性**以及**與外部框架/硬體驅動的解耦**，本專案依循 Clean Architecture 設計。
 
+### 2.0 現場頁面職責邊界
+- **Dashboard 主頁 (`/`, `/static/index.html`) 只能顯示現場資訊**：Leaderboard、倒數提示、比賽狀態、QR code、設備狀態等。主頁通常是無滑鼠/鍵盤的投放螢幕，禁止新增設定、切換、啟用音效、開始/停止比賽等人工操作控制。
+- **Game Admin (`/gameAdmin`) 負責比賽操作設定**：比賽模式、Leaderboard 顯示模式、開始倒數是否播放聲音、Start/Stop/Reset 等都必須由 Game Admin 控制。
+- **System Admin (`/systemAdmin`) 負責技術維護操作**：Station assignment、Edge Node、更新、電源等維護行為不得放入 Dashboard 或 Game Admin。
+- 若 Dashboard 需要聲音、視覺模式或其他行為變更，必須由後端狀態或 WebSocket event 驅動；控制項放在 Game Admin 或 System Admin，不得放在 Dashboard。
+
 ### 2.1 核心原則：依賴性規則 (Dependency Rule)
 - 依賴關係只能**由外向內**單向指向。
 - 內層（例如領域實體與案例）絕不能知道或依賴外層（例如 FastAPI、MQTT 代理、Bleak 藍牙庫或具體資料庫）的任何細節。

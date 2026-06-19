@@ -11,6 +11,8 @@
   "status.title": "當前狀態",
   "status.no_config": "無賽事配置",
   "settings.title": "系統設置",
+  "game_admin.title": "Game Admin",
+  "game_admin.scan_to_manage": "掃描開啟賽事設定與教練控制頁面。",
   "settings.language": "系統語系",
   "settings.language_help": "預設語系為英文 (en-US)，此設定會儲存在目前瀏覽器。",
   "race_type.label": "賽制類型",

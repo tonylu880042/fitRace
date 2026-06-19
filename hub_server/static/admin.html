@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en-US">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FitRaceStudio Admin</title>
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;700&family=Outfit:wght@400;600;800&family=Noto+Sans+TC:wght@500;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #09090b;
+      --surface: #18181b;
+      --surface-2: #111113;
+      --border: #27272a;
+      --text: #fafafa;
+      --muted: #a1a1aa;
+      --accent: #e2ff3b;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Outfit", "Noto Sans TC", sans-serif;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background-image: radial-gradient(rgba(255,255,255,0.018) 1px, transparent 0);
+      background-size: 24px 24px;
+      pointer-events: none;
+      z-index: -1;
+    }
+
+    .shell {
+      width: min(980px, 100%);
+      display: grid;
+      gap: 18px;
+    }
+
+    header {
+      border: 2px solid var(--border);
+      border-radius: 4px;
+      background: var(--surface);
+      padding: 28px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    header::before {
+      content: "";
+      position: absolute;
+      inset: 0 0 auto;
+      height: 4px;
+      background: repeating-linear-gradient(-45deg, var(--accent), var(--accent) 8px, #000 8px, #000 16px);
+    }
+
+    h1 {
+      margin: 0;
+      font-family: "Oswald", sans-serif;
+      font-size: clamp(34px, 6vw, 58px);
+      line-height: 1;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    h1 span { color: var(--accent); }
+
+    p {
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.45;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 700;
+    }
+
+    .choices {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .choice {
+      display: block;
+      min-height: 220px;
+      border: 2px solid var(--border);
+      border-radius: 4px;
+      background: var(--surface);
+      color: var(--text);
+      text-decoration: none;
+      padding: 24px;
+    }
+
+    .choice:hover {
+      border-color: var(--accent);
+    }
+
+    .choice strong {
+      display: block;
+      font-family: "Oswald", sans-serif;
+      font-size: 32px;
+      line-height: 1;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .choice span {
+      display: block;
+      margin-top: 12px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      min-height: 42px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--surface-2);
+      color: var(--text);
+      cursor: pointer;
+      font-family: "Oswald", sans-serif;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 0 14px;
+    }
+
+    button:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    @media (max-width: 720px) {
+      .choices { grid-template-columns: 1fr; }
+      .choice { min-height: 160px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <h1>FitRace<span>Studio</span> Admin</h1>
+      <p>Select the console for the operator role.</p>
+    </header>
+
+    <section class="choices" aria-label="Admin consoles">
+      <a class="choice" href="/gameAdmin">
+        <strong>Game Admin</strong>
+        <span>For venue staff and coaches: race setup, start/stop/reset, station assignment, and registration links.</span>
+      </a>
+      <a class="choice" href="/systemAdmin">
+        <strong>System Admin</strong>
+        <span>For technical operators: Edge node status, Hub updates, system power, and maintenance actions.</span>
+      </a>
+    </section>
+
+    <div class="actions">
+      <button type="button" onclick="window.location.href='/'">Dashboard</button>
+      <button type="button" onclick="window.location.href='/static/signup.html'">Signup</button>
+    </div>
+  </main>
+</body>
+</html>

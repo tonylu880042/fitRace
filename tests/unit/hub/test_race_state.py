@@ -11,6 +11,21 @@ def test_race_config_model():
     assert config.race_type == "distance"
     assert config.target_value == 1000.0
     assert config.duration_sec == 0
+    assert config.competition_mode == "individual"
+    assert config.team_scoring_policy == "average"
+    assert config.team_completion_policy == "aggregate"
+
+
+def test_race_config_accepts_team_competition_mode():
+    config = RaceConfig(
+        race_type="distance",
+        target_value=1000.0,
+        competition_mode="team",
+        team_scoring_policy="total",
+    )
+
+    assert config.competition_mode == "team"
+    assert config.team_scoring_policy == "total"
 
 
 @pytest.mark.parametrize("race_type", ["distance", "calories"])
@@ -28,6 +43,35 @@ def test_race_config_requires_positive_duration_for_duration_based_races(race_ty
 def test_race_config_rejects_unknown_race_type():
     with pytest.raises(ValidationError):
         RaceConfig(race_type="mystery", target_value=100, duration_sec=0)
+
+
+def test_race_config_rejects_unknown_competition_mode():
+    with pytest.raises(ValidationError):
+        RaceConfig(
+            race_type="distance",
+            target_value=100,
+            competition_mode="relay",
+        )
+
+
+def test_race_config_rejects_unknown_team_scoring_policy():
+    with pytest.raises(ValidationError):
+        RaceConfig(
+            race_type="distance",
+            target_value=100,
+            competition_mode="team",
+            team_scoring_policy="fastest",
+        )
+
+
+def test_race_config_rejects_unknown_team_completion_policy():
+    with pytest.raises(ValidationError):
+        RaceConfig(
+            race_type="distance",
+            target_value=100,
+            competition_mode="team",
+            team_completion_policy="first_member",
+        )
 
 
 def test_race_manager_initial_state():
@@ -204,6 +248,128 @@ def test_race_auto_stop_on_completion():
     assert manager._end_time_epoch_ms is not None
 
 
+def test_team_leaderboard_aggregates_distance_by_average_progress():
+    manager = RaceManager()
+    config = RaceConfig(
+        race_type="distance",
+        target_value=100.0,
+        competition_mode="team",
+        team_scoring_policy="average",
+    )
+    manager.assign_station(1, "node-01")
+    manager.assign_station(2, "node-02")
+    manager.assign_station(3, "node-03")
+    manager.register_athlete(1, "Runner A", team_name="Volt")
+    manager.register_athlete(2, "Runner B", team_name="Volt")
+    manager.register_athlete(3, "Runner C", team_name="Apex")
+    manager.configure(config)
+    manager.start_race()
+
+    manager.update_telemetry({"node_id": "node-01", "distance_m": 80.0, "elapsed_time_ms": 10000})
+    manager.update_telemetry({"node_id": "node-02", "distance_m": 40.0, "elapsed_time_ms": 10000})
+    manager.update_telemetry({"node_id": "node-03", "distance_m": 70.0, "elapsed_time_ms": 10000})
+
+    teams = manager.get_team_leaderboard_progress()
+
+    assert [team["team_name"] for team in teams] == ["Apex", "Volt"]
+    assert teams[0]["member_count"] == 1
+    assert teams[0]["progress_percent"] == 70.0
+    assert teams[0]["score_value"] == 70.0
+    assert teams[1]["member_count"] == 2
+    assert teams[1]["distance_m"] == 120.0
+    assert teams[1]["progress_percent"] == 60.0
+
+
+def test_team_leaderboard_aggregates_distance_by_total_progress():
+    manager = RaceManager()
+    config = RaceConfig(
+        race_type="distance",
+        target_value=100.0,
+        competition_mode="team",
+        team_scoring_policy="total",
+    )
+    manager.assign_station(1, "node-01")
+    manager.assign_station(2, "node-02")
+    manager.assign_station(3, "node-03")
+    manager.register_athlete(1, "Runner A", team_name="Volt")
+    manager.register_athlete(2, "Runner B", team_name="Volt")
+    manager.register_athlete(3, "Runner C", team_name="Apex")
+    manager.configure(config)
+    manager.start_race()
+
+    manager.update_telemetry({"node_id": "node-01", "distance_m": 80.0, "elapsed_time_ms": 10000})
+    manager.update_telemetry({"node_id": "node-02", "distance_m": 40.0, "elapsed_time_ms": 10000})
+    manager.update_telemetry({"node_id": "node-03", "distance_m": 70.0, "elapsed_time_ms": 10000})
+
+    teams = manager.get_team_leaderboard_progress()
+
+    assert [team["team_name"] for team in teams] == ["Volt", "Apex"]
+    assert teams[0]["score_value"] == 120.0
+    assert teams[0]["progress_percent"] == 120.0
+    assert [member["athlete_name"] for member in teams[0]["members"]] == ["Runner A", "Runner B"]
+
+
+def test_team_leaderboard_all_members_requires_every_distance_member_to_finish():
+    manager = RaceManager()
+    config = RaceConfig(
+        race_type="distance",
+        target_value=100.0,
+        competition_mode="team",
+        team_scoring_policy="average",
+        team_completion_policy="all_members",
+    )
+    manager.assign_station(1, "node-01")
+    manager.assign_station(2, "node-02")
+    manager.assign_station(3, "node-03")
+    manager.assign_station(4, "node-04")
+    manager.register_athlete(1, "Runner A", team_name="Volt")
+    manager.register_athlete(2, "Runner B", team_name="Volt")
+    manager.register_athlete(3, "Runner C", team_name="Apex")
+    manager.register_athlete(4, "Runner D", team_name="Apex")
+    manager.configure(config)
+    manager.start_race()
+
+    manager.update_telemetry({"node_id": "node-01", "distance_m": 100.0, "elapsed_time_ms": 10000})
+    manager.update_telemetry({"node_id": "node-02", "distance_m": 70.0, "elapsed_time_ms": 10000})
+    manager.update_telemetry({"node_id": "node-03", "distance_m": 100.0, "elapsed_time_ms": 12000})
+    manager.update_telemetry({"node_id": "node-04", "distance_m": 100.0, "elapsed_time_ms": 18000})
+
+    teams = manager.get_team_leaderboard_progress()
+
+    assert [team["team_name"] for team in teams] == ["Apex", "Volt"]
+    assert teams[0]["team_finished"] is True
+    assert teams[0]["team_finished_time_ms"] == 18000
+    assert teams[1]["team_finished"] is False
+    assert teams[1]["team_finished_time_ms"] is None
+    assert teams[1]["progress_percent"] == 85.0
+
+
+def test_team_leaderboard_all_members_applies_to_calories():
+    manager = RaceManager()
+    config = RaceConfig(
+        race_type="calories",
+        target_value=50.0,
+        competition_mode="team",
+        team_scoring_policy="average",
+        team_completion_policy="all_members",
+    )
+    manager.assign_station(1, "node-01")
+    manager.assign_station(2, "node-02")
+    manager.register_athlete(1, "Rider A", team_name="Volt")
+    manager.register_athlete(2, "Rider B", team_name="Volt")
+    manager.configure(config)
+    manager.start_race()
+
+    manager.update_telemetry({"node_id": "node-01", "calories": 52.0, "elapsed_time_ms": 10000})
+    manager.update_telemetry({"node_id": "node-02", "calories": 40.0, "elapsed_time_ms": 10000})
+
+    teams = manager.get_team_leaderboard_progress()
+
+    assert teams[0]["team_name"] == "Volt"
+    assert teams[0]["team_finished"] is False
+    assert teams[0]["progress_percent"] == 90.0
+
+
 def test_close_race_keeps_unfinished_progress_for_awards():
     manager = RaceManager()
     config = RaceConfig(race_type="distance", target_value=100.0)
@@ -303,4 +469,3 @@ def test_unbound_station_start_and_telemetry():
     # Since only Station 1 is bound and active, it should auto-stop the race (ignoring unbound Station 2)
     assert manager.get_state() == RaceState.STOPPED
     assert progress["bike-01"]["finished_time_ms"] == 10000
-

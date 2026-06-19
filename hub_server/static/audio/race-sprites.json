@@ -1,0 +1,50 @@
+{
+  "start_horn": [
+    0.0,
+    0.5
+  ],
+  "milestone_ping": [
+    0.5,
+    0.47
+  ],
+  "sprint_loop": [
+    0.97,
+    1.2
+  ],
+  "overtake_swoosh": [
+    2.17,
+    0.43
+  ],
+  "vo_halfway": [
+    2.6,
+    1.761
+  ],
+  "vo_final": [
+    4.361,
+    2.126
+  ],
+  "countdown_tick": [
+    6.487,
+    0.12
+  ],
+  "countdown_3": [
+    6.607,
+    0.35
+  ],
+  "countdown_2": [
+    6.957,
+    0.35
+  ],
+  "countdown_1": [
+    7.3069999999999995,
+    0.4
+  ],
+  "finish_fanfare": [
+    7.707,
+    0.85
+  ],
+  "champion_celebrate": [
+    8.557,
+    1.2
+  ]
+}

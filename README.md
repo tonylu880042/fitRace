@@ -1089,6 +1089,12 @@ The dashboard is displayed on a large studio screen.
   * Race paused
   * Network issue
 
+The dashboard is a display-only surface for the venue screen. It must not contain
+operator controls, settings, toggles, sound enable buttons, race start/stop/reset
+actions, or leaderboard mode selectors. Runtime behavior changes for the
+dashboard must be driven by Central Hub state or WebSocket events configured from
+`/gameAdmin` or `/systemAdmin`.
+
 ### Dashboard Data Source
 
 ```text

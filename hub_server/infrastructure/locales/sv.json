@@ -11,6 +11,8 @@
   "status.title": "Status",
   "status.no_config": "Ingen tävling konfigurerad",
   "settings.title": "Inställningar",
+  "game_admin.title": "Game Admin",
+  "game_admin.scan_to_manage": "Skanna för att öppna tävlingsinställningar och coachkontroller.",
   "settings.language": "Systemspråk",
   "settings.language_help": "Standardspråk är English (en-US). Inställningen sparas i webbläsaren.",
   "race_type.label": "Tävlingsform",

@@ -523,6 +523,547 @@
       animation: progressSweep 1.8s linear infinite;
     }
 
+    .team-leaderboard-list {
+      display: grid;
+      gap: 0.9rem;
+      position: relative;
+    }
+
+    .team-leaderboard-item {
+      display: grid;
+      grid-template-columns: 54px minmax(220px, 1.4fr) repeat(3, minmax(94px, 0.5fr));
+      gap: 1rem;
+      align-items: center;
+      padding: 1rem 1.2rem;
+      background: rgba(0, 0, 0, 0.25);
+      border: 1px solid var(--steel-border);
+      border-radius: 4px;
+      position: relative;
+      overflow: hidden;
+      transition:
+        transform 0.38s cubic-bezier(0.2, 0.9, 0.22, 1),
+        border-color 0.25s ease,
+        background 0.25s ease,
+        box-shadow 0.25s ease;
+      will-change: transform;
+    }
+
+    .team-leaderboard-item:nth-child(1) {
+      border: 2px solid var(--volt-yellow);
+      background: linear-gradient(90deg, rgba(226, 255, 59, 0.14), rgba(0, 0, 0, 0.28) 46%);
+      box-shadow: 0 0 28px rgba(226, 255, 59, 0.22), inset 0 0 10px rgba(226, 255, 59, 0.08);
+    }
+
+    .team-leaderboard-item.rank-up {
+      animation: rankUpPulse 0.75s ease-out;
+    }
+
+    .team-leaderboard-item.rank-down {
+      animation: rankDownPulse 0.75s ease-out;
+    }
+
+    .team-main {
+      min-width: 0;
+    }
+
+    .team-name {
+      font-weight: 800;
+      font-size: 1.35rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      line-height: 1.1;
+    }
+
+    .team-meta {
+      margin-top: 0.25rem;
+      color: var(--text-muted);
+      font-family: 'Oswald', sans-serif;
+      font-size: 0.76rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .team-member-strip {
+      grid-column: 1 / -1;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+      margin-top: 0.25rem;
+    }
+
+    .team-member-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      min-height: 28px;
+      max-width: 100%;
+      padding: 0.25rem 0.5rem;
+      border: 1px solid var(--steel-border);
+      border-radius: 2px;
+      background: rgba(255,255,255,0.035);
+      color: var(--text-muted);
+      font-size: 0.74rem;
+      font-weight: 700;
+      line-height: 1.1;
+    }
+
+    .team-member-chip strong {
+      color: var(--text-main);
+      font-weight: 800;
+    }
+
+    .team-member-station {
+      color: #09090b;
+      background: var(--volt-yellow);
+      padding: 0.08rem 0.24rem;
+      border-radius: 2px;
+      font-family: 'Oswald', sans-serif;
+      font-size: 0.66rem;
+      font-weight: 800;
+    }
+
+    .race-track-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.85rem;
+      position: relative;
+    }
+
+    .race-track-item {
+      display: grid;
+      grid-template-columns: 54px minmax(170px, 0.55fr) minmax(260px, 1fr) minmax(90px, 0.18fr);
+      gap: 1rem;
+      align-items: center;
+      padding: 0.9rem 1.1rem;
+      background:
+        linear-gradient(90deg, rgba(255,255,255,0.035), rgba(255,255,255,0) 34%),
+        rgba(0, 0, 0, 0.28);
+      border: 1px solid var(--steel-border);
+      border-radius: 4px;
+      position: relative;
+      overflow: hidden;
+      transition:
+        transform 0.38s cubic-bezier(0.2, 0.9, 0.22, 1),
+        border-color 0.25s ease,
+        background 0.25s ease,
+        box-shadow 0.25s ease;
+      will-change: transform;
+    }
+
+    .race-track-item:nth-child(1) {
+      border: 2px solid var(--volt-yellow);
+      background:
+        linear-gradient(90deg, rgba(226, 255, 59, 0.13), rgba(255,255,255,0.02) 44%, rgba(0,0,0,0.28)),
+        rgba(0, 0, 0, 0.28);
+      box-shadow: 0 0 28px rgba(226, 255, 59, 0.2), inset 0 0 12px rgba(226, 255, 59, 0.08);
+    }
+
+    .race-track-item.rank-up {
+      animation: rankUpPulse 0.75s ease-out;
+    }
+
+    .race-track-item.rank-down {
+      animation: rankDownPulse 0.75s ease-out;
+    }
+
+    .race-track-main {
+      min-width: 0;
+    }
+
+    .race-track-name {
+      color: var(--text-main);
+      font-weight: 900;
+      font-size: 1.18rem;
+      line-height: 1.1;
+      text-transform: uppercase;
+      overflow-wrap: anywhere;
+    }
+
+    .race-track-meta {
+      margin-top: 0.28rem;
+      color: var(--text-muted);
+      font-family: 'Oswald', sans-serif;
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .race-track-stage {
+      min-width: 0;
+    }
+
+    .race-track-rail {
+      position: relative;
+      height: 42px;
+      border: 1px solid rgba(255,255,255,0.14);
+      border-radius: 3px;
+      background:
+        repeating-linear-gradient(90deg, rgba(255,255,255,0.055) 0 1px, transparent 1px 24px),
+        linear-gradient(180deg, rgba(255,255,255,0.06), rgba(0,0,0,0.2));
+      overflow: hidden;
+    }
+
+    .race-track-fill {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      background:
+        linear-gradient(90deg, rgba(226, 255, 59, 0.2), rgba(226, 255, 59, 0.5)),
+        repeating-linear-gradient(135deg, rgba(255,255,255,0.18) 0 8px, transparent 8px 16px);
+      box-shadow: 0 0 18px rgba(226, 255, 59, 0.22);
+      transition: width 0.45s cubic-bezier(0.1, 0.8, 0.25, 1);
+    }
+
+    .race-track-checkpoint {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 1px;
+      background: rgba(255,255,255,0.32);
+    }
+
+    .race-track-checkpoint span {
+      position: absolute;
+      top: 3px;
+      left: 4px;
+      color: rgba(255,255,255,0.58);
+      font-family: 'Oswald', sans-serif;
+      font-size: 0.58rem;
+      letter-spacing: 0.05em;
+    }
+
+    .race-track-marker {
+      position: absolute;
+      top: 50%;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--volt-yellow);
+      border: 2px solid #09090b;
+      box-shadow: 0 0 16px rgba(226, 255, 59, 0.8);
+      transform: translate(-50%, -50%);
+      transition: left 0.45s cubic-bezier(0.1, 0.8, 0.25, 1);
+    }
+
+    .race-track-finish {
+      position: absolute;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: 10px;
+      background:
+        repeating-linear-gradient(180deg, #f4f4f5 0 6px, #09090b 6px 12px);
+      opacity: 0.88;
+    }
+
+    .race-track-score {
+      text-align: right;
+      min-width: 0;
+    }
+
+    .race-track-members {
+      grid-column: 2 / 4;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin-top: -0.3rem;
+    }
+
+    .race-track-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      max-width: 100%;
+      min-height: 26px;
+      padding: 0.2rem 0.48rem;
+      border: 1px solid var(--steel-border);
+      border-radius: 2px;
+      background: rgba(255,255,255,0.04);
+      color: var(--text-muted);
+      font-size: 0.72rem;
+      font-weight: 800;
+      line-height: 1.1;
+    }
+
+    .race-track-chip strong {
+      color: var(--text-main);
+    }
+
+    .team-battle-panel {
+      display: grid;
+      gap: 1rem;
+    }
+
+    .team-battle-arena {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 86px minmax(0, 1fr);
+      gap: 0.85rem;
+      align-items: stretch;
+      position: relative;
+    }
+
+    .team-battle-card {
+      position: relative;
+      min-width: 0;
+      padding: 1rem;
+      border: 1px solid var(--steel-border);
+      border-radius: 4px;
+      background:
+        linear-gradient(120deg, rgba(255,255,255,0.04), rgba(0,0,0,0.14)),
+        rgba(0,0,0,0.28);
+      overflow: hidden;
+      transition:
+        transform 0.38s cubic-bezier(0.2, 0.9, 0.22, 1),
+        border-color 0.25s ease,
+        box-shadow 0.25s ease;
+      will-change: transform;
+    }
+
+    .team-battle-card.rank-up {
+      animation: rankUpPulse 0.75s ease-out;
+    }
+
+    .team-battle-card.rank-down {
+      animation: rankDownPulse 0.75s ease-out;
+    }
+
+    .team-battle-card.leader {
+      border: 2px solid var(--volt-yellow);
+      box-shadow: 0 0 30px rgba(226, 255, 59, 0.22), inset 0 0 12px rgba(226, 255, 59, 0.08);
+    }
+
+    .team-battle-rank {
+      color: var(--text-muted);
+      font-family: 'Oswald', sans-serif;
+      font-size: 0.82rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    .team-battle-name {
+      margin-top: 0.35rem;
+      color: var(--text-main);
+      font-weight: 900;
+      font-size: 1.7rem;
+      line-height: 1;
+      text-transform: uppercase;
+      overflow-wrap: anywhere;
+    }
+
+    .team-battle-score {
+      margin-top: 0.85rem;
+      color: var(--volt-yellow);
+      font-family: 'Oswald', sans-serif;
+      font-size: 2.3rem;
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    .team-battle-meta {
+      margin-top: 0.25rem;
+      color: var(--text-muted);
+      font-family: 'Oswald', sans-serif;
+      font-size: 0.76rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .team-battle-meter {
+      position: relative;
+      height: 12px;
+      margin-top: 1rem;
+      border: 1px solid var(--steel-border);
+      border-radius: 2px;
+      background: rgba(0,0,0,0.38);
+      overflow: hidden;
+    }
+
+    .team-battle-fill {
+      height: 100%;
+      background:
+        linear-gradient(90deg, rgba(226,255,59,0.3), var(--volt-yellow)),
+        repeating-linear-gradient(135deg, rgba(255,255,255,0.22) 0 6px, transparent 6px 12px);
+      transition: width 0.45s cubic-bezier(0.1, 0.8, 0.25, 1);
+    }
+
+    .team-battle-members {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin-top: 0.9rem;
+    }
+
+    .team-battle-vs {
+      display: grid;
+      place-items: center;
+      min-height: 220px;
+      border: 1px solid rgba(226,255,59,0.36);
+      border-radius: 4px;
+      background: rgba(226,255,59,0.06);
+      color: var(--volt-yellow);
+      font-family: 'Oswald', sans-serif;
+      font-size: 2rem;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .team-battle-challengers {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 320px));
+      gap: 0.75rem;
+      justify-content: start;
+    }
+
+    .team-battle-card.compact .team-battle-name {
+      font-size: 1.1rem;
+    }
+
+    .team-battle-card.compact .team-battle-score {
+      font-size: 1.55rem;
+    }
+
+    .sprint-board-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 0.75rem;
+      position: relative;
+    }
+
+    .sprint-board-card {
+      position: relative;
+      min-width: 0;
+      padding: 0.95rem;
+      border: 1px solid var(--steel-border);
+      border-radius: 4px;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.055), rgba(0,0,0,0.16)),
+        rgba(0,0,0,0.3);
+      overflow: hidden;
+      transition:
+        transform 0.38s cubic-bezier(0.2, 0.9, 0.22, 1),
+        border-color 0.25s ease,
+        box-shadow 0.25s ease;
+      will-change: transform;
+    }
+
+    .sprint-board-card:nth-child(1) {
+      border: 2px solid var(--volt-yellow);
+      box-shadow: 0 0 26px rgba(226,255,59,0.18);
+    }
+
+    .sprint-board-card.rank-up {
+      animation: rankUpPulse 0.75s ease-out;
+    }
+
+    .sprint-board-card.rank-down {
+      animation: rankDownPulse 0.75s ease-out;
+    }
+
+    .sprint-board-topline {
+      display: flex;
+      justify-content: space-between;
+      gap: 0.75rem;
+      align-items: flex-start;
+    }
+
+    .sprint-board-rank {
+      color: var(--text-muted);
+      font-family: 'Oswald', sans-serif;
+      font-size: 1.15rem;
+      font-weight: 800;
+    }
+
+    .sprint-board-name {
+      margin-top: 0.35rem;
+      color: var(--text-main);
+      font-weight: 900;
+      font-size: 1.05rem;
+      line-height: 1.1;
+      text-transform: uppercase;
+      overflow-wrap: anywhere;
+    }
+
+    .sprint-board-meta {
+      margin-top: 0.2rem;
+      color: var(--text-muted);
+      font-family: 'Oswald', sans-serif;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .sprint-board-signal {
+      text-align: right;
+      color: var(--volt-yellow);
+      font-family: 'Oswald', sans-serif;
+      font-size: 1.75rem;
+      font-weight: 900;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    .sprint-board-signal span {
+      display: block;
+      margin-top: 0.2rem;
+      color: var(--text-muted);
+      font-size: 0.62rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .sprint-board-stats {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.45rem;
+      margin-top: 0.85rem;
+    }
+
+    .sprint-stat {
+      min-width: 0;
+      padding: 0.45rem;
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 3px;
+      background: rgba(255,255,255,0.035);
+    }
+
+    .sprint-stat strong {
+      display: block;
+      color: var(--text-main);
+      font-family: 'Oswald', sans-serif;
+      font-size: 1rem;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    .sprint-stat span {
+      display: block;
+      margin-top: 0.2rem;
+      color: var(--text-muted);
+      font-size: 0.62rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .sprint-board-progress {
+      height: 7px;
+      margin-top: 0.85rem;
+      border: 1px solid var(--steel-border);
+      border-radius: 2px;
+      background: rgba(0,0,0,0.38);
+      overflow: hidden;
+    }
+
+    .sprint-board-progress div {
+      height: 100%;
+      background: var(--volt-yellow);
+      box-shadow: 0 0 14px rgba(226,255,59,0.42);
+      transition: width 0.45s cubic-bezier(0.1, 0.8, 0.25, 1);
+    }
+
     @keyframes progressSweep {
       from { background-position: -160px 0, 0 0; }
       to { background-position: 160px 0, 0 0; }
@@ -559,6 +1100,49 @@
       opacity: 1;
     }
 
+    .race-countdown-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 9997;
+      display: grid;
+      place-items: center;
+      background: rgba(0, 0, 0, 0.72);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.18s ease;
+    }
+
+    .race-countdown-overlay.show {
+      opacity: 1;
+    }
+
+    .race-countdown-card {
+      min-width: min(560px, calc(100vw - 48px));
+      padding: 2rem;
+      border: 2px solid var(--volt-yellow);
+      border-radius: 4px;
+      background: rgba(9, 9, 11, 0.92);
+      box-shadow: 0 0 46px rgba(226, 255, 59, 0.26);
+      text-align: center;
+    }
+
+    .race-countdown-value {
+      color: var(--volt-yellow);
+      font-family: 'Oswald', sans-serif;
+      font-size: clamp(4rem, 12vw, 9rem);
+      font-weight: 900;
+      line-height: 0.95;
+      text-transform: uppercase;
+    }
+
+    .race-countdown-label {
+      margin-top: 0.75rem;
+      color: var(--text-muted);
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
     .celebration-flash {
       position: absolute;
       inset: 0;
@@ -589,12 +1173,51 @@
 
     @media (prefers-reduced-motion: reduce) {
       .leaderboard-item,
+      .team-leaderboard-item,
+      .race-track-item,
+      .team-battle-card,
+      .sprint-board-card,
       .progress-fill,
       .podium-card.place-1,
       .celebration-flash,
       .confetti-piece {
         animation: none !important;
         transition: none !important;
+      }
+    }
+
+    @media (max-width: 760px) {
+      .leaderboard-item,
+      .team-leaderboard-item,
+      .race-track-item {
+        grid-template-columns: 44px minmax(0, 1fr);
+      }
+
+      .team-battle-arena {
+        grid-template-columns: 1fr;
+      }
+
+      .team-battle-vs {
+        min-height: 56px;
+      }
+
+      .metric-group {
+        text-align: left;
+      }
+
+      .team-main,
+      .race-track-main,
+      .race-track-stage,
+      .race-track-score,
+      .metric-group,
+      .progress-track,
+      .team-member-strip,
+      .race-track-members {
+        grid-column: 1 / -1;
+      }
+
+      .race-track-score {
+        text-align: left;
       }
     }
 
@@ -634,6 +1257,48 @@
     .form-control:focus {
       outline: none;
       border-color: var(--volt-yellow);
+    }
+
+    .admin-qr-panel {
+      display: grid;
+      gap: 1rem;
+    }
+
+    .admin-qr-frame {
+      display: grid;
+      place-items: center;
+      padding: 1rem;
+      border: 1px solid rgba(226, 255, 59, 0.35);
+      border-radius: 6px;
+      background: rgba(0, 0, 0, 0.36);
+    }
+
+    .admin-qr-frame img {
+      width: min(220px, 100%);
+      aspect-ratio: 1;
+      padding: 0.45rem;
+      border-radius: 6px;
+      background: #fff;
+      object-fit: contain;
+    }
+
+    .admin-qr-copy {
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      line-height: 1.4;
+    }
+
+    .admin-link {
+      display: block;
+      overflow-wrap: anywhere;
+      color: var(--volt-yellow);
+      font-size: 0.82rem;
+      line-height: 1.35;
+      text-decoration: none;
+    }
+
+    .admin-link:hover {
+      text-decoration: underline;
     }
 
     /* Action Buttons */
@@ -942,84 +1607,26 @@
           No race configured
         </div>
         <div id="auto-reset-banner" style="display: none; margin-top: 1rem; padding: 0.5rem; background: rgba(244, 63, 94, 0.15); border: 1px solid var(--crimson-red); border-radius: 4px; text-align: center; font-size: 0.85rem; font-family: 'Noto Sans TC', sans-serif;">
-          ⏱️ <span id="auto-reset-text"><span id="auto-reset-countdown" style="font-weight: 800; color: var(--crimson-red);">60</span>s</span>
+          ⏱️ <span id="auto-reset-text"><span id="auto-reset-prefix"></span><span id="auto-reset-countdown" style="font-weight: 800; color: var(--crimson-red);">60</span><span id="auto-reset-suffix">s</span></span>
           <button onclick="cancelAutoReset(true)" style="background: transparent; border: 1px solid var(--text-muted); color: var(--text-main); font-size: 0.75rem; padding: 0.15rem 0.4rem; border-radius: 2px; cursor: pointer; margin-left: 0.5rem;" data-i18n="auto_reset.cancel">Cancel</button>
         </div>
       </div>
 
-      <!-- Config Form -->
+      <!-- Game Admin QR -->
       <div class="card">
-        <div class="card-title" data-i18n="settings.title">Settings</div>
-        <div class="form-group">
-          <label for="language-select" data-i18n="settings.language">System language</label>
-          <select id="language-select" class="form-control" onchange="setLanguage(this.value)">
-            <option value="en-US">English</option>
-            <option value="zh-TW">繁體中文</option>
-            <option value="it">Italiano</option>
-            <option value="fr">Français</option>
-            <option value="de-CH">Deutsch (Schweiz)</option>
-            <option value="sv">Svenska</option>
-          </select>
-          <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.45rem; line-height: 1.3;" data-i18n="settings.language_help">
-            Default language is English (en-US). This setting is saved in this browser.
+        <div class="card-title" data-i18n="game_admin.title">Game Admin</div>
+        <div class="admin-qr-panel">
+          <div class="admin-qr-copy" data-i18n="game_admin.scan_to_manage">
+            Scan to open race setup and coach controls.
           </div>
-        </div>
-        <div class="form-group">
-          <label for="race-type" data-i18n="race_type.label">Race type</label>
-          <select id="race-type" class="form-control" onchange="toggleConfigFields()">
-            <option value="distance" data-i18n="race.distance">Distance Challenge (m)</option>
-            <option value="calories" data-i18n="race.calories">Calories Challenge (kcal)</option>
-            <option value="time" data-i18n="race.time">Time Challenge (s)</option>
-            <option value="max_power" data-i18n="race.max_power">Max Power Challenge (W)</option>
-          </select>
-        </div>
-        
-        <div class="form-group" id="distance-group">
-          <label for="target-distance">Target distance (m)</label>
-          <input type="number" id="target-distance" class="form-control" value="1000">
-        </div>
-
-        <div class="form-group" id="time-group" style="display:none;">
-          <label for="target-duration">Time limit (seconds)</label>
-          <input type="number" id="target-duration" class="form-control" value="300">
-        </div>
-
-        <div class="form-group">
-          <label for="auto-reset-delay" data-i18n="auto_reset.label">Auto reset after finish</label>
-          <select id="auto-reset-delay" class="form-control">
-            <option value="30" data-i18n="auto_reset.30">Auto reset after 30 seconds</option>
-            <option value="60" selected data-i18n="auto_reset.60">Auto reset after 1 minute</option>
-            <option value="120" data-i18n="auto_reset.120">Auto reset after 2 minutes</option>
-            <option value="300" data-i18n="auto_reset.300">Auto reset after 5 minutes</option>
-            <option value="0" data-i18n="auto_reset.manual">Manual reset only</option>
-          </select>
-        </div>
-
-        <button class="btn btn-primary" id="btn-configure" onclick="configureRace()" data-i18n="config.submit">Save Settings</button>
-        <div id="config-status-tip" style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem; line-height: 1.3;">
-          Ready: settings can be saved now.
+          <div class="admin-qr-frame">
+            <img id="game-admin-qr-img" src="" alt="Game Admin QR">
+          </div>
+          <a class="admin-link" id="game-admin-link" href="/gameAdmin" target="_blank" rel="noopener">/gameAdmin</a>
         </div>
       </div>
 
-      <!-- Station & Device Config Card -->
-      <div class="card">
-        <div class="card-title" data-i18n="stations.title">Stations</div>
-        
-        <!-- List of current assignments -->
-        <div id="station-list-container" style="font-size: 0.85rem;">
-          <p style="color: var(--text-muted);" data-i18n="stations.waiting">Waiting for equipment discovery...</p>
-        </div>
-      </div>
-
-      <!-- Game Action Card -->
-      <div class="card">
-        <div class="card-title" data-i18n="control.title">Control</div>
-        <button class="btn btn-success" id="btn-start" onclick="startRace()" data-i18n="control.start">Start Race</button>
-        <button class="btn btn-danger" id="btn-stop" onclick="stopRace()" data-i18n="control.stop">Stop Race</button>
-        <button class="btn btn-secondary" id="btn-reset" onclick="resetRace()" data-i18n="control.reset">Reset Race</button>
-      </div>
-
-      <!-- Edge Node Status Card -->
+      <!-- Edge Node Read-only Status Card -->
       <div class="card">
         <div class="card-title">
           <div data-i18n="edge.title">Edge Nodes</div>
@@ -1038,6 +1645,7 @@
     </aside>
 
   </div>
+  <audio id="race-start-countdown-audio" preload="auto" src="/static/audio/countdown_start.wav"></audio>
 
   <script>
     let ws;
@@ -1047,6 +1655,10 @@
     let raceStartTime = null;
     let leaderboardNodes = [];
     let leaderboardRankByNode = new Map();
+    let teamLeaderboardRows = [];
+    let leaderboardDisplayMode = "classic";
+    let lastLeaderboardData = null;
+    let lastTeamLeaderboardData = null;
     let celebrationShownForRaceKey = null;
     let autoResetInterval = null;
     let autoResetSecondsLeft = 0;
@@ -1096,9 +1708,12 @@
     }
 
     function toggleConfigFields() {
-      const type = document.getElementById("race-type").value;
+      const raceTypeSelect = document.getElementById("race-type");
+      if (!raceTypeSelect) return;
+      const type = raceTypeSelect.value;
       const distGroup = document.getElementById("distance-group");
       const timeGroup = document.getElementById("time-group");
+      if (!distGroup || !timeGroup) return;
       const distLabel = distGroup.querySelector("label");
       const timeLabel = timeGroup.querySelector("label");
 
@@ -1118,6 +1733,59 @@
         distGroup.style.display = "none";
         timeGroup.style.display = "block";
         timeLabel.innerText = t("field.challenge_duration");
+      }
+    }
+
+    function showRaceCountdownOverlay(durationMs = 3120) {
+      const existing = document.getElementById("race-countdown-overlay");
+      if (existing) existing.remove();
+
+      const overlay = document.createElement("div");
+      overlay.id = "race-countdown-overlay";
+      overlay.className = "race-countdown-overlay";
+      overlay.innerHTML = `
+        <div class="race-countdown-card">
+          <div class="race-countdown-value" id="race-countdown-value">3</div>
+          <div class="race-countdown-label">Race starts on Go</div>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+      requestAnimationFrame(() => overlay.classList.add("show"));
+
+      const value = document.getElementById("race-countdown-value");
+      const steps = [
+        { at: 0, text: "3" },
+        { at: 780, text: "2" },
+        { at: 1560, text: "1" },
+        { at: 2340, text: "GO" },
+      ];
+      steps.forEach((step) => {
+        window.setTimeout(() => {
+          if (value) value.innerText = step.text;
+        }, step.at);
+      });
+
+      window.setTimeout(() => {
+        overlay.classList.remove("show");
+        window.setTimeout(() => overlay.remove(), 220);
+      }, durationMs);
+    }
+
+    async function playDashboardRaceCountdown(eventData = {}) {
+      const durationMs = metricNumber(eventData.duration_ms, 3120);
+      showRaceCountdownOverlay(durationMs);
+
+      if (eventData.play_sound === false) return;
+
+      const audio = document.getElementById("race-start-countdown-audio") || new Audio(eventData.audio_url || "/static/audio/countdown_start.wav");
+      if (eventData.audio_url && audio.getAttribute && audio.getAttribute("src") !== eventData.audio_url) {
+        audio.setAttribute("src", eventData.audio_url);
+      }
+      audio.currentTime = 0;
+      try {
+        await audio.play();
+      } catch (err) {
+        console.warn("Dashboard countdown audio was blocked by the browser:", err);
       }
     }
 
@@ -1155,8 +1823,15 @@
           fetchStations();
           return;
         }
+        if (data.type === "race_countdown") {
+          playDashboardRaceCountdown(data);
+          return;
+        }
         if (data.type === "node_status") {
           renderEdgeNodes(data.nodes || (data.node ? [data.node] : []));
+          return;
+        }
+        if (data.type === "race_event") {
           return;
         }
         if (data.type === "system_power") {
@@ -1234,6 +1909,7 @@
       const list = document.getElementById("edge-node-list");
       const summary = document.getElementById("edge-node-summary");
       const caption = document.getElementById("edge-node-caption");
+      if (!list || !summary || !caption) return;
 
       const onlineCount = edgeNodes.filter((node) => node.status === "online").length;
       const streamCount = edgeNodes.reduce((total, node) => total + ((node.equipment_streams || []).length), 0);
@@ -1360,6 +2036,211 @@
       return `<div class="podium-panel" aria-label="Race winners">${cards}</div>`;
     }
 
+    function formatTeamScore(team, raceType) {
+      const scoreLabel = team.score_label || "progress";
+      if (raceType === "distance") {
+        return scoreLabel === "distance_m"
+          ? { value: `${metricNumber(team.score_value).toFixed(0)}m`, label: "Team distance" }
+          : { value: `${metricNumber(team.score_value).toFixed(1)}%`, label: "Avg progress" };
+      }
+      if (raceType === "calories") {
+        return scoreLabel === "calories"
+          ? { value: `${metricNumber(team.score_value).toFixed(1)}`, label: "Team kcal" }
+          : { value: `${metricNumber(team.score_value).toFixed(1)}%`, label: "Avg progress" };
+      }
+      if (raceType === "time") {
+        return { value: `${metricNumber(team.score_value).toFixed(0)}m`, label: "Team distance" };
+      }
+      if (raceType === "max_power" || raceType === "watts") {
+        return { value: `${metricNumber(team.score_value).toFixed(0)}W`, label: "Team power" };
+      }
+      return { value: `${metricNumber(team.score_value).toFixed(1)}%`, label: "Team score" };
+    }
+
+    function renderTeamPodium(teams, raceType) {
+      const topThree = teams.slice(0, 3);
+      if (topThree.length === 0) return "";
+
+      const podiumOrder = topThree.length >= 3 ? [1, 0, 2] : topThree.map((_, index) => index);
+      const cards = podiumOrder.map((teamIndex) => {
+        const team = topThree[teamIndex];
+        if (!team) return "";
+        const rank = teamIndex + 1;
+        const medal = getMedalMeta(rank);
+        const score = formatTeamScore(team, raceType);
+        return `
+          <div class="podium-card place-${rank}">
+            <div class="podium-place">
+              <span class="medal-mark ${medal.className}" title="${medal.title}">${medal.label}</span>
+              <span>#${rank} ${medal.title}</span>
+            </div>
+            <div class="podium-name">${escapeHtml(team.team_name || "Team")}</div>
+            <div class="podium-score">${score.value}</div>
+            <div class="podium-sub">${score.label} · ${metricNumber(team.member_count).toFixed(0)} athletes</div>
+          </div>
+        `;
+      }).join("");
+
+      return `<div class="podium-panel" aria-label="Team race winners">${cards}</div>`;
+    }
+
+    function aggregateTeamLeaderboard(progressData, raceType) {
+      const teams = new Map();
+      Object.values(progressData || {}).forEach((node) => {
+        const teamName = String(node.team_name || "").trim() || "Unassigned";
+        if (!teams.has(teamName)) {
+          teams.set(teamName, {
+            team_name: teamName,
+            member_count: 0,
+            finished_count: 0,
+            distance_m: 0,
+            calories: 0,
+            power_watts: 0,
+            max_power_watts: 0,
+            elapsed_time_ms: 0,
+            progress_total: 0,
+            team_finished_time_ms: null,
+            members: [],
+          });
+        }
+
+        const team = teams.get(teamName);
+        const progressPercent = metricNumber(node.progress_percent);
+        const distanceM = metricNumber(node.distance_m);
+        const calories = metricNumber(node.calories);
+        const powerWatts = metricNumber(node.power_watts);
+        const maxPowerWatts = metricNumber(node.max_power_watts);
+        const elapsedMs = metricNumber(node.elapsed_time_ms);
+        const completionPolicy = currentConfig?.team_completion_policy || "aggregate";
+        const teamProgressPercent = completionPolicy === "all_members" && (raceType === "distance" || raceType === "calories")
+          ? Math.min(100, progressPercent)
+          : progressPercent;
+
+        team.member_count += 1;
+        team.finished_count += node.finished_time_ms ? 1 : 0;
+        team.distance_m += distanceM;
+        team.calories += calories;
+        team.power_watts += powerWatts;
+        team.max_power_watts += maxPowerWatts;
+        team.elapsed_time_ms = Math.max(team.elapsed_time_ms, elapsedMs);
+        team.progress_total += teamProgressPercent;
+        if (node.finished_time_ms) {
+          team.team_finished_time_ms = Math.max(
+            team.team_finished_time_ms || 0,
+            metricNumber(node.finished_time_ms)
+          );
+        }
+        team.members.push({
+          node_id: node.node_id,
+          athlete_name: node.athlete_name,
+          station_number: node.station_number,
+          distance_m: distanceM,
+          calories,
+          power_watts: powerWatts,
+          max_power_watts: maxPowerWatts,
+          elapsed_time_ms: elapsedMs,
+          progress_percent: teamProgressPercent,
+          finished_time_ms: node.finished_time_ms,
+        });
+      });
+
+      const policy = currentConfig?.team_scoring_policy || "average";
+      const completionPolicy = currentConfig?.team_completion_policy || "aggregate";
+      const rows = [...teams.values()].map((team) => {
+        const memberCount = team.member_count || 1;
+        const averageProgress = team.progress_total / memberCount;
+        let scoreValue = averageProgress;
+        let progressPercent = averageProgress;
+        let scoreLabel = "progress";
+
+        if (raceType === "distance") {
+          if (completionPolicy === "all_members") {
+            scoreValue = averageProgress;
+          } else if (policy === "total") {
+            scoreValue = team.distance_m;
+            progressPercent = currentConfig?.target_value ? (team.distance_m / currentConfig.target_value) * 100 : 0;
+            scoreLabel = "distance_m";
+          }
+        } else if (raceType === "calories") {
+          if (completionPolicy === "all_members") {
+            scoreValue = averageProgress;
+          } else if (policy === "total") {
+            scoreValue = team.calories;
+            progressPercent = currentConfig?.target_value ? (team.calories / currentConfig.target_value) * 100 : 0;
+            scoreLabel = "calories";
+          }
+        } else if (raceType === "time") {
+          scoreValue = policy === "total" ? team.distance_m : team.distance_m / memberCount;
+          scoreLabel = "distance_m";
+        } else if (raceType === "max_power" || raceType === "watts") {
+          scoreValue = policy === "total" ? team.max_power_watts : team.max_power_watts / memberCount;
+          scoreLabel = "max_power_watts";
+        }
+
+        const targetBasedAllMembers = completionPolicy === "all_members" && (raceType === "distance" || raceType === "calories");
+        const teamFinished = targetBasedAllMembers
+          ? team.member_count > 0 && team.finished_count === team.member_count
+          : progressPercent >= 100;
+        team.members.sort((a, b) => metricNumber(a.station_number, 999) - metricNumber(b.station_number, 999));
+        return {
+          team_name: team.team_name,
+          member_count: team.member_count,
+          finished_count: team.finished_count,
+          distance_m: team.distance_m,
+          calories: team.calories,
+          power_watts: team.power_watts,
+          max_power_watts: team.max_power_watts,
+          elapsed_time_ms: team.elapsed_time_ms,
+          progress_percent: progressPercent,
+          average_progress_percent: averageProgress,
+          score_value: scoreValue,
+          score_label: scoreLabel,
+          scoring_policy: policy,
+          completion_policy: completionPolicy,
+          team_finished: teamFinished,
+          team_finished_time_ms: teamFinished ? team.team_finished_time_ms : null,
+          members: team.members,
+        };
+      });
+
+      return sortTeamLeaderboardRows(rows);
+    }
+
+    function sortTeamLeaderboardRows(rows) {
+      const targetBasedAllMembers = currentConfig?.team_completion_policy === "all_members" &&
+        (currentConfig?.race_type === "distance" || currentConfig?.race_type === "calories");
+      if (targetBasedAllMembers) {
+        return rows.sort((a, b) => {
+          if (Boolean(a.team_finished) !== Boolean(b.team_finished)) return a.team_finished ? -1 : 1;
+          const finishDiff = metricNumber(a.team_finished_time_ms, Infinity) - metricNumber(b.team_finished_time_ms, Infinity);
+          if (finishDiff !== 0) return finishDiff;
+          const progressDiff = metricNumber(b.average_progress_percent) - metricNumber(a.average_progress_percent);
+          if (progressDiff !== 0) return progressDiff;
+          return String(a.team_name || "").localeCompare(String(b.team_name || ""));
+        });
+      }
+      return rows.sort((a, b) => {
+        const scoreDiff = metricNumber(b.score_value) - metricNumber(a.score_value);
+        if (scoreDiff !== 0) return scoreDiff;
+        const progressDiff = metricNumber(b.average_progress_percent) - metricNumber(a.average_progress_percent);
+        if (progressDiff !== 0) return progressDiff;
+        const finishedDiff = metricNumber(b.finished_count) - metricNumber(a.finished_count);
+        if (finishedDiff !== 0) return finishedDiff;
+        return String(a.team_name || "").localeCompare(String(b.team_name || ""));
+      });
+    }
+
+    function isTeamLeaderboardFinal(raceType, teams) {
+      if (!teams.length) return false;
+      if (raceType === "distance" || raceType === "calories") {
+        if (currentConfig?.team_completion_policy === "all_members") {
+          return teams.every((team) => Boolean(team.team_finished));
+        }
+        return teams.every((team) => metricNumber(team.progress_percent) >= 100);
+      }
+      return currentState === "STOPPED";
+    }
+
     function triggerFinishCelebration(nodes) {
       const raceKey = `${raceEndTime || raceStartTime || "race"}:${nodes.map((node) => node.node_id).join("|")}`;
       if (celebrationShownForRaceKey === raceKey) return;
@@ -1451,7 +2332,7 @@
     }
 
     function animateLeaderboardReorder(previousRects) {
-      const items = document.querySelectorAll(".leaderboard-item");
+      const items = document.querySelectorAll(".leaderboard-item, .team-leaderboard-item, .race-track-item, .team-battle-card, .sprint-board-card");
       items.forEach((item) => {
         const nodeId = item.dataset.nodeId;
         const previousRect = previousRects.get(nodeId);
@@ -1472,12 +2353,480 @@
       });
 
       window.setTimeout(() => {
-        document.querySelectorAll(".leaderboard-item.rank-up, .leaderboard-item.rank-down")
+        document.querySelectorAll(".leaderboard-item.rank-up, .leaderboard-item.rank-down, .team-leaderboard-item.rank-up, .team-leaderboard-item.rank-down, .race-track-item.rank-up, .race-track-item.rank-down, .team-battle-card.rank-up, .team-battle-card.rank-down, .sprint-board-card.rank-up, .sprint-board-card.rank-down")
           .forEach((item) => item.classList.remove("rank-up", "rank-down"));
       }, 900);
     }
 
-    function renderLeaderboard(progressData) {
+    function normalizeLeaderboardDisplayMode(mode) {
+      return ["classic", "race_track", "team_battle", "sprint_board"].includes(mode) ? mode : "classic";
+    }
+
+    function applyLeaderboardDisplayMode(mode) {
+      leaderboardDisplayMode = normalizeLeaderboardDisplayMode(mode);
+    }
+
+    function getRankedTeamRows(progressData, teamData, raceType) {
+      return sortTeamLeaderboardRows(
+        Array.isArray(teamData) && teamData.length
+          ? teamData.map((team) => ({ ...team, members: [...(team.members || [])] }))
+          : aggregateTeamLeaderboard(progressData, raceType)
+      );
+    }
+
+    function getRankedIndividualRows(progressData, raceType) {
+      return sortLeaderboardNodes(Object.values(progressData || {}), raceType);
+    }
+
+    function renderLeaderboardEmptyState() {
+      const container = document.getElementById("leaderboard-container");
+      container.innerHTML = `
+        <div class="empty-state">
+          <p>${escapeHtml(t("leaderboard.waiting_data"))}</p>
+        </div>`;
+      leaderboardNodes = [];
+      teamLeaderboardRows = [];
+      leaderboardRankByNode = new Map();
+    }
+
+    function formatSprintSignal(row, raceType) {
+      if (row.kind === "team") {
+        if (raceType === "max_power" || raceType === "watts") {
+          return { value: `${metricNumber(row.raw.max_power_watts).toFixed(0)}W`, label: "Team peak" };
+        }
+        const avgSpeed = (row.raw.members || []).reduce((total, member) => {
+          const elapsedSec = Math.max(1, metricNumber(member.elapsed_time_ms) / 1000);
+          return total + (metricNumber(member.distance_m) / elapsedSec) * 3.6;
+        }, 0) / Math.max(1, metricNumber(row.raw.member_count, 1));
+        return { value: `${avgSpeed.toFixed(1)}`, label: "Avg kph" };
+      }
+
+      if (raceType === "max_power" || raceType === "watts" || raceType === "calories") {
+        return { value: `${metricNumber(row.raw.power_watts).toFixed(0)}W`, label: "Current power" };
+      }
+      return { value: `${metricNumber(row.raw.instantaneous_speed_kph).toFixed(1)}`, label: "kph" };
+    }
+
+    function renderMemberProgressChips(members, className = "race-track-chip") {
+      return (members || []).map((member) => {
+        const station = member.station_number ? `<span class="team-member-station">S${escapeHtml(member.station_number)}</span>` : "";
+        return `
+          <span class="${className}">
+            ${station}
+            <strong>${escapeHtml(member.athlete_name || "Athlete")}</strong>
+            ${metricNumber(member.progress_percent).toFixed(0)}%
+          </span>
+        `;
+      }).join("");
+    }
+
+    function renderRaceTrackLeaderboard(progressData, teamData = null) {
+      const container = document.getElementById("leaderboard-container");
+      const previousRects = new Map();
+      container.querySelectorAll(".race-track-item").forEach((item) => {
+        previousRects.set(item.dataset.nodeId, item.getBoundingClientRect());
+      });
+
+      const raceType = (currentConfig && currentConfig.race_type) || 'distance';
+      const isTeamMode = currentConfig && currentConfig.competition_mode === "team";
+      const teamRows = isTeamMode
+        ? getRankedTeamRows(progressData, teamData, raceType)
+        : [];
+      const individualRows = isTeamMode ? [] : getRankedIndividualRows(progressData, raceType);
+      const rows = isTeamMode
+        ? teamRows.map((team, index) => {
+            const score = formatTeamScore(team, raceType);
+            const completionLabel = team.completion_policy === "all_members" ? "all members finish" : "aggregate finish";
+            return {
+              id: team.team_name || `team-${index + 1}`,
+              name: team.team_name || "Team",
+              meta: `${metricNumber(team.member_count).toFixed(0)} athletes · ${completionLabel}`,
+              score,
+              progress: metricNumber(team.progress_percent),
+              members: team.members || [],
+              finished: `${metricNumber(team.finished_count).toFixed(0)}/${metricNumber(team.member_count).toFixed(0)} finished`,
+            };
+          })
+        : individualRows.map((node) => {
+            const score = formatResultScore(node, raceType);
+            const station = node.station_number ? `Station ${node.station_number}` : node.node_id;
+            const teamSuffix = node.team_name ? ` · ${node.team_name}` : "";
+            return {
+              id: node.node_id,
+              name: node.athlete_name || "Athlete",
+              meta: `${station || "Node"}${teamSuffix}`,
+              score,
+              progress: metricNumber(node.progress_percent),
+              members: [],
+              finished: node.finished_time_ms ? `${(metricNumber(node.finished_time_ms) / 1000).toFixed(1)}s finish` : `${metricNumber(node.progress_percent).toFixed(1)}% progress`,
+            };
+          });
+
+      if (rows.length === 0) {
+        renderLeaderboardEmptyState();
+        return;
+      }
+
+      leaderboardNodes = isTeamMode ? Object.values(progressData || {}) : individualRows;
+      teamLeaderboardRows = teamRows;
+      const leaderboardFinal = isTeamMode
+        ? isTeamLeaderboardFinal(raceType, teamRows)
+        : isLeaderboardFinal(raceType, leaderboardNodes);
+
+      let html = "";
+      if (leaderboardFinal) {
+        if (isTeamMode) {
+          html += renderTeamPodium(teamRows, raceType);
+        } else {
+          html += renderPodium(leaderboardNodes, raceType);
+        }
+      }
+      html += '<div class="race-track-list">';
+      rows.forEach((row, index) => {
+        const currentRank = index + 1;
+        const previousRank = leaderboardRankByNode.get(row.id);
+        const rankDelta = previousRank ? previousRank - currentRank : 0;
+        const rankClass = rankDelta > 0 ? "rank-up" : rankDelta < 0 ? "rank-down" : "";
+        const progress = Math.max(0, Math.min(100, metricNumber(row.progress)));
+        const members = renderMemberProgressChips(row.members, "race-track-chip");
+        const memberStrip = members ? `<div class="race-track-members">${members}</div>` : "";
+
+        html += `
+          <div class="race-track-item ${rankClass}" data-node-id="${escapeHtml(row.id)}">
+            <div class="rank">${currentRank <= 3 ? `<span>${currentRank}</span>` : `<span>${currentRank}</span>`}</div>
+            <div class="race-track-main">
+              <div class="race-track-name">${escapeHtml(row.name)}</div>
+              <div class="race-track-meta">${escapeHtml(row.meta)}</div>
+            </div>
+            <div class="race-track-stage" aria-label="${escapeHtml(row.name)} progress ${progress.toFixed(1)}%">
+              <div class="race-track-rail">
+                <div class="race-track-fill" style="width: ${progress}%"></div>
+                <div class="race-track-checkpoint" style="left: 25%"><span>25</span></div>
+                <div class="race-track-checkpoint" style="left: 50%"><span>50</span></div>
+                <div class="race-track-checkpoint" style="left: 75%"><span>75</span></div>
+                <div class="race-track-marker" style="left: ${progress}%"></div>
+                <div class="race-track-finish" title="Finish"></div>
+              </div>
+            </div>
+            <div class="race-track-score">
+              <div class="metric-val score-primary">${escapeHtml(row.score.value)}</div>
+              <div class="metric-lbl">${escapeHtml(row.score.label)} · ${escapeHtml(row.finished)}</div>
+            </div>
+            ${memberStrip}
+          </div>
+        `;
+      });
+      html += '</div>';
+
+      container.innerHTML = html;
+      leaderboardRankByNode = new Map(rows.map((row, index) => [row.id, index + 1]));
+      animateLeaderboardReorder(previousRects);
+
+      if (leaderboardFinal) {
+        triggerFinishCelebration(rows.map((row) => ({ node_id: row.id })));
+      }
+    }
+
+    function renderTeamBattleLeaderboard(progressData, teamData = null) {
+      const container = document.getElementById("leaderboard-container");
+      const previousRects = new Map();
+      container.querySelectorAll(".team-battle-card").forEach((item) => {
+        previousRects.set(item.dataset.nodeId, item.getBoundingClientRect());
+      });
+
+      const raceType = (currentConfig && currentConfig.race_type) || 'distance';
+      const teams = getRankedTeamRows(progressData, teamData, raceType);
+      if (teams.length === 0) {
+        renderLeaderboardEmptyState();
+        return;
+      }
+
+      leaderboardNodes = Object.values(progressData || {});
+      teamLeaderboardRows = teams;
+      const leaderboardFinal = isTeamLeaderboardFinal(raceType, teams);
+      const cardHtml = (team, index, compact = false) => {
+        const currentRank = index + 1;
+        const teamKey = team.team_name || `team-${currentRank}`;
+        const previousRank = leaderboardRankByNode.get(teamKey);
+        const rankDelta = previousRank ? previousRank - currentRank : 0;
+        const rankClass = rankDelta > 0 ? "rank-up" : rankDelta < 0 ? "rank-down" : "";
+        const score = formatTeamScore(team, raceType);
+        const progress = Math.max(0, Math.min(100, metricNumber(team.progress_percent)));
+        const completionLabel = team.completion_policy === "all_members" ? "all members finish" : "aggregate finish";
+        const members = renderMemberProgressChips(team.members, "race-track-chip");
+        return `
+          <div class="team-battle-card ${compact ? "compact" : ""} ${currentRank === 1 ? "leader" : ""} ${rankClass}" data-node-id="${escapeHtml(teamKey)}">
+            <div class="team-battle-rank">#${currentRank} · ${metricNumber(team.finished_count).toFixed(0)}/${metricNumber(team.member_count).toFixed(0)} finished</div>
+            <div class="team-battle-name">${escapeHtml(team.team_name || "Team")}</div>
+            <div class="team-battle-score">${escapeHtml(score.value)}</div>
+            <div class="team-battle-meta">${escapeHtml(score.label)} · ${completionLabel}</div>
+            <div class="team-battle-meter">
+              <div class="team-battle-fill" style="width: ${progress}%"></div>
+            </div>
+            <div class="team-battle-members">${members}</div>
+          </div>
+        `;
+      };
+
+      let html = leaderboardFinal ? renderTeamPodium(teams, raceType) : "";
+      html += '<div class="team-battle-panel">';
+      if (teams.length === 1) {
+        html += `<div class="team-battle-arena">${cardHtml(teams[0], 0)}<div class="team-battle-vs">Solo</div><div></div></div>`;
+      } else {
+        html += `
+          <div class="team-battle-arena">
+            ${cardHtml(teams[0], 0)}
+            <div class="team-battle-vs">VS</div>
+            ${cardHtml(teams[1], 1)}
+          </div>
+        `;
+      }
+
+      if (teams.length > 2) {
+        html += '<div class="team-battle-challengers">';
+        teams.slice(2).forEach((team, offset) => {
+          html += cardHtml(team, offset + 2, true);
+        });
+        html += '</div>';
+      }
+      html += '</div>';
+
+      container.innerHTML = html;
+      leaderboardRankByNode = new Map(teams.map((team, index) => [team.team_name || `team-${index + 1}`, index + 1]));
+      animateLeaderboardReorder(previousRects);
+      if (leaderboardFinal) {
+        triggerFinishCelebration(teams.map((team) => ({ node_id: team.team_name })));
+      }
+    }
+
+    function renderSprintBoardLeaderboard(progressData, teamData = null) {
+      const container = document.getElementById("leaderboard-container");
+      const previousRects = new Map();
+      container.querySelectorAll(".sprint-board-card").forEach((item) => {
+        previousRects.set(item.dataset.nodeId, item.getBoundingClientRect());
+      });
+
+      const raceType = (currentConfig && currentConfig.race_type) || 'distance';
+      const isTeamMode = currentConfig && currentConfig.competition_mode === "team";
+      const teamRows = isTeamMode ? getRankedTeamRows(progressData, teamData, raceType) : [];
+      const individualRows = isTeamMode ? [] : getRankedIndividualRows(progressData, raceType);
+      const rows = isTeamMode
+        ? teamRows.map((team, index) => ({
+            id: team.team_name || `team-${index + 1}`,
+            kind: "team",
+            name: team.team_name || "Team",
+            meta: `${metricNumber(team.member_count).toFixed(0)} athletes`,
+            progress: metricNumber(team.progress_percent),
+            score: formatTeamScore(team, raceType),
+            raw: team,
+            statA: `${metricNumber(team.finished_count).toFixed(0)}/${metricNumber(team.member_count).toFixed(0)}`,
+            statALabel: "Finished",
+            statB: `${metricNumber(team.average_progress_percent).toFixed(0)}%`,
+            statBLabel: "Average",
+            statC: `${metricNumber(team.distance_m).toFixed(0)}m`,
+            statCLabel: "Distance",
+          }))
+        : individualRows.map((node) => ({
+            id: node.node_id,
+            kind: "individual",
+            name: node.athlete_name || "Athlete",
+            meta: `${node.station_number ? `Station ${node.station_number}` : node.node_id}${node.team_name ? ` · ${node.team_name}` : ""}`,
+            progress: metricNumber(node.progress_percent),
+            score: formatResultScore(node, raceType),
+            raw: node,
+            statA: `${metricNumber(node.power_watts).toFixed(0)}W`,
+            statALabel: "Power",
+            statB: `${metricNumber(node.distance_m).toFixed(0)}m`,
+            statBLabel: "Distance",
+            statC: `${metricNumber(node.calories).toFixed(1)}`,
+            statCLabel: "Kcal",
+          }));
+
+      if (rows.length === 0) {
+        renderLeaderboardEmptyState();
+        return;
+      }
+
+      leaderboardNodes = isTeamMode ? Object.values(progressData || {}) : individualRows;
+      teamLeaderboardRows = teamRows;
+      const leaderboardFinal = isTeamMode
+        ? isTeamLeaderboardFinal(raceType, teamRows)
+        : isLeaderboardFinal(raceType, leaderboardNodes);
+
+      let html = "";
+      if (leaderboardFinal) {
+        html += isTeamMode ? renderTeamPodium(teamRows, raceType) : renderPodium(leaderboardNodes, raceType);
+      }
+      html += '<div class="sprint-board-grid">';
+      rows.forEach((row, index) => {
+        const currentRank = index + 1;
+        const previousRank = leaderboardRankByNode.get(row.id);
+        const rankDelta = previousRank ? previousRank - currentRank : 0;
+        const rankClass = rankDelta > 0 ? "rank-up" : rankDelta < 0 ? "rank-down" : "";
+        const sprintSignal = formatSprintSignal(row, raceType);
+        const progress = Math.max(0, Math.min(100, metricNumber(row.progress)));
+        const policyOrNode = row.kind === "team"
+          ? String(row.raw.completion_policy || "aggregate").replace(/_/g, " ")
+          : row.raw.node_id || "";
+
+        html += `
+          <div class="sprint-board-card ${rankClass}" data-node-id="${escapeHtml(row.id)}">
+            <div class="sprint-board-topline">
+              <div>
+                <div class="sprint-board-rank">#${currentRank}</div>
+                <div class="sprint-board-name">${escapeHtml(row.name)}</div>
+                <div class="sprint-board-meta">${escapeHtml(row.meta)}</div>
+              </div>
+              <div class="sprint-board-signal">
+                ${escapeHtml(sprintSignal.value)}
+                <span>${escapeHtml(sprintSignal.label)}</span>
+              </div>
+            </div>
+            <div class="sprint-board-stats">
+              <div class="sprint-stat"><strong>${escapeHtml(row.score.value)}</strong><span>${escapeHtml(row.score.label)}</span></div>
+              <div class="sprint-stat"><strong>${escapeHtml(row.statA)}</strong><span>${escapeHtml(row.statALabel)}</span></div>
+              <div class="sprint-stat"><strong>${escapeHtml(row.statB)}</strong><span>${escapeHtml(row.statBLabel)}</span></div>
+            </div>
+            <div class="sprint-board-stats">
+              <div class="sprint-stat"><strong>${escapeHtml(row.statC)}</strong><span>${escapeHtml(row.statCLabel)}</span></div>
+              <div class="sprint-stat"><strong>${progress.toFixed(0)}%</strong><span>Progress</span></div>
+              <div class="sprint-stat"><strong>${escapeHtml(policyOrNode)}</strong><span>${row.kind === "team" ? "Policy" : "Node"}</span></div>
+            </div>
+            <div class="sprint-board-progress"><div style="width: ${progress}%"></div></div>
+          </div>
+        `;
+      });
+      html += '</div>';
+
+      container.innerHTML = html;
+      leaderboardRankByNode = new Map(rows.map((row, index) => [row.id, index + 1]));
+      animateLeaderboardReorder(previousRects);
+      if (leaderboardFinal) {
+        triggerFinishCelebration(rows.map((row) => ({ node_id: row.id })));
+      }
+    }
+
+    function renderTeamLeaderboard(progressData, teamData = null) {
+      const container = document.getElementById("leaderboard-container");
+      const previousRects = new Map();
+      container.querySelectorAll(".team-leaderboard-item").forEach((item) => {
+        previousRects.set(item.dataset.nodeId, item.getBoundingClientRect());
+      });
+
+      const raceType = (currentConfig && currentConfig.race_type) || 'distance';
+      const teams = sortTeamLeaderboardRows(
+        Array.isArray(teamData) && teamData.length
+          ? teamData.map((team) => ({ ...team, members: [...(team.members || [])] }))
+          : aggregateTeamLeaderboard(progressData, raceType)
+      );
+
+      if (teams.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <p>${escapeHtml(t("leaderboard.waiting_data"))}</p>
+          </div>`;
+        leaderboardNodes = [];
+        teamLeaderboardRows = [];
+        leaderboardRankByNode = new Map();
+        return;
+      }
+
+      teamLeaderboardRows = teams;
+      leaderboardNodes = Object.values(progressData || {});
+      const leaderboardFinal = isTeamLeaderboardFinal(raceType, teams);
+
+      let html = leaderboardFinal ? renderTeamPodium(teams, raceType) : '';
+      html += '<div class="team-leaderboard-list">';
+      teams.forEach((team, index) => {
+        const currentRank = index + 1;
+        const teamKey = team.team_name || `team-${index + 1}`;
+        const previousRank = leaderboardRankByNode.get(teamKey);
+        const rankDelta = previousRank ? previousRank - currentRank : 0;
+        const rankClass = rankDelta > 0 ? "rank-up" : rankDelta < 0 ? "rank-down" : "";
+        let rankDisplayHtml = '';
+        if (currentRank === 1) {
+          rankDisplayHtml = `<span class="rank-champion" title="冠軍">👑</span>`;
+        } else if (currentRank === 2) {
+          rankDisplayHtml = `<span class="rank-silver" title="亞軍">🥈</span>`;
+        } else if (currentRank === 3) {
+          rankDisplayHtml = `<span class="rank-bronze" title="季軍">🥉</span>`;
+        } else {
+          rankDisplayHtml = `<span>${currentRank}</span>`;
+        }
+
+        const score = formatTeamScore(team, raceType);
+        const progressText = `${metricNumber(team.progress_percent).toFixed(1)}%`;
+        const completionLabel = team.completion_policy === "all_members" ? "all members finish" : "aggregate finish";
+        const members = (team.members || []).map((member) => {
+          const station = member.station_number ? `<span class="team-member-station">S${escapeHtml(member.station_number)}</span>` : "";
+          return `
+            <span class="team-member-chip">
+              ${station}
+              <strong>${escapeHtml(member.athlete_name || "Athlete")}</strong>
+              ${metricNumber(member.progress_percent).toFixed(0)}%
+            </span>
+          `;
+        }).join("");
+
+        html += `
+          <div class="team-leaderboard-item ${rankClass}" data-node-id="${escapeHtml(teamKey)}">
+            <div class="rank">${rankDisplayHtml}</div>
+            <div class="team-main">
+              <div class="team-name">${escapeHtml(team.team_name || "Team")}</div>
+              <div class="team-meta">${metricNumber(team.member_count).toFixed(0)} athletes · ${escapeHtml(team.scoring_policy || "average")} scoring · ${completionLabel}</div>
+            </div>
+            <div class="metric-group">
+              <div class="metric-val score-primary">${score.value}</div>
+              <div class="metric-lbl">${escapeHtml(score.label)}</div>
+            </div>
+            <div class="metric-group">
+              <div class="metric-val">${progressText}</div>
+              <div class="metric-lbl">Team progress</div>
+            </div>
+            <div class="metric-group">
+              <div class="metric-val">${metricNumber(team.finished_count).toFixed(0)}/${metricNumber(team.member_count).toFixed(0)}</div>
+              <div class="metric-lbl">Finished</div>
+            </div>
+            <div class="progress-track">
+              <div class="progress-fill" style="width: ${Math.min(100, metricNumber(team.progress_percent))}%"></div>
+            </div>
+            <div class="team-member-strip">${members}</div>
+          </div>
+        `;
+      });
+      html += '</div>';
+      container.innerHTML = html;
+      leaderboardRankByNode = new Map(teams.map((team, index) => [team.team_name || `team-${index + 1}`, index + 1]));
+      animateLeaderboardReorder(previousRects);
+      if (leaderboardFinal) {
+        triggerFinishCelebration(teams.map((team) => ({ node_id: team.team_name })));
+      }
+    }
+
+    function renderLeaderboard(progressData, teamData = null) {
+      lastLeaderboardData = progressData || {};
+      lastTeamLeaderboardData = teamData || null;
+
+      if (leaderboardDisplayMode === "race_track") {
+        renderRaceTrackLeaderboard(progressData, teamData);
+        return;
+      }
+
+      if (leaderboardDisplayMode === "team_battle") {
+        renderTeamBattleLeaderboard(progressData, teamData);
+        return;
+      }
+
+      if (leaderboardDisplayMode === "sprint_board") {
+        renderSprintBoardLeaderboard(progressData, teamData);
+        return;
+      }
+
+      if (currentConfig && currentConfig.competition_mode === "team") {
+        renderTeamLeaderboard(progressData, teamData);
+        return;
+      }
+
       const container = document.getElementById("leaderboard-container");
       const previousRects = new Map();
       container.querySelectorAll(".leaderboard-item").forEach((item) => {
@@ -1492,6 +2841,7 @@
             <p>${escapeHtml(t("leaderboard.waiting_data"))}</p>
           </div>`;
         leaderboardNodes = [];
+        teamLeaderboardRows = [];
         leaderboardRankByNode = new Map();
         return;
       }
@@ -1681,6 +3031,7 @@
 
     function renderStations(data) {
       const listContainer = document.getElementById("station-list-container");
+      if (!listContainer) return;
 
       // 2. Render stations list with details & QR Codes
       const stations = data.stations;
@@ -1776,9 +3127,10 @@
       currentConfig = data.config;
       raceStartTime = data.start_time_epoch_ms;
       raceEndTime = data.end_time_epoch_ms || null;
+      applyLeaderboardDisplayMode(data.leaderboard_display_mode || "classic");
 
       if (data.leaderboard) {
-        renderLeaderboard(data.leaderboard);
+        renderLeaderboard(data.leaderboard, data.team_leaderboard || null);
       }
 
       document.getElementById("current-state-lbl").innerText = currentState;
@@ -1787,18 +3139,19 @@
       const typeIndicator = document.getElementById("race-type-indicator");
 
       if (currentConfig) {
+        const competitionLabel = currentConfig.competition_mode === "team" ? "Team" : "Individual";
         if (currentConfig.race_type === "distance") {
-          configDesc.innerText = `${t("race.distance")}: ${currentConfig.target_value}m`;
-          typeIndicator.innerText = `${t("race.distance")} (${currentConfig.target_value}m)`;
+          configDesc.innerText = `${competitionLabel} · ${t("race.distance")}: ${currentConfig.target_value}m`;
+          typeIndicator.innerText = `${competitionLabel} · ${t("race.distance")} (${currentConfig.target_value}m)`;
         } else if (currentConfig.race_type === "calories") {
-          configDesc.innerText = `${t("race.calories")}: ${currentConfig.target_value} kcal`;
-          typeIndicator.innerText = `${t("race.calories")} (${currentConfig.target_value} kcal)`;
+          configDesc.innerText = `${competitionLabel} · ${t("race.calories")}: ${currentConfig.target_value} kcal`;
+          typeIndicator.innerText = `${competitionLabel} · ${t("race.calories")} (${currentConfig.target_value} kcal)`;
         } else if (currentConfig.race_type === "time") {
-          configDesc.innerText = `${t("race.time")}: ${currentConfig.duration_sec}s`;
-          typeIndicator.innerText = `${t("race.time")} (${currentConfig.duration_sec}s)`;
+          configDesc.innerText = `${competitionLabel} · ${t("race.time")}: ${currentConfig.duration_sec}s`;
+          typeIndicator.innerText = `${competitionLabel} · ${t("race.time")} (${currentConfig.duration_sec}s)`;
         } else if (currentConfig.race_type === "max_power" || currentConfig.race_type === "watts") {
-          configDesc.innerText = `${t("race.max_power")}: ${currentConfig.duration_sec}s`;
-          typeIndicator.innerText = `${t("race.max_power")} (${currentConfig.duration_sec}s)`;
+          configDesc.innerText = `${competitionLabel} · ${t("race.max_power")}: ${currentConfig.duration_sec}s`;
+          typeIndicator.innerText = `${competitionLabel} · ${t("race.max_power")} (${currentConfig.duration_sec}s)`;
         }
       } else {
         configDesc.innerText = t("status.no_config");
@@ -1830,13 +3183,30 @@
       }
 
       // Button states
-      document.getElementById("btn-start").disabled = (currentState !== "READY");
-      document.getElementById("btn-stop").disabled = (currentState !== "RUNNING");
-      document.getElementById("btn-reset").disabled = (currentState === "RUNNING");
+      const btnStart = document.getElementById("btn-start");
+      const btnStop = document.getElementById("btn-stop");
+      const btnReset = document.getElementById("btn-reset");
+      if (btnStart) btnStart.disabled = (currentState !== "READY");
+      if (btnStop) btnStop.disabled = (currentState !== "RUNNING");
+      if (btnReset) btnReset.disabled = (currentState === "RUNNING");
 
       // Configure button & dynamic status tip control
       const btnConfigure = document.getElementById("btn-configure");
       const configTip = document.getElementById("config-status-tip");
+      if (!btnConfigure || !configTip) {
+        if (currentState === "STOPPED") {
+          if (!autoResetInterval && !autoResetCancelled) {
+            startAutoResetCountdown();
+          }
+        } else {
+          autoResetCancelled = false;
+          if (currentState === "IDLE" || currentState === "READY") {
+            celebrationShownForRaceKey = null;
+          }
+          cancelAutoReset(false);
+        }
+        return;
+      }
       if (currentState === "RUNNING") {
         btnConfigure.disabled = true;
         configTip.style.color = "var(--crimson-red)";
@@ -1864,6 +3234,25 @@
       }
     }
 
+    function updateAutoResetBannerText() {
+      const countdown = document.getElementById("auto-reset-countdown");
+      const prefix = document.getElementById("auto-reset-prefix");
+      const suffix = document.getElementById("auto-reset-suffix");
+      if (!countdown || !prefix || !suffix) return;
+
+      const secondsText = String(autoResetSecondsLeft);
+      const bannerText = t("auto_reset.banner", { seconds: secondsText });
+      const secondsIndex = bannerText.indexOf(secondsText);
+      countdown.innerText = secondsText;
+      if (secondsIndex >= 0) {
+        prefix.innerText = bannerText.slice(0, secondsIndex);
+        suffix.innerText = bannerText.slice(secondsIndex + secondsText.length);
+      } else {
+        prefix.innerText = bannerText;
+        suffix.innerText = "";
+      }
+    }
+
     function startAutoResetCountdown() {
       if (autoResetInterval) {
         clearInterval(autoResetInterval);
@@ -1871,7 +3260,7 @@
       }
 
       const delaySelect = document.getElementById("auto-reset-delay");
-      const delaySeconds = parseInt(delaySelect.value, 10);
+      const delaySeconds = delaySelect ? parseInt(delaySelect.value, 10) : 60;
       
       if (delaySeconds <= 0) {
         document.getElementById("auto-reset-banner").style.display = "none";
@@ -1879,8 +3268,7 @@
       }
 
       autoResetSecondsLeft = delaySeconds;
-      document.getElementById("auto-reset-countdown").innerText = autoResetSecondsLeft;
-      document.getElementById("auto-reset-text").innerText = t("auto_reset.banner", { seconds: autoResetSecondsLeft });
+      updateAutoResetBannerText();
       document.getElementById("auto-reset-banner").style.display = "block";
 
       autoResetInterval = setInterval(() => {
@@ -1891,8 +3279,7 @@
           document.getElementById("auto-reset-banner").style.display = "none";
           resetRace();
         } else {
-          document.getElementById("auto-reset-countdown").innerText = autoResetSecondsLeft;
-          document.getElementById("auto-reset-text").innerText = t("auto_reset.banner", { seconds: autoResetSecondsLeft });
+          updateAutoResetBannerText();
         }
       }, 1000);
     }
@@ -1965,6 +3352,10 @@
     }
 
     async function configureRace() {
+      if (!document.getElementById("race-type")) {
+        window.location.href = "/gameAdmin";
+        return;
+      }
       const type = document.getElementById("race-type").value;
       const target_value = parseFloat(document.getElementById("target-distance").value) || 0;
       const duration_sec = parseInt(document.getElementById("target-duration").value) || 0;
@@ -2062,8 +3453,26 @@
       connectWebSocket();
       fetchNodes();
 
-      // Initialize general registration QR Code on the right side of the hero bar
+      // Initialize QR codes on the right side of the hero bar and admin card
       let ipCheckInterval = null;
+
+      function qrCodeUrl(targetUrl) {
+        return `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(targetUrl)}`;
+      }
+
+      function updateAccessLinks(baseUrl) {
+        const generalSignupUrl = `${baseUrl}/static/signup.html`;
+        const gameAdminUrl = `${baseUrl}/gameAdmin`;
+        const headerQrImg = document.getElementById("header-qr-img");
+        const gameAdminQrImg = document.getElementById("game-admin-qr-img");
+        const gameAdminLink = document.getElementById("game-admin-link");
+        if (headerQrImg) headerQrImg.src = qrCodeUrl(generalSignupUrl);
+        if (gameAdminQrImg) gameAdminQrImg.src = qrCodeUrl(gameAdminUrl);
+        if (gameAdminLink) {
+          gameAdminLink.href = gameAdminUrl;
+          gameAdminLink.innerText = gameAdminUrl;
+        }
+      }
 
       async function updateQrCode() {
         try {
@@ -2074,9 +3483,7 @@
           if (ip && ip !== "127.0.0.1" && ip !== "localhost") {
             const port = window.location.port ? `:${window.location.port}` : '';
             const baseUrl = `${window.location.protocol}//${ip}${port}`;
-            const generalSignupUrl = `${baseUrl}/static/signup.html`;
-            const qrCodeApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(generalSignupUrl)}`;
-            document.getElementById("header-qr-img").src = qrCodeApiUrl;
+            updateAccessLinks(baseUrl);
             return true;
           }
         } catch (err) {
@@ -2092,9 +3499,7 @@
         const hubIp = window.location.hostname;
         const port = window.location.port ? `:${window.location.port}` : '';
         const baseUrl = `${window.location.protocol}//${hubIp}${port}`;
-        const generalSignupUrl = `${baseUrl}/static/signup.html`;
-        const qrCodeApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(generalSignupUrl)}`;
-        document.getElementById("header-qr-img").src = qrCodeApiUrl;
+        updateAccessLinks(baseUrl);
 
         // Set interval to check until we get a real IP
         ipCheckInterval = setInterval(async () => {

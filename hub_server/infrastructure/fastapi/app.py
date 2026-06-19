@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from hub_server.domain.models import RaceState, RaceConfig
 from hub_server.usecases.race_manager import RaceManager
 from hub_server.usecases.node_registry import NodeRegistry
+from hub_server.usecases.race_event_engine import RaceEventEngine
 from hub_server.adapters.websocket_manager import WebSocketManager
 from hub_server.infrastructure.locales import DEFAULT_LOCALE, list_locales, load_locale
 from hub_server.usecases.update_checker import UpdateChecker
@@ -23,10 +24,16 @@ from fitrace_common.version import APP_VERSION
 logger = logging.getLogger("hub_server.fastapi")
 
 DEFAULT_UPDATE_PUBLIC_KEY_PATH = str(
-    Path(__file__).resolve().parents[3] / "fitrace_common" / "release-ed25519-public.pem"
+    Path(__file__).resolve().parents[3]
+    / "fitrace_common"
+    / "release-ed25519-public.pem"
 )
-HUB_UPDATER_SERVICE = os.getenv("FITRACE_HUB_UPDATER_SERVICE", "fitracestudio-hub-updater.service")
+HUB_UPDATER_SERVICE = os.getenv(
+    "FITRACE_HUB_UPDATER_SERVICE", "fitracestudio-hub-updater.service"
+)
 MAX_AVATAR_BYTES = 256 * 1024
+RACE_START_COUNTDOWN_AUDIO_URL = "/static/audio/countdown_start.wav"
+RACE_START_COUNTDOWN_DURATION_MS = 3120
 
 
 def run_systemctl(command: list[str]):
@@ -35,7 +42,10 @@ def run_systemctl(command: list[str]):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    if os.getenv("FITRACE_UPDATE_AUTO_CHECK", "1") != "0" and update_checker.manifest_url:
+    if (
+        os.getenv("FITRACE_UPDATE_AUTO_CHECK", "1") != "0"
+        and update_checker.manifest_url
+    ):
         asyncio.create_task(asyncio.to_thread(update_checker.check))
     yield
 
@@ -48,15 +58,20 @@ async def add_no_cache_header(request: Request, call_next):
     response = await call_next(request)
     path = request.url.path
     if path.endswith(".html") or path == "/" or path.endswith("/"):
-        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Cache-Control"] = (
+            "no-store, no-cache, must-revalidate, max-age=0"
+        )
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
     return response
+
 
 # Global instances (Shared Context)
 race_manager = RaceManager()
 ws_manager = WebSocketManager()
 node_registry = NodeRegistry()
+race_event_engine = RaceEventEngine()
+race_start_countdown_lock = asyncio.Lock()
 update_checker = UpdateChecker(
     manifest_url=os.getenv(
         "FITRACE_UPDATE_MANIFEST_URL",
@@ -67,7 +82,9 @@ update_checker = UpdateChecker(
         "https://dd9tnec1hh2ts.cloudfront.net/channels/stable/manifest.json.sig",
     ),
     current_version=APP_VERSION,
-    public_key_path=os.getenv("FITRACE_UPDATE_PUBLIC_KEY_PATH", DEFAULT_UPDATE_PUBLIC_KEY_PATH),
+    public_key_path=os.getenv(
+        "FITRACE_UPDATE_PUBLIC_KEY_PATH", DEFAULT_UPDATE_PUBLIC_KEY_PATH
+    ),
     cache_dir=os.getenv("FITRACE_UPDATE_CACHE_DIR", "/tmp/fitrace-update-cache"),
 )
 power_manager = PowerManager(
@@ -83,8 +100,19 @@ power_manager = PowerManager(
 
 class ConfigurePayload(BaseModel):
     race_type: str
+    competition_mode: str = "individual"
+    team_scoring_policy: str = "average"
+    team_completion_policy: str = "aggregate"
     target_value: float = 0.0
     duration_sec: int = 0
+
+
+class LeaderboardDisplayPayload(BaseModel):
+    mode: str
+
+
+class StartCountdownSoundPayload(BaseModel):
+    enabled: bool
 
 
 class AssignStationPayload(BaseModel):
@@ -111,8 +139,11 @@ class DiagnosticTelemetryPayload(BaseModel):
     instantaneous_speed_kph: float = 18.0
     cadence_rpm: int = 75
     power_watts: int = 180
+
+
 def get_real_ip() -> Optional[str]:
     import socket
+
     # 1. Try UDP socket trick to get interface routing to external IP
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
@@ -167,9 +198,13 @@ def require_admin(request: Request):
 
 
 def require_diagnostics_admin(request: Request):
-    expected_token = os.getenv("FITRACE_DIAGNOSTICS_TOKEN") or os.getenv("FITRACE_ADMIN_TOKEN")
+    expected_token = os.getenv("FITRACE_DIAGNOSTICS_TOKEN") or os.getenv(
+        "FITRACE_ADMIN_TOKEN"
+    )
     if not expected_token:
-        raise HTTPException(status_code=503, detail="Diagnostics token is not configured")
+        raise HTTPException(
+            status_code=503, detail="Diagnostics token is not configured"
+        )
     provided_token = request.headers.get("X-FitRace-Diagnostics-Token")
     if provided_token != expected_token:
         raise HTTPException(status_code=401, detail="Diagnostics token required")
@@ -177,8 +212,7 @@ def require_diagnostics_admin(request: Request):
 
 def is_test_telemetry_enabled() -> bool:
     return (
-        os.getenv("TESTING") == "1"
-        or os.getenv("FITRACE_ENABLE_TEST_TELEMETRY") == "1"
+        os.getenv("TESTING") == "1" or os.getenv("FITRACE_ENABLE_TEST_TELEMETRY") == "1"
     )
 
 
@@ -205,15 +239,7 @@ def decode_avatar_webp(avatar_base64: str) -> bytes:
 
 
 async def get_race_state_data() -> dict:
-    config = race_manager.get_config()
-    return {
-        "state": race_manager.get_state().value,
-        "config": config.model_dump() if config else None,
-        "registered_nodes": race_manager.get_registered_nodes(),
-        "start_time_epoch_ms": race_manager._start_time_epoch_ms,
-        "end_time_epoch_ms": getattr(race_manager, "_end_time_epoch_ms", None),
-        "leaderboard": race_manager.get_leaderboard_progress(),
-    }
+    return race_manager.get_state_snapshot()
 
 
 async def broadcast_race_state():
@@ -227,6 +253,21 @@ async def broadcast_race_state():
 @app.get("/api/race/state")
 async def get_race_state():
     return await get_race_state_data()
+
+
+@app.post("/api/leaderboard/display")
+async def set_leaderboard_display(payload: LeaderboardDisplayPayload):
+    try:
+        race_manager.set_leaderboard_display_mode(payload.mode)
+        return await broadcast_race_state()
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/race/start-sound")
+async def set_start_countdown_sound(payload: StartCountdownSoundPayload):
+    race_manager.set_start_countdown_sound_enabled(payload.enabled)
+    return await broadcast_race_state()
 
 
 @app.get("/api/nodes")
@@ -270,7 +311,10 @@ async def download_updates(request: Request):
 async def install_hub_update(request: Request):
     require_admin(request)
     if race_manager.get_state() != RaceState.IDLE:
-        raise HTTPException(status_code=409, detail="Hub update install is allowed only when race state is IDLE")
+        raise HTTPException(
+            status_code=409,
+            detail="Hub update install is allowed only when race state is IDLE",
+        )
     status = await asyncio.to_thread(update_checker.install_hub)
     if status.get("state") == "error":
         raise HTTPException(status_code=409, detail=status.get("error"))
@@ -281,9 +325,14 @@ async def install_hub_update(request: Request):
 async def apply_hub_update(request: Request):
     require_admin(request)
     if race_manager.get_state() != RaceState.IDLE:
-        raise HTTPException(status_code=409, detail="Hub update apply is allowed only when race state is IDLE")
+        raise HTTPException(
+            status_code=409,
+            detail="Hub update apply is allowed only when race state is IDLE",
+        )
     try:
-        await asyncio.to_thread(run_systemctl, ["sudo", "systemctl", "start", HUB_UPDATER_SERVICE])
+        await asyncio.to_thread(
+            run_systemctl, ["sudo", "systemctl", "start", HUB_UPDATER_SERVICE]
+        )
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=409, detail=str(e))
     return {"state": "updater_started", "service": HUB_UPDATER_SERVICE}
@@ -292,13 +341,15 @@ async def apply_hub_update(request: Request):
 async def run_hub_power_action(action):
     try:
         result = action()
-        await ws_manager.broadcast({
-            "type": "system_power",
-            "action": result.action,
-            "target": result.target,
-            "dry_run": result.dry_run,
-            "message": result.message,
-        })
+        await ws_manager.broadcast(
+            {
+                "type": "system_power",
+                "action": result.action,
+                "target": result.target,
+                "dry_run": result.dry_run,
+                "message": result.message,
+            }
+        )
         return asdict(result)
     except PowerActionError as e:
         raise HTTPException(status_code=409, detail=str(e))
@@ -313,59 +364,65 @@ async def restart_hub_service(request: Request):
 @app.post("/api/system/power/reboot")
 async def reboot_hub(payload: PowerActionPayload, request: Request):
     require_admin(request)
-    return await run_hub_power_action(lambda: power_manager.reboot(payload.confirmation))
+    return await run_hub_power_action(
+        lambda: power_manager.reboot(payload.confirmation)
+    )
 
 
 @app.post("/api/system/power/shutdown")
 async def shutdown_hub(payload: PowerActionPayload, request: Request):
     require_admin(request)
-    
+
     # 1. Notify all EdgeNodes via MQTT to shut down
     mqtt_client = getattr(request.app.state, "mqtt_client", None)
     if mqtt_client:
         try:
             import json
+
             await mqtt_client.publish(
-                "fitrace/nodes/command",
-                json.dumps({"action": "shutdown"})
+                "fitrace/nodes/command", json.dumps({"action": "shutdown"})
             )
             logger.info("Published shutdown command to all EdgeNodes via MQTT")
         except Exception as e:
             logger.error(f"Failed to publish shutdown command to EdgeNodes: {e}")
-            
+
     # 2. Wait a short moment to ensure MQTT messages are sent
     await asyncio.sleep(0.5)
-    
+
     # 3. Shutdown the Central Hub itself
-    return await run_hub_power_action(lambda: power_manager.shutdown(payload.confirmation))
+    return await run_hub_power_action(
+        lambda: power_manager.shutdown(payload.confirmation)
+    )
 
 
 @app.post("/api/system/power/shutdown-system")
 async def shutdown_system(request: Request):
     require_admin(request)
-    
+
     # 1. Notify all EdgeNodes via MQTT to shut down
     mqtt_client = getattr(request.app.state, "mqtt_client", None)
     if mqtt_client:
         try:
             import json
+
             await mqtt_client.publish(
-                "fitrace/nodes/command",
-                json.dumps({"action": "shutdown"})
+                "fitrace/nodes/command", json.dumps({"action": "shutdown"})
             )
             logger.info("Published shutdown command to all EdgeNodes via MQTT")
         except Exception as e:
             logger.error(f"Failed to publish shutdown command to EdgeNodes: {e}")
-            
+
     # 2. Wait a short moment to ensure MQTT messages are sent
     await asyncio.sleep(0.5)
-    
+
     # 3. Shutdown the Central Hub itself
     return await run_hub_power_action(lambda: power_manager.shutdown("SHUTDOWN"))
 
 
 @app.post("/api/diagnostics/telemetry")
-async def run_diagnostic_telemetry(payload: DiagnosticTelemetryPayload, request: Request):
+async def run_diagnostic_telemetry(
+    payload: DiagnosticTelemetryPayload, request: Request
+):
     if not is_diagnostics_enabled():
         raise HTTPException(status_code=404, detail="Not found")
 
@@ -437,10 +494,16 @@ async def configure_race(payload: ConfigurePayload):
     try:
         config = RaceConfig(
             race_type=payload.race_type,
+            competition_mode=payload.competition_mode,
+            team_scoring_policy=payload.team_scoring_policy,
+            team_completion_policy=payload.team_completion_policy,
             target_value=payload.target_value,
             duration_sec=payload.duration_sec,
         )
+        prev_state = race_manager.get_state()
         race_manager.configure(config)
+        if prev_state == RaceState.STOPPED:
+            race_event_engine.reset()
         return await broadcast_race_state()
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -450,9 +513,39 @@ async def configure_race(payload: ConfigurePayload):
 async def start_race():
     try:
         race_manager.start_race()
+        race_event_engine.reset()
         return await broadcast_race_state()
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/race/countdown-start")
+async def countdown_start_race():
+    if race_start_countdown_lock.locked():
+        raise HTTPException(status_code=409, detail="Race countdown is already active")
+    if race_manager.get_state() != RaceState.READY:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Race must be in READY state to start countdown; current state is {race_manager.get_state().value}",
+        )
+
+    async with race_start_countdown_lock:
+        await ws_manager.broadcast(
+            {
+                "type": "race_countdown",
+                "audio_url": RACE_START_COUNTDOWN_AUDIO_URL,
+                "duration_ms": RACE_START_COUNTDOWN_DURATION_MS,
+                "play_sound": race_manager.get_start_countdown_sound_enabled(),
+                "message": "Starting in 3, 2, 1, Go",
+            }
+        )
+        await asyncio.sleep(RACE_START_COUNTDOWN_DURATION_MS / 1000)
+        try:
+            race_manager.start_race()
+            race_event_engine.reset()
+            return await broadcast_race_state()
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.post("/api/race/stop")
@@ -476,6 +569,7 @@ async def close_race():
 @app.post("/api/race/reset")
 async def reset_race():
     race_manager.reset_race()
+    race_event_engine.reset()
     return await broadcast_race_state()
 
 
@@ -508,19 +602,25 @@ async def register_athlete(payload: RegisterAthletePayload):
                     "avatars",
                 )
                 os.makedirs(avatar_dir, exist_ok=True)
-                file_path = os.path.join(avatar_dir, f"station_{payload.station_number}.webp")
+                file_path = os.path.join(
+                    avatar_dir, f"station_{payload.station_number}.webp"
+                )
                 with open(file_path, "wb") as f:
                     f.write(img_data)
                 has_avatar = True
             except Exception as e:
-                raise HTTPException(status_code=400, detail=f"Invalid avatar image: {str(e)}")
+                raise HTTPException(
+                    status_code=400, detail=f"Invalid avatar image: {str(e)}"
+                )
         else:
             avatar_dir = os.path.join(
                 os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
                 "static",
                 "avatars",
             )
-            file_path = os.path.join(avatar_dir, f"station_{payload.station_number}.webp")
+            file_path = os.path.join(
+                avatar_dir, f"station_{payload.station_number}.webp"
+            )
             if os.path.exists(file_path):
                 try:
                     os.remove(file_path)
@@ -533,18 +633,19 @@ async def register_athlete(payload: RegisterAthletePayload):
             team_name=payload.team_name,
             has_avatar=has_avatar,
         )
-        
+
         # Broadcast registration success to the dashboard
-        station_node_id = race_manager._stations.get(payload.station_number)
-        equipment_type = race_manager._active_nodes.get(station_node_id, "unknown") if station_node_id else "unknown"
-        await ws_manager.broadcast({
-            "type": "registration_success",
-            "athlete_name": payload.athlete_name,
-            "station_number": payload.station_number,
-            "team_name": payload.team_name,
-            "equipment_type": equipment_type,
-        })
-        
+        equipment_type = race_manager.get_station_equipment_type(payload.station_number)
+        await ws_manager.broadcast(
+            {
+                "type": "registration_success",
+                "athlete_name": payload.athlete_name,
+                "station_number": payload.station_number,
+                "team_name": payload.team_name,
+                "equipment_type": equipment_type,
+            }
+        )
+
         return race_manager.get_stations_status()
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -560,44 +661,27 @@ async def post_test_telemetry(payload: Dict[str, Any]):
         if not node_id:
             raise HTTPException(status_code=400, detail="Missing node_id")
 
-        eq_type = payload.get("equipment_type", "unknown")
-        race_manager.update_active_node(node_id, eq_type)
-
-        # Only update telemetry progress and broadcast if the race is actively RUNNING
-        if race_manager.get_state() == RaceState.RUNNING:
-            # TDD Compatibility: Auto-register node if not registered
-            if node_id not in race_manager.get_registered_nodes():
-                race_manager._registered_nodes[node_id] = f"Athlete {node_id}"
-                # Add to progress dict since start_race has already been executed
-                race_manager._progress[node_id] = {
-                    "node_id": node_id,
-                    "athlete_name": f"Athlete {node_id}",
-                    "distance_m": 0.0,
-                    "elapsed_time_ms": 0,
-                    "instantaneous_speed_kph": 0.0,
-                    "progress_percent": 0.0,
-                    "calories": 0.0,
-                    "power_watts": 0,
-                    "max_power_watts": 0,
-                    "finished_time_ms": None,
-                }
-
-            progress = race_manager.update_telemetry(payload)
+        progress = race_manager.ingest_telemetry(payload)
+        if progress is not None:
             await ws_manager.broadcast(progress)
-            
+
+            # Check for race events
+            events = race_event_engine.evaluate(race_manager, progress)
+            for event in events:
+                await ws_manager.broadcast(
+                    {
+                        "type": "race_event",
+                        "event": event,
+                    }
+                )
+
             # If the race state just transitioned to STOPPED, broadcast state change
             if race_manager.get_state() == RaceState.STOPPED:
-                config = race_manager.get_config()
-                await ws_manager.broadcast({
-                    "type": "state_change",
-                    "state": race_manager.get_state().value,
-                    "config": config.model_dump() if config else None,
-                    "registered_nodes": race_manager.get_registered_nodes(),
-                    "start_time_epoch_ms": race_manager._start_time_epoch_ms,
-                    "end_time_epoch_ms": getattr(race_manager, "_end_time_epoch_ms", None),
-                })
+                state_change = race_manager.get_state_snapshot()
+                state_change["type"] = "state_change"
+                await ws_manager.broadcast(state_change)
             return progress
-        
+
         # Broadcast empty progress to trigger frontend fetchStations() refresh
         await ws_manager.broadcast({})
         return {"status": "node_registered", "node_id": node_id}
@@ -629,3 +713,18 @@ if os.path.exists(static_dir):
 @app.get("/")
 def read_root():
     return RedirectResponse(url="/static/index.html")
+
+
+@app.get("/admin")
+def read_admin():
+    return RedirectResponse(url="/static/admin.html")
+
+
+@app.get("/gameAdmin")
+def read_game_admin():
+    return RedirectResponse(url="/static/gameAdmin.html")
+
+
+@app.get("/systemAdmin")
+def read_system_admin():
+    return RedirectResponse(url="/static/systemAdmin.html")
