@@ -21,7 +21,7 @@ Typical supported equipment includes:
 
 The system is designed to operate inside a local studio network without depending on external cloud services during live race operation.
 
-Deployment network, hostname, mDNS, and Edge Node discovery rules are documented in [DEPLOYMENT.md](DEPLOYMENT.md). Normalized Edge-to-Hub telemetry is documented in [TELEMETRY_SPEC.md](TELEMETRY_SPEC.md). Hub-led OTA update design is documented in [OTA_UPDATE.md](OTA_UPDATE.md). AWS cloud requirements for update distribution are documented in [AWS_CLOUD_REQUIREMENTS.md](AWS_CLOUD_REQUIREMENTS.md). Cloud update validation is documented in [CLOUD_UPDATE_TEST_PLAN.md](CLOUD_UPDATE_TEST_PLAN.md).
+Deployment network, hostname, mDNS, and Edge Node discovery rules are documented in [DEPLOYMENT.md](DEPLOYMENT.md). Normalized Edge-to-Hub telemetry is documented in [TELEMETRY_SPEC.md](TELEMETRY_SPEC.md). Hub-led OTA update design is documented in [OTA_UPDATE.md](OTA_UPDATE.md). AWS cloud requirements for update distribution are documented in [AWS_CLOUD_REQUIREMENTS.md](AWS_CLOUD_REQUIREMENTS.md). Cloud update validation is documented in [CLOUD_UPDATE_TEST_PLAN.md](CLOUD_UPDATE_TEST_PLAN.md). RPi4 kiosk soak validation is documented in [RPI4_SOAK_TEST_PLAN.md](RPI4_SOAK_TEST_PLAN.md).
 
 ---
 
