@@ -70,3 +70,59 @@ class EdgeNodeStatus(BaseModel):
     available_channels: int = 2
     last_seen_epoch_ms: int
     equipment_streams: list[EquipmentStreamStatus] = Field(default_factory=list)
+
+
+class HyroxStage(str, Enum):
+    RUN_1 = "run_1"
+    SKI_ERG = "ski_erg"
+    RUN_2 = "run_2"
+    SLED_PUSH = "sled_push"
+    RUN_3 = "run_3"
+    SLED_PULL = "sled_pull"
+    RUN_4 = "run_4"
+    BURPEE_BROAD = "burpee_broad"
+    RUN_5 = "run_5"
+    ROW = "row"
+    RUN_6 = "run_6"
+    FARMERS_CARRY = "farmers_carry"
+    RUN_7 = "run_7"
+    SANDBAG_LUNGES = "sandbag_lunges"
+    RUN_8 = "run_8"
+    WALL_BALLS = "wall_balls"
+    FINISHED = "finished"
+
+
+class AthleteTagBinding(BaseModel):
+    athlete_name: str
+    team_name: str | None = None
+    rfid_tag_id: str
+    station_number: int | None = None
+    division: Literal["individual", "doubles", "relay"] = "individual"
+
+
+class HyroxConfig(BaseModel):
+    competition_mode: Literal["individual", "doubles", "relay"] = Field(
+        "individual", description="Hyrox race format"
+    )
+    session_type: Literal["training", "competition"] = Field(
+        "training", description="Type of session (training or official competition)"
+    )
+    # Site calibration knobs: antenna power and mat placement vary per venue
+    rssi_threshold_dbm: float = Field(
+        -60.0, description="RFID reads weaker than this are ignored (spillover filter)"
+    )
+    run_lap_debounce_ms: int = Field(
+        1000, description="Minimum ms between counted running-track crossings per tag"
+    )
+
+
+class AthleteHyroxState(BaseModel):
+    athlete_name: str
+    team_name: str | None = None
+    station_number: int
+    division: Literal["individual", "doubles", "relay"] = "individual"
+    current_stage: HyroxStage = HyroxStage.RUN_1
+    stage_laps: dict[str, int] = Field(default_factory=dict)  # stage_name -> completed_laps/reps
+    stage_start_times: dict[str, int] = Field(default_factory=dict)  # stage_name -> epoch_ms
+    stage_end_times: dict[str, int] = Field(default_factory=dict)  # stage_name -> epoch_ms
+    total_elapsed_time_ms: int = 0

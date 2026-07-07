@@ -12,8 +12,9 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Requ
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
-from hub_server.domain.models import RaceState, RaceConfig
+from hub_server.domain.models import RaceState, RaceConfig, HyroxConfig, AthleteTagBinding
 from hub_server.usecases.race_manager import RaceManager
+from hub_server.usecases.hyrox_manager import HyroxManager
 from hub_server.usecases.node_registry import NodeRegistry
 from hub_server.usecases.race_event_engine import RaceEventEngine
 from hub_server.usecases.race_result_store import RaceResultStore
@@ -77,8 +78,21 @@ async def add_no_cache_header(request: Request, call_next):
     return response
 
 
+@app.middleware("http")
+async def check_hyrox_enabled(request: Request, call_next):
+    path = request.url.path
+    if path.startswith("/hyrox") or path.startswith("/api/hyrox"):
+        if os.getenv("FITRACE_ENABLE_HYROX", "0") != "1":
+            from fastapi.responses import JSONResponse
+            return JSONResponse(
+                status_code=404, content={"detail": "Hyrox mode is disabled"}
+            )
+    return await call_next(request)
+
+
 # Global instances (Shared Context)
 race_manager = RaceManager()
+hyrox_manager = HyroxManager()
 ws_manager = WebSocketManager()
 node_registry = NodeRegistry()
 race_event_engine = RaceEventEngine()
@@ -145,6 +159,10 @@ class PowerActionPayload(BaseModel):
     confirmation: Optional[str] = None
 
 
+class HyroxCompleteStagePayload(BaseModel):
+    rfid_tag_id: str
+
+
 class DiagnosticTelemetryPayload(BaseModel):
     node_id: str = "diagnostic-bike-01"
     equipment_type: str = "fan_bike"
@@ -200,6 +218,49 @@ def get_system_ip():
 @app.get("/health")
 def health_check():
     return {"status": "ok", "version": APP_VERSION}
+
+
+@app.get("/api/hyrox/state")
+def get_hyrox_state():
+    return hyrox_manager.get_state()
+
+
+@app.post("/api/hyrox/configure")
+def configure_hyrox(config: HyroxConfig, request: Request):
+    require_admin(request)
+    hyrox_manager.configure(config)
+    return config
+
+
+@app.post("/api/hyrox/register")
+def register_hyrox_athlete(payload: AthleteTagBinding):
+    hyrox_manager.register_athlete(
+        athlete_name=payload.athlete_name,
+        rfid_tag_id=payload.rfid_tag_id,
+        station_number=payload.station_number,
+        team_name=payload.team_name,
+        division=payload.division,
+    )
+    return {"status": "ok"}
+
+
+@app.post("/api/hyrox/start")
+def start_hyrox_race(request: Request):
+    require_admin(request)
+    hyrox_manager.start_race()
+    return {"status": "started"}
+
+
+@app.post("/api/hyrox/complete-stage")
+def complete_hyrox_stage(payload: HyroxCompleteStagePayload, request: Request):
+    require_admin(request)
+    now_ms = int(time.time() * 1000)
+    if not hyrox_manager.complete_current_stage(payload.rfid_tag_id, now_ms):
+        raise HTTPException(
+            status_code=409,
+            detail="Race not active, tag unknown, or athlete already finished",
+        )
+    return {"status": "ok"}
 
 
 def require_admin(request: Request):
@@ -947,3 +1008,18 @@ def read_game_admin():
 @app.get("/systemAdmin")
 def read_system_admin():
     return RedirectResponse(url="/static/systemAdmin.html")
+
+
+@app.get("/hyrox/dashboard")
+def read_hyrox_dashboard():
+    return RedirectResponse(url="/static/hyrox_dashboard.html")
+
+
+@app.get("/hyrox/admin")
+def read_hyrox_admin():
+    return RedirectResponse(url="/static/hyrox_admin.html")
+
+
+@app.get("/hyrox/signup")
+def read_hyrox_signup():
+    return RedirectResponse(url="/static/hyrox_signup.html")

@@ -10,6 +10,7 @@ from hub_server.infrastructure.fastapi.app import (
     node_registry,
     race_event_engine,
     race_result_store,
+    hyrox_manager,
 )
 
 logging.basicConfig(
@@ -39,6 +40,7 @@ async def main_async():
             node_registry,
             race_event_engine,
             race_result_store,
+            hyrox_manager=hyrox_manager,
         )
         subscriber.start_listening()
     except Exception as e:

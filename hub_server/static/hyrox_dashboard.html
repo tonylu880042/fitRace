@@ -1,0 +1,927 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FitRaceStudio - Hyrox 大螢幕看板</title>
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;700;800&family=Outfit:wght@400;600;800&family=Noto+Sans+TC:wght@500;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #09090b;
+      --surface: #18181b;
+      --border: #27272a;
+      --text: #f8fafc;
+      --accent: #e2ff3b;
+      --amber: #f59e0b;
+      --red: #f43f5e;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Outfit", "Noto Sans TC", sans-serif;
+      padding: 24px;
+      overflow-x: hidden;
+    }
+
+    /* Industrial Warning Stripe Header */
+    .header-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 24px;
+      border: 2px solid var(--border);
+      border-radius: 4px;
+      background: var(--surface);
+      position: relative;
+      overflow: hidden;
+      margin-bottom: 24px;
+    }
+
+    .header-bar::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 6px;
+      background: var(--accent);
+    }
+
+    .title {
+      font-family: "Oswald", sans-serif;
+      font-size: 24px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin: 0;
+      color: var(--accent);
+    }
+
+    .status-badge {
+      padding: 6px 12px;
+      font-family: "Oswald", sans-serif;
+      font-size: 14px;
+      font-weight: 700;
+      text-transform: uppercase;
+      background: #27272a;
+      border-radius: 3px;
+      letter-spacing: 0.05em;
+    }
+
+    .status-active {
+      background: var(--accent);
+      color: #000;
+    }
+
+    /* Grid Layout */
+    .grid-container {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 20px;
+    }
+
+    .athlete-card {
+      border: 2px solid var(--border);
+      background: var(--surface);
+      border-radius: 4px;
+      padding: 16px 20px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      position: relative;
+    }
+
+    .athlete-card.working {
+      border-color: var(--accent);
+      box-shadow: 0 0 14px rgba(226, 255, 59, 0.18);
+    }
+
+    .athlete-card.done {
+      border-color: var(--amber);
+      box-shadow: 0 0 18px rgba(245, 158, 11, 0.25);
+    }
+
+    /* 8-station race spine */
+    .spine {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .spine-dot {
+      flex: 1;
+      height: 6px;
+      border-radius: 3px;
+      background: #27272a;
+    }
+
+    .spine-dot.done { background: var(--accent); }
+
+    .spine-dot.now {
+      background: var(--accent);
+      animation: spinePulse 1.2s ease-in-out infinite;
+    }
+
+    .spine-dot.next {
+      background: repeating-linear-gradient(90deg, #3f3f46 0 4px, #27272a 4px 8px);
+    }
+
+    @keyframes spinePulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.35; }
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 10px;
+      gap: 12px;
+    }
+
+    .rank-num {
+      font-family: "Oswald", sans-serif;
+      font-size: 34px;
+      font-weight: 800;
+      line-height: 1;
+      color: var(--accent);
+      min-width: 52px;
+    }
+
+    .rank-num small {
+      font-size: 18px;
+      vertical-align: top;
+      opacity: 0.7;
+    }
+
+    .athlete-name {
+      font-family: "Oswald", "Noto Sans TC", sans-serif;
+      font-size: 22px;
+      font-weight: 700;
+      margin: 0;
+      color: var(--text);
+      line-height: 1.15;
+    }
+
+    .division-chip {
+      display: inline-block;
+      font-size: 11px;
+      text-transform: uppercase;
+      color: var(--accent);
+      border: 1px solid var(--accent);
+      border-radius: 3px;
+      padding: 1px 6px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      margin-top: 4px;
+    }
+
+    /* Team member chips: bright, readable from across the gym */
+    .member-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .member-chip {
+      background: #27272a;
+      border: 1px solid #52525b;
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 600;
+      padding: 2px 10px;
+      border-radius: 999px;
+      white-space: nowrap;
+    }
+
+    .station-num {
+      font-family: "Oswald", sans-serif;
+      font-size: 15px;
+      font-weight: 800;
+      color: var(--accent);
+      border: 1px solid var(--accent);
+      padding: 2px 6px;
+      border-radius: 3px;
+      white-space: nowrap;
+    }
+
+    /* Current activity panel: icon tile + stage name + progress */
+    .station-panel {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      background: #101012;
+      border: 1px solid #3f3f46;
+      border-radius: 6px;
+      padding: 10px 14px;
+    }
+
+    .panel-label {
+      font-family: "Oswald", sans-serif;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 2px;
+    }
+
+    .msym {
+      font-family: 'Material Symbols Outlined';
+      font-weight: normal;
+      font-style: normal;
+      font-size: 34px;
+      line-height: 1;
+      display: inline-block;
+      color: var(--accent);
+    }
+
+    .icon-tile.mirror .msym { transform: scaleX(-1); }
+
+    .icon-tile {
+      width: 58px;
+      height: 58px;
+      border-radius: 8px;
+      background: #27272a;
+      border: 1px solid #3f3f46;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .icon-tile.working {
+      background: rgba(226, 255, 59, 0.12);
+      border-color: var(--accent);
+      animation: tileGlow 1.6s ease-in-out infinite;
+    }
+
+    .icon-tile.running { animation: runBob 0.8s ease-in-out infinite; }
+
+    .icon-tile.done {
+      background: rgba(245, 158, 11, 0.15);
+      border-color: var(--amber);
+    }
+
+    @keyframes tileGlow {
+      0%, 100% { box-shadow: 0 0 0 rgba(226, 255, 59, 0); }
+      50% { box-shadow: 0 0 16px rgba(226, 255, 59, 0.45); }
+    }
+
+    @keyframes runBob {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-4px); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .icon-tile.working, .icon-tile.running, .spine-dot.now { animation: none; }
+    }
+
+    .stage-name {
+      font-family: "Oswald", "Noto Sans TC", sans-serif;
+      text-transform: uppercase;
+      font-weight: 800;
+      font-size: 18px;
+      letter-spacing: 0.04em;
+    }
+
+    .stage-name .zh {
+      font-size: 13px;
+      color: #d4d4d8;
+      font-weight: 500;
+      letter-spacing: 0;
+      margin-left: 6px;
+    }
+
+    .stage-laps {
+      font-family: "Oswald", sans-serif;
+      font-size: 28px;
+      font-weight: 800;
+      margin: 2px 0 0;
+      line-height: 1;
+    }
+
+    .progress-bar-container {
+      height: 8px;
+      background: #27272a;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      background: var(--accent);
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+
+    .athlete-card.done .progress-bar-fill { background: var(--amber); }
+
+    .timing {
+      font-family: "Oswald", sans-serif;
+      font-size: 13px;
+      color: #a1a1aa;
+      letter-spacing: 0.1em;
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+
+    .timing .elapsed {
+      font-variant-numeric: tabular-nums;
+      font-weight: 800;
+      font-size: 34px;
+      color: var(--text);
+      line-height: 1;
+    }
+
+    .athlete-card.done .timing .elapsed { color: var(--accent); }
+
+    /* Celebration Overlay */
+    .celebration-overlay {
+      position: fixed;
+      top: 0; left: 0; width: 100vw; height: 100vh;
+      background: rgba(9, 9, 11, 0.96);
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.5s ease;
+    }
+    .celebration-overlay.show {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .podium-container {
+      display: flex;
+      justify-content: center;
+      align-items: flex-end;
+      gap: 24px;
+      margin-top: 40px;
+      width: 100%;
+      max-width: 800px;
+    }
+    .podium-place {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      background: var(--surface);
+      border: 2px solid var(--border);
+      border-radius: 8px;
+      padding: 24px;
+      width: 200px;
+      position: relative;
+      animation: fadeInUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+    .podium-place.first {
+      height: 320px;
+      border-color: var(--accent);
+      box-shadow: 0 0 25px rgba(226, 255, 59, 0.3);
+      animation-delay: 0.4s;
+    }
+    .podium-place.second {
+      height: 260px;
+      border-color: #a1a1aa;
+      animation-delay: 0.2s;
+    }
+    .podium-place.third {
+      height: 220px;
+      border-color: #b45309;
+      animation-delay: 0.6s;
+    }
+    .podium-rank {
+      font-family: "Oswald", sans-serif;
+      font-size: 48px;
+      font-weight: 800;
+      line-height: 1;
+      margin-bottom: 16px;
+    }
+    .first .podium-rank { color: var(--accent); }
+    .second .podium-rank { color: #d1d5db; }
+    .third .podium-rank { color: #d97706; }
+
+    .podium-name {
+      font-family: "Oswald", sans-serif;
+      font-size: 22px;
+      font-weight: 700;
+      text-align: center;
+      word-break: break-all;
+      margin-bottom: 8px;
+      color: var(--text);
+    }
+    .podium-time {
+      font-family: "Outfit", sans-serif;
+      font-size: 16px;
+      color: #a1a1aa;
+    }
+
+    .celebration-title {
+      font-family: "Oswald", sans-serif;
+      font-size: 64px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.15em;
+      color: var(--accent);
+      text-shadow: 0 0 15px rgba(226, 255, 59, 0.4);
+      margin: 0;
+      text-align: center;
+      animation: pulse 2s infinite;
+    }
+
+    /* Confetti particle style */
+    .confetti-particle {
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+      animation: confettiFall 4s linear infinite;
+    }
+
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(40px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+    }
+    @keyframes confettiFall {
+      0% { transform: translateY(-50px) rotate(0deg); opacity: 1; }
+      100% { transform: translateY(105vh) rotate(720deg); opacity: 0; }
+    }
+
+    /* Individual Finish Toast */
+    .finish-toast {
+      position: fixed;
+      top: -100px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #18181b;
+      border: 2px solid var(--accent);
+      box-shadow: 0 0 25px rgba(226, 255, 59, 0.45);
+      color: var(--text);
+      padding: 16px 36px;
+      font-family: "Oswald", sans-serif;
+      font-size: 24px;
+      font-weight: 700;
+      text-transform: uppercase;
+      border-radius: 8px;
+      z-index: 10000;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      letter-spacing: 0.03em;
+      animation: slideDownFade 5.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+    .finish-toast strong {
+      color: var(--accent);
+    }
+    @keyframes slideDownFade {
+      0% { top: -100px; opacity: 0; }
+      8% { top: 40px; opacity: 1; }
+      92% { top: 40px; opacity: 1; }
+      100% { top: -100px; opacity: 0; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header-bar">
+    <h1 class="title">FitRaceStudio // HYROX BOARD</h1>
+    <div id="race-status" class="status-badge">Idle</div>
+  </div>
+
+  <div id="athletes-grid" class="grid-container">
+    <!-- Dynamic Cards -->
+  </div>
+
+  <!-- Celebration Podium Overlay -->
+  <div id="celebration-overlay" class="celebration-overlay">
+    <h1 class="celebration-title">🏆 Race Complete 🏆</h1>
+    <p style="font-family: 'Oswald', sans-serif; font-size: 20px; color: #a1a1aa; text-transform: uppercase; margin-top: 10px;">Standings / 賽事頒獎台</p>
+
+    <div class="podium-container">
+      <!-- 2nd Place -->
+      <div class="podium-place second">
+        <div class="podium-rank">2</div>
+        <div id="podium-2nd-name" class="podium-name">--</div>
+        <div id="podium-2nd-time" class="podium-time">--</div>
+      </div>
+
+      <!-- 1st Place -->
+      <div class="podium-place first">
+        <div class="podium-rank" style="font-size: 64px;">👑 1</div>
+        <div id="podium-1st-name" class="podium-name" style="font-size: 24px; color: var(--accent);">--</div>
+        <div id="podium-1st-time" class="podium-time" style="font-size: 18px; color: var(--text);">--</div>
+      </div>
+
+      <!-- 3rd Place -->
+      <div class="podium-place third">
+        <div class="podium-rank">3</div>
+        <div id="podium-3rd-name" class="podium-name">--</div>
+        <div id="podium-3rd-time" class="podium-time">--</div>
+      </div>
+    </div>
+
+    <p id="clear-countdown-text" style="color: #f43f5e; font-size: 14px; margin-top: 50px; font-weight: bold; font-family: 'Oswald', sans-serif; letter-spacing: 0.05em;">⚠️ 畫面將於 90 秒後自動清空重設 (Auto-clears in 90 seconds)</p>
+  </div>
+
+  <script>
+    let clearTimer = null;
+    let countdownInterval = null;
+    let wasActive = false;
+    const finishedAthletes = new Set();
+
+    // Material Symbols icon + bilingual name per stage
+    const STAGE_META = {
+      run:            { icon: "directions_run",    zh: "跑步",     en: "RUN" },
+      ski_erg:        { icon: "downhill_skiing",   zh: "滑雪機",   en: "SKI ERG" },
+      sled_push:      { icon: "trolley",           zh: "推雪橇",   en: "SLED PUSH" },
+      sled_pull:      { icon: "trolley",           zh: "拉雪橇",   en: "SLED PULL", mirror: true },
+      burpee_broad:   { icon: "sports_gymnastics", zh: "波比跳遠", en: "BURPEE JUMP" },
+      row:            { icon: "rowing",            zh: "划船機",   en: "ROW" },
+      farmers_carry:  { icon: "luggage",           zh: "農夫走路", en: "FARMERS CARRY" },
+      sandbag_lunges: { icon: "hiking",            zh: "沙袋弓步", en: "SANDBAG LUNGES" },
+      wall_balls:     { icon: "sports_handball",   zh: "牆球",     en: "WALL BALLS" },
+      finished:       { icon: "sports_score",      zh: "完賽",     en: "FINISHED" }
+    };
+
+    function stageMeta(stage) {
+      if (stage.startsWith("run_")) {
+        return { ...STAGE_META.run, en: `RUN ${stage.split("_")[1]}/8` };
+      }
+      return STAGE_META[stage] || STAGE_META.run;
+    }
+
+    function fmtTime(ms) {
+      const total = Math.max(0, Math.round(ms / 1000));
+      const h = Math.floor(total / 3600);
+      const m = Math.floor((total % 3600) / 60);
+      const s = total % 60;
+      const mm = String(m).padStart(2, "0");
+      const ss = String(s).padStart(2, "0");
+      return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+    }
+
+    function triggerLocalConfetti() {
+      const container = document.body;
+      const colors = ['#e2ff3b', '#38bdf8', '#f43f5e', '#a855f7', '#10b981'];
+      for (let i = 0; i < 40; i++) {
+        const p = document.createElement('div');
+        p.className = 'confetti-particle';
+        p.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+        p.style.width = '8px';
+        p.style.height = '12px';
+
+        const fromLeft = Math.random() > 0.5;
+        p.style.left = fromLeft ? (Math.random() * 20 + 'vw') : (80 + Math.random() * 20 + 'vw');
+        p.style.top = '100vh';
+
+        p.animate([
+          { transform: 'translateY(0) scale(1) rotate(0deg)', opacity: 1 },
+          { transform: `translateY(-${50 + Math.random() * 40}vh) translateX(${(Math.random() - 0.5) * 200}px) scale(0.5) rotate(${360 + Math.random() * 360}deg)`, opacity: 0 }
+        ], {
+          duration: 1500 + Math.random() * 1500,
+          easing: 'cubic-bezier(0.25, 1, 0.50, 1)'
+        });
+
+        container.appendChild(p);
+        setTimeout(() => p.remove(), 3000);
+      }
+    }
+
+    function showFinishToast(name, timeStr) {
+      const toast = document.createElement('div');
+      toast.className = 'finish-toast';
+      toast.innerHTML = `🎉 恭喜 <strong>${name}</strong> 完賽！時間：${timeStr} 🎉`;
+      document.body.appendChild(toast);
+
+      triggerLocalConfetti();
+
+      setTimeout(() => {
+        toast.remove();
+      }, 5500);
+    }
+
+    function createConfetti() {
+      const container = document.getElementById('celebration-overlay');
+      document.querySelectorAll('.confetti-particle').forEach(p => p.remove());
+      const colors = ['#e2ff3b', '#38bdf8', '#f43f5e', '#a855f7', '#10b981'];
+      for (let i = 0; i < 100; i++) {
+        const particle = document.createElement('div');
+        particle.className = 'confetti-particle';
+        particle.style.left = Math.random() * 100 + 'vw';
+        particle.style.top = -10 - Math.random() * 50 + 'px';
+        particle.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+        particle.style.width = 6 + Math.random() * 8 + 'px';
+        particle.style.height = 10 + Math.random() * 12 + 'px';
+        particle.style.animationDelay = Math.random() * 3 + 's';
+        particle.style.animationDuration = 2 + Math.random() * 3 + 's';
+        container.appendChild(particle);
+      }
+    }
+
+    async function updateDashboard() {
+      try {
+        const res = await fetch('/api/hyrox/state');
+        if (!res.ok) return;
+        const data = await res.json();
+
+        // Update status
+        const statusEl = document.getElementById('race-status');
+        if (data.is_active) {
+          statusEl.textContent = 'RUNNING';
+          statusEl.className = 'status-badge status-active';
+          if (!wasActive) {
+            finishedAthletes.clear();
+            wasActive = true;
+          }
+        } else {
+          statusEl.textContent = 'IDLE';
+          statusEl.className = 'status-badge';
+          wasActive = false;
+          finishedAthletes.clear();
+        }
+
+        // Render athletes
+        const grid = document.getElementById('athletes-grid');
+        grid.innerHTML = '';
+
+        const STAGE_TARGETS = {
+          "sled_push": 4,
+          "sled_pull": 4,
+          "burpee_broad": 4,
+          "row": 1, // Mock metric target
+          "farmers_carry": 4,
+          "sandbag_lunges": 4,
+          "wall_balls": 75
+        };
+
+        const STAGE_ORDER = [
+          "run_1", "ski_erg", "run_2", "sled_push", "run_3", "sled_pull", "run_4", "burpee_broad",
+          "run_5", "row", "run_6", "farmers_carry", "run_7", "sandbag_lunges", "run_8", "wall_balls", "finished"
+        ];
+
+        // Grouping logic
+        const grouped = {};
+        for (const [tagId, athlete] of Object.entries(data.athletes)) {
+          const isGroup = athlete.division !== 'individual' && athlete.team_name;
+          const key = isGroup ? `${athlete.division}:${athlete.team_name}` : `ind:${tagId}`;
+
+          if (!grouped[key]) {
+            grouped[key] = {
+              names: [athlete.athlete_name],
+              division: athlete.division,
+              team_name: athlete.team_name || null,
+              station_number: athlete.station_number || 0,
+              current_stage: athlete.current_stage,
+              athletes: [athlete]
+            };
+          } else {
+            grouped[key].names.push(athlete.athlete_name);
+            grouped[key].athletes.push(athlete);
+            if (athlete.station_number > grouped[key].station_number) {
+              grouped[key].station_number = athlete.station_number;
+            }
+            // Group stage is the furthest stage reached by any member
+            const currentIdx = STAGE_ORDER.indexOf(grouped[key].current_stage);
+            const newIdx = STAGE_ORDER.indexOf(athlete.current_stage);
+            if (newIdx > currentIdx) {
+              grouped[key].current_stage = athlete.current_stage;
+            }
+          }
+        }
+
+        // Rank entries: furthest stage first; finished by time, others by laps
+        const entries = Object.entries(grouped).map(([key, group]) => {
+          const stageIdx = STAGE_ORDER.indexOf(group.current_stage);
+          let currentLaps = 0;
+          let maxElapsedTime = 0;
+          for (const ath of group.athletes) {
+            currentLaps += (ath.stage_laps[group.current_stage] || 0);
+            if (ath.total_elapsed_time_ms > maxElapsedTime) {
+              maxElapsedTime = ath.total_elapsed_time_ms;
+            }
+          }
+          return { key, group, stageIdx, currentLaps, maxElapsedTime };
+        });
+
+        entries.sort((a, b) => {
+          if (a.stageIdx !== b.stageIdx) return b.stageIdx - a.stageIdx;
+          if (a.group.current_stage === 'finished') return a.maxElapsedTime - b.maxElapsedTime;
+          return b.currentLaps - a.currentLaps;
+        });
+
+        entries.forEach(({ key, group, stageIdx, currentLaps, maxElapsedTime }, i) => {
+          const rank = i + 1;
+          const displayName = group.team_name ? group.team_name : group.names[0];
+          const memberChips = group.team_name
+            ? `<div class="member-chips">${group.names.map(n => `<span class="member-chip">${n}</span>`).join('')}</div>`
+            : '';
+
+          const currentStage = group.current_stage;
+          const isRun = currentStage.startsWith('run_');
+          const isFinished = currentStage === 'finished';
+          const meta = stageMeta(currentStage);
+          const targetLaps = STAGE_TARGETS[currentStage] || 4;
+          const pct = isFinished ? 100 : Math.min(100, Math.round((currentLaps / targetLaps) * 100));
+
+          // Elapsed time
+          const run1Start = group.athletes[0].stage_start_times["run_1"];
+          let elapsedStr = "--:--";
+          if (run1Start) {
+            if (isFinished) {
+              elapsedStr = fmtTime(maxElapsedTime);
+            } else if (data.is_active) {
+              elapsedStr = fmtTime(Date.now() - run1Start);
+            } else {
+              elapsedStr = "00:00";
+            }
+          }
+
+          // Progress text per stage type
+          let lapText = `${currentLaps} LAPS`;
+          if (currentStage === "wall_balls") {
+            lapText = `${currentLaps} / ${targetLaps} REPS`;
+          } else if (["sled_push", "sled_pull", "burpee_broad", "farmers_carry", "sandbag_lunges"].includes(currentStage)) {
+            lapText = `${currentLaps} / ${targetLaps} LENGTHS`;
+          } else if (["ski_erg", "row"].includes(currentStage)) {
+            lapText = "IN PROGRESS";
+          } else if (isFinished) {
+            lapText = "8 / 8 STATIONS";
+          }
+
+          // 8-station spine: dot i maps to the workout at STAGE_ORDER index 2i-1
+          let spineDots = '';
+          for (let d = 1; d <= 8; d++) {
+            const wIdx = 2 * d - 1;
+            let cls = '';
+            if (stageIdx > wIdx) cls = 'done';
+            else if (stageIdx === wIdx) cls = 'now';
+            else if (stageIdx === wIdx - 1) cls = 'next';
+            spineDots += `<div class="spine-dot ${cls}"></div>`;
+          }
+
+          const panelLabel = isFinished ? 'RACE COMPLETE 完賽'
+            : isRun ? 'ON THE TRACK 跑道上'
+            : 'CURRENT STATION 工作站';
+
+          let tileCls = isFinished ? 'done' : isRun ? 'running' : (data.is_active ? 'working' : '');
+          if (meta.mirror) tileCls += ' mirror';
+
+          const card = document.createElement('div');
+          card.className = `athlete-card ${isFinished ? 'done' : (!isRun && data.is_active ? 'working' : '')}`;
+
+          card.innerHTML = `
+            <div class="card-header">
+              <div class="rank-num"><small>#</small>${rank}</div>
+              <div style="flex: 1; min-width: 0;">
+                <h2 class="athlete-name">${displayName}</h2>
+                <span class="division-chip">${group.division}</span>
+                ${memberChips}
+              </div>
+              <span class="station-num">ST ${group.station_number || '--'}</span>
+            </div>
+            <div class="spine">${spineDots}</div>
+            <div class="station-panel">
+              <div class="icon-tile ${tileCls}"><span class="msym">${meta.icon}</span></div>
+              <div style="min-width: 0;">
+                <div class="panel-label">${panelLabel}</div>
+                <div class="stage-name">${meta.en}<span class="zh">${meta.zh}</span></div>
+                <div class="stage-laps">${lapText}</div>
+              </div>
+            </div>
+            <div class="progress-bar-container">
+              <div class="progress-bar-fill" style="width: ${pct}%"></div>
+            </div>
+            <div class="timing">
+              <span>ELAPSED 總時間</span>
+              <span class="elapsed">${elapsedStr}</span>
+            </div>
+          `;
+          grid.appendChild(card);
+
+          if (isFinished && data.is_active && !finishedAthletes.has(key)) {
+            finishedAthletes.add(key);
+            showFinishToast(displayName, elapsedStr);
+          }
+        });
+
+        // Celebration & Auto-clear logic
+        const overlay = document.getElementById('celebration-overlay');
+        let allFinished = Object.keys(grouped).length > 0;
+        for (const key of Object.keys(grouped)) {
+          if (grouped[key].current_stage !== 'finished') {
+            allFinished = false;
+            break;
+          }
+        }
+
+        if (data.is_active && allFinished) {
+          if (!clearTimer) {
+            createConfetti();
+            overlay.classList.add('show');
+
+            // Find podium positions
+            const sorted = Object.entries(grouped)
+              .map(([key, g]) => {
+                let maxElapsedTime = 0;
+                for (const ath of g.athletes) {
+                  if (ath.total_elapsed_time_ms > maxElapsedTime) {
+                    maxElapsedTime = ath.total_elapsed_time_ms;
+                  }
+                }
+                return {
+                  name: g.team_name || g.names[0],
+                  time: maxElapsedTime
+                };
+              })
+              .sort((a, b) => a.time - b.time);
+
+            document.getElementById('podium-1st-name').textContent = sorted[0] ? sorted[0].name : '--';
+            document.getElementById('podium-1st-time').textContent = sorted[0] ? fmtTime(sorted[0].time) : '--';
+
+            document.getElementById('podium-2nd-name').textContent = sorted[1] ? sorted[1].name : '--';
+            document.getElementById('podium-2nd-time').textContent = sorted[1] ? fmtTime(sorted[1].time) : '--';
+
+            document.getElementById('podium-3rd-name').textContent = sorted[2] ? sorted[2].name : '--';
+            document.getElementById('podium-3rd-time').textContent = sorted[2] ? fmtTime(sorted[2].time) : '--';
+
+            // Start 90s auto-clear countdown
+            let countdown = 90;
+            const countdownEl = document.getElementById('clear-countdown-text');
+            countdownEl.textContent = `⚠️ 畫面將於 ${countdown} 秒後自動清空重設 (Auto-clears in ${countdown} seconds)`;
+
+            countdownInterval = setInterval(() => {
+              countdown--;
+              if (countdownEl) {
+                countdownEl.textContent = `⚠️ 畫面將於 ${countdown} 秒後自動清空重設 (Auto-clears in ${countdown} seconds)`;
+              }
+              if (countdown <= 0) {
+                clearInterval(countdownInterval);
+                countdownInterval = null;
+              }
+            }, 1000);
+
+            clearTimer = setTimeout(async () => {
+              try {
+                // configure requires the admin token; reuse the one stored by the admin pages
+                const headers = { 'Content-Type': 'application/json' };
+                const token = localStorage.getItem('fitrace.adminPassword') || localStorage.getItem('fitrace.adminToken') || '';
+                if (token) headers['X-FitRace-Admin-Token'] = token;
+                const res = await fetch('/api/hyrox/configure', {
+                  method: 'POST',
+                  headers,
+                  body: JSON.stringify({ competition_mode: 'individual', session_type: 'training' })
+                });
+                if (!res.ok) {
+                  console.error("Auto-clear failed: HTTP " + res.status + " (set admin token via /hyrox/admin on this device)");
+                  return;
+                }
+                overlay.classList.remove('show');
+                document.querySelectorAll('.confetti-particle').forEach(p => p.remove());
+                clearTimer = null;
+                if (countdownInterval) {
+                  clearInterval(countdownInterval);
+                  countdownInterval = null;
+                }
+              } catch (e) {
+                console.error("Failed to reset session:", e);
+              }
+            }, 90000);
+          }
+        } else {
+          // Reset timer and overlay if not active or not all finished
+          if (clearTimer) {
+            clearTimeout(clearTimer);
+            clearTimer = null;
+          }
+          if (countdownInterval) {
+            clearInterval(countdownInterval);
+            countdownInterval = null;
+          }
+          overlay.classList.remove('show');
+          document.querySelectorAll('.confetti-particle').forEach(p => p.remove());
+        }
+
+      } catch (err) {
+        console.error("Dashboard error:", err);
+      }
+    }
+
+    // Poll every 1 second
+    setInterval(updateDashboard, 1000);
+    updateDashboard();
+  </script>
+</body>
+</html>

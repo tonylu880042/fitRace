@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FitRaceStudio - Hyrox 報名登記</title>
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;700;800&family=Outfit:wght@400;600;800&family=Noto+Sans+TC:wght@500;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #09090b;
+      --surface: #18181b;
+      --border: #27272a;
+      --text: #f8fafc;
+      --accent: #e2ff3b;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Outfit", "Noto Sans TC", sans-serif;
+      padding: 24px;
+      display: grid;
+      place-items: center;
+      min-height: 100vh;
+    }
+
+    .shell {
+      width: min(500px, 100%);
+      display: grid;
+      gap: 20px;
+    }
+
+    header {
+      border: 2px solid var(--border);
+      background: var(--surface);
+      padding: 24px;
+      border-radius: 4px;
+      position: relative;
+    }
+
+    header::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 6px;
+      background: var(--accent);
+    }
+
+    h1 {
+      font-family: "Oswald", sans-serif;
+      font-weight: 800;
+      text-transform: uppercase;
+      margin: 0 0 6px 0;
+      color: var(--accent);
+      letter-spacing: 0.1em;
+    }
+
+    .subtitle {
+      margin: 0;
+      color: #a1a1aa;
+    }
+
+    form {
+      border: 2px solid var(--border);
+      background: var(--surface);
+      padding: 24px;
+      border-radius: 4px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    label {
+      font-family: "Oswald", sans-serif;
+      text-transform: uppercase;
+      font-weight: 700;
+      font-size: 14px;
+      color: #a1a1aa;
+    }
+
+    input {
+      background: #09090b;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 12px;
+      border-radius: 4px;
+      font-family: inherit;
+      font-size: 16px;
+    }
+
+    button {
+      background: var(--accent);
+      color: #000;
+      border: none;
+      padding: 14px;
+      font-family: "Oswald", sans-serif;
+      font-weight: 800;
+      text-transform: uppercase;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 18px;
+      transition: background 0.2s;
+    }
+
+    button:hover {
+      background: #c5e02c;
+    }
+
+    .success-msg {
+      color: var(--accent);
+      font-weight: 600;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="shell">
+    <header>
+      <h1>Athlete Registration</h1>
+      <p class="subtitle">Hyrox 選手手自登記與 RFID 綁定</p>
+    </header>
+
+    <form id="signup-form">
+      <div class="form-group">
+        <label for="athlete-name">選手姓名 (Athlete Name)</label>
+        <input type="text" id="athlete-name" placeholder="例如: Tony Lu" required>
+      </div>
+
+      <div class="form-group">
+        <label for="team-name">隊伍名稱 (Team Name - 選填)</label>
+        <input type="text" id="team-name" placeholder="例如: Alpha Core">
+      </div>
+
+      <div class="form-group">
+        <label for="rfid-tag">RFID 腳踝綁帶 ID (RFID Tag ID)</label>
+        <input type="text" id="rfid-tag" placeholder="例如: E2801105..." required>
+      </div>
+
+      <div class="form-group">
+        <label for="division">參賽組別 (Division)</label>
+        <select id="division" style="background: #09090b; border: 1px solid var(--border); color: var(--text); padding: 12px; border-radius: 4px; font-family: inherit; font-size: 16px;">
+          <option value="individual">個人組 (Individual)</option>
+          <option value="doubles">雙人組 (Doubles - 2人一隊)</option>
+          <option value="relay">四人接力組 (Relay - 4人一隊)</option>
+        </select>
+      </div>
+
+      <button type="submit">完成登記 // SUBMIT REGISTRATION</button>
+      <p id="success-message" class="success-msg"></p>
+    </form>
+  </div>
+
+  <script>
+    const divisionSelect = document.getElementById('division');
+    const teamNameInput = document.getElementById('team-name');
+    const teamNameLabel = document.querySelector('label[for="team-name"]');
+    const teamHint = document.createElement('div');
+    teamHint.id = 'team-hint';
+    teamHint.style.fontSize = '13px';
+    teamHint.style.color = '#e11d48';
+    teamHint.style.marginTop = '6px';
+    teamHint.style.lineHeight = '1.4';
+    teamNameInput.parentNode.appendChild(teamHint);
+
+    function updateTeamFields() {
+      const val = divisionSelect.value;
+      if (val === 'doubles' || val === 'relay') {
+        teamNameLabel.innerHTML = '隊伍名稱 (Team Name - <span style="color: #e11d48; font-weight: bold;">團體賽必填</span>)';
+        teamNameInput.placeholder = '例如: Ucare (請與隊友輸入完全相同的隊伍名稱)';
+        teamNameInput.required = true;
+        teamHint.innerHTML = '⚠️ 系統將以「隊伍名稱」進行分組，請確保與隊友輸入完全一致的名稱（包含大小寫與空格）。';
+      } else {
+        teamNameLabel.textContent = '隊伍名稱 (Team Name - 選填)';
+        teamNameInput.placeholder = '例如: Alpha Core';
+        teamNameInput.required = false;
+        teamHint.innerHTML = '';
+      }
+    }
+
+    divisionSelect.addEventListener('change', updateTeamFields);
+    updateTeamFields();
+
+    document.getElementById('signup-form').onsubmit = async (e) => {
+      e.preventDefault();
+
+      const name = document.getElementById('athlete-name').value;
+      const team = document.getElementById('team-name').value;
+      const rfid = document.getElementById('rfid-tag').value;
+      const division = document.getElementById('division').value;
+
+      try {
+        const res = await fetch('/api/hyrox/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            athlete_name: name,
+            team_name: team || null,
+            rfid_tag_id: rfid,
+            division: division
+          })
+        });
+
+        if (res.ok) {
+          document.getElementById('success-message').textContent = '登記成功！祝您獲得好成績！';
+          document.getElementById('signup-form').reset();
+          updateTeamFields();
+          setTimeout(() => document.getElementById('success-message').textContent = '', 4000);
+        } else {
+
+          const err = await res.json();
+          alert("登記失敗: " + JSON.stringify(err.detail));
+        }
+      } catch (err) {
+        alert("網路錯誤，請稍後再試: " + err);
+      }
+    };
+  </script>
+</body>
+</html>

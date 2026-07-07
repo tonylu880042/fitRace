@@ -179,3 +179,59 @@ async def test_mqtt_subscriber_persists_result_when_telemetry_auto_stops_race(tm
     results = result_store.list_results()
     assert len(results) == 1
     assert results[0]["snapshot"]["state"] == "STOPPED"
+
+
+class FakeHyroxManager:
+    def __init__(self):
+        self.crossings = []
+        self.wallball_reps = []
+
+    def register_tag_crossing(self, tag_id, location, rssi, timestamp_ms, station_number=None):
+        self.crossings.append((tag_id, location, rssi, timestamp_ms, station_number))
+
+    def register_wallball_rep(self, station_number, timestamp_ms):
+        self.wallball_reps.append((station_number, timestamp_ms))
+
+
+@pytest.mark.asyncio
+async def test_mqtt_subscriber_routes_rfid_payload():
+    hyrox_manager = FakeHyroxManager()
+    subscriber = MqttSubscriber(
+        async_mqtt_client=None,
+        race_manager=None,
+        ws_manager=None,
+        hyrox_manager=hyrox_manager,
+    )
+
+    await subscriber._handle_rfid(
+        {
+            "tag_id": "EPC_ATHLETE_123",
+            "location": "start_line",
+            "rssi": -45.0,
+            "timestamp_epoch_ms": 1780000000000,
+        }
+    )
+
+    assert hyrox_manager.crossings == [
+        ("EPC_ATHLETE_123", "start_line", -45.0, 1780000000000, None)
+    ]
+
+
+@pytest.mark.asyncio
+async def test_mqtt_subscriber_routes_wallball_payload():
+    hyrox_manager = FakeHyroxManager()
+    subscriber = MqttSubscriber(
+        async_mqtt_client=None,
+        race_manager=None,
+        ws_manager=None,
+        hyrox_manager=hyrox_manager,
+    )
+
+    await subscriber._handle_wallball(
+        {
+            "station_number": 2,
+            "timestamp_epoch_ms": 1780000500000,
+        }
+    )
+
+    assert hyrox_manager.wallball_reps == [(2, 1780000500000)]

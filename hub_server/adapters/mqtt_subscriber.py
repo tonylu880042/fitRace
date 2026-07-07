@@ -45,6 +45,7 @@ class MqttSubscriber:
         node_registry=None,
         race_event_engine=None,
         race_result_store=None,
+        hyrox_manager=None,
     ):
         """
         :param async_mqtt_client: An instance of AsyncMqttClient.
@@ -58,6 +59,7 @@ class MqttSubscriber:
         self._node_registry = node_registry
         self._race_event_engine = race_event_engine
         self._race_result_store = race_result_store
+        self._hyrox_manager = hyrox_manager
         self._loop = asyncio.get_event_loop()
 
     def start_listening(self):
@@ -83,12 +85,54 @@ class MqttSubscriber:
                     "/status"
                 )
                 future = self._handle_node_status(payload, edge_node_id)
+            elif topic.startswith("gym/telemetry/rfid/"):
+                future = self._handle_rfid(payload)
+            elif topic.startswith("gym/telemetry/wallball/"):
+                future = self._handle_wallball(payload)
             else:
                 future = self._handle_telemetry(payload)
 
             asyncio.run_coroutine_threadsafe(future, self._loop)
         except Exception as e:
             logger.error(f"Failed to process incoming MQTT payload: {e}")
+
+    async def _handle_rfid(self, payload: dict):
+        if not self._hyrox_manager:
+            return
+        tag_id = payload.get("tag_id")
+        location = payload.get("location")
+        rssi = payload.get("rssi")
+        timestamp_ms = payload.get("timestamp_epoch_ms")
+
+        station_number = payload.get("station_number")
+        if station_number is None:
+            # ponytail: fallback parses only the spec'd "L<n>..." antenna_id
+            # form (e.g. "L1_START"), stations 1-9; anything else needs an
+            # explicit station_number in the payload.
+            antenna_id = payload.get("antenna_id") or ""
+            if antenna_id.startswith("L") and len(antenna_id) > 1 and antenna_id[1].isdigit():
+                station_number = int(antenna_id[1])
+
+        if tag_id and location and rssi is not None and timestamp_ms:
+            self._hyrox_manager.register_tag_crossing(
+                tag_id=tag_id,
+                location=location,
+                rssi=float(rssi),
+                timestamp_ms=int(timestamp_ms),
+                station_number=station_number,
+            )
+
+    async def _handle_wallball(self, payload: dict):
+        if not self._hyrox_manager:
+            return
+        station_number = payload.get("station_number")
+        timestamp_ms = payload.get("timestamp_epoch_ms")
+
+        if station_number is not None and timestamp_ms:
+            self._hyrox_manager.register_wallball_rep(
+                station_number=int(station_number),
+                timestamp_ms=int(timestamp_ms),
+            )
 
     async def _handle_node_status(self, payload: dict, edge_node_id: str):
         if not self._node_registry:
