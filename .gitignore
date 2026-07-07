@@ -3,7 +3,10 @@
 .ruff_cache/
 __pycache__/
 *.pyc
+*.egg-info/
 .DS_Store
 wifi_state.json
+data/
 output/
 scratch/
+tmp/

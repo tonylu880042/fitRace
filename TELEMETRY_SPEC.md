@@ -78,7 +78,14 @@ These fields should be present in every normal sample. If a device cannot provid
 | Field | Type | Unit | Description |
 | --- | --- | --- | --- |
 | `edge_node_id` | string | n/a | Physical Edge Node that produced the stream, for example `fitrace-edge-01`. Recommended for diagnostics. |
+| `mac_address` | string | n/a | BLE MAC address reported by the UART antenna board for the physical equipment. |
+| `ftms_type` | string | n/a | Raw antenna board FTMS type, for example `TMILL`, `BIKE`, `ROWER`, `ELLIP`, or `UNKNOWN`. |
+| `rssi` | number | dBm | BLE RSSI reported by the antenna board. |
+| `pace_sec_per_500m` | number | sec/500m | Rower pace. Only expected for `ROWER`. |
+| `total_energy_kcal` | integer | kcal | Board-reported cumulative FTMS energy. |
 | `calories` | number | kcal-like score | Cumulative calories reported by equipment or calculated by Edge Node. If omitted, Central Hub currently estimates it from power and elapsed time. |
+| `ftms_payload` | object | n/a | Type-specific parsed FTMS payload. See below. |
+| `raw_payload` | object | n/a | Original JSON object from the UART `FTMS:` line. |
 
 ## 4. Supported Equipment Types
 
@@ -192,6 +199,47 @@ calories = power_watts * (elapsed_time_ms / 1000) / 1000
 ```
 
 This is a simple score estimate, not a physiology-grade kcal calculation. For production devices that provide calories through FTMS or antenna board data, Edge Node should send cumulative `calories` directly.
+
+### Type-Specific FTMS Payload
+
+Edge Node keeps common normalized fields for scoring, and also preserves the
+antenna board's type-specific data in `ftms_payload`.
+
+For `TMILL`, `BIKE`, and `ELLIP`:
+
+```json
+{
+  "kind": "speed",
+  "rssi": -55,
+  "instantaneous_speed": 8.32,
+  "total_distance": 1204,
+  "instantaneous_power": 142,
+  "total_energy": 37
+}
+```
+
+For `ROWER`:
+
+```json
+{
+  "kind": "rower",
+  "rssi": -60,
+  "stroke_rate": 24.5,
+  "total_distance": 850,
+  "instantaneous_pace": 125,
+  "instantaneous_power": 98,
+  "total_energy": 22
+}
+```
+
+For `UNKNOWN`:
+
+```json
+{
+  "kind": "unknown",
+  "rssi": -70
+}
+```
 
 ## 7. Validation Rules
 

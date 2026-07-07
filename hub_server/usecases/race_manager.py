@@ -393,6 +393,9 @@ class RaceManager:
         return self.update_telemetry(payload)
 
     def assign_station(self, station_number: int, node_id: Optional[str]):
+        if self._state == RaceState.RUNNING:
+            raise ValueError("Cannot assign stations while race is running")
+
         # Unassign if node_id is empty or None
         if not node_id:
             if station_number in self._stations:

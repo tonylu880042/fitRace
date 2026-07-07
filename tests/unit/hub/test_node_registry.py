@@ -19,6 +19,8 @@ def test_node_registry_updates_edge_status_and_marks_offline_after_timeout():
                     "node_id": "fitrace-edge-01-bike-01",
                     "equipment_id": "BIKE_01",
                     "equipment_type": "fan_bike",
+                    "ble_target": "AA:BB:CC:DD:EE:01",
+                    "mac_address": "AA:BB:CC:DD:EE:01",
                     "status": "configured",
                     "antenna_channel": "uart-1",
                 }
@@ -30,6 +32,7 @@ def test_node_registry_updates_edge_status_and_marks_offline_after_timeout():
     assert nodes[0]["edge_node_id"] == "fitrace-edge-01"
     assert nodes[0]["status"] == "online"
     assert nodes[0]["equipment_streams"][0]["node_id"] == "fitrace-edge-01-bike-01"
+    assert nodes[0]["equipment_streams"][0]["mac_address"] == "AA:BB:CC:DD:EE:01"
 
     now_ms += 10_001
     stale_nodes = registry.list_nodes()

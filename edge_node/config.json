@@ -1,80 +1,67 @@
 {
   "node_id": "fitrace-edge-01",
-  "mqtt_host": "192.168.0.129",
+  "mqtt_host": "192.168.0.130",
   "mqtt_port": 1883,
-  "max_ftms_connections": 10,
+  "max_ftms_connections": 5,
   "available_channels": 2,
-  "antenna_protocol_version": "pending-hardware",
+  "antenna_protocol_version": "uart-ftms-json-v1.1",
+  "antenna_auto_connect": true,
+  "antenna_channels": [
+    {
+      "id": "uart-1",
+      "port": "/dev/ttyAMA0",
+      "uart": "UART0",
+      "tx_gpio": "GPIO14",
+      "rx_gpio": "GPIO15",
+      "baudrate": 115200,
+      "rtscts": false
+    },
+    {
+      "id": "uart-2",
+      "port": "/dev/ttyAMA4",
+      "uart": "UART4",
+      "tx_gpio": "GPIO12",
+      "rx_gpio": "GPIO13",
+      "baudrate": 115200,
+      "rtscts": false,
+      "dtoverlay": "uart4-pi5"
+    }
+  ],
   "equipment_bindings": [
     {
       "node_id": "fitrace-edge-01-01",
       "equipment_id": "TREAD_01",
       "equipment_type": "treadmill",
-      "ble_target": "TREAD_01_TARGET",
-      "antenna_channel": "mock-1"
+      "ble_target": "F3:03:1F:87:20:14",
+      "antenna_channel": "uart-1"
     },
     {
       "node_id": "fitrace-edge-01-02",
       "equipment_id": "TREAD_02",
       "equipment_type": "treadmill",
-      "ble_target": "TREAD_02_TARGET",
-      "antenna_channel": "mock-2"
+      "ble_target": "D6:34:A6:DF:35:B0",
+      "antenna_channel": "uart-1"
     },
     {
       "node_id": "fitrace-edge-01-03",
       "equipment_id": "TREAD_03",
       "equipment_type": "treadmill",
-      "ble_target": "TREAD_03_TARGET",
-      "antenna_channel": "mock-3"
+      "ble_target": "DF:F9:29:D7:9E:ED",
+      "antenna_channel": "uart-2"
     },
     {
       "node_id": "fitrace-edge-01-04",
       "equipment_id": "TREAD_04",
       "equipment_type": "treadmill",
-      "ble_target": "TREAD_04_TARGET",
-      "antenna_channel": "mock-4"
+      "ble_target": "CA:1B:69:AB:E5:51",
+      "antenna_channel": "uart-2"
     },
     {
       "node_id": "fitrace-edge-01-05",
       "equipment_id": "TREAD_05",
       "equipment_type": "treadmill",
-      "ble_target": "TREAD_05_TARGET",
-      "antenna_channel": "mock-5"
-    },
-    {
-      "node_id": "fitrace-edge-01-06",
-      "equipment_id": "TREAD_06",
-      "equipment_type": "treadmill",
-      "ble_target": "TREAD_06_TARGET",
-      "antenna_channel": "mock-6"
-    },
-    {
-      "node_id": "fitrace-edge-01-07",
-      "equipment_id": "TREAD_07",
-      "equipment_type": "treadmill",
-      "ble_target": "TREAD_07_TARGET",
-      "antenna_channel": "mock-7"
-    },
-    {
-      "node_id": "fitrace-edge-01-08",
-      "equipment_id": "TREAD_08",
-      "equipment_type": "treadmill",
-      "ble_target": "TREAD_08_TARGET",
-      "antenna_channel": "mock-8"
-    },
-    {
-      "node_id": "fitrace-edge-01-09",
-      "equipment_id": "TREAD_09",
-      "equipment_type": "treadmill",
-      "ble_target": "TREAD_09_TARGET",
-      "antenna_channel": "mock-9"
-    },
-    {
-      "node_id": "fitrace-edge-01-10",
-      "equipment_id": "TREAD_10",
-      "equipment_type": "treadmill",
-      "ble_target": "TREAD_10_TARGET",
-      "antenna_channel": "mock-10"
+      "ble_target": "D2:C1:6A:98:F3:41",
+      "antenna_channel": "uart-2"
     }
   ]
 }

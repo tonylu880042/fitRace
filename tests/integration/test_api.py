@@ -6,6 +6,139 @@ from hub_server.infrastructure.fastapi.app import app
 client = TestClient(app)
 
 
+def set_online_station(station_number: int, node_id: str):
+    from hub_server.infrastructure.fastapi.app import node_registry
+
+    node_registry.update_status(
+        {
+            "edge_node_id": f"edge-{station_number:02d}",
+            "status": "online",
+            "last_seen_epoch_ms": int(time.time() * 1000),
+            "equipment_streams": [
+                {
+                    "node_id": node_id,
+                    "equipment_id": f"BIKE_{station_number:02d}",
+                    "equipment_type": "fan_bike",
+                    "status": "configured",
+                    "last_telemetry_epoch_ms": int(time.time() * 1000),
+                }
+            ],
+        }
+    )
+    client.post(
+        "/api/stations/assign",
+        json={"station_number": station_number, "node_id": node_id},
+    )
+
+
+def prepare_individual_ready_race():
+    client.post("/api/race/reset")
+    set_online_station(1, "node-01")
+    client.post(
+        "/api/race/register",
+        json={"station_number": 1, "athlete_name": "Runner A"},
+    )
+    return client.post(
+        "/api/race/configure",
+        json={"race_type": "distance", "target_value": 100, "duration_sec": 0},
+    )
+
+
+def test_hub_management_endpoints_require_admin_token(monkeypatch):
+    monkeypatch.setenv("FITRACE_ADMIN_TOKEN", "admin-secret")
+
+    response = client.post(
+        "/api/race/configure",
+        json={"race_type": "distance", "target_value": 100, "duration_sec": 0},
+    )
+    assert response.status_code == 401
+
+    response = client.post(
+        "/api/race/configure",
+        headers={"X-FitRace-Admin-Token": "admin-secret"},
+        json={"race_type": "distance", "target_value": 100, "duration_sec": 0},
+    )
+    assert response.status_code == 200
+
+    blocked_routes = [
+        ("/api/race/start", {}),
+        ("/api/race/countdown-start", {}),
+        ("/api/race/stop", {}),
+        ("/api/race/close", {}),
+        ("/api/race/reset", {}),
+        ("/api/stations/assign", {"station_number": 1, "node_id": "node-01"}),
+        ("/api/leaderboard/display", {"mode": "classic"}),
+        ("/api/race/start-sound", {"enabled": True}),
+    ]
+    for route, payload in blocked_routes:
+        response = client.post(route, json=payload)
+        assert response.status_code == 401
+
+
+def test_start_race_blocks_station_without_fresh_telemetry_timestamp():
+    from hub_server.infrastructure.fastapi.app import node_registry
+
+    client.post("/api/race/reset")
+    node_registry.clear()
+    node_registry.update_status(
+        {
+            "edge_node_id": "edge-01",
+            "status": "online",
+            "last_seen_epoch_ms": int(time.time() * 1000),
+            "equipment_streams": [
+                {
+                    "node_id": "node-01",
+                    "equipment_id": "BIKE_01",
+                    "equipment_type": "fan_bike",
+                    "status": "configured",
+                }
+            ],
+        }
+    )
+    client.post(
+        "/api/stations/assign",
+        json={"station_number": 1, "node_id": "node-01"},
+    )
+    client.post(
+        "/api/race/register",
+        json={"station_number": 1, "athlete_name": "Runner A"},
+    )
+    client.post(
+        "/api/race/configure",
+        json={"race_type": "distance", "target_value": 100, "duration_sec": 0},
+    )
+
+    readiness = client.get("/api/race/readiness")
+    assert readiness.status_code == 200
+    assert readiness.json()["ready"] is False
+    assert readiness.json()["station_health"][0]["health"] == "missing"
+
+    blocked = client.post("/api/race/start")
+    assert blocked.status_code == 409
+
+
+def test_station_assignment_is_blocked_while_race_is_running():
+    client.post("/api/race/reset")
+    set_online_station(1, "node-01")
+    client.post(
+        "/api/race/register",
+        json={"station_number": 1, "athlete_name": "Runner A"},
+    )
+    client.post(
+        "/api/race/configure",
+        json={"race_type": "distance", "target_value": 100, "duration_sec": 0},
+    )
+    started = client.post("/api/race/start")
+    assert started.status_code == 200
+
+    response = client.post(
+        "/api/stations/assign",
+        json={"station_number": 1, "node_id": None},
+    )
+
+    assert response.status_code == 409
+
+
 def test_health_check_endpoint():
     response = client.get("/health")
     assert response.status_code == 200
@@ -110,8 +243,15 @@ def test_management_controls_are_split_by_admin_role():
     assert "Team Rule" in response_game_admin.text
     assert "Leaderboard Preview" in response_game_admin.text
     assert "Start Flow" in response_game_admin.text
+    assert "Race Readiness" in response_game_admin.text
+    assert "/api/race/readiness" in response_game_admin.text
+    assert "renderReadinessPanel" in response_game_admin.text
+    assert "Station Health" in response_game_admin.text
+    assert "Team Average" in response_game_admin.text
+    assert "Team Target" in response_game_admin.text
+    assert "Everyone Finishes" in response_game_admin.text
     assert "Countdown Active" in response_game_admin.text
-    assert "All Members Finish means every teammate must complete" in response_game_admin.text
+    assert "Everyone Finishes means every teammate must complete" in response_game_admin.text
     assert "Operator Unlock" in response_game_admin.text
     assert "Access Code" in response_game_admin.text
     assert "Admin Token" not in response_game_admin.text
@@ -120,7 +260,7 @@ def test_management_controls_are_split_by_admin_role():
     assert "competition_mode: competitionMode" in response_game_admin.text
     assert "team_scoring_policy: teamScoringPolicy" in response_game_admin.text
     assert "team_completion_policy: teamCompletionPolicy" in response_game_admin.text
-    assert "renderTeamReadiness" in response_game_admin.text
+    assert "renderTeamReadiness" not in response_game_admin.text
     assert '<option value="0">Manual</option>' not in response_game_admin.text
     assert "Station Assignment" not in response_game_admin.text
     assert "Assign Stream" not in response_game_admin.text
@@ -358,9 +498,51 @@ def test_power_actions_are_blocked_while_race_is_running():
 
 def test_race_workflow_via_api():
     # Initial state should be IDLE
+    from hub_server.infrastructure.fastapi.app import node_registry
+
+    client.post("/api/race/reset")
+    node_registry.clear()
     res = client.get("/api/race/state")
     assert res.status_code == 200
     assert res.json()["state"] == "IDLE"
+
+
+def test_stopped_race_result_is_persisted_and_listed(monkeypatch, tmp_path):
+    import hub_server.infrastructure.fastapi.app as hub_app
+    from hub_server.usecases.race_result_store import RaceResultStore
+
+    store = RaceResultStore(tmp_path / "race_results.jsonl")
+    monkeypatch.setattr(hub_app, "race_result_store", store)
+
+    client.post("/api/race/reset")
+    set_online_station(1, "node-01")
+    client.post(
+        "/api/race/register",
+        json={"station_number": 1, "athlete_name": "Runner A"},
+    )
+    client.post(
+        "/api/race/configure",
+        json={"race_type": "time", "target_value": 0, "duration_sec": 120},
+    )
+    client.post("/api/race/start")
+
+    stop_response = client.post("/api/race/stop")
+    results_response = client.get("/api/race/results")
+
+    assert stop_response.status_code == 200
+    assert results_response.status_code == 200
+    results = results_response.json()["results"]
+    assert len(results) == 1
+    assert results[0]["snapshot"]["state"] == "STOPPED"
+    assert results[0]["snapshot"]["config"]["race_type"] == "time"
+    assert results[0]["snapshot"]["leaderboard"]["node-01"]["athlete_name"] == "Runner A"
+    client.post("/api/race/reset")
+
+    set_online_station(1, "node-01")
+    client.post(
+        "/api/race/register",
+        json={"station_number": 1, "athlete_name": "Runner A"},
+    )
 
     # Configure race
     config_payload = {"race_type": "time", "target_value": 0, "duration_sec": 120}
@@ -385,6 +567,100 @@ def test_race_workflow_via_api():
     assert res.json()["state"] == "IDLE"
 
 
+def test_race_readiness_reports_blocking_issues_before_start():
+    from hub_server.infrastructure.fastapi.app import node_registry
+
+    client.post("/api/race/reset")
+    node_registry.clear()
+    client.post(
+        "/api/race/configure",
+        json={
+            "race_type": "distance",
+            "target_value": 100,
+            "duration_sec": 0,
+            "competition_mode": "team",
+            "team_scoring_policy": "average",
+            "team_completion_policy": "aggregate",
+        },
+    )
+
+    readiness = client.get("/api/race/readiness")
+
+    assert readiness.status_code == 200
+    payload = readiness.json()
+    assert payload["ready"] is False
+    assert "Register at least one athlete before starting." in payload["blocking_issues"]
+    assert "Team race needs at least two teams." in payload["blocking_issues"]
+    assert payload["checks"]["sound"]["status"] == "ok"
+
+    blocked = client.post("/api/race/start")
+    assert blocked.status_code == 409
+    assert "Register at least one athlete" in blocked.json()["detail"]
+
+
+def test_race_readiness_passes_for_online_registered_team_race():
+    from hub_server.infrastructure.fastapi.app import node_registry
+
+    client.post("/api/race/reset")
+    node_registry.clear()
+    set_online_station(1, "node-01")
+    set_online_station(2, "node-02")
+    client.post(
+        "/api/race/register",
+        json={"station_number": 1, "athlete_name": "Runner A", "team_name": "Volt"},
+    )
+    client.post(
+        "/api/race/register",
+        json={"station_number": 2, "athlete_name": "Runner B", "team_name": "Apex"},
+    )
+    client.post(
+        "/api/race/configure",
+        json={
+            "race_type": "distance",
+            "target_value": 100,
+            "duration_sec": 0,
+            "competition_mode": "team",
+            "team_scoring_policy": "total",
+            "team_completion_policy": "all_members",
+        },
+    )
+
+    readiness = client.get("/api/race/readiness")
+
+    assert readiness.status_code == 200
+    payload = readiness.json()
+    assert payload["ready"] is True
+    assert payload["blocking_issues"] == []
+    assert payload["checks"]["teams"]["status"] == "ok"
+    assert payload["checks"]["stations"]["status"] == "ok"
+    assert [station["health"] for station in payload["station_health"]] == ["online", "online"]
+
+
+def test_start_race_blocks_registered_station_without_online_device():
+    from hub_server.infrastructure.fastapi.app import node_registry
+
+    client.post("/api/race/reset")
+    node_registry.clear()
+    client.post(
+        "/api/stations/assign",
+        json={"station_number": 1, "node_id": "missing-node"},
+    )
+    client.post(
+        "/api/race/register",
+        json={"station_number": 1, "athlete_name": "Runner A"},
+    )
+    client.post(
+        "/api/race/configure",
+        json={"race_type": "distance", "target_value": 100, "duration_sec": 0},
+    )
+
+    blocked = client.post("/api/race/countdown-start")
+
+    assert blocked.status_code == 409
+    assert "Station 1 device is missing or offline." in blocked.json()["detail"]
+    client.post("/api/race/reset")
+
+
 def test_leaderboard_display_mode_can_be_controlled_from_game_admin():
     client.post("/api/race/reset")
 
@@ -406,8 +682,10 @@ def test_leaderboard_display_mode_can_be_controlled_from_game_admin():
 
 def test_countdown_start_delays_race_start_for_dashboard_audio(monkeypatch):
     from hub_server.infrastructure.fastapi import app as hub_app
+    from hub_server.infrastructure.fastapi.app import node_registry
 
     client.post("/api/race/reset")
+    node_registry.clear()
     monkeypatch.setattr(hub_app, "RACE_START_COUNTDOWN_DURATION_MS", 10)
     broadcasts = []
 
@@ -415,6 +693,12 @@ def test_countdown_start_delays_race_start_for_dashboard_audio(monkeypatch):
       broadcasts.append(payload)
 
     monkeypatch.setattr(hub_app.ws_manager, "broadcast", capture_broadcast)
+    set_online_station(1, "node-01")
+    client.post(
+        "/api/race/register",
+        json={"station_number": 1, "athlete_name": "Runner A"},
+    )
+    broadcasts.clear()
     client.post(
         "/api/race/configure",
         json={"race_type": "distance", "target_value": 100, "duration_sec": 0},
@@ -448,16 +732,19 @@ def test_start_countdown_sound_defaults_on_and_can_be_controlled_from_game_admin
 
 
 def test_team_race_state_exposes_team_leaderboard(monkeypatch):
+    from hub_server.infrastructure.fastapi.app import node_registry
+
     monkeypatch.setenv("TESTING", "1")
     client.post("/api/race/reset")
+    node_registry.clear()
     for station_number in (1, 2, 3):
         client.post(
             "/api/stations/assign",
             json={"station_number": station_number, "node_id": None},
         )
-    client.post("/api/stations/assign", json={"station_number": 1, "node_id": "node-01"})
-    client.post("/api/stations/assign", json={"station_number": 2, "node_id": "node-02"})
-    client.post("/api/stations/assign", json={"station_number": 3, "node_id": "node-03"})
+    set_online_station(1, "node-01")
+    set_online_station(2, "node-02")
+    set_online_station(3, "node-03")
     client.post(
         "/api/race/register",
         json={"station_number": 1, "athlete_name": "Runner A", "team_name": "Volt"},
@@ -581,7 +868,7 @@ def test_diagnostic_telemetry_blocks_while_race_is_running(monkeypatch):
     monkeypatch.setenv("FITRACE_ENABLE_DIAGNOSTICS", "1")
     monkeypatch.setenv("FITRACE_DIAGNOSTICS_TOKEN", "secret")
     monkeypatch.delenv("FITRACE_ADMIN_TOKEN", raising=False)
-    client.post("/api/race/reset")
+    prepare_individual_ready_race()
     client.post(
         "/api/race/configure",
         json={"race_type": "time", "target_value": 0, "duration_sec": 60},
@@ -643,8 +930,16 @@ def test_diagnostic_telemetry_broadcasts_synthetic_progress_without_mutating_rac
 
 
 def test_race_close_endpoint_via_api(monkeypatch):
+    from hub_server.infrastructure.fastapi.app import node_registry
+
     monkeypatch.setenv("TESTING", "1")
     client.post("/api/race/reset")
+    node_registry.clear()
+    set_online_station(1, "bike-01")
+    client.post(
+        "/api/race/register",
+        json={"station_number": 1, "athlete_name": "Runner A"},
+    )
 
     config_payload = {"race_type": "distance", "target_value": 100, "duration_sec": 0}
     res = client.post("/api/race/configure", json=config_payload)
@@ -673,7 +968,16 @@ def test_race_close_endpoint_via_api(monkeypatch):
 
 
 def test_websocket_dashboard_broadcast(monkeypatch):
+    from hub_server.infrastructure.fastapi.app import node_registry
+
     monkeypatch.setenv("TESTING", "1")
+    client.post("/api/race/reset")
+    node_registry.clear()
+    set_online_station(1, "rower-01")
+    client.post(
+        "/api/race/register",
+        json={"station_number": 1, "athlete_name": "Runner A"},
+    )
     config_payload = {"race_type": "distance", "target_value": 1000, "duration_sec": 0}
     # Configure and start first
     client.post("/api/race/configure", json=config_payload)

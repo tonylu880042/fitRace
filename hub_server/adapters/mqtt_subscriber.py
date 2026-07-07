@@ -1,10 +1,35 @@
 import asyncio
 import json
 import logging
+from typing import Any
+
+from pydantic import BaseModel, Field, ValidationError
 
 from hub_server.domain.models import RaceState
 
 logger = logging.getLogger("hub_server.mqtt_subscriber")
+
+
+class TelemetryPayload(BaseModel):
+    node_id: str = Field(..., min_length=1)
+    edge_node_id: str | None = None
+    mac_address: str | None = None
+    equipment_id: str | None = None
+    equipment_type: str = "unknown"
+    ftms_type: str | None = None
+    rssi: int | float | None = None
+    instantaneous_speed_kph: float = Field(0.0, ge=0.0)
+    cadence_rpm: int = Field(0, ge=0)
+    pace_sec_per_500m: int | float | None = Field(None, ge=0)
+    power_watts: int = Field(0, ge=0)
+    heart_rate_bpm: int = Field(0, ge=0)
+    distance_m: float = Field(0.0, ge=0.0)
+    total_energy_kcal: int | None = Field(None, ge=0)
+    elapsed_time_ms: int = Field(0, ge=0)
+    calories: float | None = Field(None, ge=0.0)
+    timestamp_epoch_ms: int | None = Field(None, ge=0)
+    ftms_payload: dict[str, Any] | None = None
+    raw_payload: dict[str, Any] | None = None
 
 
 class MqttSubscriber:
@@ -15,6 +40,7 @@ class MqttSubscriber:
         ws_manager,
         node_registry=None,
         race_event_engine=None,
+        race_result_store=None,
     ):
         """
         :param async_mqtt_client: An instance of AsyncMqttClient.
@@ -27,6 +53,7 @@ class MqttSubscriber:
         self._ws_manager = ws_manager
         self._node_registry = node_registry
         self._race_event_engine = race_event_engine
+        self._race_result_store = race_result_store
         self._loop = asyncio.get_event_loop()
 
     def start_listening(self):
@@ -73,11 +100,16 @@ class MqttSubscriber:
         )
 
     async def _handle_telemetry(self, payload: dict):
-        node_id = payload.get("node_id")
-        if not node_id:
+        try:
+            telemetry = TelemetryPayload.model_validate(payload)
+        except ValidationError as e:
+            logger.warning("Rejected invalid MQTT telemetry payload: %s", e)
             return
 
-        progress = self._race_manager.ingest_telemetry(payload)
+        telemetry_payload = telemetry.model_dump(exclude_none=True)
+        node_id = telemetry_payload["node_id"]
+
+        progress = self._race_manager.ingest_telemetry(telemetry_payload)
         if progress is not None:
             await self._ws_manager.broadcast(progress)
             logger.debug(f"Broadcasted telemetry update for node: {node_id}")
@@ -96,6 +128,8 @@ class MqttSubscriber:
             # If the race state just transitioned to STOPPED, broadcast state change
             if self._race_manager.get_state() == RaceState.STOPPED:
                 state_change = self._race_manager.get_state_snapshot()
+                if self._race_result_store:
+                    self._race_result_store.save_finished_snapshot(state_change)
                 state_change["type"] = "state_change"
                 await self._ws_manager.broadcast(state_change)
         else:

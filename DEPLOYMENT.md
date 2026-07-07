@@ -82,6 +82,21 @@ Use lowercase hostnames and hyphens. Avoid underscores in hostnames.
 
 Each RPi Edge Node should be provisioned before shipment.
 
+Install Python dependencies from the project metadata instead of copying a local
+`.venv` between devices:
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install --upgrade pip
+.venv/bin/python -m pip install -e ".[dev]"
+```
+
+For production images that do not need test tooling, use:
+
+```bash
+.venv/bin/python -m pip install -e .
+```
+
 Set hostname:
 
 ```bash
@@ -135,9 +150,18 @@ Recommended endpoints:
 GET  /api/config
 POST /api/config
 GET  /api/status
-GET  /api/ble/scan
+POST /api/antenna/command
+GET  /api/ble/scan        # troubleshooting only
 POST /api/restart
 ```
+
+Production setup and maintenance endpoints that can expose local device inventory or change device state must require the local admin token. The current Edge setup API expects the same header used by the Hub admin pages:
+
+```text
+X-FitRace-Admin-Token: <local-admin-token>
+```
+
+Set this token through `FITRACE_ADMIN_TOKEN` on both Hub and Edge services.
 
 Recommended config fields:
 
@@ -150,7 +174,28 @@ Recommended config fields:
   "web_config_port": 8001,
   "max_ftms_connections": 5,
   "available_channels": 2,
-  "antenna_protocol_version": "pending-hardware",
+  "antenna_protocol_version": "uart-ftms-json-v1.1",
+  "antenna_channels": [
+    {
+      "id": "uart-1",
+      "port": "/dev/ttyAMA0",
+      "uart": "UART0",
+      "tx_gpio": "GPIO14",
+      "rx_gpio": "GPIO15",
+      "baudrate": 115200,
+      "rtscts": false
+    },
+    {
+      "id": "uart-2",
+      "port": "/dev/ttyAMA4",
+      "uart": "UART4",
+      "tx_gpio": "GPIO12",
+      "rx_gpio": "GPIO13",
+      "baudrate": 115200,
+      "rtscts": false,
+      "dtoverlay": "uart4-pi5"
+    }
+  ],
   "equipment_bindings": [
     {
       "node_id": "fitrace-edge-01-01",
@@ -185,11 +230,191 @@ Last telemetry timestamp
 Firmware/software version
 ```
 
-### FTMS Scan Command (Paused USB Dongle Prototype)
+### UART Antenna Board Control
 
-This section records the paused USB Bluetooth dongle prototype. It is not the current product deployment path while the two-channel UART antenna board is pending.
+The product Edge Node path controls the antenna board over UART. The local setup page exposes these commands through:
 
-The product setup UI should ultimately command the antenna board to scan through UART. Until the hardware protocol is available, the UI may keep mock/configured states and should not require this USB dongle scan path for deployment.
+```text
+POST /api/antenna/command
+X-FitRace-Admin-Token: <local-admin-token>
+```
+
+Request body:
+
+```json
+{
+  "port": "/dev/ttyAMA0",
+  "command": "scan",
+  "baudrate": 115200,
+  "rtscts": false,
+  "timeout_sec": 5,
+  "scan_duration_sec": 5,
+  "macs": ["AA:BB:CC:DD:EE:01"],
+  "report_interval_ms": 1000,
+  "raw_command": "STATUS;"
+}
+```
+
+The configured production UART channels are:
+
+| Channel | UART | Port | TX GPIO | RX GPIO | Raspberry Pi overlay |
+|---|---|---|---|---|---|
+| Channel | Pi model | UART | Port | TX GPIO | RX GPIO | Raspberry Pi overlay |
+|---|---|---|---|---|---|---|
+| `uart-1` | Pi 4 | UART0 | `/dev/ttyAMA0` | GPIO14 | GPIO15 | built in / primary UART |
+| `uart-1` | Pi 5 | UART0 | `/dev/ttyAMA0` | GPIO14 | GPIO15 | `dtoverlay=uart0-pi5` after disabling serial console |
+| `uart-2` | Pi 4 | UART5 | `/dev/ttyAMA4` | GPIO12 | GPIO13 | `dtoverlay=uart5` |
+| `uart-2` | Pi 5 | UART4 | `/dev/ttyAMA4` | GPIO12 | GPIO13 | `dtoverlay=uart4-pi5` |
+
+Pi 5 UART0 deployment gotcha: on a fresh Raspberry Pi OS image, GPIO14/GPIO15 may be reserved for the Linux serial console. In that state `/dev/serial0` can open, but `PING;` will not reach the antenna board because `console=serial0,115200` and `serial-getty@ttyAMA10.service` own the port, and pin mux may show GPIO14/GPIO15 as `none`. After enabling `dtoverlay=uart0-pi5`, use `/dev/ttyAMA0` for GPIO14/GPIO15; `/dev/serial0` may still point to another internal UART such as `/dev/ttyAMA10`.
+
+Before using `uart-1` on Pi 5:
+
+```bash
+sudo cp /boot/firmware/cmdline.txt /boot/firmware/cmdline.txt.fitrace-bak
+sudo sed -i 's/ console=serial0,115200//g; s/console=serial0,115200 //g' /boot/firmware/cmdline.txt
+sudo systemctl disable --now serial-getty@ttyAMA10.service || true
+sudo systemctl disable --now serial-getty@serial0.service || true
+
+if ! grep -qxF 'dtoverlay=uart0-pi5' /boot/firmware/config.txt; then
+  echo 'dtoverlay=uart0-pi5' | sudo tee -a /boot/firmware/config.txt
+fi
+
+sudo reboot
+```
+
+After reboot, verify:
+
+```bash
+pinctrl get 14
+pinctrl get 15
+ls -l /dev/serial0 /dev/ttyAMA*
+```
+
+Expected: GPIO14/GPIO15 are assigned to `TXD0/RXD0`, `serial-getty` is inactive, `/dev/ttyAMA0` exists, and `POST /api/antenna/command` with `{"port":"/dev/ttyAMA0","command":"ping"}` can receive `BOOT:*` from the antenna board.
+
+Only fields required by the selected command need to be present. The Edge Node opens the serial port, sends the command sequence, reads line-based UART responses, parses each response, and closes the port.
+
+Supported commands:
+
+| API `command` | UART command sent | Required fields | Notes |
+|---|---|---|---|
+| `ping` | `PING;` | none | Board returns `BOOT:HAS_LIST,count=<N>;` or `BOOT:NO_LIST;`. |
+| `scan` | `SCAN:START;`, then `SCAN:STOP;` | `scan_duration_sec` optional | Edge Node reads `DEVICE:` lines during the scan window. |
+| `connect` | `CONNECT:<MAC...>;` | `macs` non-empty | Edge Node does not cap the MAC count; antenna board firmware may still ignore devices beyond its own capacity. |
+| `disconnect_all` | `DISCONNECT:ALL;` | none | Clears board-side connections/list. |
+| `report` | `REPORT:<ms>;` | `report_interval_ms` | Allowed range is 100-10000 ms. |
+| `status` | `STATUS;` | none | Used for diagnostics and future health checks. |
+| `version` | `VERSION;` | none | Returns firmware version. |
+| `reboot` | `REBOOT;` | none | Board may briefly disconnect after `REBOOT:OK;`. |
+| `raw` | caller-provided command | `raw_command` | Edge Node appends `;` and `\r\n` if needed. |
+
+Successful response:
+
+```json
+{
+  "port": "/dev/ttyAMA0",
+  "baudrate": 115200,
+  "rtscts": false,
+  "command": "scan",
+  "elapsed_sec": 5.214,
+  "tx": ["SCAN:START;", "SCAN:STOP;"],
+  "rx": [
+    "SCAN:OK;",
+    "DEVICE:AA:BB:CC:DD:EE:01,-55,Treadmill-01,TMILL;",
+    "SCAN:OK;"
+  ],
+  "parsed": [
+    {"type": "ok", "command": "SCAN", "raw": "SCAN:OK;"},
+    {
+      "type": "device",
+      "address": "AA:BB:CC:DD:EE:01",
+      "rssi": -55,
+      "name": "Treadmill-01",
+      "device_type": "TMILL",
+      "raw": "DEVICE:AA:BB:CC:DD:EE:01,-55,Treadmill-01,TMILL;"
+    },
+    {"type": "ok", "command": "SCAN", "raw": "SCAN:OK;"}
+  ]
+}
+```
+
+UART line format is ASCII, semicolon-terminated, and newline-delimited when sent over serial.
+
+Control response schemas:
+
+| UART response | Parsed `type` | Parsed fields |
+|---|---|---|
+| `BOOT:HAS_LIST,count=2;` | `boot` | `has_list=true`, `count=2` |
+| `BOOT:NO_LIST;` | `boot` | `has_list=false`, `count=0` |
+| `DEVICE:<MAC>,<RSSI>,<NAME>,<TYPE>;` | `device` | `address`, `rssi`, `name`, `device_type` |
+| `BLE_DEVICE:<MAC>,<RSSI>,<NAME>[,<TYPE>];` | `device` | Same as `DEVICE`; missing type becomes `UNKNOWN`. |
+| `STATUS:REPORT,2/3;` | `status` | `state=REPORT`, `connected=2`, `target=3` |
+| `STATUS:REPORT,conn=2,target=3;` | `status` | Legacy-compatible form; normalized to `connected` and `target`. |
+| `VERSION:1.1.0;` | `version` | `version=1.1.0` |
+| `<COMMAND>:OK;` | `ok` | `command=<COMMAND>` |
+| `ERROR:...;` or `<COMMAND>:ERROR:...;` | `error` | `message` contains the raw error line. |
+
+FTMS telemetry response:
+
+```text
+FTMS:<MAC>,<TYPE>,{json};
+```
+
+Supported `TYPE` values are `TMILL`, `BIKE`, `ROWER`, `ELLIP`, and `UNKNOWN`.
+
+Speed-based equipment (`TMILL`, `BIKE`, `ELLIP`) uses:
+
+```json
+{
+  "rssi": -55,
+  "instantaneous_speed": 8.32,
+  "total_distance": 1204,
+  "instantaneous_power": 142,
+  "total_energy": 37
+}
+```
+
+Rower equipment uses `stroke_rate` and `instantaneous_pace` instead of `instantaneous_speed`:
+
+```json
+{
+  "rssi": -60,
+  "stroke_rate": 24.5,
+  "total_distance": 850,
+  "instantaneous_pace": 125,
+  "instantaneous_power": 98,
+  "total_energy": 22
+}
+```
+
+Edge Node keeps the original firmware JSON in `payload` and also normalizes common fields for UI/API consumers:
+
+| Parsed field | Source |
+|---|---|
+| `equipment_type` | `TMILL=treadmill`, `BIKE=fan_bike`, `ROWER=rowing_machine`, `ELLIP=elliptical`, `UNKNOWN=unknown` |
+| `rssi` | `payload.rssi` |
+| `instantaneous_speed_kph` | `payload.instantaneous_speed`, default `0.0` |
+| `cadence_rpm` | `payload.stroke_rate`, default `0.0` |
+| `pace_sec_per_500m` | `payload.instantaneous_pace` |
+| `distance_m` | `payload.total_distance`, default `0.0` |
+| `power_watts` | `payload.instantaneous_power`, default `0` |
+| `total_energy_kcal` | `payload.total_energy`, default `0` |
+
+Malformed FTMS JSON is returned as:
+
+```json
+{
+  "type": "invalid",
+  "message_type": "telemetry",
+  "reason": "invalid_json",
+  "raw": "FTMS:AA:BB:CC:DD:EE:01,BIKE,{\"rssi\":-62"
+}
+```
+
+### FTMS Scan Command (USB Dongle Troubleshooting)
+
+The current `/api/ble/scan` endpoint is a protected troubleshooting tool. It requires `FITRACE_ADMIN_TOKEN` when the token is configured.
 
 Recommended request:
 
@@ -351,7 +576,20 @@ Development builds default to dry-run power actions. Real system commands must b
 ```text
 FITRACE_POWER_COMMANDS_ENABLED=1
 FITRACE_ADMIN_TOKEN=<local-admin-token>
+FITRACE_NODE_COMMAND_TOKEN=<hub-to-edge-command-token>
+FITRACE_RACE_RESULTS_PATH=/var/lib/fitracestudio/race_results.jsonl
+FITRACE_EDGE_MONITOR_PATH=/var/lib/fitracestudio/edge_monitor.jsonl
 ```
+
+`FITRACE_ADMIN_TOKEN` protects Hub and Edge HTTP management APIs. `FITRACE_NODE_COMMAND_TOKEN` protects MQTT commands sent from the Hub to Edge Nodes, including system shutdown. Hub and Edge services in the same shipped system must share the same `FITRACE_NODE_COMMAND_TOKEN`. If `FITRACE_NODE_COMMAND_TOKEN` is not set, the current implementation falls back to `FITRACE_ADMIN_TOKEN`; production deployments should set both explicitly so browser-facing admin access and machine-to-machine command authorization can rotate independently.
+
+`FITRACE_RACE_RESULTS_PATH` controls where completed race snapshots are stored.
+If it is not set, the Hub writes `data/race_results.jsonl` relative to its
+working directory.
+
+`FITRACE_EDGE_MONITOR_PATH` controls where Edge Nodes write recent UART RX/TX
+and MQTT publish monitor events for the local setup page. If it is not set, the
+Edge service writes `data/edge_monitor.jsonl` relative to its working directory.
 
 Recommended local API shape:
 
@@ -406,6 +644,8 @@ Strong AP password per shipment or customer
 Technician PIN or local admin auth for Edge Web Setup writes
 Read-only status endpoints may be visible on LAN
 Write endpoints require authentication
+Hub and Edge HTTP management APIs require FITRACE_ADMIN_TOKEN
+Hub-to-Edge MQTT power commands require FITRACE_NODE_COMMAND_TOKEN
 MQTT username/password
 Optional per-node MQTT credentials
 Topic ACLs when supported
@@ -421,14 +661,15 @@ Local admin authentication before reboot or shutdown
 2. Confirm SSID `fitRace26` is broadcasting.
 3. Power on Central Hub.
 4. Confirm Hub is reachable at its reserved IP or hostname.
-5. Power on Edge Nodes.
-6. Confirm each Edge Node joins `fitRace26`.
-7. Open each Edge Node web setup page.
-8. Configure equipment identity and FTMS target.
-9. Confirm each configured FTMS device status is connected.
-10. Confirm MQTT status is connected.
-11. Confirm Hub dashboard shows each node online.
-12. Run a short telemetry test before starting an event.
+5. Confirm `FITRACE_ADMIN_TOKEN` and `FITRACE_NODE_COMMAND_TOKEN` are configured on Hub and Edge services.
+6. Power on Edge Nodes.
+7. Confirm each Edge Node joins `fitRace26`.
+8. Open each Edge Node web setup page.
+9. Configure equipment identity and FTMS target.
+10. Confirm each configured FTMS device status is connected.
+11. Confirm MQTT status is connected.
+12. Confirm Hub dashboard shows each node online.
+13. Run a short telemetry test before starting an event.
 
 ## 15. Open Implementation Questions
 

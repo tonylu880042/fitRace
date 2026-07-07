@@ -1,6 +1,6 @@
 import pytest
 import time
-from edge_node.domain.models import TelemetryData
+from edge_node.domain.models import RowerFtmsPayload, TelemetryData
 from edge_node.usecases.mock_generator import generate_mock_telemetry
 
 
@@ -42,6 +42,47 @@ def test_telemetry_data_dict_serialization():
     assert data_dict["equipment_type"] == "fan_bike"
     assert data_dict["instantaneous_speed_kph"] == 12.0
     assert data_dict["distance_m"] == 200.0
+
+
+def test_telemetry_data_serializes_type_specific_ftms_payload():
+    data = TelemetryData(
+        node_id="rower-01",
+        equipment_id="ROW_01",
+        equipment_type="rowing_machine",
+        mac_address="AA:BB:CC:DD:EE:03",
+        ftms_type="ROWER",
+        rssi=-60,
+        cadence_rpm=24,
+        pace_sec_per_500m=125,
+        power_watts=98,
+        distance_m=850,
+        total_energy_kcal=22,
+        calories=22,
+        elapsed_time_ms=0,
+        timestamp_epoch_ms=123456789,
+        ftms_payload=RowerFtmsPayload(
+            rssi=-60,
+            stroke_rate=24.5,
+            total_distance=850,
+            instantaneous_pace=125,
+            instantaneous_power=98,
+            total_energy=22,
+        ),
+        raw_payload={
+            "rssi": -60,
+            "stroke_rate": 24.5,
+            "total_distance": 850,
+            "instantaneous_pace": 125,
+            "instantaneous_power": 98,
+            "total_energy": 22,
+        },
+    )
+
+    data_dict = data.model_dump()
+    assert data_dict["ftms_type"] == "ROWER"
+    assert data_dict["pace_sec_per_500m"] == 125
+    assert data_dict["ftms_payload"]["kind"] == "rower"
+    assert data_dict["raw_payload"]["stroke_rate"] == 24.5
 
 
 @pytest.mark.asyncio

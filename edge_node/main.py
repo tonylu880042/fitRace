@@ -2,6 +2,7 @@ import os
 import json
 import asyncio
 import logging
+import re
 import signal
 import socket
 import time
@@ -11,12 +12,15 @@ from edge_node.adapters.mqtt_publisher import MqttPublisher
 from edge_node.usecases.mock_generator import generate_mock_telemetry
 from edge_node.infrastructure.ble.bleak_client import BleakTelemetryClient, BLEAK_AVAILABLE
 from edge_node.usecases.multi_ftms_manager import MultiFtmsManager
+from edge_node.usecases.antenna_ftms_manager import AntennaFtmsManager
+from edge_node.usecases.event_log import EdgeEventLog
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 )
 logger = logging.getLogger("edge_node.main")
 NODE_STATUS_INTERVAL_SEC = 5.0
+MAC_ADDRESS_PATTERN = re.compile(r"^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$")
 
 
 async def shutdown(loop, signal=None):
@@ -42,6 +46,17 @@ async def execute_node_shutdown():
             subprocess.run(["sudo", "systemctl", "poweroff"], check=True, timeout=15)
         except Exception as e:
             logger.error(f"Failed to execute sudo systemctl poweroff: {e}")
+
+
+def _node_command_token() -> str | None:
+    return os.getenv("FITRACE_NODE_COMMAND_TOKEN") or os.getenv("FITRACE_ADMIN_TOKEN")
+
+
+def _is_authorized_node_command(payload: dict) -> bool:
+    expected_token = _node_command_token()
+    if not expected_token:
+        return False
+    return payload.get("token") == expected_token
 
 
 def main():
@@ -84,6 +99,7 @@ def main():
             pass
 
     async def run_app():
+        event_log = EdgeEventLog.from_env()
         client_id = f"fitrace-edge-{node_id}"
         mqtt_client = AsyncMqttClient(
             host=mqtt_host, port=mqtt_port, client_id=client_id
@@ -101,6 +117,9 @@ def main():
                     payload = json.loads(msg.payload.decode("utf-8"))
                     action = payload.get("action")
                     if action == "shutdown":
+                        if not _is_authorized_node_command(payload):
+                            logger.warning("Rejected unauthorized MQTT shutdown command")
+                            return
                         logger.info("Received MQTT shutdown command")
                         loop.call_soon_threadsafe(
                             lambda: asyncio.create_task(execute_node_shutdown())
@@ -120,7 +139,7 @@ def main():
             # In standalone mode, we still generate logs to stdout
             mqtt_client = None
 
-        publisher = MqttPublisher(mqtt_client) if mqtt_client else None
+        publisher = MqttPublisher(mqtt_client, event_log=event_log) if mqtt_client else None
         heartbeat_task = None
         if publisher:
             heartbeat_task = asyncio.create_task(
@@ -128,24 +147,46 @@ def main():
             )
 
         try:
-            if edge_config.equipment_bindings and BLEAK_AVAILABLE:
-                async def on_telemetry(telemetry):
-                    logger.info(
-                        "BLE Telemetry [%s/%s]: Speed=%skph, Dist=%sm, Power=%sW, Cadence=%srpm, HR=%sbpm",
-                        telemetry.edge_node_id,
-                        telemetry.node_id,
-                        telemetry.instantaneous_speed_kph,
-                        telemetry.distance_m,
-                        telemetry.power_watts,
-                        telemetry.cadence_rpm,
-                        telemetry.heart_rate_bpm,
-                    )
-                    if publisher:
-                        try:
-                            topic = f"gym/telemetry/{telemetry.node_id}"
-                            await publisher.publish_telemetry(topic, telemetry)
-                        except Exception as e:
-                            logger.error(f"Failed to publish telemetry: {e}")
+            async def on_telemetry(telemetry):
+                logger.info(
+                    "Telemetry [%s/%s]: Speed=%skph, Dist=%sm, Power=%sW, Cadence=%srpm, HR=%sbpm",
+                    telemetry.edge_node_id,
+                    telemetry.node_id,
+                    telemetry.instantaneous_speed_kph,
+                    telemetry.distance_m,
+                    telemetry.power_watts,
+                    telemetry.cadence_rpm,
+                    telemetry.heart_rate_bpm,
+                )
+                if publisher:
+                    try:
+                        topic = f"gym/telemetry/{telemetry.node_id}"
+                        await publisher.publish_telemetry(topic, telemetry)
+                    except Exception as e:
+                        logger.error(f"Failed to publish telemetry: {e}")
+
+            if edge_config.antenna_channels and edge_config.antenna_auto_connect:
+                logger.info(
+                    "Antenna auto-connect enabled for %s UART channel(s)",
+                    len(edge_config.antenna_channels),
+                )
+                antenna_manager = AntennaFtmsManager(
+                    edge_config=edge_config,
+                    on_telemetry=on_telemetry,
+                    event_log=event_log,
+                )
+                try:
+                    await antenna_manager.start()
+                    while True:
+                        if not antenna_manager.running:
+                            raise RuntimeError("Antenna FTMS manager stopped unexpectedly")
+                        await asyncio.sleep(1.0)
+                except asyncio.CancelledError:
+                    logger.info("Antenna FTMS manager task cancelled")
+                finally:
+                    await antenna_manager.stop()
+
+            elif edge_config.equipment_bindings and BLEAK_AVAILABLE:
 
                 def make_client(binding, telemetry_callback):
                     return BleakTelemetryClient(
@@ -259,14 +300,24 @@ def _build_node_status(
         "status": "online",
         "software_version": edge_config.software_version,
         "antenna_protocol_version": edge_config.antenna_protocol_version,
+        "antenna_auto_connect": edge_config.antenna_auto_connect,
         "max_ftms_connections": edge_config.max_ftms_connections,
         "available_channels": edge_config.available_channels,
+        "antenna_channels": [
+            channel.model_dump() for channel in edge_config.antenna_channels
+        ],
         "last_seen_epoch_ms": now(),
         "equipment_streams": [
             {
                 "node_id": binding.node_id,
                 "equipment_id": binding.equipment_id,
                 "equipment_type": binding.equipment_type,
+                "ble_target": binding.ble_target,
+                "mac_address": (
+                    binding.ble_target.upper()
+                    if MAC_ADDRESS_PATTERN.match(binding.ble_target)
+                    else None
+                ),
                 "status": "configured",
                 "antenna_channel": binding.antenna_channel,
                 "rssi": None,

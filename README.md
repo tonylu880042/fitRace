@@ -27,10 +27,23 @@ Deployment network, hostname, mDNS, and Edge Node discovery rules are documented
 
 ## Development Verification
 
+Create a local environment from the project dependency metadata:
+
+```text
+python3 -m venv .venv
+.venv/bin/python -m pip install --upgrade pip
+.venv/bin/python -m pip install -e ".[dev]"
+```
+
+Run the test suite:
+
 ```text
 .venv/bin/python -m pytest -q
 node scripts/verify_dashboard_ux.mjs
 ```
+
+Pytest is configured in `pyproject.toml` to collect only `tests/`, so reference
+hardware demos under `referece_for_edge_node/` are not treated as test modules.
 
 `scripts/verify_dashboard_ux.mjs` starts a local test Hub, seeds a team race,
 drives Dashboard state through READY, COUNTDOWN, RUNNING, Team Battle completion,
@@ -134,6 +147,8 @@ Purpose:
 
 BLE / FTMS should only be used for equipment-side telemetry capture. The Edge Node product path controls this through the antenna board UART protocol, not direct RPi USB Bluetooth dongles.
 It should not be used for race dashboard streaming or multi-node coordination.
+
+The Edge Node local setup service exposes UART antenna diagnostics through `POST /api/antenna/command`. It can send `PING`, `SCAN`, `CONNECT`, `DISCONNECT:ALL`, `REPORT`, `STATUS`, `VERSION`, `REBOOT`, and raw commands, then returns both raw UART lines and parsed response objects. The detailed command and response schema is documented in [DEPLOYMENT.md](DEPLOYMENT.md#uart-antenna-board-control).
 
 ---
 
@@ -351,6 +366,7 @@ Recommended responsibilities:
 * Connect to up to 5 fitness machines through the UART-controlled antenna board
 * Capture real-time equipment telemetry
 * Convert FTMS packets into normalized telemetry JSON
+* Expose local UART antenna board command diagnostics for setup and maintenance
 * Publish telemetry to Central Hub through Wi-Fi / MQTT
 * Maintain local configuration
 * Reconnect each FTMS equipment independently after antenna board, BLE, or Wi-Fi interruption
@@ -665,7 +681,28 @@ Example config fields:
   "mqtt_port": 1883,
   "max_ftms_connections": 5,
   "available_channels": 2,
-  "antenna_protocol_version": "pending-hardware",
+  "antenna_protocol_version": "uart-ftms-json-v1.1",
+  "antenna_channels": [
+    {
+      "id": "uart-1",
+      "port": "/dev/ttyAMA0",
+      "uart": "UART0",
+      "tx_gpio": "GPIO14",
+      "rx_gpio": "GPIO15",
+      "baudrate": 115200,
+      "rtscts": false
+    },
+    {
+      "id": "uart-2",
+      "port": "/dev/ttyAMA4",
+      "uart": "UART4",
+      "tx_gpio": "GPIO12",
+      "rx_gpio": "GPIO13",
+      "baudrate": 115200,
+      "rtscts": false,
+      "dtoverlay": "uart4-pi5"
+    }
+  ],
   "equipment_bindings": [
     {
       "node_id": "fitrace-edge-01-01",
@@ -1243,6 +1280,7 @@ Required behavior:
 
 ```text
 Keep race state snapshot
+Persist completed race result snapshots
 Track node last-seen timestamp
 Broadcast node status
 Restart services automatically
@@ -1262,6 +1300,9 @@ Recommended baseline:
 * Strong `fitRace26` AP password
 * Setup mode timeout
 * Local admin PIN or token
+* Configure `FITRACE_ADMIN_TOKEN` on Hub and Edge services for HTTP management APIs
+* Configure matching `FITRACE_NODE_COMMAND_TOKEN` on Hub and Edge services for Hub-to-Edge MQTT commands
+* Configure `FITRACE_EDGE_MONITOR_PATH` on Edge services when runtime monitor events should be stored outside the release directory
 * No open unauthenticated configuration endpoint in production
 * No open unauthenticated reboot or shutdown endpoint in production
 * Keep power actions in dry-run unless `FITRACE_POWER_COMMANDS_ENABLED=1` is set on deployed hardware
@@ -1274,6 +1315,7 @@ Recommended baseline:
 * Per-node credentials if possible
 * Topic-level ACL
 * Optional TLS if hardware resources allow
+* MQTT power commands must include the shared `FITRACE_NODE_COMMAND_TOKEN`
 
 ### Setup App Security
 
@@ -1283,6 +1325,7 @@ Recommended baseline:
 * Do not expose AP credentials in ordinary setup screens
 * Validate device identity
 * Prevent unauthorized node rebinding
+* Treat direct BLE scan as a temporary troubleshooting path until the UART antenna board protocol is finalized
 * Store credentials securely
 
 ---
@@ -1313,7 +1356,7 @@ Recommended baseline:
 * Equipment binding workflow
 * Race event control panel
 * Leaderboard scoring logic
-* Local result storage
+* Local result storage for completed race snapshots
 * Export race results
 * Installer-friendly setup flow
 

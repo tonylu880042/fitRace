@@ -454,6 +454,14 @@
       border-color: rgba(52,211,153,0.55);
     }
 
+    .readiness-card.block {
+      border-color: rgba(244,63,94,0.75);
+    }
+
+    .readiness-card.info {
+      border-color: rgba(161,161,170,0.5);
+    }
+
     .readiness-main {
       display: flex;
       flex-wrap: wrap;
@@ -472,6 +480,77 @@
       color: var(--muted);
       font-size: 13px;
       line-height: 1.35;
+    }
+
+    .readiness-checks {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .readiness-check {
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: rgba(255,255,255,0.03);
+      padding: 9px;
+    }
+
+    .readiness-check.ok { border-color: rgba(52,211,153,0.45); }
+    .readiness-check.warn { border-color: rgba(245,158,11,0.55); }
+    .readiness-check.block { border-color: rgba(244,63,94,0.65); }
+
+    .readiness-check-title {
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .readiness-check-message {
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .issue-list {
+      margin: 10px 0 0;
+      padding-left: 18px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .health-pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 26px;
+      padding: 0 8px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .health-pill.online {
+      color: var(--ok);
+      border-color: rgba(52,211,153,0.55);
+    }
+
+    .health-pill.stale {
+      color: var(--warn);
+      border-color: rgba(245,158,11,0.65);
+    }
+
+    .health-pill.missing {
+      color: var(--danger);
+      border-color: rgba(244,63,94,0.7);
     }
 
     .stream-list {
@@ -551,6 +630,7 @@
       }
       .summary-grid,
       .guidance-grid,
+      .readiness-checks,
       .grid-3 {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
@@ -560,6 +640,7 @@
       .grid-2,
       .grid-3,
       .guidance-grid,
+      .readiness-checks,
       .summary-grid {
         grid-template-columns: 1fr;
       }
@@ -595,6 +676,14 @@
         <div class="metric-value" id="summary-stations">0</div>
         <div class="metric-label">Stations</div>
       </div>
+      <div class="metric">
+        <div class="metric-value" id="summary-readiness">WAIT</div>
+        <div class="metric-label">Readiness</div>
+      </div>
+      <div class="metric">
+        <div class="metric-value" id="summary-sound">ON</div>
+        <div class="metric-label">Start Sound</div>
+      </div>
     </section>
 
     <main class="layout game-layout">
@@ -624,15 +713,15 @@
             <div class="field" id="team-scoring-field">
               <label for="team-scoring-policy">Team Scoring</label>
               <select id="team-scoring-policy" onchange="updateControlGuidance(); renderStations()">
-                <option value="average">Average Progress</option>
+                <option value="average">Team Average</option>
                 <option value="total">Team Total</option>
               </select>
             </div>
             <div class="field" id="team-completion-field">
               <label for="team-completion-policy">Completion Rule</label>
               <select id="team-completion-policy" onchange="updateControlGuidance(); renderStations()">
-                <option value="aggregate">Aggregate Progress</option>
-                <option value="all_members">All Members Finish</option>
+                <option value="aggregate">Team Target</option>
+                <option value="all_members">Everyone Finishes</option>
               </select>
             </div>
             <div class="field" id="target-field">
@@ -678,6 +767,7 @@
               <div class="guidance-body" id="start-flow-summary">Start Race sends the countdown to the Dashboard. The race timer begins on Go.</div>
             </div>
           </div>
+          <div class="readiness" id="race-readiness-panel" aria-live="polite"></div>
           <div class="countdown-banner" id="countdown-status" aria-live="polite">Countdown active on Dashboard. Race starts on Go.</div>
           <div class="button-row">
             <button type="button" class="primary" id="btn-configure" onclick="configureRace()">Save Settings</button>
@@ -721,6 +811,7 @@
       race: null,
       stations: { stations: {}, unassigned_nodes: [] },
       nodes: [],
+      readiness: null,
       update: null,
       refreshTimer: null,
       countdownActive: false,
@@ -831,11 +922,11 @@
 
       if (isTeamRace) {
         const scoringText = scoring === "total"
-          ? "Team Total ranks teams by accumulated progress."
-          : "Average Progress ranks teams by normalized member average.";
+          ? "Team Total ranks teams by the whole team's combined output."
+          : "Team Average ranks teams by each member's normalized contribution.";
         const completionText = completion === "all_members"
-          ? `All Members Finish means every teammate must complete the ${targetLabel}; one unfinished member keeps the team unfinished.`
-          : "Aggregate Progress lets the team finish when the team score reaches the target.";
+          ? `Everyone Finishes means every teammate must complete the ${targetLabel}; one unfinished member keeps the team unfinished.`
+          : "Team Target lets the team finish when the selected team score reaches the target.";
         $("team-rule-summary").textContent = `${scoringText} ${completionText}`;
       } else {
         $("team-rule-summary").textContent = "Individual race. Team names can display on the leaderboard, but ranking is per athlete.";
@@ -876,6 +967,12 @@
       state.nodes = (await fetchJson(`/api/nodes?t=${Date.now()}`)).nodes || [];
     }
 
+    async function refreshReadiness() {
+      state.readiness = await fetchJson(`/api/race/readiness?t=${Date.now()}`);
+      renderReadinessPanel();
+      renderStations();
+    }
+
 
     async function refreshHealth() {
       try {
@@ -892,6 +989,7 @@
         refreshState(),
         refreshStations(),
         refreshNodes(),
+        refreshReadiness(),
       ]);
       scheduleRefresh();
     }
@@ -911,6 +1009,7 @@
       const race = state.race || {};
       const raceState = race.state || "IDLE";
       $("summary-state").textContent = raceState;
+      $("summary-sound").textContent = race.start_countdown_sound_enabled === false ? "OFF" : "ON";
       $("race-state-pill").textContent = raceState;
       $("race-state-pill").className = `pill race-state ${raceState}`;
 
@@ -929,14 +1028,89 @@
           : metricNumber(config.duration_sec, 0);
       }
 
-      $("btn-start").disabled = raceState !== "READY" || state.countdownActive;
+      const readinessReady = state.readiness?.ready === true;
+      $("btn-start").disabled = raceState !== "READY" || state.countdownActive || !readinessReady;
       $("btn-start").textContent = state.countdownActive ? "Countdown Active" : "Start Race";
       $("btn-stop").disabled = raceState !== "RUNNING";
       $("btn-reset").disabled = raceState === "RUNNING";
       $("btn-configure").disabled = raceState === "RUNNING";
       $("countdown-status").classList.toggle("show", state.countdownActive);
       updateControlGuidance();
+      renderReadinessPanel();
 
+    }
+
+    function readinessStatusClass(status) {
+      if (status === "block") return "block";
+      if (status === "warn") return "warn";
+      if (status === "ok") return "ok";
+      return "info";
+    }
+
+    function renderReadinessPanel() {
+      const panel = $("race-readiness-panel");
+      if (!panel) return;
+
+      const readiness = state.readiness;
+      if (!readiness) {
+        $("summary-readiness").textContent = "WAIT";
+        panel.innerHTML = `
+          <div class="readiness-card info">
+            <div class="readiness-main">
+              <div class="readiness-title">Race Readiness</div>
+              <span class="pill">Checking</span>
+            </div>
+            <div class="readiness-meta">Checking registrations, teams, station health, start sound, and target settings.</div>
+          </div>
+        `;
+        return;
+      }
+
+      $("summary-readiness").textContent = readiness.ready ? "READY" : "CHECK";
+      const statusClass = readiness.ready ? "ok" : "block";
+      const title = readiness.ready ? "Ready To Start" : "Needs Attention Before Start";
+      const issues = readiness.blocking_issues || [];
+      const warnings = readiness.warnings || [];
+      const issueHtml = [...issues, ...warnings].length
+        ? `<ul class="issue-list">${[...issues, ...warnings].map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`
+        : "";
+      const checks = readiness.checks || {};
+      const checkOrder = [
+        ["state", "Race State"],
+        ["target", "Target"],
+        ["registrations", "Registrations"],
+        ["teams", "Teams"],
+        ["stations", "Station Health"],
+        ["sound", "Sound"],
+      ];
+      const checksHtml = checkOrder.map(([key, label]) => {
+        const check = checks[key] || { status: "info", message: "--" };
+        const klass = readinessStatusClass(check.status);
+        return `
+          <div class="readiness-check ${klass}">
+            <div class="readiness-check-title">${escapeHtml(label)}</div>
+            <div class="readiness-check-message">${escapeHtml(check.message || "--")}</div>
+          </div>
+        `;
+      }).join("");
+
+      panel.innerHTML = `
+        <div class="readiness-card ${statusClass}">
+          <div class="readiness-main">
+            <div class="readiness-title">Race Readiness · ${title}</div>
+            <span class="pill">${readiness.ready ? "Start Enabled" : "Start Locked"}</span>
+          </div>
+          <div class="readiness-meta">Checks registrations, teams, station health, sound setting, and target value before Start Race.</div>
+          ${issueHtml}
+          <div class="readiness-checks">${checksHtml}</div>
+        </div>
+      `;
+    }
+
+    function getStationHealth(stationNumber) {
+      const health = (state.readiness?.station_health || []).find((station) => Number(station.station_number) === Number(stationNumber));
+      if (health) return health;
+      return { health: "missing", label: "Not checked", edge_node_id: null };
     }
 
     function renderStations() {
@@ -963,6 +1137,7 @@
 
       const assigned = keys.map((key) => {
         const station = stations[key] || {};
+        const health = getStationHealth(key);
         const signupUrl = `${window.location.origin}/static/signup.html?station=${encodeURIComponent(key)}`;
         return `
           <div class="row-card">
@@ -970,61 +1145,16 @@
               <div>
                 <div class="row-name">Station ${escapeHtml(key)} · ${escapeHtml(station.equipment_type || "unbound")}</div>
                 <div class="row-meta">${escapeHtml(station.node_id || "No telemetry stream")} · ${escapeHtml(station.athlete_name || "No athlete")}${station.team_name ? ` (${escapeHtml(station.team_name)})` : ""}</div>
+                <div class="row-meta">Health: ${escapeHtml(health.label || health.health || "--")}${health.edge_node_id ? ` · ${escapeHtml(health.edge_node_id)}` : ""}</div>
                 <div class="row-meta">${escapeHtml(signupUrl)}</div>
               </div>
+              <span class="health-pill ${escapeHtml(health.health || "missing")}">${escapeHtml(health.health || "missing")}</span>
             </div>
           </div>
         `;
       }).join("");
 
-      list.innerHTML = `${renderTeamReadiness(stations, keys)}${unassigned}${assigned}`;
-    }
-
-    function renderTeamReadiness(stations, keys) {
-      if ($("competition-mode").value !== "team") return "";
-
-      const athletes = keys
-        .map((key) => ({ stationNumber: key, ...(stations[key] || {}) }))
-        .filter((station) => station.athlete_name);
-      const teamCounts = new Map();
-      const unassignedAthletes = [];
-
-      athletes.forEach((station) => {
-        const teamName = (station.team_name || "").trim();
-        if (!teamName) {
-          unassignedAthletes.push(station);
-          return;
-        }
-        teamCounts.set(teamName, (teamCounts.get(teamName) || 0) + 1);
-      });
-
-      const teamList = [...teamCounts.entries()]
-        .sort((a, b) => a[0].localeCompare(b[0]))
-        .map(([teamName, count]) => `${escapeHtml(teamName)}: ${count}`)
-        .join(" · ");
-      const teamCount = teamCounts.size;
-      const hasWarning = teamCount < 2 || unassignedAthletes.length > 0;
-      const title = hasWarning ? "Team Race Needs Review" : "Team Race Ready";
-      const completionText = $("team-completion-policy").selectedOptions[0].textContent;
-      const meta = [
-        `${teamCount} teams`,
-        `${athletes.length} athletes`,
-        unassignedAthletes.length ? `${unassignedAthletes.length} without team` : "",
-        completionText,
-        teamList,
-      ].filter(Boolean).join(" · ");
-
-      return `
-        <div class="readiness" aria-live="polite">
-          <div class="readiness-card ${hasWarning ? "warn" : "ok"}">
-            <div class="readiness-main">
-              <div class="readiness-title">${title}</div>
-              <span class="pill">${escapeHtml($("team-scoring-policy").selectedOptions[0].textContent)}</span>
-            </div>
-            <div class="readiness-meta">${escapeHtml(meta || "Register athletes with team names before starting.")}</div>
-          </div>
-        </div>
-      `;
+      list.innerHTML = `${unassigned}${assigned}`;
     }
 
 
@@ -1055,6 +1185,7 @@
           headers: adminHeaders({ "Content-Type": "application/json" }),
           body: JSON.stringify(payload),
         });
+        await refreshReadiness();
         renderRace();
         setMessage("race-message", "Race settings saved.", "ok");
       } catch (error) {
@@ -1087,6 +1218,7 @@
           headers: adminHeaders({ "Content-Type": "application/json" }),
           body: JSON.stringify({ enabled }),
         });
+        await refreshReadiness();
         renderRace();
         setMessage("race-message", enabled ? "Start sound enabled." : "Start sound disabled.", "ok");
       } catch (error) {
@@ -1097,6 +1229,13 @@
 
     async function startRace() {
       if (state.countdownActive) return;
+      await refreshReadiness();
+      if (!state.readiness?.ready) {
+        const issues = state.readiness?.blocking_issues || ["Race is not ready to start."];
+        setMessage("race-message", issues.join(" "), "error");
+        renderRace();
+        return;
+      }
       state.countdownActive = true;
       renderRace();
       setMessage("race-message", "Countdown playing on Dashboard. Race starts on Go.", "warn");

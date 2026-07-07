@@ -1,12 +1,20 @@
+import json
 import os
 from dataclasses import asdict
+from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 
+from edge_node.domain.models import EdgeNodeConfig
+from edge_node.infrastructure.antenna.command_runner import (
+    AntennaCommandRequest,
+    AntennaCommandRunner,
+)
 from edge_node.infrastructure.ble.ftms_scanner import BleakFtmsScanner
 from edge_node.infrastructure.network.wifi_status import LinuxWifiStatusReader, WifiStatus
+from edge_node.usecases.event_log import EdgeEventLog
 from edge_node.usecases.ftms_scanner import scan_ftms_devices
 from fitrace_common.power_manager import PowerActionError, PowerManager
 
@@ -14,14 +22,34 @@ from fitrace_common.power_manager import PowerActionError, PowerManager
 app = FastAPI(title="FitRaceStudio Edge Node")
 ftms_scanner = BleakFtmsScanner()
 wifi_status_reader = LinuxWifiStatusReader()
+edge_event_log = EdgeEventLog.from_env()
+antenna_command_runner = AntennaCommandRunner(event_log=edge_event_log)
 power_manager = PowerManager(
     target="edge",
     service_name="fitracestudio-edge.service",
 )
+CONFIG_PATH = Path(__file__).resolve().parents[2] / "config.json"
+FALLBACK_ANTENNA_PORT = "/dev/serial0"
 
 
 class PowerActionPayload(BaseModel):
     confirmation: str | None = None
+
+
+class AntennaCommandPayload(BaseModel):
+    port: str | None = None
+    baudrate: int = 115200
+    rtscts: bool = False
+    command: str
+    timeout_sec: float = 5.0
+    scan_duration_sec: float = 5.0
+    macs: list[str] = Field(default_factory=list)
+    report_interval_ms: int | None = None
+    raw_command: str | None = None
+
+
+class EdgeConfigPayload(EdgeNodeConfig):
+    pass
 
 
 def require_admin(request: Request):
@@ -31,6 +59,30 @@ def require_admin(request: Request):
     provided_token = request.headers.get("X-FitRace-Admin-Token")
     if provided_token != expected_token:
         raise HTTPException(status_code=401, detail="Admin token required")
+
+
+def load_edge_config() -> EdgeNodeConfig:
+    try:
+        with open(CONFIG_PATH, encoding="utf-8") as f:
+            return EdgeNodeConfig.model_validate(json.load(f))
+    except FileNotFoundError:
+        return EdgeNodeConfig(node_id="fitrace-edge", antenna_protocol_version="unknown")
+    except (json.JSONDecodeError, ValueError) as e:
+        raise HTTPException(status_code=500, detail=f"Invalid Edge Node config: {e}")
+
+
+def save_edge_config(config: EdgeNodeConfig):
+    CONFIG_PATH.write_text(
+        json.dumps(config.model_dump(), indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+
+def default_antenna_port() -> str:
+    config = load_edge_config()
+    if config.antenna_channels:
+        return config.antenna_channels[0].port
+    return FALLBACK_ANTENNA_PORT
 
 
 @app.get("/health")
@@ -74,8 +126,22 @@ def edge_setup_page():
     return HTMLResponse(EDGE_SETUP_HTML)
 
 
+@app.get("/api/config")
+def get_edge_config(request: Request):
+    require_admin(request)
+    return load_edge_config().model_dump()
+
+
+@app.post("/api/config")
+def update_edge_config(payload: EdgeConfigPayload, request: Request):
+    require_admin(request)
+    save_edge_config(payload)
+    return {"status": "saved", "config": payload.model_dump()}
+
+
 @app.get("/api/ble/scan")
 async def scan_ble_ftms_devices(
+    request: Request,
     adapter: str = Query(
         "hci1",
         description="Linux BLE adapter to scan with. Use hci1 for the USB dongle by default.",
@@ -86,6 +152,7 @@ async def scan_ble_ftms_devices(
         description="Return all BLE devices, not only devices advertising the FTMS service UUID.",
     ),
 ):
+    require_admin(request)
     try:
         devices = await scan_ftms_devices(
             ftms_scanner,
@@ -107,12 +174,61 @@ async def scan_ble_ftms_devices(
 
 @app.get("/api/wifi/status")
 def get_wifi_status(
+    request: Request,
     interface: str = Query(
         "wlan0",
         description="Linux Wi-Fi interface to inspect for RSSI.",
     )
 ):
+    require_admin(request)
     return wifi_status_reader.read(interface=interface).model_dump()
+
+
+@app.get("/api/antenna/config")
+def get_antenna_config(request: Request):
+    require_admin(request)
+    config = load_edge_config()
+    channels = [channel.model_dump() for channel in config.antenna_channels]
+    return {
+        "protocol_version": config.antenna_protocol_version,
+        "default_port": channels[0]["port"] if channels else FALLBACK_ANTENNA_PORT,
+        "channels": channels,
+    }
+
+
+@app.get("/api/monitor/events")
+def get_monitor_events(
+    request: Request,
+    limit: int = Query(100, ge=1, le=500),
+):
+    require_admin(request)
+    return {
+        "path": str(edge_event_log.path),
+        "events": edge_event_log.list_events(limit=limit),
+    }
+
+
+@app.post("/api/antenna/command")
+def run_antenna_command(payload: AntennaCommandPayload, request: Request):
+    require_admin(request)
+    try:
+        return antenna_command_runner.run(
+            AntennaCommandRequest(
+                port=payload.port or default_antenna_port(),
+                baudrate=payload.baudrate,
+                rtscts=payload.rtscts,
+                command=payload.command,
+                timeout_sec=payload.timeout_sec,
+                scan_duration_sec=payload.scan_duration_sec,
+                macs=payload.macs,
+                report_interval_ms=payload.report_interval_ms,
+                raw_command=payload.raw_command,
+            )
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
 
 EDGE_SETUP_HTML = """
@@ -456,9 +572,166 @@ EDGE_SETUP_HTML = """
       text-align: center;
     }
 
+    .button-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .button-grid button {
+      min-height: 40px;
+      padding: 0 10px;
+      font-size: 12px;
+    }
+
+    .button-secondary {
+      border: 1px solid var(--border);
+      background: var(--panel-2);
+      color: var(--text);
+    }
+
+    .binding-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .binding-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr);
+      gap: 10px;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--panel-2);
+    }
+
+    .binding-row .field {
+      margin-bottom: 0;
+    }
+
+    .binding-row .binding-target {
+      grid-column: 1 / -1;
+    }
+
+    .readonly-input {
+      color: var(--muted);
+      background: #0d1116;
+      cursor: default;
+    }
+
+    .raw-output {
+      max-height: 360px;
+      overflow: auto;
+      margin: 0;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #090b0e;
+      color: var(--text);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .monitor-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .monitor-toolbar .status-line {
+      flex: 1;
+    }
+
+    .monitor-refresh {
+      width: auto;
+      min-width: 96px;
+      min-height: 34px;
+      padding: 0 12px;
+      font-size: 12px;
+    }
+
+    .monitor-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .monitor-card {
+      min-height: 184px;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--panel-2);
+    }
+
+    .monitor-card-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .monitor-equipment-name {
+      min-width: 0;
+      color: var(--text);
+      font-size: 15px;
+      font-weight: 800;
+      overflow-wrap: anywhere;
+    }
+
+    .monitor-status-pill {
+      flex: 0 0 auto;
+      padding: 4px 8px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .monitor-status-pill.live {
+      color: var(--ok);
+      border-color: rgba(52, 211, 153, 0.4);
+    }
+
+    .monitor-fields {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 7px 12px;
+    }
+
+    .monitor-field {
+      min-width: 0;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .monitor-field strong {
+      display: block;
+      margin-top: 2px;
+      color: var(--text);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 13px;
+      overflow-wrap: anywhere;
+    }
+
+    .monitor-field.wide {
+      grid-column: 1 / -1;
+    }
+
     @media (max-width: 820px) {
       main { grid-template-columns: 1fr; }
       header { align-items: flex-start; flex-direction: column; }
+      .button-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .binding-row { grid-template-columns: 1fr; }
+      .binding-row .binding-target { grid-column: auto; }
+      .monitor-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -507,58 +780,103 @@ EDGE_SETUP_HTML = """
           </div>
         </section>
 
-        <section class="panel" aria-labelledby="scan-title">
-          <h2 id="scan-title" data-i18n="scan.title">BLE Scan</h2>
+        <section class="panel" aria-labelledby="antenna-title">
+          <h2 id="antenna-title" data-i18n="antenna.title">UART Antenna Control</h2>
           <div class="field">
-            <label for="adapter" data-i18n="scan.adapter">Adapter</label>
-            <select id="adapter">
-              <option value="hci1" selected>hci1 USB dongle</option>
-              <option value="hci0">hci0 onboard</option>
+            <label for="antenna-port" data-i18n="antenna.port">Serial port</label>
+            <input id="antenna-port" type="text" value="/dev/serial0" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="antenna-channel" data-i18n="antenna.channel">UART channel</label>
+            <select id="antenna-channel">
+              <option value="">Manual serial port</option>
             </select>
           </div>
           <div class="field">
-            <label for="timeout" data-i18n="scan.timeout">Timeout seconds</label>
-            <input id="timeout" type="number" min="1" max="30" value="5">
+            <label for="antenna-baudrate" data-i18n="antenna.baudrate">Baudrate</label>
+            <input id="antenna-baudrate" type="number" min="9600" max="1000000" value="115200">
           </div>
           <div class="field">
-            <label class="toggle" for="include-all">
-            <span data-i18n="scan.include_all">Include non-FTMS devices</span>
-            <input id="include-all" type="checkbox">
+            <label class="toggle" for="antenna-rtscts">
+              <span data-i18n="antenna.rtscts">RTS/CTS hardware flow control</span>
+              <input id="antenna-rtscts" type="checkbox">
             </label>
           </div>
-          <button id="scan-btn" type="button" data-i18n="scan.button">Scan FTMS Devices</button>
-
+          <div class="field">
+            <label for="antenna-timeout" data-i18n="antenna.timeout">Read timeout seconds</label>
+            <input id="antenna-timeout" type="number" min="1" max="30" value="5">
+          </div>
+          <div class="field">
+            <label for="antenna-scan-duration" data-i18n="antenna.scan_duration">Scan duration seconds</label>
+            <input id="antenna-scan-duration" type="number" min="1" max="30" value="5">
+          </div>
+          <div class="button-grid" aria-label="UART antenna commands">
+            <button class="antenna-command" type="button" data-command="ping">PING</button>
+            <button class="antenna-command" type="button" data-command="status">STATUS</button>
+            <button class="antenna-command" type="button" data-command="version">VERSION</button>
+            <button class="antenna-command" type="button" data-command="scan">SCAN</button>
+            <button class="antenna-command" type="button" data-command="connect">CONNECT</button>
+            <button class="antenna-command button-secondary" type="button" data-command="disconnect_all">DISCONNECT</button>
+            <button class="antenna-command button-secondary" type="button" data-command="reboot">REBOOT</button>
+          </div>
+          <div class="field" style="margin-top:14px;">
+            <label for="antenna-macs" data-i18n="antenna.macs">Device MACs / IDs for CONNECT</label>
+            <input id="antenna-macs" type="text" placeholder="AA:BB:CC:DD:EE:01,AA:BB:CC:DD:EE:02" autocomplete="off">
+          </div>
+          <button id="antenna-connect-btn" type="button" class="button-secondary" data-i18n="antenna.connect">CONNECT selected devices</button>
+          <div class="field" style="margin-top:14px;">
+            <label for="antenna-report-interval" data-i18n="antenna.report_interval">Report interval ms</label>
+            <input id="antenna-report-interval" type="number" min="100" max="10000" value="1000">
+          </div>
+          <button id="antenna-report-btn" type="button" class="button-secondary" data-i18n="antenna.report">Set report interval</button>
+          <div class="field" style="margin-top:14px;">
+            <label for="antenna-raw" data-i18n="antenna.raw">Raw command</label>
+            <input id="antenna-raw" type="text" placeholder="STATUS;" autocomplete="off">
+          </div>
+          <button id="antenna-raw-btn" type="button" class="button-secondary" data-i18n="antenna.send_raw">Send raw command</button>
           <div class="status" aria-live="polite">
-            <div class="status-line"><span data-i18n="scan.status">Status</span><strong id="scan-state">Idle</strong></div>
-            <div class="status-line"><span data-i18n="scan.elapsed">Elapsed</span><strong id="elapsed">0.0s</strong></div>
-            <div class="status-line"><span data-i18n="scan.remaining">Remaining</span><strong id="remaining">0.0s</strong></div>
-            <div class="progress" aria-hidden="true"><div class="progress-fill" id="progress-fill"></div></div>
-            <div class="message" id="message">Ready to scan nearby FTMS equipment.</div>
+            <div class="status-line"><span data-i18n="antenna.command_status">Command status</span><strong id="antenna-state">Idle</strong></div>
+            <div class="message" id="antenna-message">Ready to send UART commands.</div>
           </div>
         </section>
       </div>
 
-      <section class="panel" aria-labelledby="results-title">
-        <h2 id="results-title" data-i18n="results.title">Discovered Devices</h2>
-        <div id="results" class="device-list">
-          <div class="empty" data-i18n="results.empty">No scan results yet.</div>
-        </div>
-      </section>
+      <div class="stack">
+        <section class="panel" aria-labelledby="bindings-title">
+          <h2 id="bindings-title" data-i18n="bindings.title">Equipment Bindings</h2>
+          <div class="status-line"><span data-i18n="bindings.node_id">Edge node</span><strong id="config-node-id">--</strong></div>
+          <div class="binding-list" id="binding-list" style="margin-top:14px;"></div>
+          <div class="button-grid" style="margin-top:14px;">
+            <button id="config-save-btn" type="button" data-i18n="bindings.save">Save bindings</button>
+            <button id="config-restart-btn" type="button" class="button-secondary" data-i18n="bindings.restart">Restart Edge runtime</button>
+          </div>
+          <div class="message" id="config-message" data-i18n="bindings.ready">Edit names here, then save and restart Edge runtime.</div>
+        </section>
+
+        <section class="panel" aria-labelledby="antenna-output-title">
+          <h2 id="antenna-output-title" data-i18n="antenna.output">UART Response</h2>
+          <pre id="antenna-output" class="raw-output">No UART command has been sent yet.</pre>
+        </section>
+
+        <section class="panel" aria-labelledby="monitor-title">
+          <div class="monitor-toolbar">
+            <h2 id="monitor-title" data-i18n="monitor.title" style="margin:0;">Runtime Monitor</h2>
+            <button id="monitor-refresh-btn" type="button" class="button-secondary monitor-refresh" data-i18n="monitor.refresh">Refresh</button>
+          </div>
+          <div class="status-line">
+            <span data-i18n="monitor.status">Fixed equipment telemetry slots</span>
+            <strong id="monitor-count">0</strong>
+          </div>
+          <div id="monitor-grid" class="monitor-grid" aria-live="polite" style="margin-top:12px;">
+            <div class="empty" data-i18n="monitor.empty">No equipment bindings configured.</div>
+          </div>
+        </section>
+      </div>
     </main>
   </div>
 
   <script>
-    const scanBtn = document.getElementById("scan-btn");
     const languageSelect = document.getElementById("language-select");
-    const adapterInput = document.getElementById("adapter");
-    const timeoutInput = document.getElementById("timeout");
-    const includeAllInput = document.getElementById("include-all");
-    const scanState = document.getElementById("scan-state");
-    const elapsedLabel = document.getElementById("elapsed");
-    const remainingLabel = document.getElementById("remaining");
-    const progressFill = document.getElementById("progress-fill");
-    const message = document.getElementById("message");
-    const results = document.getElementById("results");
     const wifiIcon = document.getElementById("wifi-icon");
     const wifiLevel = document.getElementById("wifi-level");
     const wifiSub = document.getElementById("wifi-sub");
@@ -566,7 +884,39 @@ EDGE_SETUP_HTML = """
     const wifiInterface = document.getElementById("wifi-interface");
     const wifiSsid = document.getElementById("wifi-ssid");
     const wifiMessage = document.getElementById("wifi-message");
-    let timer = null;
+    const antennaPortInput = document.getElementById("antenna-port");
+    const antennaChannelSelect = document.getElementById("antenna-channel");
+    const antennaBaudrateInput = document.getElementById("antenna-baudrate");
+    const antennaRtsctsInput = document.getElementById("antenna-rtscts");
+    const antennaTimeoutInput = document.getElementById("antenna-timeout");
+    const antennaScanDurationInput = document.getElementById("antenna-scan-duration");
+    const antennaMacsInput = document.getElementById("antenna-macs");
+    const antennaReportIntervalInput = document.getElementById("antenna-report-interval");
+    const antennaRawInput = document.getElementById("antenna-raw");
+    const antennaState = document.getElementById("antenna-state");
+    const antennaMessage = document.getElementById("antenna-message");
+    const antennaOutput = document.getElementById("antenna-output");
+    const monitorGrid = document.getElementById("monitor-grid");
+    const monitorCount = document.getElementById("monitor-count");
+    const monitorRefreshBtn = document.getElementById("monitor-refresh-btn");
+    const antennaCommandButtons = Array.from(document.querySelectorAll(".antenna-command"));
+    const antennaConnectBtn = document.getElementById("antenna-connect-btn");
+    const antennaReportBtn = document.getElementById("antenna-report-btn");
+    const antennaRawBtn = document.getElementById("antenna-raw-btn");
+    const bindingList = document.getElementById("binding-list");
+    const configNodeId = document.getElementById("config-node-id");
+    const configMessage = document.getElementById("config-message");
+    const configSaveBtn = document.getElementById("config-save-btn");
+    const configRestartBtn = document.getElementById("config-restart-btn");
+    const allAntennaButtons = [
+      ...antennaCommandButtons,
+      antennaConnectBtn,
+      antennaReportBtn,
+      antennaRawBtn,
+    ];
+    let edgeConfig = null;
+    let antennaChannels = [];
+    let monitorLatestByNode = new Map();
     let currentLocale = localStorage.getItem("fitrace.edge.locale") || "en-US";
     const dictionaries = {
       "en-US": {
@@ -582,26 +932,57 @@ EDGE_SETUP_HTML = """
         "wifi.disconnected": "Disconnected",
         "wifi.position_hint": "Signal state helps adjust on-site placement",
         "wifi.connect_hint": "Confirm the Edge Node is connected to the AP",
-        "scan.title": "BLE Scan",
-        "scan.adapter": "Adapter",
-        "scan.timeout": "Timeout seconds",
-        "scan.include_all": "Include non-FTMS devices",
-        "scan.button": "Scan FTMS Devices",
-        "scan.status": "Status",
-        "scan.elapsed": "Elapsed",
-        "scan.remaining": "Remaining",
-        "scan.idle": "Idle",
-        "scan.scanning": "Scanning",
-        "scan.complete": "Complete",
-        "scan.failed": "Failed",
-        "scan.ready": "Ready to scan nearby FTMS equipment.",
-        "scan.in_progress": "Scanning {adapter}. Results update when the scan window completes.",
-        "scan.done": "Scan complete. Found {count} device(s).",
-        "results.title": "Discovered Devices",
-        "results.empty": "No scan results yet.",
-        "results.none": "No FTMS devices found. Try include-all mode for troubleshooting.",
-        "results.scanning": "Scanning BLE advertisements from the selected adapter...",
-        "results.no_available": "No results available."
+        "antenna.title": "UART Antenna Control",
+        "antenna.port": "Serial port",
+        "antenna.channel": "UART channel",
+        "antenna.baudrate": "Baudrate",
+        "antenna.rtscts": "RTS/CTS hardware flow control",
+        "antenna.timeout": "Read timeout seconds",
+        "antenna.scan_duration": "Scan duration seconds",
+        "antenna.macs": "Device MACs / IDs for CONNECT",
+        "antenna.connect": "CONNECT selected devices",
+        "antenna.report_interval": "Report interval ms",
+        "antenna.report": "Set report interval",
+        "antenna.raw": "Raw command",
+        "antenna.send_raw": "Send raw command",
+        "antenna.command_status": "Command status",
+        "antenna.output": "UART Response",
+        "antenna.ready": "Ready to send UART commands.",
+        "antenna.running": "Sending {command} to {port}.",
+        "antenna.complete": "{command} complete. Received {count} line(s).",
+        "antenna.complete_state": "Complete",
+        "antenna.failed": "Command failed",
+        "antenna.idle": "Idle",
+        "monitor.title": "Runtime Monitor",
+        "monitor.refresh": "Refresh",
+        "monitor.status": "Fixed equipment telemetry slots",
+        "monitor.empty": "No equipment bindings configured.",
+        "monitor.failed": "Monitor read failed",
+        "monitor.waiting": "Waiting",
+        "monitor.live": "Live",
+        "monitor.name": "Name",
+        "monitor.type": "Type",
+        "monitor.mac": "MAC",
+        "monitor.channel": "UART",
+        "monitor.speed": "Speed",
+        "monitor.distance": "Distance",
+        "monitor.power": "Power",
+        "monitor.cadence": "Cadence",
+        "monitor.rssi": "RSSI",
+        "monitor.calories": "Calories",
+        "monitor.updated": "Updated",
+        "bindings.title": "Equipment Bindings",
+        "bindings.node_id": "Edge node",
+        "bindings.name": "Display name",
+        "bindings.type": "Equipment type",
+        "bindings.channel": "UART channel",
+        "bindings.target": "BLE target / MAC",
+        "bindings.save": "Save bindings",
+        "bindings.restart": "Restart Edge runtime",
+        "bindings.ready": "Edit names here, then save and restart Edge runtime.",
+        "bindings.saved": "Bindings saved. Restart Edge runtime to apply.",
+        "bindings.restarted": "Edge runtime restart requested.",
+        "bindings.failed": "Config update failed"
       }
     };
     dictionaries["zh-TW"] = {
@@ -618,11 +999,57 @@ EDGE_SETUP_HTML = """
       "wifi.disconnected": "未連線",
       "wifi.position_hint": "訊號狀態可用於現場位置調整",
       "wifi.connect_hint": "請確認 Edge Node 已連上 AP",
-      "scan.title": "BLE 掃描",
-      "scan.button": "掃描 FTMS 設備",
-      "scan.ready": "準備掃描附近 FTMS 設備。",
-      "results.title": "已發現設備",
-      "results.empty": "尚無掃描結果。"
+      "antenna.title": "UART 天線板控制",
+      "antenna.port": "Serial port",
+      "antenna.channel": "UART 通道",
+      "antenna.baudrate": "Baudrate",
+      "antenna.rtscts": "RTS/CTS 硬體流控",
+      "antenna.timeout": "讀取逾時秒數",
+      "antenna.scan_duration": "掃描秒數",
+      "antenna.macs": "CONNECT 用設備 MAC / ID",
+      "antenna.connect": "CONNECT 選定設備",
+      "antenna.report_interval": "回報週期 ms",
+      "antenna.report": "設定回報週期",
+      "antenna.raw": "原始命令",
+      "antenna.send_raw": "送出原始命令",
+      "antenna.command_status": "命令狀態",
+      "antenna.output": "UART 回應",
+      "antenna.ready": "準備送出 UART 命令。",
+      "antenna.running": "正在送出 {command} 到 {port}。",
+      "antenna.complete": "{command} 完成，收到 {count} 行。",
+      "antenna.complete_state": "完成",
+      "antenna.failed": "命令失敗",
+      "antenna.idle": "閒置",
+      "monitor.title": "運行監測",
+      "monitor.refresh": "重新整理",
+      "monitor.status": "固定設備即時欄位",
+      "monitor.empty": "尚未設定設備綁定。",
+      "monitor.failed": "監測資料讀取失敗",
+      "monitor.waiting": "等待中",
+      "monitor.live": "即時",
+      "monitor.name": "名稱",
+      "monitor.type": "類型",
+      "monitor.mac": "MAC",
+      "monitor.channel": "UART",
+      "monitor.speed": "速度",
+      "monitor.distance": "距離",
+      "monitor.power": "功率",
+      "monitor.cadence": "步頻",
+      "monitor.rssi": "RSSI",
+      "monitor.calories": "熱量",
+      "monitor.updated": "更新時間",
+      "bindings.title": "設備綁定",
+      "bindings.node_id": "Edge Node",
+      "bindings.name": "顯示名稱",
+      "bindings.type": "設備類型",
+      "bindings.channel": "UART 通道",
+      "bindings.target": "BLE 目標 / MAC",
+      "bindings.save": "儲存設備綁定",
+      "bindings.restart": "重啟 Edge runtime",
+      "bindings.ready": "在這裡修改名稱，儲存後重啟 Edge runtime 套用。",
+      "bindings.saved": "設備綁定已儲存，請重啟 Edge runtime 套用。",
+      "bindings.restarted": "已送出 Edge runtime 重啟。",
+      "bindings.failed": "設定更新失敗"
     };
     ["it", "fr", "de-CH", "sv"].forEach((locale) => {
       dictionaries[locale] = { ...dictionaries["en-US"] };
@@ -642,9 +1069,9 @@ EDGE_SETUP_HTML = """
       document.querySelectorAll("[data-i18n]").forEach((element) => {
         element.innerText = t(element.dataset.i18n);
       });
-      scanState.textContent = t("scan.idle");
-      if (!message.classList.contains("error") && !message.classList.contains("ok")) {
-        message.textContent = t("scan.ready");
+      antennaState.textContent = t("antenna.idle");
+      if (!antennaMessage.classList.contains("error") && !antennaMessage.classList.contains("ok")) {
+        antennaMessage.textContent = t("antenna.ready");
       }
     }
 
@@ -652,6 +1079,7 @@ EDGE_SETUP_HTML = """
       currentLocale = languageSelect.value;
       localStorage.setItem("fitrace.edge.locale", currentLocale);
       applyTranslations();
+      renderMonitorEquipment();
     });
 
     function escapeHtml(value) {
@@ -663,32 +1091,23 @@ EDGE_SETUP_HTML = """
         .replace(/'/g, "&#039;");
     }
 
-    function setMessage(text, type = "") {
-      message.textContent = text;
-      message.className = `message ${type}`.trim();
+    function adminHeaders(extra = {}) {
+      const headers = { ...extra };
+      const token = localStorage.getItem("fitrace.adminPassword") || localStorage.getItem("fitrace.adminToken") || "";
+      if (token) {
+        headers["X-FitRace-Admin-Token"] = token;
+      }
+      return headers;
     }
 
-    function renderDevices(devices) {
-      if (!devices.length) {
-        results.innerHTML = `<div class="empty">${escapeHtml(t("results.none"))}</div>`;
-        return;
-      }
+    function setAntennaMessage(text, type = "") {
+      antennaMessage.textContent = text;
+      antennaMessage.className = `message ${type}`.trim();
+    }
 
-      results.innerHTML = devices.map((device) => {
-        const services = (device.matched_services && device.matched_services.length)
-          ? device.matched_services
-          : device.service_uuids || [];
-        return `
-          <article class="device">
-            <div>
-              <div class="device-name">${escapeHtml(device.name || "Unnamed BLE Device")}</div>
-              <div class="device-meta">${escapeHtml(device.address)}</div>
-              <div class="device-meta">${escapeHtml(services.join(", ") || "No service UUID advertised")}</div>
-            </div>
-            <div class="rssi">${device.rssi === null || device.rssi === undefined ? "RSSI -" : `${escapeHtml(device.rssi)} dBm`}</div>
-          </article>
-        `;
-      }).join("");
+    function setConfigMessage(text, type = "") {
+      configMessage.textContent = text;
+      configMessage.className = `message ${type}`.trim();
     }
 
     function renderWifiStatus(status) {
@@ -729,9 +1148,356 @@ EDGE_SETUP_HTML = """
       });
     }
 
+    function renderAntennaOutput(payload) {
+      antennaOutput.textContent = JSON.stringify(payload, null, 2);
+    }
+
+    function formatEventTime(epochMs) {
+      if (!epochMs) return "--";
+      return new Date(epochMs).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      });
+    }
+
+    function formatMetric(value, suffix = "", digits = 0) {
+      if (value === null || value === undefined || value === "") return "--";
+      const number = Number(value);
+      if (!Number.isFinite(number)) return String(value);
+      return `${number.toFixed(digits)}${suffix}`;
+    }
+
+    function renderMonitorField(labelKey, value, className = "") {
+      return `
+        <div class="monitor-field ${className}">
+          <span>${escapeHtml(t(labelKey))}</span>
+          <strong>${escapeHtml(value)}</strong>
+        </div>
+      `;
+    }
+
+    function renderMonitorEquipment() {
+      const bindings = Array.isArray(edgeConfig?.equipment_bindings) ? edgeConfig.equipment_bindings.slice(0, 5) : [];
+      const liveCount = bindings.filter((binding) => monitorLatestByNode.has(binding.node_id)).length;
+      monitorCount.textContent = `${liveCount}/${bindings.length}`;
+      if (!bindings.length) {
+        monitorGrid.innerHTML = `<div class="empty">${escapeHtml(t("monitor.empty"))}</div>`;
+        return;
+      }
+      monitorGrid.innerHTML = bindings.map((binding) => {
+        const payload = monitorLatestByNode.get(binding.node_id) || {};
+        const isLive = Boolean(payload.node_id);
+        const updated = formatEventTime(payload.timestamp_epoch_ms);
+        return `
+          <div class="monitor-card" data-node-id="${escapeHtml(binding.node_id)}">
+            <div class="monitor-card-header">
+              <div class="monitor-equipment-name">${escapeHtml(binding.equipment_id || binding.node_id)}</div>
+              <div class="monitor-status-pill ${isLive ? "live" : ""}">${escapeHtml(isLive ? t("monitor.live") : t("monitor.waiting"))}</div>
+            </div>
+            <div class="monitor-fields">
+              ${renderMonitorField("monitor.name", binding.equipment_id || "--")}
+              ${renderMonitorField("monitor.type", binding.equipment_type || "--")}
+              ${renderMonitorField("monitor.mac", payload.mac_address || binding.ble_target || "--", "wide")}
+              ${renderMonitorField("monitor.channel", binding.antenna_channel || "--")}
+              ${renderMonitorField("monitor.updated", updated)}
+              ${renderMonitorField("monitor.speed", formatMetric(payload.instantaneous_speed_kph, " kph", 2))}
+              ${renderMonitorField("monitor.distance", formatMetric(payload.distance_m, " m", 0))}
+              ${renderMonitorField("monitor.power", formatMetric(payload.power_watts, " W", 0))}
+              ${renderMonitorField("monitor.cadence", formatMetric(payload.cadence_rpm, " rpm", 0))}
+              ${renderMonitorField("monitor.rssi", formatMetric(payload.rssi, " dBm", 0))}
+              ${renderMonitorField("monitor.calories", formatMetric(payload.calories ?? payload.total_energy_kcal, " kcal", 0))}
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function updateMonitorFromEvents(events) {
+      events.forEach((event) => {
+        const payload = event.payload || {};
+        const topic = event.topic || "";
+        if (event.source !== "mqtt" || event.direction !== "publish" || !topic.startsWith("gym/telemetry/")) {
+          return;
+        }
+        if (!payload.node_id) {
+          return;
+        }
+        const previous = monitorLatestByNode.get(payload.node_id);
+        if (!previous || Number(payload.timestamp_epoch_ms || 0) >= Number(previous.timestamp_epoch_ms || 0)) {
+          monitorLatestByNode.set(payload.node_id, payload);
+        }
+      });
+      renderMonitorEquipment();
+    }
+
+    async function refreshMonitorEvents() {
+      try {
+        const response = await fetch("/api/monitor/events?limit=200", {
+          headers: adminHeaders(),
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.detail || t("monitor.failed"));
+        }
+        updateMonitorFromEvents(Array.isArray(payload.events) ? payload.events : []);
+      } catch (error) {
+        monitorCount.textContent = "!";
+        monitorGrid.innerHTML = `<div class="empty">${escapeHtml(error.message || t("monitor.failed"))}</div>`;
+      }
+    }
+
+    function renderAntennaConfig(config) {
+      const channels = Array.isArray(config.channels) ? config.channels : [];
+      antennaChannels = channels;
+      antennaChannelSelect.innerHTML = `<option value="">Manual serial port</option>`;
+      channels.forEach((channel) => {
+        const option = document.createElement("option");
+        option.value = channel.port;
+        option.textContent = `${channel.id} (${channel.port})`;
+        option.dataset.baudrate = channel.baudrate || "";
+        option.dataset.rtscts = channel.rtscts ? "1" : "0";
+        antennaChannelSelect.appendChild(option);
+      });
+      if (config.default_port) {
+        antennaPortInput.value = config.default_port;
+        antennaChannelSelect.value = config.default_port;
+      }
+      if (edgeConfig) {
+        renderBindings(edgeConfig);
+      }
+    }
+
+    function channelOptions(selectedValue) {
+      return antennaChannels.map((channel) => (
+        `<option value="${escapeHtml(channel.id)}" ${channel.id === selectedValue ? "selected" : ""}>${escapeHtml(channel.id)} (${escapeHtml(channel.port)})</option>`
+      )).join("");
+    }
+
+    function renderBindings(config) {
+      edgeConfig = config;
+      configNodeId.textContent = config.node_id || "--";
+      const bindings = Array.isArray(config.equipment_bindings) ? config.equipment_bindings : [];
+      if (!bindings.length) {
+        bindingList.innerHTML = `<div class="empty">No equipment bindings configured.</div>`;
+        renderMonitorEquipment();
+        return;
+      }
+      bindingList.innerHTML = bindings.map((binding, index) => `
+        <div class="binding-row" data-index="${index}">
+          <div class="field">
+            <label>${escapeHtml(t("bindings.name"))}</label>
+            <input class="binding-equipment-id" type="text" value="${escapeHtml(binding.equipment_id || "")}" autocomplete="off">
+          </div>
+          <div class="field">
+            <label>${escapeHtml(t("bindings.type"))}</label>
+            <select class="binding-equipment-type">
+              ${["treadmill", "fan_bike", "rowing_machine", "elliptical", "ski_erg", "unknown"].map((type) => (
+                `<option value="${type}" ${type === binding.equipment_type ? "selected" : ""}>${type}</option>`
+              )).join("")}
+            </select>
+          </div>
+          <div class="field">
+            <label>${escapeHtml(t("bindings.channel"))}</label>
+            <select class="binding-channel">
+              ${channelOptions(binding.antenna_channel || "")}
+            </select>
+          </div>
+          <div class="field binding-target">
+            <label>${escapeHtml(t("bindings.target"))} · ${escapeHtml(binding.node_id || "")}</label>
+            <input class="binding-target-input readonly-input" type="text" value="${escapeHtml(binding.ble_target || "")}" readonly tabindex="-1">
+          </div>
+        </div>
+      `).join("");
+      renderMonitorEquipment();
+    }
+
+    async function loadEdgeConfig() {
+      try {
+        const response = await fetch("/api/config", {
+          headers: adminHeaders(),
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.detail || "Failed to load config");
+        }
+        renderBindings(payload);
+      } catch (error) {
+        setConfigMessage(error.message, "error");
+      }
+    }
+
+    function collectEdgeConfig() {
+      if (!edgeConfig) {
+        throw new Error("Config is not loaded");
+      }
+      const bindings = Array.from(bindingList.querySelectorAll(".binding-row")).map((row, index) => {
+        const original = edgeConfig.equipment_bindings[index] || {};
+        return {
+          ...original,
+          equipment_id: row.querySelector(".binding-equipment-id").value.trim(),
+          equipment_type: row.querySelector(".binding-equipment-type").value,
+          antenna_channel: row.querySelector(".binding-channel").value,
+          ble_target: original.ble_target,
+        };
+      });
+      return {
+        ...edgeConfig,
+        max_ftms_connections: bindings.length,
+        equipment_bindings: bindings,
+      };
+    }
+
+    async function saveEdgeConfig() {
+      let payload;
+      try {
+        payload = collectEdgeConfig();
+      } catch (error) {
+        setConfigMessage(error.message, "error");
+        return;
+      }
+      configSaveBtn.disabled = true;
+      try {
+        const response = await fetch("/api/config", {
+          method: "POST",
+          headers: adminHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify(payload),
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result.detail || t("bindings.failed"));
+        }
+        edgeConfig = result.config;
+        renderBindings(edgeConfig);
+        setConfigMessage(t("bindings.saved"), "ok");
+      } catch (error) {
+        setConfigMessage(error.message, "error");
+      } finally {
+        configSaveBtn.disabled = false;
+      }
+    }
+
+    async function restartEdgeRuntime() {
+      configRestartBtn.disabled = true;
+      try {
+        const response = await fetch("/api/system/power/restart-service", {
+          method: "POST",
+          headers: adminHeaders({ "Content-Type": "application/json" }),
+          body: "{}",
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result.detail || "Restart failed");
+        }
+        setConfigMessage(t("bindings.restarted"), "ok");
+      } catch (error) {
+        setConfigMessage(error.message, "error");
+      } finally {
+        window.setTimeout(() => {
+          configRestartBtn.disabled = false;
+        }, 2000);
+      }
+    }
+
+    async function loadAntennaConfig() {
+      try {
+        const response = await fetch("/api/antenna/config", {
+          headers: adminHeaders(),
+        });
+        if (!response.ok) return;
+        renderAntennaConfig(await response.json());
+      } catch (_error) {
+        // Keep the fallback value already rendered in the input.
+      }
+    }
+
+    function buildAntennaPayload(command) {
+      const port = antennaPortInput.value.trim();
+      if (!port) {
+        throw new Error("Serial port is required");
+      }
+
+      const payload = {
+        port,
+        command,
+        baudrate: Math.max(9600, Number(antennaBaudrateInput.value) || 115200),
+        rtscts: antennaRtsctsInput.checked,
+        timeout_sec: Math.max(1, Math.min(30, Number(antennaTimeoutInput.value) || 5)),
+        scan_duration_sec: Math.max(1, Math.min(30, Number(antennaScanDurationInput.value) || 5)),
+      };
+
+      if (command === "connect") {
+        payload.macs = antennaMacsInput.value
+          .split(",")
+          .map((value) => value.trim())
+          .filter(Boolean);
+        if (!payload.macs.length) {
+          throw new Error("Enter at least one device MAC or ID for CONNECT");
+        }
+      }
+
+      if (command === "report") {
+        payload.report_interval_ms = Math.max(100, Math.min(10000, Number(antennaReportIntervalInput.value) || 1000));
+      }
+
+      if (command === "raw") {
+        payload.raw_command = antennaRawInput.value.trim();
+        if (!payload.raw_command) {
+          throw new Error("Raw command is required");
+        }
+      }
+
+      return payload;
+    }
+
+    function setAntennaButtonsDisabled(disabled) {
+      allAntennaButtons.forEach((button) => {
+        button.disabled = disabled;
+      });
+    }
+
+    async function runAntennaCommand(command) {
+      let payload;
+      try {
+        payload = buildAntennaPayload(command);
+      } catch (error) {
+        antennaState.textContent = t("antenna.failed");
+        setAntennaMessage(error.message, "error");
+        return;
+      }
+
+      setAntennaButtonsDisabled(true);
+      antennaState.textContent = command.toUpperCase();
+      setAntennaMessage(t("antenna.running", { command: command.toUpperCase(), port: payload.port }));
+      antennaOutput.textContent = "Waiting for UART response...";
+
+      try {
+        const response = await fetch("/api/antenna/command", {
+          method: "POST",
+          headers: adminHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify(payload),
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result.detail || "UART command failed");
+        }
+        antennaState.textContent = t("antenna.complete_state");
+        setAntennaMessage(t("antenna.complete", { command: command.toUpperCase(), count: result.rx.length }), "ok");
+        renderAntennaOutput(result);
+      } catch (error) {
+        antennaState.textContent = t("antenna.failed");
+        setAntennaMessage(error.message, "error");
+        renderAntennaOutput({ error: error.message });
+      } finally {
+        setAntennaButtonsDisabled(false);
+      }
+    }
+
     async function refreshWifiStatus() {
       try {
-        const response = await fetch("/api/wifi/status?interface=wlan0");
+        const response = await fetch("/api/wifi/status?interface=wlan0", {
+          headers: adminHeaders(),
+        });
         const status = await response.json();
         if (!response.ok) {
           throw new Error(status.detail || "Failed to read Wi-Fi status");
@@ -746,70 +1512,32 @@ EDGE_SETUP_HTML = """
       }
     }
 
-    function startProgress(timeoutSec) {
-      const started = Date.now();
-      clearInterval(timer);
-      timer = setInterval(() => {
-        const elapsed = Math.max(0, (Date.now() - started) / 1000);
-        const remaining = Math.max(0, timeoutSec - elapsed);
-        const percent = Math.min(100, (elapsed / timeoutSec) * 100);
-        elapsedLabel.textContent = `${elapsed.toFixed(1)}s`;
-        remainingLabel.textContent = `${remaining.toFixed(1)}s`;
-        progressFill.style.width = `${percent}%`;
-      }, 100);
-    }
-
-    function stopProgress(done = false) {
-      clearInterval(timer);
-      timer = null;
-      if (done) {
-        progressFill.style.width = "100%";
-        remainingLabel.textContent = "0.0s";
-      }
-    }
-
-    scanBtn.addEventListener("click", async () => {
-      const adapter = adapterInput.value;
-      const timeoutSec = Math.max(1, Math.min(30, Number(timeoutInput.value) || 5));
-      const includeAll = includeAllInput.checked;
-      const params = new URLSearchParams({
-        adapter,
-        timeout_sec: String(timeoutSec),
-        include_all: String(includeAll),
-      });
-
-      scanBtn.disabled = true;
-      scanState.textContent = t("scan.scanning");
-      elapsedLabel.textContent = "0.0s";
-      remainingLabel.textContent = `${timeoutSec.toFixed(1)}s`;
-      progressFill.style.width = "0%";
-      results.innerHTML = `<div class="empty">${escapeHtml(t("results.scanning"))}</div>`;
-      setMessage(t("scan.in_progress", { adapter }));
-      startProgress(timeoutSec);
-
-      try {
-        const response = await fetch(`/api/ble/scan?${params.toString()}`);
-        const payload = await response.json();
-        if (!response.ok) {
-          throw new Error(payload.detail || "Scan failed");
-        }
-        stopProgress(true);
-        scanState.textContent = t("scan.complete");
-        setMessage(t("scan.done", { count: payload.devices.length }), "ok");
-        renderDevices(payload.devices);
-      } catch (error) {
-        stopProgress(false);
-        scanState.textContent = t("scan.failed");
-        setMessage(error.message, "error");
-        results.innerHTML = `<div class="empty">${escapeHtml(t("results.no_available"))}</div>`;
-      } finally {
-        scanBtn.disabled = false;
-      }
+    antennaCommandButtons.forEach((button) => {
+      button.addEventListener("click", () => runAntennaCommand(button.dataset.command));
     });
+    antennaChannelSelect.addEventListener("change", () => {
+      const selected = antennaChannelSelect.selectedOptions[0];
+      if (!selected || !selected.value) return;
+      antennaPortInput.value = selected.value;
+      if (selected.dataset.baudrate) {
+        antennaBaudrateInput.value = selected.dataset.baudrate;
+      }
+      antennaRtsctsInput.checked = selected.dataset.rtscts === "1";
+    });
+    antennaConnectBtn.addEventListener("click", () => runAntennaCommand("connect"));
+    antennaReportBtn.addEventListener("click", () => runAntennaCommand("report"));
+    antennaRawBtn.addEventListener("click", () => runAntennaCommand("raw"));
+    configSaveBtn.addEventListener("click", saveEdgeConfig);
+    configRestartBtn.addEventListener("click", restartEdgeRuntime);
+    monitorRefreshBtn.addEventListener("click", refreshMonitorEvents);
 
     applyTranslations();
+    loadAntennaConfig();
+    loadEdgeConfig();
     refreshWifiStatus();
+    refreshMonitorEvents();
     setInterval(refreshWifiStatus, 5000);
+    setInterval(refreshMonitorEvents, 2000);
   </script>
 </body>
 </html>

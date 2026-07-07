@@ -3,6 +3,7 @@ import os
 import base64
 import logging
 import subprocess
+import time
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
@@ -10,11 +11,12 @@ from typing import Dict, Any, Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from hub_server.domain.models import RaceState, RaceConfig
 from hub_server.usecases.race_manager import RaceManager
 from hub_server.usecases.node_registry import NodeRegistry
 from hub_server.usecases.race_event_engine import RaceEventEngine
+from hub_server.usecases.race_result_store import RaceResultStore
 from hub_server.adapters.websocket_manager import WebSocketManager
 from hub_server.infrastructure.locales import DEFAULT_LOCALE, list_locales, load_locale
 from hub_server.usecases.update_checker import UpdateChecker
@@ -34,10 +36,19 @@ HUB_UPDATER_SERVICE = os.getenv(
 MAX_AVATAR_BYTES = 256 * 1024
 RACE_START_COUNTDOWN_AUDIO_URL = "/static/audio/countdown_start.wav"
 RACE_START_COUNTDOWN_DURATION_MS = 3120
+STATION_TELEMETRY_STALE_MS = 10_000
 
 
 def run_systemctl(command: list[str]):
     subprocess.run(command, check=True, timeout=15)
+
+
+def build_node_command(action: str) -> dict:
+    command = {"action": action}
+    token = os.getenv("FITRACE_NODE_COMMAND_TOKEN") or os.getenv("FITRACE_ADMIN_TOKEN")
+    if token:
+        command["token"] = token
+    return command
 
 
 @asynccontextmanager
@@ -71,6 +82,9 @@ race_manager = RaceManager()
 ws_manager = WebSocketManager()
 node_registry = NodeRegistry()
 race_event_engine = RaceEventEngine()
+race_result_store = RaceResultStore(
+    os.getenv("FITRACE_RACE_RESULTS_PATH", "data/race_results.jsonl")
+)
 race_start_countdown_lock = asyncio.Lock()
 update_checker = UpdateChecker(
     manifest_url=os.getenv(
@@ -116,14 +130,14 @@ class StartCountdownSoundPayload(BaseModel):
 
 
 class AssignStationPayload(BaseModel):
-    station_number: int
+    station_number: int = Field(..., ge=1)
     node_id: Optional[str] = None
 
 
 class RegisterAthletePayload(BaseModel):
-    station_number: int
-    athlete_name: str
-    team_name: Optional[str] = None
+    station_number: int = Field(..., ge=1)
+    athlete_name: str = Field(..., min_length=1, max_length=80)
+    team_name: Optional[str] = Field(None, max_length=80)
     avatar_base64: Optional[str] = None
 
 
@@ -244,10 +258,185 @@ async def get_race_state_data() -> dict:
 
 async def broadcast_race_state():
     state_data = await get_race_state_data()
+    race_result_store.save_finished_snapshot(state_data)
     ws_data = dict(state_data)
     ws_data["type"] = "state_change"
     await ws_manager.broadcast(ws_data)
     return state_data
+
+
+def station_stream_health(node_id: str | None) -> dict:
+    if not node_id:
+        return {
+            "health": "missing",
+            "label": "No telemetry stream",
+            "edge_node_id": None,
+            "last_telemetry_epoch_ms": None,
+        }
+
+    for edge_node in node_registry.list_nodes():
+        for stream in edge_node.get("equipment_streams", []):
+            if stream.get("node_id") != node_id:
+                continue
+
+            if edge_node.get("status") != "online":
+                return {
+                    "health": "missing",
+                    "label": "Edge offline",
+                    "edge_node_id": edge_node.get("edge_node_id"),
+                    "last_telemetry_epoch_ms": stream.get("last_telemetry_epoch_ms"),
+                }
+
+            last_telemetry_ms = stream.get("last_telemetry_epoch_ms")
+            if not last_telemetry_ms:
+                return {
+                    "health": "missing",
+                    "label": "No telemetry received",
+                    "edge_node_id": edge_node.get("edge_node_id"),
+                    "last_telemetry_epoch_ms": None,
+                }
+
+            age_ms = int(time.time() * 1000) - int(last_telemetry_ms)
+            if age_ms > STATION_TELEMETRY_STALE_MS:
+                return {
+                    "health": "stale",
+                    "label": "Telemetry stale",
+                    "edge_node_id": edge_node.get("edge_node_id"),
+                    "last_telemetry_epoch_ms": last_telemetry_ms,
+                }
+
+            return {
+                "health": "online",
+                "label": "Online",
+                "edge_node_id": edge_node.get("edge_node_id"),
+                "last_telemetry_epoch_ms": last_telemetry_ms,
+            }
+
+    return {
+        "health": "missing",
+        "label": "Device missing",
+        "edge_node_id": None,
+        "last_telemetry_epoch_ms": None,
+    }
+
+
+def build_check(status: str, message: str) -> dict:
+    return {"status": status, "message": message}
+
+
+def get_race_readiness_status() -> dict:
+    race_state = race_manager.get_state()
+    config = race_manager.get_config()
+    stations_status = race_manager.get_stations_status()
+    stations = stations_status.get("stations", {})
+    blocking_issues: list[str] = []
+    warnings: list[str] = []
+
+    checks = {
+        "state": build_check("ok", "Race is READY."),
+        "target": build_check("ok", "Race target is valid."),
+        "registrations": build_check("ok", "Athletes are registered."),
+        "teams": build_check("ok", "Team setup is valid."),
+        "stations": build_check("ok", "Registered stations are online."),
+        "sound": build_check("ok", "Start sound is enabled."),
+    }
+
+    if race_state != RaceState.READY:
+        blocking_issues.append(f"Race state must be READY; current state is {race_state.value}.")
+        checks["state"] = build_check("block", "Save race settings before starting.")
+
+    if not config:
+        blocking_issues.append("Save race settings before starting.")
+        checks["target"] = build_check("block", "No race target has been saved.")
+    elif config.race_type in ("distance", "calories") and config.target_value <= 0:
+        blocking_issues.append("Target value must be greater than 0.")
+        checks["target"] = build_check("block", "Target value must be greater than 0.")
+    elif config.race_type in ("time", "max_power", "watts") and config.duration_sec <= 0:
+        blocking_issues.append("Challenge duration must be greater than 0.")
+        checks["target"] = build_check("block", "Challenge duration must be greater than 0.")
+
+    registered_stations = [
+        (int(station_number), station)
+        for station_number, station in stations.items()
+        if station.get("athlete_name")
+    ]
+    registered_stations.sort(key=lambda item: item[0])
+
+    if not registered_stations:
+        blocking_issues.append("Register at least one athlete before starting.")
+        checks["registrations"] = build_check("block", "No athletes are registered.")
+    else:
+        checks["registrations"] = build_check(
+            "ok", f"{len(registered_stations)} athlete(s) registered."
+        )
+
+    station_health = []
+    for station_number, station in registered_stations:
+        health = station_stream_health(station.get("node_id"))
+        health_item = {
+            "station_number": station_number,
+            "node_id": station.get("node_id"),
+            "athlete_name": station.get("athlete_name"),
+            "team_name": station.get("team_name"),
+            **health,
+        }
+        station_health.append(health_item)
+        if health["health"] in ("missing", "stale"):
+            blocking_issues.append(f"Station {station_number} device is missing or offline.")
+
+    unhealthy_count = sum(
+        1 for station in station_health if station.get("health") != "online"
+    )
+    if unhealthy_count:
+        checks["stations"] = build_check(
+            "block", f"{unhealthy_count} registered station(s) need attention."
+        )
+
+    if config and config.competition_mode == "team":
+        team_names = {
+            (station.get("team_name") or "").strip()
+            for _, station in registered_stations
+            if (station.get("team_name") or "").strip()
+        }
+        missing_team_count = sum(
+            1
+            for _, station in registered_stations
+            if not (station.get("team_name") or "").strip()
+        )
+        if len(team_names) < 2:
+            blocking_issues.append("Team race needs at least two teams.")
+        if missing_team_count:
+            blocking_issues.append("Every team race athlete needs a team name.")
+        if len(team_names) < 2 or missing_team_count:
+            checks["teams"] = build_check("block", "Team setup needs review.")
+        else:
+            checks["teams"] = build_check("ok", f"{len(team_names)} teams ready.")
+    elif config:
+        checks["teams"] = build_check("info", "Individual race; team rules are not applied.")
+
+    if not race_manager.get_start_countdown_sound_enabled():
+        warnings.append("Start sound is disabled for this race.")
+        checks["sound"] = build_check("warn", "Silent start selected.")
+
+    return {
+        "ready": not blocking_issues,
+        "race_state": race_state.value,
+        "competition_mode": config.competition_mode if config else None,
+        "blocking_issues": blocking_issues,
+        "warnings": warnings,
+        "checks": checks,
+        "station_health": station_health,
+    }
+
+
+def enforce_race_readiness():
+    readiness = get_race_readiness_status()
+    if not readiness["ready"]:
+        raise HTTPException(
+            status_code=409,
+            detail=" ".join(readiness["blocking_issues"]),
+        )
+    return readiness
 
 
 @app.get("/api/race/state")
@@ -255,8 +444,22 @@ async def get_race_state():
     return await get_race_state_data()
 
 
+@app.get("/api/race/readiness")
+def get_race_readiness():
+    return get_race_readiness_status()
+
+
+@app.get("/api/race/results")
+def get_race_results(limit: int = 50):
+    return {
+        "path": str(race_result_store.path),
+        "results": race_result_store.list_results(limit=limit),
+    }
+
+
 @app.post("/api/leaderboard/display")
-async def set_leaderboard_display(payload: LeaderboardDisplayPayload):
+async def set_leaderboard_display(payload: LeaderboardDisplayPayload, request: Request):
+    require_admin(request)
     try:
         race_manager.set_leaderboard_display_mode(payload.mode)
         return await broadcast_race_state()
@@ -265,7 +468,8 @@ async def set_leaderboard_display(payload: LeaderboardDisplayPayload):
 
 
 @app.post("/api/race/start-sound")
-async def set_start_countdown_sound(payload: StartCountdownSoundPayload):
+async def set_start_countdown_sound(payload: StartCountdownSoundPayload, request: Request):
+    require_admin(request)
     race_manager.set_start_countdown_sound_enabled(payload.enabled)
     return await broadcast_race_state()
 
@@ -380,7 +584,7 @@ async def shutdown_hub(payload: PowerActionPayload, request: Request):
             import json
 
             await mqtt_client.publish(
-                "fitrace/nodes/command", json.dumps({"action": "shutdown"})
+                "fitrace/nodes/command", json.dumps(build_node_command("shutdown"))
             )
             logger.info("Published shutdown command to all EdgeNodes via MQTT")
         except Exception as e:
@@ -406,7 +610,7 @@ async def shutdown_system(request: Request):
             import json
 
             await mqtt_client.publish(
-                "fitrace/nodes/command", json.dumps({"action": "shutdown"})
+                "fitrace/nodes/command", json.dumps(build_node_command("shutdown"))
             )
             logger.info("Published shutdown command to all EdgeNodes via MQTT")
         except Exception as e:
@@ -490,7 +694,8 @@ def get_locale(locale: str):
 
 
 @app.post("/api/race/configure")
-async def configure_race(payload: ConfigurePayload):
+async def configure_race(payload: ConfigurePayload, request: Request):
+    require_admin(request)
     try:
         config = RaceConfig(
             race_type=payload.race_type,
@@ -510,7 +715,9 @@ async def configure_race(payload: ConfigurePayload):
 
 
 @app.post("/api/race/start")
-async def start_race():
+async def start_race(request: Request):
+    require_admin(request)
+    enforce_race_readiness()
     try:
         race_manager.start_race()
         race_event_engine.reset()
@@ -520,7 +727,8 @@ async def start_race():
 
 
 @app.post("/api/race/countdown-start")
-async def countdown_start_race():
+async def countdown_start_race(request: Request):
+    require_admin(request)
     if race_start_countdown_lock.locked():
         raise HTTPException(status_code=409, detail="Race countdown is already active")
     if race_manager.get_state() != RaceState.READY:
@@ -528,6 +736,7 @@ async def countdown_start_race():
             status_code=400,
             detail=f"Race must be in READY state to start countdown; current state is {race_manager.get_state().value}",
         )
+    enforce_race_readiness()
 
     async with race_start_countdown_lock:
         await ws_manager.broadcast(
@@ -549,7 +758,8 @@ async def countdown_start_race():
 
 
 @app.post("/api/race/stop")
-async def stop_race():
+async def stop_race(request: Request):
+    require_admin(request)
     try:
         race_manager.stop_race()
         return await broadcast_race_state()
@@ -558,7 +768,8 @@ async def stop_race():
 
 
 @app.post("/api/race/close")
-async def close_race():
+async def close_race(request: Request):
+    require_admin(request)
     try:
         race_manager.close_race()
         return await broadcast_race_state()
@@ -567,7 +778,8 @@ async def close_race():
 
 
 @app.post("/api/race/reset")
-async def reset_race():
+async def reset_race(request: Request):
+    require_admin(request)
     race_manager.reset_race()
     race_event_engine.reset()
     return await broadcast_race_state()
@@ -579,12 +791,15 @@ def get_stations():
 
 
 @app.post("/api/stations/assign")
-async def assign_station(payload: AssignStationPayload):
+async def assign_station(payload: AssignStationPayload, request: Request):
+    require_admin(request)
     try:
         race_manager.assign_station(payload.station_number, payload.node_id)
         # Broadcast the updated race state and leaderboard progress to all WebSocket clients
         await broadcast_race_state()
         return race_manager.get_stations_status()
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

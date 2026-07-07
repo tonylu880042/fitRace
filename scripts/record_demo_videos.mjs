@@ -76,8 +76,8 @@ function delay(ms) {
 
 function startHub() {
   const child = spawn(
-    path.join(ROOT, ".venv/bin/uvicorn"),
-    ["hub_server.infrastructure.fastapi.app:app", "--host", "127.0.0.1", "--port", "8010"],
+    path.join(ROOT, ".venv/bin/python"),
+    ["-m", "scripts.demo_hub"],
     {
       cwd: ROOT,
       env: {
@@ -446,6 +446,96 @@ async function recordLiveRace(browser) {
   return rec.close();
 }
 
+async function recordFullSystemWorkflow(browser) {
+  await seedConfiguredRace({ registerAthletes: false });
+  const rec = await newRecordedPage(browser, "13_full_system_workflow.webm");
+  const { page } = rec;
+  const workflowTeams = ["Velocity", "Velocity", "Apex", "Apex", "Pulse", "Pulse"];
+
+  await page.goto(`${BASE_URL}/gameAdmin`, { waitUntil: "networkidle" });
+  await addOverlay(page, "1. Race setup: safety checks keep Start Race locked", "right");
+  await delay(3600);
+
+  await page.goto(`${BASE_URL}/static/signup.html?station=1`, { waitUntil: "networkidle" });
+  await addOverlay(page, "2. Athlete registration from a station device");
+  await page.locator('[data-type="male"]').click();
+  await page.fill("#athlete-name", demoNodes[0].athlete);
+  await page.fill("#team-name", workflowTeams[0]);
+  await delay(1400);
+  await page.click("#submit-btn");
+  await delay(2200);
+
+  for (const [index, node] of demoNodes.slice(1).entries()) {
+    await api("/api/race/register", {
+      method: "POST",
+      body: JSON.stringify({
+        station_number: node.station,
+        athlete_name: node.athlete,
+        team_name: workflowTeams[index + 1],
+      }),
+    });
+  }
+
+  await page.goto(`${BASE_URL}/gameAdmin`, { waitUntil: "networkidle" });
+  await page.selectOption("#competition-mode", "team");
+  await page.selectOption("#team-scoring-policy", "total");
+  await page.selectOption("#team-completion-policy", "all_members");
+  await page.selectOption("#leaderboard-display-mode", "team_battle");
+  await page.fill("#race-target", "500");
+  await page.click("#btn-configure");
+  await api("/api/race/configure", {
+    method: "POST",
+    body: JSON.stringify({
+      race_type: "distance",
+      competition_mode: "team",
+      team_scoring_policy: "total",
+      team_completion_policy: "all_members",
+      target_value: 500,
+      duration_sec: 0,
+    }),
+  });
+  await api("/api/leaderboard/display", {
+    method: "POST",
+    body: JSON.stringify({ mode: "team_battle" }),
+  });
+  await page.reload({ waitUntil: "networkidle" });
+  await page.waitForFunction(() => document.querySelector("#summary-readiness")?.innerText.includes("READY"));
+  await addOverlay(page, "3. Team Race: Team Total + Everyone Finishes", "right");
+  await delay(4200);
+
+  await page.click("#btn-start");
+  await delay(700);
+  await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
+  await addOverlay(page, "4. Dashboard receives the 3, 2, 1, Go start signal");
+  await page.waitForFunction(() => document.body.innerText.includes("LIVE RACE"), { timeout: 9000 });
+  await delay(1500);
+
+  await addOverlay(page, "5. Team Battle updates live from every station", "right");
+  for (let step = 1; step <= 7; step += 1) {
+    await sendTelemetryFrame(step, 7);
+    await delay(1150);
+  }
+  await api("/api/race/stop", { method: "POST" });
+  await delay(1000);
+  await addOverlay(page, "6. Results lock when the race is finished", "right");
+  await delay(3600);
+
+  await page.goto(`${BASE_URL}/gameAdmin`, { waitUntil: "networkidle" });
+  await addOverlay(page, "7. Choose distance, calories, time, or max power", "right");
+  for (const mode of ["distance", "calories", "time", "max_power"]) {
+    await page.selectOption("#race-type", mode);
+    await delay(800);
+  }
+  await addOverlay(page, "8. Choose Classic, Race Track, Team Battle, or Sprint Board", "right");
+  for (const mode of ["classic", "race_track", "team_battle", "sprint_board"]) {
+    await page.selectOption("#leaderboard-display-mode", mode);
+    await delay(850);
+  }
+  await hideOverlay(page);
+  await delay(500);
+  return rec.close();
+}
+
 async function main() {
   await mkdir(OUTPUT_DIR, { recursive: true });
   const hub = startHub();
@@ -454,11 +544,14 @@ async function main() {
     await waitForHub();
     browser = await chromium.launch({ headless: true });
     const outputs = [];
-    outputs.push(await recordOverview(browser));
-    outputs.push(await recordSignup(browser));
-    outputs.push(await recordGameAdmin(browser));
-    outputs.push(await recordSystemAdmin(browser));
-    outputs.push(await recordLiveRace(browser));
+    if (!process.env.FITRACE_RECORD_FULL_ONLY) {
+      outputs.push(await recordOverview(browser));
+      outputs.push(await recordSignup(browser));
+      outputs.push(await recordGameAdmin(browser));
+      outputs.push(await recordSystemAdmin(browser));
+      outputs.push(await recordLiveRace(browser));
+    }
+    outputs.push(await recordFullSystemWorkflow(browser));
 
     for (const file of outputs) {
       const info = await stat(file);

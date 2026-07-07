@@ -1,5 +1,7 @@
 from fastapi.testclient import TestClient
-from hub_server.infrastructure.fastapi.app import app
+import time
+
+from hub_server.infrastructure.fastapi.app import app, node_registry
 
 client = TestClient(app)
 
@@ -7,6 +9,12 @@ client = TestClient(app)
 def test_station_api_workflow():
     # 1. Reset race to clean state
     client.post("/api/race/reset")
+    node_registry.clear()
+    for station_number in (1, 2, 3):
+        client.post(
+            "/api/stations/assign",
+            json={"station_number": station_number, "node_id": None},
+        )
 
     # 2. Query empty stations status
     res = client.get("/api/stations")
@@ -43,6 +51,21 @@ def test_station_api_workflow():
     # Let's post an assignment.
     res = client.post("/api/stations/assign", json={"station_number": 1, "node_id": "bike-01"})
     assert res.status_code == 200
+    node_registry.update_status(
+        {
+            "edge_node_id": "edge-01",
+            "status": "online",
+            "equipment_streams": [
+                    {
+                        "node_id": "bike-01",
+                        "equipment_id": "BIKE_01",
+                        "equipment_type": "fan_bike",
+                        "status": "configured",
+                        "last_telemetry_epoch_ms": int(time.time() * 1000),
+                    }
+                ],
+            }
+    )
     
     res = client.get("/api/stations")
     assert res.json()["stations"]["1"]["node_id"] == "bike-01"

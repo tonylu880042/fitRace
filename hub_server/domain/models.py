@@ -49,6 +49,8 @@ class EquipmentStreamStatus(BaseModel):
     node_id: str
     equipment_id: str | None = None
     equipment_type: str | None = None
+    ble_target: str | None = None
+    mac_address: str | None = None
     status: str = "unknown"
     antenna_channel: str | None = None
     rssi: int | None = None

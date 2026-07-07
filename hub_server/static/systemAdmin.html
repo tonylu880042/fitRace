@@ -731,8 +731,8 @@
         const streamHtml = (node.equipment_streams || []).length
           ? node.equipment_streams.map((stream) => `
               <span class="stream">
-                <strong>${escapeHtml(stream.node_id || stream.equipment_id || "stream")}</strong>
-                ${escapeHtml(stream.status || "unknown")}${stream.antenna_channel ? ` · ${escapeHtml(stream.antenna_channel)}` : ""}
+                <strong>${escapeHtml(stream.equipment_id || stream.node_id || "stream")}</strong>
+                ${escapeHtml(stream.node_id || "")}${stream.antenna_channel ? ` · ${escapeHtml(stream.antenna_channel)}` : ""}${stream.mac_address || stream.ble_target ? ` · ${escapeHtml(stream.mac_address || stream.ble_target)}` : ""}
               </span>
             `).join("")
           : `<span class="stream"><strong>0 streams</strong>unbound</span>`;

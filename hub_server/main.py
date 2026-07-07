@@ -9,6 +9,7 @@ from hub_server.infrastructure.fastapi.app import (
     ws_manager,
     node_registry,
     race_event_engine,
+    race_result_store,
 )
 
 logging.basicConfig(
@@ -32,7 +33,12 @@ async def main_async():
     try:
         await mqtt_client.connect()
         subscriber = MqttSubscriber(
-            mqtt_client, race_manager, ws_manager, node_registry, race_event_engine
+            mqtt_client,
+            race_manager,
+            ws_manager,
+            node_registry,
+            race_event_engine,
+            race_result_store,
         )
         subscriber.start_listening()
     except Exception as e:
