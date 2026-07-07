@@ -10,14 +10,14 @@
     "hub": {
       "version": "0.1.2",
       "artifact_url": "https://dd9tnec1hh2ts.cloudfront.net/releases/0.1.2/fitrace-hub-0.1.2.tar.zst",
-      "sha256": "89f58265768e85e3bde111178f1dd7ce65e32d3fccff8beb102adb108237d0f4",
+      "sha256": "628e1e42722a1b48407755995baecb6b4b0a46d2df3daf0dffeb1712b7eead17",
       "requires_reboot": false,
       "systemd_units": ["fitracestudio-hub.service"]
     },
     "edge": {
       "version": "0.1.2",
       "artifact_url": "https://dd9tnec1hh2ts.cloudfront.net/releases/0.1.2/fitrace-edge-0.1.2.tar.zst",
-      "sha256": "985073726ae6d8fae634b3ebe831a62998b03c872a3d5cb8197e5d19cc9503b7",
+      "sha256": "bb927860265f9c03971bef6457755b52abba91f08427bf15af4ca32c9cc76a72",
       "requires_reboot": false,
       "systemd_units": ["fitracestudio-edge.service", "fitracestudio-edge-web.service"]
     }
