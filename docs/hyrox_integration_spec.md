@@ -68,6 +68,106 @@ The hardware deployment consists of athlete-worn passive tags, lane-bound floor 
 *   **Sensors**: Target-mounted rather than ball-mounted to prevent structural damage. A piezoelectric vibration sensor detects impact on the board, combined with an upward-pointing Time-of-Flight (ToF) laser distance sensor to verify the ball reached the required height (9ft/10ft).
 *   **Processor**: ESP32 controller on the target board, transmitting successful repetitions directly to the Hub over Wi-Fi via MQTT.
 
+### 2.3 Lane Pairing & Shuttle-Length Definition
+For constrained venues, lane-based Hyrox stations may require athletes to travel back and forth multiple times. The system must define these stations in **lengths**, not ambiguous "laps" or "trips".
+
+**Terminology**
+*   `length`: One completed movement from one end of a lane to the opposite end.
+    *   Example: `start_line -> finish_line` = 1 length.
+    *   Example: `finish_line -> start_line` = 1 length.
+*   `round_trip`: Two lengths, returning to the starting side.
+    *   Example: `start_line -> finish_line -> start_line` = 2 lengths = 1 round trip.
+*   `target_lengths`: Required completed lengths for a stage.
+*   `lane_length_m`: Physical distance between the paired lane endpoints.
+*   `lane_id`: A stable lane identity inside a station, for example `sled_push_lane_1`.
+*   `endpoint`: The physical end of a lane. Valid values are `start_line` and `finish_line`.
+
+**Hardware rule**
+For formal competition timing, each active lane must have two paired RFID read zones:
+*   One endpoint reader/antenna at `start_line`.
+*   One endpoint reader/antenna at `finish_line`.
+
+One RFID read zone alone can only prove that a tag appeared near that reader. It cannot prove that the athlete reached the opposite side, so one-reader mode is acceptable only for diagnostics or informal training and must be marked as lower-confidence telemetry.
+
+### 2.4 RFID Lane Pairing Model
+Each lane-based station may contain multiple lanes. Each lane binds exactly two endpoint sensors into one logical lane:
+
+```json
+{
+  "station_number": 2,
+  "station_stage": "sled_push",
+  "lane_id": "sled_push_lane_1",
+  "lane_number": 1,
+  "lane_length_m": 12.5,
+  "target_lengths": 8,
+  "sensors": {
+    "start_line": {
+      "node_id": "rfid-reader-01",
+      "antenna_id": "L1_START"
+    },
+    "finish_line": {
+      "node_id": "rfid-reader-01",
+      "antenna_id": "L1_FINISH"
+    }
+  }
+}
+```
+
+**Pairing constraints**
+1.  A `lane_id` must map to one `station_stage` and one `station_number`.
+2.  A `lane_id` must have both `start_line` and `finish_line` endpoint sensors for competition mode.
+3.  A physical `node_id + antenna_id` pair must not be assigned to more than one lane endpoint.
+4.  `target_lengths` must be a positive integer. Even numbers map cleanly to round trips; odd numbers are valid when a workout intentionally finishes at the opposite side.
+5.  `lane_length_m` must be positive. It is used for display and auditability; completion is still driven by endpoint crossing order.
+6.  Athletes should be assigned to a `lane_id` when entering a lane station. Dynamic assignment from first lane read is allowed in training mode, but competition mode should prefer explicit lane assignment to reduce cross-lane ambiguity.
+
+**Counting rule**
+The Hub counts a completed length only when the same athlete tag is detected at the opposite endpoint from the previous counted endpoint for the same `station_stage + lane_id`.
+
+Valid sequence:
+```text
+start_line -> finish_line = 1 length
+finish_line -> start_line = 2 lengths
+start_line -> finish_line = 3 lengths
+```
+
+Ignored duplicate/cross-talk sequence:
+```text
+start_line -> start_line = still 0 lengths
+finish_line -> finish_line = no additional length
+read from lane_id mismatch = ignored or flagged for review
+rssi below threshold = ignored
+```
+
+**Stage completion rule**
+A lane stage is complete when:
+
+```text
+completed_lengths >= target_lengths
+```
+
+The default official-style values can remain `4` lengths for initial setup, but venue operators must be able to configure each lane station independently:
+
+```json
+{
+  "sled_push": { "lane_length_m": 12.5, "target_lengths": 8 },
+  "sled_pull": { "lane_length_m": 12.5, "target_lengths": 8 },
+  "burpee_broad": { "lane_length_m": 10.0, "target_lengths": 8 },
+  "farmers_carry": { "lane_length_m": 10.0, "target_lengths": 20 },
+  "sandbag_lunges": { "lane_length_m": 10.0, "target_lengths": 10 }
+}
+```
+
+**UI display rule**
+The coach/admin UI should show both machine-precise and human-readable values:
+
+```text
+Target: 8 lengths
+Equivalent: 4 round trips
+Lane length: 12.5 m
+Total lane distance: 100 m
+```
+
 ---
 
 ## 3. Data Transmission Schemas (MQTT)
@@ -81,6 +181,10 @@ Published by the Edge Node when a tag is detected crossing a floor mat:
   "node_id": "rfid-reader-01",
   "edge_node_id": "edge-node-rfid-01",
   "equipment_type": "rfid_timing_mat",
+  "station_number": 2,
+  "station_stage": "sled_push",
+  "lane_id": "sled_push_lane_1",
+  "lane_number": 1,
   "location": "start_line",
   "antenna_id": "L1_START",
   "tag_id": "E28011052000789A",
@@ -90,6 +194,8 @@ Published by the Edge Node when a tag is detected crossing a floor mat:
 ```
 *Note on Ingestion Filtering (Cross-talk Prevention)*:
 Adjacent lanes can occasionally detect tags from neighboring lanes. The Edge Node and Hub must filter out telemetry rows where `rssi < -60` (or a calibrated threshold) to isolate lanes.
+
+For lane stations, `lane_id` should be supplied by the Edge Node after mapping `node_id + antenna_id` through the lane pairing table. If `lane_id` is missing, the Hub may infer it from `station_number + antenna_id` only when that mapping is configured and unambiguous.
 
 ### 3.2 Wall Ball Counter
 Published by the ESP32 wall ball target sensor on successful hits:
@@ -148,10 +254,28 @@ class HyroxConfig(BaseModel):
     session_type: Literal["training", "competition"] = Field(
         "training", description="Type of session (training or official competition)"
     )
+    lane_stations: Dict[str, "HyroxLaneStationConfig"] = Field(default_factory=dict)
+
+class HyroxLaneEndpointSensor(BaseModel):
+    node_id: str
+    antenna_id: str
+
+class HyroxLaneConfig(BaseModel):
+    lane_id: str
+    lane_number: int
+    lane_length_m: float
+    target_lengths: int
+    sensors: Dict[Literal["start_line", "finish_line"], HyroxLaneEndpointSensor]
+
+class HyroxLaneStationConfig(BaseModel):
+    station_number: int
+    station_stage: HyroxStage
+    lanes: List[HyroxLaneConfig] = Field(default_factory=list)
 
 class AthleteHyroxState(BaseModel):
     athlete_name: str
     station_number: int
+    lane_id: Optional[str] = None
     current_stage: HyroxStage = HyroxStage.RUN_1
     stage_laps: Dict[str, int] = Field(default_factory=dict) # stage_name -> completed_laps/reps
     stage_start_times: Dict[str, int] = Field(default_factory=dict) # stage_name -> epoch_ms
@@ -310,6 +434,12 @@ To implement this functionality following the project's strict TDD pipeline, dev
         Simulate an athlete completing 4 laps of Sled Push. Verify that the athlete's `current_stage` transitions automatically to `RUN_2` and triggers WebSocket broadcasts.
     *   **Test Case 4 (`test_wallball_counts`)**:
         Simulate wall ball event payloads on station 2. Verify that only the athlete bound to station 2 receives counts, and other athletes are unaffected.
+    *   **Test Case 5 (`test_lane_pair_requires_opposite_endpoint`)**:
+        Configure a lane with `start_line` and `finish_line`. Verify duplicate reads at the same endpoint do not increment `completed_lengths`, while alternating endpoint reads do.
+    *   **Test Case 6 (`test_configurable_target_lengths`)**:
+        Configure `sled_push.target_lengths = 8`. Verify the athlete does not advance at 4 lengths and advances only after 8 valid alternating endpoint crossings.
+    *   **Test Case 7 (`test_lane_mismatch_rejected`)**:
+        Bind an athlete to `sled_push_lane_1`. Publish RFID reads for the same tag from `sled_push_lane_2`. Verify they are ignored or surfaced as lane-mismatch diagnostics without incrementing progress.
 
 ### 5.2 Integration Tests
 *   **File**: `tests/integration/test_hyrox_sensor_stream.py`

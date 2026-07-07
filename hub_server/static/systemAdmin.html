@@ -371,6 +371,172 @@
       font-size: 12px;
     }
 
+    .settings-intro {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 14px;
+      align-items: start;
+      margin-bottom: 14px;
+    }
+
+    .settings-intro p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .stage-tabs {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 8px;
+      margin: 14px 0;
+    }
+
+    .stage-tab {
+      min-height: 64px;
+      padding: 10px;
+      text-align: left;
+      white-space: normal;
+    }
+
+    .stage-tab.active {
+      border-color: var(--accent);
+      background: rgba(226,255,59,0.1);
+      color: var(--accent);
+    }
+
+    .stage-tab span {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-family: "Outfit", sans-serif;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+    }
+
+    .settings-board {
+      display: grid;
+      grid-template-columns: minmax(0, 0.78fr) minmax(0, 1.22fr);
+      gap: 14px;
+      align-items: start;
+    }
+
+    .settings-card {
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: rgba(0,0,0,0.22);
+      padding: 14px;
+    }
+
+    .computed-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .computed {
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 10px;
+      background: rgba(255,255,255,0.03);
+    }
+
+    .computed strong {
+      display: block;
+      font-family: "Oswald", sans-serif;
+      font-size: 22px;
+      line-height: 1;
+      color: var(--accent);
+    }
+
+    .computed span {
+      display: block;
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .lane-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .lane-toolbar h3 {
+      margin: 0;
+      font-family: "Oswald", sans-serif;
+      font-size: 17px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .lane-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .lane-card {
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: rgba(255,255,255,0.03);
+      padding: 12px;
+    }
+
+    .lane-card-header {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    .lane-card-title {
+      font-weight: 800;
+      letter-spacing: 0.02em;
+    }
+
+    .endpoint-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .json-preview {
+      min-height: 170px;
+      max-height: 300px;
+      overflow: auto;
+      margin: 12px 0 0;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: #050506;
+      color: #d4d4d8;
+      padding: 12px;
+      font-size: 12px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+    }
+
+    .validation-list {
+      display: grid;
+      gap: 6px;
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.35;
+    }
+
+    .validation-list .error { color: var(--danger); }
+    .validation-list .warn { color: var(--warn); }
+    .validation-list .ok { color: var(--ok); }
+
     .empty {
       border: 1px dashed var(--border-strong);
       border-radius: 4px;
@@ -428,6 +594,16 @@
       .grid-3 {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
+      .settings-board,
+      .settings-intro {
+        grid-template-columns: 1fr;
+      }
+      .stage-tabs {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .endpoint-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
     }
 
     @media (max-width: 640px) {
@@ -438,6 +614,14 @@
       }
       .button-row button {
         width: 100%;
+      }
+      .stage-tabs,
+      .computed-grid,
+      .endpoint-grid {
+        grid-template-columns: 1fr;
+      }
+      .settings-intro .pill {
+        width: fit-content;
       }
     }
   </style>
@@ -512,6 +696,64 @@
           <div class="list" id="station-list" style="margin-top: 14px;"></div>
         </section>
 
+        <section class="panel" aria-labelledby="hyrox-settings-title">
+          <div class="panel-header">
+            <h2 class="panel-title" id="hyrox-settings-title">Hyrox Lane System Settings</h2>
+            <span class="pill" id="hyrox-settings-state">draft</span>
+          </div>
+          <div class="settings-intro">
+            <p>
+              Configure shuttle-style stations that need several lengths in a limited venue.
+              Competition mode should pair each lane with one start RFID read zone and one finish RFID read zone, then count only alternating endpoint reads.
+            </p>
+            <button type="button" onclick="resetHyroxLaneDraft()">Reset Draft</button>
+          </div>
+          <div class="stage-tabs" id="hyrox-stage-tabs"></div>
+          <datalist id="hyrox-stream-options"></datalist>
+          <div class="settings-board">
+            <div class="settings-card">
+              <div class="grid-2">
+                <div class="field">
+                  <label for="hyrox-station-number">Station</label>
+                  <input type="number" id="hyrox-station-number" min="1" max="99" onchange="updateHyroxStageField('station_number', this.value)">
+                </div>
+                <div class="field">
+                  <label for="hyrox-lane-length">Lane Length (m)</label>
+                  <input type="number" id="hyrox-lane-length" min="1" step="0.5" onchange="updateHyroxStageField('lane_length_m', this.value)">
+                </div>
+                <div class="field">
+                  <label for="hyrox-target-lengths">Target Lengths</label>
+                  <input type="number" id="hyrox-target-lengths" min="1" step="1" onchange="updateHyroxStageField('target_lengths', this.value)">
+                </div>
+                <div class="field">
+                  <label for="hyrox-total-distance">Target Distance (m)</label>
+                  <input type="number" id="hyrox-total-distance" min="1" step="1" onchange="updateHyroxStageField('target_distance_m', this.value)">
+                </div>
+              </div>
+              <div class="computed-grid" aria-label="Hyrox shuttle calculation">
+                <div class="computed"><strong id="hyrox-computed-distance">0m</strong><span>configured distance</span></div>
+                <div class="computed"><strong id="hyrox-computed-rounds">0</strong><span>round trips</span></div>
+                <div class="computed"><strong id="hyrox-computed-lanes">0</strong><span>lanes</span></div>
+              </div>
+              <div class="button-row">
+                <button type="button" class="primary" onclick="saveHyroxLaneDraft()">Save Draft</button>
+                <button type="button" onclick="validateHyroxLaneDraft(true)">Validate Pairing</button>
+                <button type="button" onclick="copyHyroxLaneJson()">Copy JSON</button>
+              </div>
+              <div class="status-text" id="hyrox-settings-message"></div>
+              <div class="validation-list" id="hyrox-validation-list"></div>
+            </div>
+            <div class="settings-card">
+              <div class="lane-toolbar">
+                <h3>RFID Lane Pairing</h3>
+                <button type="button" onclick="addHyroxLane()">Add Lane</button>
+              </div>
+              <div class="lane-list" id="hyrox-lane-list"></div>
+              <pre class="json-preview" id="hyrox-json-preview" aria-label="Hyrox lane settings JSON"></pre>
+            </div>
+          </div>
+        </section>
+
         <section class="panel" aria-labelledby="update-title">
           <div class="panel-header">
             <h2 class="panel-title" id="update-title">Updates</h2>
@@ -561,11 +803,63 @@
   </div>
 
   <script>
+    const HYROX_LANE_STORAGE_KEY = "fitrace.hyroxLaneSettings";
+    const HYROX_LANE_STAGES = [
+      { id: "sled_push", label: "Sled Push", station: 2, distance: 50, laneLength: 12.5, lengths: 4 },
+      { id: "sled_pull", label: "Sled Pull", station: 3, distance: 50, laneLength: 12.5, lengths: 4 },
+      { id: "burpee_broad_jump", label: "Burpee Broad", station: 4, distance: 80, laneLength: 20, lengths: 4 },
+      { id: "farmers_carry", label: "Farmers Carry", station: 6, distance: 200, laneLength: 25, lengths: 8 },
+      { id: "sandbag_lunges", label: "Sandbag Lunges", station: 7, distance: 100, laneLength: 25, lengths: 4 },
+    ];
+
+    function defaultHyroxLaneSettings() {
+      return {
+        mode: "competition",
+        counting_rule: "alternate_start_finish_endpoints",
+        stages: Object.fromEntries(HYROX_LANE_STAGES.map((stage) => [
+          stage.id,
+          {
+            station_number: stage.station,
+            station_stage: stage.id,
+            label: stage.label,
+            target_distance_m: stage.distance,
+            lane_length_m: stage.laneLength,
+            target_lengths: stage.lengths,
+            lanes: [
+              emptyHyroxLane(1),
+              emptyHyroxLane(2),
+            ],
+          },
+        ])),
+      };
+    }
+
+    function emptyHyroxLane(laneNumber) {
+      return {
+        lane_id: `lane-${laneNumber}`,
+        lane_number: laneNumber,
+        start_node_id: "",
+        start_antenna_id: "",
+        finish_node_id: "",
+        finish_antenna_id: "",
+      };
+    }
+
+    function loadHyroxLaneSettings() {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(HYROX_LANE_STORAGE_KEY) || "null");
+        if (parsed && parsed.stages) return parsed;
+      } catch (_) {}
+      return defaultHyroxLaneSettings();
+    }
+
     const state = {
       race: null,
       stations: { stations: {}, unassigned_nodes: [] },
       nodes: [],
       update: null,
+      hyroxActiveStage: "sled_push",
+      hyroxLaneSettings: loadHyroxLaneSettings(),
       refreshTimer: null,
       adminToken: localStorage.getItem("fitrace.adminPassword") || localStorage.getItem("fitrace.adminToken") || "",
     };
@@ -785,9 +1079,19 @@
       const streams = getKnownStreams();
       if (!streams.length) {
         select.innerHTML = `<option value="">No streams discovered</option>`;
+        renderHyroxStreamOptions(streams);
         return;
       }
       select.innerHTML = streams.map((stream) => (
+        `<option value="${escapeHtml(stream.node_id)}">${escapeHtml(stream.label)}</option>`
+      )).join("");
+      renderHyroxStreamOptions(streams);
+    }
+
+    function renderHyroxStreamOptions(streams) {
+      const datalist = $("hyrox-stream-options");
+      if (!datalist) return;
+      datalist.innerHTML = streams.map((stream) => (
         `<option value="${escapeHtml(stream.node_id)}">${escapeHtml(stream.label)}</option>`
       )).join("");
     }
@@ -908,6 +1212,265 @@
       }
     }
 
+    function activeHyroxStageConfig() {
+      const stage = state.hyroxLaneSettings.stages[state.hyroxActiveStage];
+      if (stage) return stage;
+      state.hyroxActiveStage = HYROX_LANE_STAGES[0].id;
+      return state.hyroxLaneSettings.stages[state.hyroxActiveStage];
+    }
+
+    function normalizePositiveNumber(value, fallback) {
+      const number = Number(value);
+      return Number.isFinite(number) && number > 0 ? number : fallback;
+    }
+
+    function normalizePositiveInt(value, fallback) {
+      const number = parseInt(value, 10);
+      return Number.isFinite(number) && number > 0 ? number : fallback;
+    }
+
+    function selectHyroxStage(stageId) {
+      if (!state.hyroxLaneSettings.stages[stageId]) return;
+      state.hyroxActiveStage = stageId;
+      renderHyroxLaneSettings();
+    }
+
+    function updateHyroxStageField(field, value) {
+      const stage = activeHyroxStageConfig();
+      if (field === "station_number" || field === "target_lengths") {
+        stage[field] = normalizePositiveInt(value, stage[field]);
+      } else if (field === "lane_length_m" || field === "target_distance_m") {
+        stage[field] = normalizePositiveNumber(value, stage[field]);
+      }
+      renderHyroxLaneSettings();
+      setMessage("hyrox-settings-message", "Draft has unsaved changes.", "warn");
+    }
+
+    function updateHyroxLane(index, field, value) {
+      const stage = activeHyroxStageConfig();
+      const lane = stage.lanes[index];
+      if (!lane) return;
+      if (field === "lane_number") {
+        lane.lane_number = normalizePositiveInt(value, lane.lane_number || index + 1);
+        if (!lane.lane_id || /^lane-\d+$/.test(lane.lane_id)) {
+          lane.lane_id = `lane-${lane.lane_number}`;
+        }
+      } else {
+        lane[field] = String(value || "").trim();
+      }
+      renderHyroxLaneSettings();
+      setMessage("hyrox-settings-message", "Draft has unsaved changes.", "warn");
+    }
+
+    function addHyroxLane() {
+      const stage = activeHyroxStageConfig();
+      const nextNumber = Math.max(0, ...stage.lanes.map((lane) => Number(lane.lane_number) || 0)) + 1;
+      stage.lanes.push(emptyHyroxLane(nextNumber));
+      renderHyroxLaneSettings();
+      setMessage("hyrox-settings-message", `Lane ${nextNumber} added.`, "ok");
+    }
+
+    function removeHyroxLane(index) {
+      const stage = activeHyroxStageConfig();
+      if (stage.lanes.length <= 1) {
+        setMessage("hyrox-settings-message", "At least one lane is required.", "error");
+        return;
+      }
+      stage.lanes.splice(index, 1);
+      renderHyroxLaneSettings();
+      setMessage("hyrox-settings-message", "Lane removed.", "ok");
+    }
+
+    function hyroxExportPayload() {
+      const stages = Object.values(state.hyroxLaneSettings.stages).map((stage) => ({
+        station_number: stage.station_number,
+        station_stage: stage.station_stage,
+        label: stage.label,
+        lane_length_m: stage.lane_length_m,
+        target_lengths: stage.target_lengths,
+        target_distance_m: stage.target_distance_m,
+        counting_rule: state.hyroxLaneSettings.counting_rule,
+        lanes: stage.lanes.map((lane) => ({
+          lane_id: lane.lane_id,
+          lane_number: lane.lane_number,
+          sensors: [
+            { endpoint: "start", node_id: lane.start_node_id, antenna_id: lane.start_antenna_id },
+            { endpoint: "finish", node_id: lane.finish_node_id, antenna_id: lane.finish_antenna_id },
+          ],
+        })),
+      }));
+      return {
+        mode: state.hyroxLaneSettings.mode,
+        lane_stations: stages,
+      };
+    }
+
+    function validateHyroxLaneDraft(showMessage = false) {
+      const errors = [];
+      const warnings = [];
+      const seenSensors = new Map();
+      Object.values(state.hyroxLaneSettings.stages).forEach((stage) => {
+        if (!Number.isFinite(Number(stage.lane_length_m)) || Number(stage.lane_length_m) <= 0) {
+          errors.push(`${stage.label}: lane length must be greater than 0.`);
+        }
+        if (!Number.isInteger(Number(stage.target_lengths)) || Number(stage.target_lengths) <= 0) {
+          errors.push(`${stage.label}: target lengths must be a positive integer.`);
+        }
+        if (!stage.lanes.length) {
+          errors.push(`${stage.label}: at least one lane is required.`);
+        }
+        if (Number(stage.target_lengths) % 2 !== 0) {
+          warnings.push(`${stage.label}: odd target lengths end on the opposite side.`);
+        }
+        stage.lanes.forEach((lane) => {
+          const laneLabel = `${stage.label} lane ${lane.lane_number || "?"}`;
+          if (!lane.lane_id) errors.push(`${laneLabel}: lane_id is required.`);
+          const endpoints = [
+            ["start", lane.start_node_id, lane.start_antenna_id],
+            ["finish", lane.finish_node_id, lane.finish_antenna_id],
+          ];
+          endpoints.forEach(([endpoint, nodeId, antennaId]) => {
+            if (!nodeId || !antennaId) {
+              errors.push(`${laneLabel}: ${endpoint} node and antenna are required.`);
+              return;
+            }
+            const key = `${nodeId}::${antennaId}`;
+            if (seenSensors.has(key)) {
+              errors.push(`${laneLabel}: ${endpoint} sensor duplicates ${seenSensors.get(key)}.`);
+            } else {
+              seenSensors.set(key, `${laneLabel} ${endpoint}`);
+            }
+          });
+          if (lane.start_node_id && lane.finish_node_id && lane.start_antenna_id && lane.finish_antenna_id) {
+            const startKey = `${lane.start_node_id}::${lane.start_antenna_id}`;
+            const finishKey = `${lane.finish_node_id}::${lane.finish_antenna_id}`;
+            if (startKey === finishKey) {
+              errors.push(`${laneLabel}: start and finish must use different RFID read zones.`);
+            }
+          }
+        });
+      });
+
+      const activeStage = activeHyroxStageConfig();
+      const completeLanes = activeStage.lanes.filter((lane) => lane.start_node_id && lane.start_antenna_id && lane.finish_node_id && lane.finish_antenna_id).length;
+      $("hyrox-settings-state").textContent = errors.length ? "needs setup" : "ready draft";
+      $("hyrox-computed-lanes").textContent = `${completeLanes}/${activeStage.lanes.length}`;
+      renderHyroxValidation(errors, warnings);
+      if (showMessage) {
+        setMessage(
+          "hyrox-settings-message",
+          errors.length ? `${errors.length} pairing issue(s) need attention.` : "Lane pairing draft is valid.",
+          errors.length ? "error" : "ok"
+        );
+      }
+      return { errors, warnings };
+    }
+
+    function renderHyroxValidation(errors, warnings) {
+      const list = $("hyrox-validation-list");
+      const visibleItems = [
+        ...errors.slice(0, 5).map((text) => ({ kind: "error", text })),
+        ...warnings.slice(0, 3).map((text) => ({ kind: "warn", text })),
+      ];
+      if (!visibleItems.length) {
+        list.innerHTML = `<div class="ok">All configured RFID read zones are uniquely paired.</div>`;
+        return;
+      }
+      list.innerHTML = visibleItems.map((item) => (
+        `<div class="${item.kind}">${escapeHtml(item.text)}</div>`
+      )).join("");
+    }
+
+    function renderHyroxLaneSettings() {
+      const stage = activeHyroxStageConfig();
+      const tabs = $("hyrox-stage-tabs");
+      tabs.innerHTML = HYROX_LANE_STAGES.map((stageMeta) => {
+        const config = state.hyroxLaneSettings.stages[stageMeta.id];
+        return `
+          <button type="button" class="stage-tab ${stageMeta.id === state.hyroxActiveStage ? "active" : ""}" onclick="selectHyroxStage('${stageMeta.id}')">
+            ${escapeHtml(stageMeta.label)}
+            <span>${escapeHtml(config.target_lengths)} lengths · ${escapeHtml(config.target_distance_m)}m</span>
+          </button>
+        `;
+      }).join("");
+
+      $("hyrox-station-number").value = stage.station_number;
+      $("hyrox-lane-length").value = stage.lane_length_m;
+      $("hyrox-target-lengths").value = stage.target_lengths;
+      $("hyrox-total-distance").value = stage.target_distance_m;
+
+      const configuredDistance = Number(stage.lane_length_m) * Number(stage.target_lengths);
+      const roundTrips = Math.floor(Number(stage.target_lengths) / 2);
+      const remainder = Number(stage.target_lengths) % 2;
+      $("hyrox-computed-distance").textContent = `${Number.isFinite(configuredDistance) ? configuredDistance : 0}m`;
+      $("hyrox-computed-rounds").textContent = remainder ? `${roundTrips}+1` : String(roundTrips);
+
+      $("hyrox-lane-list").innerHTML = stage.lanes.map((lane, index) => `
+        <div class="lane-card">
+          <div class="lane-card-header">
+            <div class="lane-card-title">${escapeHtml(stage.label)} · Lane ${escapeHtml(lane.lane_number)}</div>
+            <button type="button" class="danger" onclick="removeHyroxLane(${index})">Remove</button>
+          </div>
+          <div class="grid-2">
+            <div class="field">
+              <label>Lane ID</label>
+              <input type="text" value="${escapeHtml(lane.lane_id)}" onchange="updateHyroxLane(${index}, 'lane_id', this.value)">
+            </div>
+            <div class="field">
+              <label>Lane Number</label>
+              <input type="number" min="1" value="${escapeHtml(lane.lane_number)}" onchange="updateHyroxLane(${index}, 'lane_number', this.value)">
+            </div>
+          </div>
+          <div class="endpoint-grid" style="margin-top:10px;">
+            <div class="field">
+              <label>Start Node</label>
+              <input list="hyrox-stream-options" type="text" value="${escapeHtml(lane.start_node_id)}" onchange="updateHyroxLane(${index}, 'start_node_id', this.value)">
+            </div>
+            <div class="field">
+              <label>Start Antenna</label>
+              <input type="text" value="${escapeHtml(lane.start_antenna_id)}" placeholder="A1" onchange="updateHyroxLane(${index}, 'start_antenna_id', this.value)">
+            </div>
+            <div class="field">
+              <label>Finish Node</label>
+              <input list="hyrox-stream-options" type="text" value="${escapeHtml(lane.finish_node_id)}" onchange="updateHyroxLane(${index}, 'finish_node_id', this.value)">
+            </div>
+            <div class="field">
+              <label>Finish Antenna</label>
+              <input type="text" value="${escapeHtml(lane.finish_antenna_id)}" placeholder="B1" onchange="updateHyroxLane(${index}, 'finish_antenna_id', this.value)">
+            </div>
+          </div>
+        </div>
+      `).join("");
+
+      $("hyrox-json-preview").textContent = JSON.stringify(hyroxExportPayload(), null, 2);
+      validateHyroxLaneDraft(false);
+    }
+
+    function saveHyroxLaneDraft() {
+      localStorage.setItem(HYROX_LANE_STORAGE_KEY, JSON.stringify(state.hyroxLaneSettings));
+      validateHyroxLaneDraft(false);
+      setMessage("hyrox-settings-message", "Draft saved in this browser.", "ok");
+    }
+
+    function resetHyroxLaneDraft() {
+      if (!window.confirm("Reset Hyrox lane settings draft?")) return;
+      state.hyroxLaneSettings = defaultHyroxLaneSettings();
+      state.hyroxActiveStage = "sled_push";
+      localStorage.removeItem(HYROX_LANE_STORAGE_KEY);
+      renderHyroxLaneSettings();
+      setMessage("hyrox-settings-message", "Draft reset.", "ok");
+    }
+
+    async function copyHyroxLaneJson() {
+      const json = JSON.stringify(hyroxExportPayload(), null, 2);
+      try {
+        await navigator.clipboard.writeText(json);
+        setMessage("hyrox-settings-message", "Hyrox lane JSON copied.", "ok");
+      } catch (_) {
+        setMessage("hyrox-settings-message", "Select the JSON preview and copy it manually.", "warn");
+      }
+    }
+
     function renderUpdate() {
       const update = state.update || {};
       $("update-state").textContent = update.state || "never_checked";
@@ -1018,6 +1581,7 @@
 
     connectWebSocket();
     updateSignupLink();
+    renderHyroxLaneSettings();
     refreshAll();
     if (!state.adminToken) {
       window.setTimeout(openLogin, 250);
