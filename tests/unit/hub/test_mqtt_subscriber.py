@@ -41,6 +41,14 @@ class FakeWebSocketManager:
         self.broadcasts.append(payload)
 
 
+class FakeNodeRegistry:
+    def __init__(self):
+        self.telemetry_payloads = []
+
+    def update_telemetry(self, payload):
+        self.telemetry_payloads.append(payload)
+
+
 @pytest.mark.asyncio
 async def test_mqtt_subscriber_rejects_invalid_telemetry_payload():
     race_manager = FakeRaceManager()
@@ -67,15 +75,18 @@ async def test_mqtt_subscriber_rejects_invalid_telemetry_payload():
 async def test_mqtt_subscriber_normalizes_valid_telemetry_payload():
     race_manager = FakeRaceManager(progress={})
     ws_manager = FakeWebSocketManager()
+    node_registry = FakeNodeRegistry()
     subscriber = MqttSubscriber(
         async_mqtt_client=None,
         race_manager=race_manager,
         ws_manager=ws_manager,
+        node_registry=node_registry,
     )
 
     await subscriber._handle_telemetry(
         {
             "node_id": "node-01",
+            "edge_node_id": "edge-01",
             "equipment_type": "fan_bike",
             "distance_m": 12.5,
             "elapsed_time_ms": 1000,
@@ -86,6 +97,7 @@ async def test_mqtt_subscriber_normalizes_valid_telemetry_payload():
     assert race_manager.payloads == [
         {
             "node_id": "node-01",
+            "edge_node_id": "edge-01",
             "equipment_type": "fan_bike",
             "instantaneous_speed_kph": 0.0,
             "cadence_rpm": 0,
@@ -95,6 +107,7 @@ async def test_mqtt_subscriber_normalizes_valid_telemetry_payload():
             "elapsed_time_ms": 1000,
         }
     ]
+    assert node_registry.telemetry_payloads == race_manager.payloads
     assert ws_manager.broadcasts == [{}]
 
 

@@ -50,8 +50,28 @@ class TelemetryData(BaseModel):
     power_watts: int = Field(0, ge=0)
     heart_rate_bpm: int = Field(0, ge=0)
     distance_m: float = Field(0.0, ge=0.0)
+    raw_total_distance_m: float | None = Field(
+        None,
+        ge=0.0,
+        description="Raw cumulative distance reported by the equipment.",
+    )
+    delta_distance_m: float | None = Field(
+        None,
+        ge=0.0,
+        description="Distance increment since the previous telemetry row for this equipment.",
+    )
     total_energy_kcal: int | None = Field(None, ge=0)
     calories: float | None = Field(None, ge=0)
+    raw_total_energy_kcal: float | None = Field(
+        None,
+        ge=0.0,
+        description="Raw cumulative energy reported by the equipment.",
+    )
+    delta_energy_kcal: float | None = Field(
+        None,
+        ge=0.0,
+        description="Energy increment since the previous telemetry row for this equipment.",
+    )
     elapsed_time_ms: int = Field(0, ge=0)
     timestamp_epoch_ms: int = Field(..., description="Epoch timestamp in milliseconds")
     ftms_payload: TypedFtmsPayload | None = Field(

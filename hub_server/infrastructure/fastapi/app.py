@@ -762,7 +762,9 @@ async def stop_race(request: Request):
     require_admin(request)
     try:
         race_manager.stop_race()
-        return await broadcast_race_state()
+        state_data = await broadcast_race_state()
+        race_result_store.save_finished_snapshot(state_data)
+        return state_data
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -772,7 +774,9 @@ async def close_race(request: Request):
     require_admin(request)
     try:
         race_manager.close_race()
-        return await broadcast_race_state()
+        state_data = await broadcast_race_state()
+        race_result_store.save_finished_snapshot(state_data)
+        return state_data
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

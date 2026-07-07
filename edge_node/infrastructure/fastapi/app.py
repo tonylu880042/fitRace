@@ -1,5 +1,6 @@
 import json
 import os
+import time
 from dataclasses import asdict
 from pathlib import Path
 
@@ -46,6 +47,11 @@ class AntennaCommandPayload(BaseModel):
     macs: list[str] = Field(default_factory=list)
     report_interval_ms: int | None = None
     raw_command: str | None = None
+
+
+class AntennaReconnectPayload(BaseModel):
+    timeout_sec: float = 5.0
+    report_interval_ms: int = 250
 
 
 class EdgeConfigPayload(EdgeNodeConfig):
@@ -204,6 +210,7 @@ def get_monitor_events(
     require_admin(request)
     return {
         "path": str(edge_event_log.path),
+        "server_now_epoch_ms": int(time.time() * 1000),
         "events": edge_event_log.list_events(limit=limit),
     }
 
@@ -229,6 +236,63 @@ def run_antenna_command(payload: AntennaCommandPayload, request: Request):
         raise HTTPException(status_code=400, detail=str(e))
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
+
+
+@app.post("/api/antenna/reconnect-configured")
+def reconnect_configured_antenna_devices(payload: AntennaReconnectPayload, request: Request):
+    require_admin(request)
+    config = load_edge_config()
+    channels_by_id = {channel.id: channel for channel in config.antenna_channels}
+    targets_by_channel: dict[str, list[str]] = {}
+    for binding in config.equipment_bindings:
+        if not binding.antenna_channel:
+            continue
+        if binding.antenna_channel not in channels_by_id:
+            continue
+        targets_by_channel.setdefault(binding.antenna_channel, []).append(binding.ble_target)
+
+    if not targets_by_channel:
+        raise HTTPException(status_code=400, detail="No configured antenna targets found")
+
+    results = []
+    try:
+        for channel_id, macs in targets_by_channel.items():
+            channel = channels_by_id[channel_id]
+            connect_result = antenna_command_runner.run(
+                AntennaCommandRequest(
+                    port=channel.port,
+                    baudrate=channel.baudrate,
+                    rtscts=channel.rtscts,
+                    command="connect",
+                    timeout_sec=payload.timeout_sec,
+                    macs=macs,
+                )
+            )
+            report_result = antenna_command_runner.run(
+                AntennaCommandRequest(
+                    port=channel.port,
+                    baudrate=channel.baudrate,
+                    rtscts=channel.rtscts,
+                    command="report",
+                    timeout_sec=payload.timeout_sec,
+                    report_interval_ms=payload.report_interval_ms,
+                )
+            )
+            results.append(
+                {
+                    "channel_id": channel_id,
+                    "port": channel.port,
+                    "macs": macs,
+                    "connect": connect_result,
+                    "report": report_result,
+                }
+            )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    return {"status": "reconnected", "channels": results}
 
 
 EDGE_SETUP_HTML = """
@@ -700,6 +764,11 @@ EDGE_SETUP_HTML = """
       border-color: rgba(52, 211, 153, 0.4);
     }
 
+    .monitor-status-pill.stale {
+      color: var(--warning);
+      border-color: rgba(246, 165, 36, 0.45);
+    }
+
     .monitor-fields {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -824,9 +893,10 @@ EDGE_SETUP_HTML = """
             <input id="antenna-macs" type="text" placeholder="AA:BB:CC:DD:EE:01,AA:BB:CC:DD:EE:02" autocomplete="off">
           </div>
           <button id="antenna-connect-btn" type="button" class="button-secondary" data-i18n="antenna.connect">CONNECT selected devices</button>
+          <button id="antenna-reconnect-configured-btn" type="button" class="button-secondary" data-i18n="antenna.reconnect_configured" style="margin-top:10px;">CONNECT configured devices</button>
           <div class="field" style="margin-top:14px;">
             <label for="antenna-report-interval" data-i18n="antenna.report_interval">Report interval ms</label>
-            <input id="antenna-report-interval" type="number" min="100" max="10000" value="1000">
+            <input id="antenna-report-interval" type="number" min="100" max="10000" value="250">
           </div>
           <button id="antenna-report-btn" type="button" class="button-secondary" data-i18n="antenna.report">Set report interval</button>
           <div class="field" style="margin-top:14px;">
@@ -901,6 +971,7 @@ EDGE_SETUP_HTML = """
     const monitorRefreshBtn = document.getElementById("monitor-refresh-btn");
     const antennaCommandButtons = Array.from(document.querySelectorAll(".antenna-command"));
     const antennaConnectBtn = document.getElementById("antenna-connect-btn");
+    const antennaReconnectConfiguredBtn = document.getElementById("antenna-reconnect-configured-btn");
     const antennaReportBtn = document.getElementById("antenna-report-btn");
     const antennaRawBtn = document.getElementById("antenna-raw-btn");
     const bindingList = document.getElementById("binding-list");
@@ -911,13 +982,39 @@ EDGE_SETUP_HTML = """
     const allAntennaButtons = [
       ...antennaCommandButtons,
       antennaConnectBtn,
+      antennaReconnectConfiguredBtn,
       antennaReportBtn,
       antennaRawBtn,
     ];
     let edgeConfig = null;
     let antennaChannels = [];
     let monitorLatestByNode = new Map();
-    let currentLocale = localStorage.getItem("fitrace.edge.locale") || "en-US";
+    let monitorDisplayedByNode = new Map();
+    let monitorServerNowEpochMs = null;
+    let monitorServerNowReceivedAtMs = null;
+    const ANTENNA_DEFAULT_REPORT_INTERVAL_MS = 250;
+    const MONITOR_REFRESH_MS = 250;
+    const MONITOR_LIVE_WINDOW_MS = 3000;
+    const MONITOR_SMOOTHING_MS = 180;
+    const MONITOR_SMOOTH_FIELDS = [
+      "instantaneous_speed_kph",
+      "distance_m",
+      "power_watts",
+      "cadence_rpm",
+      "rssi",
+      "calories",
+      "total_energy_kcal",
+    ];
+    function getBrowserLocale() {
+      const saved = localStorage.getItem("fitrace.edge.locale");
+      if (saved) return saved;
+      const browserLang = navigator.language || navigator.userLanguage;
+      if (browserLang && browserLang.toLowerCase().startsWith("zh")) {
+        return "zh-TW";
+      }
+      return "en-US";
+    }
+    let currentLocale = getBrowserLocale();
     const dictionaries = {
       "en-US": {
         "edge.subtitle": "Local Edge Node setup",
@@ -941,6 +1038,7 @@ EDGE_SETUP_HTML = """
         "antenna.scan_duration": "Scan duration seconds",
         "antenna.macs": "Device MACs / IDs for CONNECT",
         "antenna.connect": "CONNECT selected devices",
+        "antenna.reconnect_configured": "CONNECT configured devices",
         "antenna.report_interval": "Report interval ms",
         "antenna.report": "Set report interval",
         "antenna.raw": "Raw command",
@@ -960,6 +1058,7 @@ EDGE_SETUP_HTML = """
         "monitor.failed": "Monitor read failed",
         "monitor.waiting": "Waiting",
         "monitor.live": "Live",
+        "monitor.stale": "Stale",
         "monitor.name": "Name",
         "monitor.type": "Type",
         "monitor.mac": "MAC",
@@ -1008,6 +1107,7 @@ EDGE_SETUP_HTML = """
       "antenna.scan_duration": "掃描秒數",
       "antenna.macs": "CONNECT 用設備 MAC / ID",
       "antenna.connect": "CONNECT 選定設備",
+      "antenna.reconnect_configured": "CONNECT 已設定設備",
       "antenna.report_interval": "回報週期 ms",
       "antenna.report": "設定回報週期",
       "antenna.raw": "原始命令",
@@ -1027,6 +1127,7 @@ EDGE_SETUP_HTML = """
       "monitor.failed": "監測資料讀取失敗",
       "monitor.waiting": "等待中",
       "monitor.live": "即時",
+      "monitor.stale": "逾時",
       "monitor.name": "名稱",
       "monitor.type": "類型",
       "monitor.mac": "MAC",
@@ -1177,9 +1278,61 @@ EDGE_SETUP_HTML = """
       `;
     }
 
+    function monitorNowEpochMs() {
+      if (monitorServerNowEpochMs && monitorServerNowReceivedAtMs !== null) {
+        return monitorServerNowEpochMs + (performance.now() - monitorServerNowReceivedAtMs);
+      }
+      return Date.now();
+    }
+
+    function monitorTelemetryAgeMs(payload) {
+      const timestamp = Number(payload?.timestamp_epoch_ms || 0);
+      if (!timestamp) return Infinity;
+      return monitorNowEpochMs() - timestamp;
+    }
+
+    function updateMonitorDisplayedPayloads(frameDeltaMs) {
+      const alpha = 1 - Math.exp(-Math.max(0, frameDeltaMs) / MONITOR_SMOOTHING_MS);
+      monitorLatestByNode.forEach((target, nodeId) => {
+        const current = monitorDisplayedByNode.get(nodeId);
+        if (!current) {
+          monitorDisplayedByNode.set(nodeId, { ...target });
+          return;
+        }
+        const next = { ...target };
+        MONITOR_SMOOTH_FIELDS.forEach((field) => {
+          const targetValue = Number(target?.[field]);
+          const currentValue = Number(current?.[field]);
+          if (!Number.isFinite(targetValue)) {
+            return;
+          }
+          if (!Number.isFinite(currentValue)) {
+            next[field] = targetValue;
+            return;
+          }
+          const value = currentValue + ((targetValue - currentValue) * alpha);
+          next[field] = Math.abs(value - targetValue) < 0.01 ? targetValue : value;
+        });
+        monitorDisplayedByNode.set(nodeId, next);
+      });
+    }
+
+    function monitorStatusForPayload(payload) {
+      if (!payload?.node_id) {
+        return { label: t("monitor.waiting"), className: "" };
+      }
+      if (monitorTelemetryAgeMs(payload) <= MONITOR_LIVE_WINDOW_MS) {
+        return { label: t("monitor.live"), className: "live" };
+      }
+      return { label: t("monitor.stale"), className: "stale" };
+    }
+
     function renderMonitorEquipment() {
       const bindings = Array.isArray(edgeConfig?.equipment_bindings) ? edgeConfig.equipment_bindings.slice(0, 5) : [];
-      const liveCount = bindings.filter((binding) => monitorLatestByNode.has(binding.node_id)).length;
+      const liveCount = bindings.filter((binding) => {
+        const payload = monitorLatestByNode.get(binding.node_id);
+        return payload?.node_id && monitorTelemetryAgeMs(payload) <= MONITOR_LIVE_WINDOW_MS;
+      }).length;
       monitorCount.textContent = `${liveCount}/${bindings.length}`;
       if (!bindings.length) {
         monitorGrid.innerHTML = `<div class="empty">${escapeHtml(t("monitor.empty"))}</div>`;
@@ -1187,13 +1340,14 @@ EDGE_SETUP_HTML = """
       }
       monitorGrid.innerHTML = bindings.map((binding) => {
         const payload = monitorLatestByNode.get(binding.node_id) || {};
-        const isLive = Boolean(payload.node_id);
+        const displayPayload = monitorDisplayedByNode.get(binding.node_id) || payload;
+        const status = monitorStatusForPayload(payload);
         const updated = formatEventTime(payload.timestamp_epoch_ms);
         return `
           <div class="monitor-card" data-node-id="${escapeHtml(binding.node_id)}">
             <div class="monitor-card-header">
               <div class="monitor-equipment-name">${escapeHtml(binding.equipment_id || binding.node_id)}</div>
-              <div class="monitor-status-pill ${isLive ? "live" : ""}">${escapeHtml(isLive ? t("monitor.live") : t("monitor.waiting"))}</div>
+              <div class="monitor-status-pill ${status.className}">${escapeHtml(status.label)}</div>
             </div>
             <div class="monitor-fields">
               ${renderMonitorField("monitor.name", binding.equipment_id || "--")}
@@ -1201,16 +1355,25 @@ EDGE_SETUP_HTML = """
               ${renderMonitorField("monitor.mac", payload.mac_address || binding.ble_target || "--", "wide")}
               ${renderMonitorField("monitor.channel", binding.antenna_channel || "--")}
               ${renderMonitorField("monitor.updated", updated)}
-              ${renderMonitorField("monitor.speed", formatMetric(payload.instantaneous_speed_kph, " kph", 2))}
-              ${renderMonitorField("monitor.distance", formatMetric(payload.distance_m, " m", 0))}
-              ${renderMonitorField("monitor.power", formatMetric(payload.power_watts, " W", 0))}
-              ${renderMonitorField("monitor.cadence", formatMetric(payload.cadence_rpm, " rpm", 0))}
-              ${renderMonitorField("monitor.rssi", formatMetric(payload.rssi, " dBm", 0))}
-              ${renderMonitorField("monitor.calories", formatMetric(payload.calories ?? payload.total_energy_kcal, " kcal", 0))}
+              ${renderMonitorField("monitor.speed", formatMetric(displayPayload.instantaneous_speed_kph, " kph", 2))}
+              ${renderMonitorField("monitor.distance", formatMetric(displayPayload.distance_m, " m", 0))}
+              ${renderMonitorField("monitor.power", formatMetric(displayPayload.power_watts, " W", 0))}
+              ${renderMonitorField("monitor.cadence", formatMetric(displayPayload.cadence_rpm, " rpm", 0))}
+              ${renderMonitorField("monitor.rssi", formatMetric(displayPayload.rssi, " dBm", 0))}
+              ${renderMonitorField("monitor.calories", formatMetric(displayPayload.calories ?? displayPayload.total_energy_kcal, " kcal", 0))}
             </div>
           </div>
         `;
       }).join("");
+    }
+
+    let monitorLastFrameMs = performance.now();
+    function animateMonitorEquipment(frameMs) {
+      const deltaMs = frameMs - monitorLastFrameMs;
+      monitorLastFrameMs = frameMs;
+      updateMonitorDisplayedPayloads(deltaMs);
+      renderMonitorEquipment();
+      requestAnimationFrame(animateMonitorEquipment);
     }
 
     function updateMonitorFromEvents(events) {
@@ -1239,6 +1402,10 @@ EDGE_SETUP_HTML = """
         const payload = await response.json();
         if (!response.ok) {
           throw new Error(payload.detail || t("monitor.failed"));
+        }
+        if (Number(payload.server_now_epoch_ms || 0)) {
+          monitorServerNowEpochMs = Number(payload.server_now_epoch_ms);
+          monitorServerNowReceivedAtMs = performance.now();
         }
         updateMonitorFromEvents(Array.isArray(payload.events) ? payload.events : []);
       } catch (error) {
@@ -1437,7 +1604,7 @@ EDGE_SETUP_HTML = """
       }
 
       if (command === "report") {
-        payload.report_interval_ms = Math.max(100, Math.min(10000, Number(antennaReportIntervalInput.value) || 1000));
+        payload.report_interval_ms = Math.max(100, Math.min(10000, Number(antennaReportIntervalInput.value) || ANTENNA_DEFAULT_REPORT_INTERVAL_MS));
       }
 
       if (command === "raw") {
@@ -1493,6 +1660,44 @@ EDGE_SETUP_HTML = """
       }
     }
 
+    async function reconnectConfiguredDevices() {
+      const reportIntervalMs = Math.max(100, Math.min(10000, Number(antennaReportIntervalInput.value) || ANTENNA_DEFAULT_REPORT_INTERVAL_MS));
+      const timeoutSec = Math.max(1, Math.min(30, Number(antennaTimeoutInput.value) || 5));
+      setAntennaButtonsDisabled(true);
+      antennaState.textContent = "CONNECT";
+      setAntennaMessage(t("antenna.running", { command: "CONNECT", port: "configured channels" }));
+      antennaOutput.textContent = "Waiting for UART response...";
+
+      try {
+        const response = await fetch("/api/antenna/reconnect-configured", {
+          method: "POST",
+          headers: adminHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({
+            timeout_sec: timeoutSec,
+            report_interval_ms: reportIntervalMs,
+          }),
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result.detail || "Configured reconnect failed");
+        }
+        const lineCount = result.channels.reduce((total, channel) => (
+          total
+          + (channel.connect?.rx?.length || 0)
+          + (channel.report?.rx?.length || 0)
+        ), 0);
+        antennaState.textContent = t("antenna.complete_state");
+        setAntennaMessage(t("antenna.complete", { command: "CONNECT", count: lineCount }), "ok");
+        renderAntennaOutput(result);
+      } catch (error) {
+        antennaState.textContent = t("antenna.failed");
+        setAntennaMessage(error.message, "error");
+        renderAntennaOutput({ error: error.message });
+      } finally {
+        setAntennaButtonsDisabled(false);
+      }
+    }
+
     async function refreshWifiStatus() {
       try {
         const response = await fetch("/api/wifi/status?interface=wlan0", {
@@ -1525,6 +1730,7 @@ EDGE_SETUP_HTML = """
       antennaRtsctsInput.checked = selected.dataset.rtscts === "1";
     });
     antennaConnectBtn.addEventListener("click", () => runAntennaCommand("connect"));
+    antennaReconnectConfiguredBtn.addEventListener("click", reconnectConfiguredDevices);
     antennaReportBtn.addEventListener("click", () => runAntennaCommand("report"));
     antennaRawBtn.addEventListener("click", () => runAntennaCommand("raw"));
     configSaveBtn.addEventListener("click", saveEdgeConfig);
@@ -1537,7 +1743,8 @@ EDGE_SETUP_HTML = """
     refreshWifiStatus();
     refreshMonitorEvents();
     setInterval(refreshWifiStatus, 5000);
-    setInterval(refreshMonitorEvents, 2000);
+    setInterval(refreshMonitorEvents, MONITOR_REFRESH_MS);
+    requestAnimationFrame(animateMonitorEquipment);
   </script>
 </body>
 </html>

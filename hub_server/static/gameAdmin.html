@@ -731,8 +731,9 @@
             <div class="field">
               <label for="auto-refresh">Refresh</label>
               <select id="auto-refresh">
-                <option value="2000">Every 2 seconds</option>
-                <option value="5000" selected>Every 5 seconds</option>
+                <option value="0">Live WebSocket only</option>
+                <option value="5000">Fallback: 5 seconds</option>
+                <option value="15000" selected>Fallback: 15 seconds</option>
               </select>
             </div>
             <div class="field">
@@ -814,6 +815,7 @@
       readiness: null,
       update: null,
       refreshTimer: null,
+      wsConnected: false,
       countdownActive: false,
       adminToken: localStorage.getItem("fitrace.adminPassword") || localStorage.getItem("fitrace.adminToken") || "",
     };
@@ -983,7 +985,7 @@
       }
     }
 
-    async function refreshAll() {
+    async function refreshAll(options = {}) {
       await Promise.allSettled([
         refreshHealth(),
         refreshState(),
@@ -991,7 +993,7 @@
         refreshNodes(),
         refreshReadiness(),
       ]);
-      scheduleRefresh();
+      if (options.schedule !== false) scheduleRefresh();
     }
 
     function scheduleRefresh() {
@@ -1000,9 +1002,17 @@
         state.refreshTimer = null;
       }
       const interval = parseInt($("auto-refresh").value, 10);
-      if (interval > 0) {
+      if (interval > 0 && !state.wsConnected) {
         state.refreshTimer = window.setTimeout(refreshAll, interval);
       }
+    }
+
+    async function refreshOperationalState() {
+      await Promise.allSettled([
+        refreshState(),
+        refreshStations(),
+        refreshReadiness(),
+      ]);
     }
 
     function renderRace() {
@@ -1280,29 +1290,47 @@
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
       const socket = new WebSocket(`${protocol}//${window.location.host}/ws/dashboard`);
       socket.onopen = () => {
+        state.wsConnected = true;
+        if (state.refreshTimer) {
+          window.clearTimeout(state.refreshTimer);
+          state.refreshTimer = null;
+        }
         $("ws-dot").className = "dot online";
         $("ws-label").textContent = "Online";
-        refreshAll();
+        refreshAll({ schedule: false });
       };
       socket.onclose = () => {
+        state.wsConnected = false;
         $("ws-dot").className = "dot";
         $("ws-label").textContent = "Offline";
+        scheduleRefresh();
         window.setTimeout(connectWebSocket, 3000);
+      };
+      socket.onerror = () => {
+        state.wsConnected = false;
+        $("ws-dot").className = "dot";
+        $("ws-label").textContent = "Offline";
+        scheduleRefresh();
       };
       socket.onmessage = (event) => {
         const payload = JSON.parse(event.data);
         if (payload.type === "state_change") {
           state.race = payload;
           renderRace();
-          refreshStations();
+          Promise.allSettled([refreshStations(), refreshReadiness()]);
           return;
         }
         if (payload.type === "node_status") {
           state.nodes = payload.nodes || (payload.node ? [payload.node] : []);
+          Promise.allSettled([refreshStations(), refreshReadiness()]);
           return;
         }
         if (payload.type === "registration_success") {
-          refreshStations();
+          refreshOperationalState();
+          return;
+        }
+        if (!payload.type) {
+          Promise.allSettled([refreshStations(), refreshReadiness()]);
           return;
         }
       };

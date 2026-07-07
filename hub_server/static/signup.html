@@ -403,7 +403,22 @@
 
     let avatarBase64 = null;
     let avatarProcessing = false;
-    let currentLocale = localStorage.getItem('fitrace.locale') || 'en-US';
+    function getBrowserLocale() {
+      const saved = localStorage.getItem('fitrace.locale');
+      if (saved) return saved;
+      const browserLang = navigator.language || navigator.userLanguage;
+      if (browserLang) {
+        const lower = browserLang.toLowerCase();
+        if (lower.startsWith('zh')) return 'zh-TW';
+        if (lower.startsWith('it')) return 'it';
+        if (lower.startsWith('fr')) return 'fr';
+        if (lower.startsWith('de')) return 'de-CH';
+        if (lower.startsWith('sv')) return 'sv';
+        if (lower.startsWith('en')) return 'en-US';
+      }
+      return 'en-US';
+    }
+    let currentLocale = getBrowserLocale();
     let signupMessages = {};
     const AVATAR_MAX_SOURCE_BYTES = 8 * 1024 * 1024;
     const AVATAR_TARGET_SIZE = 96;

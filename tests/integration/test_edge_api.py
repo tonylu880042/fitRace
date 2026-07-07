@@ -64,6 +64,21 @@ def test_edge_setup_page_includes_uart_antenna_controls_without_ble_scan_panel()
     assert "Fixed equipment telemetry slots" in response.text
     assert "monitor-card" in response.text
     assert "/api/monitor/events" in response.text
+    assert 'id="antenna-reconnect-configured-btn"' in response.text
+    assert "/api/antenna/reconnect-configured" in response.text
+    assert 'id="antenna-report-interval" type="number" min="100" max="10000" value="250"' in response.text
+    assert "ANTENNA_DEFAULT_REPORT_INTERVAL_MS = 250" in response.text
+    assert "MONITOR_REFRESH_MS = 250" in response.text
+    assert "MONITOR_LIVE_WINDOW_MS = 3000" in response.text
+    assert "MONITOR_SMOOTHING_MS = 180" in response.text
+    assert "requestAnimationFrame(animateMonitorEquipment)" in response.text
+    assert '"monitor.stale": "Stale"' in response.text
+    assert '"monitor.stale": "逾時"' in response.text
+    assert "function monitorNowEpochMs()" in response.text
+    assert "monitorServerNowEpochMs" in response.text
+    assert "monitorNowEpochMs() - timestamp" in response.text
+    assert "Date.now() - timestamp" not in response.text
+    assert 'setInterval(refreshMonitorEvents, MONITOR_REFRESH_MS)' in response.text
 
 
 def test_edge_config_endpoint_reads_and_writes_equipment_bindings(monkeypatch, tmp_path):
@@ -107,6 +122,96 @@ def test_edge_config_endpoint_reads_and_writes_equipment_bindings(monkeypatch, t
     assert update_response.status_code == 200
     saved = json.loads(config_path.read_text(encoding="utf-8"))
     assert saved["equipment_bindings"][0]["equipment_id"] == "跑步機_A"
+
+
+def test_reconnect_configured_antenna_devices_groups_targets_by_channel(monkeypatch, tmp_path):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "node_id": "fitrace-edge-test",
+                "mqtt_host": "192.168.0.130",
+                "max_ftms_connections": 3,
+                "antenna_channels": [
+                    {
+                        "id": "uart-1",
+                        "port": "/dev/ttyAMA0",
+                        "baudrate": 115200,
+                    },
+                    {
+                        "id": "uart-2",
+                        "port": "/dev/ttyAMA4",
+                        "baudrate": 57600,
+                        "rtscts": True,
+                    },
+                ],
+                "equipment_bindings": [
+                    {
+                        "node_id": "fitrace-edge-test-01",
+                        "equipment_id": "BIKE_01",
+                        "equipment_type": "fan_bike",
+                        "ble_target": "AA:BB:CC:DD:EE:01",
+                        "antenna_channel": "uart-1",
+                    },
+                    {
+                        "node_id": "fitrace-edge-test-02",
+                        "equipment_id": "BIKE_02",
+                        "equipment_type": "fan_bike",
+                        "ble_target": "AA:BB:CC:DD:EE:02",
+                        "antenna_channel": "uart-1",
+                    },
+                    {
+                        "node_id": "fitrace-edge-test-03",
+                        "equipment_id": "BIKE_03",
+                        "equipment_type": "fan_bike",
+                        "ble_target": "AA:BB:CC:DD:EE:03",
+                        "antenna_channel": "uart-2",
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    class FakeAntennaCommandRunner:
+        def __init__(self):
+            self.requests = []
+
+        def run(self, request):
+            self.requests.append(request)
+            return {
+                "port": request.port,
+                "command": request.command,
+                "rx": [f"{request.command}:OK"],
+            }
+
+    fake_runner = FakeAntennaCommandRunner()
+    monkeypatch.setattr(edge_app_module, "CONFIG_PATH", config_path)
+    monkeypatch.setattr(edge_app_module, "antenna_command_runner", fake_runner)
+    client = TestClient(edge_app_module.app)
+
+    response = client.post(
+        "/api/antenna/reconnect-configured",
+        json={"timeout_sec": 2, "report_interval_ms": 750},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "reconnected"
+    assert payload["channels"][0]["macs"] == [
+        "AA:BB:CC:DD:EE:01",
+        "AA:BB:CC:DD:EE:02",
+    ]
+    assert payload["channels"][1]["macs"] == ["AA:BB:CC:DD:EE:03"]
+    connect_requests = [request for request in fake_runner.requests if request.command == "connect"]
+    report_requests = [request for request in fake_runner.requests if request.command == "report"]
+    assert connect_requests[0].port == "/dev/ttyAMA0"
+    assert connect_requests[0].macs == ["AA:BB:CC:DD:EE:01", "AA:BB:CC:DD:EE:02"]
+    assert connect_requests[1].port == "/dev/ttyAMA4"
+    assert connect_requests[1].baudrate == 57600
+    assert connect_requests[1].rtscts is True
+    assert connect_requests[1].macs == ["AA:BB:CC:DD:EE:03"]
+    assert [request.report_interval_ms for request in report_requests] == [750, 750]
 
 
 def test_edge_wifi_status_endpoint(monkeypatch):
@@ -281,6 +386,7 @@ def test_edge_monitor_events_endpoint_reads_event_log(monkeypatch, tmp_path):
     assert response.status_code == 200
     payload = response.json()
     assert payload["path"].endswith("edge_monitor.jsonl")
+    assert isinstance(payload["server_now_epoch_ms"], int)
     assert payload["events"][0]["source"] == "uart"
     assert payload["events"][0]["direction"] == "rx"
     assert payload["events"][0]["message"] == "BOOT:NO_LIST;"

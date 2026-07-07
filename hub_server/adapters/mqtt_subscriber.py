@@ -24,9 +24,13 @@ class TelemetryPayload(BaseModel):
     power_watts: int = Field(0, ge=0)
     heart_rate_bpm: int = Field(0, ge=0)
     distance_m: float = Field(0.0, ge=0.0)
+    raw_total_distance_m: float | None = Field(None, ge=0.0)
+    delta_distance_m: float | None = Field(None, ge=0.0)
     total_energy_kcal: int | None = Field(None, ge=0)
     elapsed_time_ms: int = Field(0, ge=0)
     calories: float | None = Field(None, ge=0.0)
+    raw_total_energy_kcal: float | None = Field(None, ge=0.0)
+    delta_energy_kcal: float | None = Field(None, ge=0.0)
     timestamp_epoch_ms: int | None = Field(None, ge=0)
     ftms_payload: dict[str, Any] | None = None
     raw_payload: dict[str, Any] | None = None
@@ -108,6 +112,8 @@ class MqttSubscriber:
 
         telemetry_payload = telemetry.model_dump(exclude_none=True)
         node_id = telemetry_payload["node_id"]
+        if self._node_registry:
+            self._node_registry.update_telemetry(telemetry_payload)
 
         progress = self._race_manager.ingest_telemetry(telemetry_payload)
         if progress is not None:

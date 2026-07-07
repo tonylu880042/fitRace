@@ -581,11 +581,21 @@ class RaceManager:
         prev_finished_time = prev_progress.get("finished_time_ms")
         prev_max_power = prev_progress.get("max_power_watts", 0)
 
-        distance_m = payload.get("distance_m", 0.0)
-        elapsed_time_ms = payload.get("elapsed_time_ms", 0)
+        distance_m = self._session_metric_value(
+            prev_progress,
+            payload,
+            total_field="distance_m",
+            delta_field="delta_distance_m",
+        )
+        elapsed_time_ms = self._elapsed_time_ms(payload)
         speed = payload.get("instantaneous_speed_kph", 0.0)
         power_watts = int(payload.get("power_watts", 0))
-        calories = payload.get("calories")
+        calories = self._session_metric_value(
+            prev_progress,
+            payload,
+            total_field="calories",
+            delta_field="delta_energy_kcal",
+        )
 
         if calories is None:
             calories = (power_watts * (elapsed_time_ms / 1000.0)) / 1000.0
@@ -652,3 +662,30 @@ class RaceManager:
                 self._end_time_epoch_ms = int(time.time() * 1000)
 
         return self._progress
+
+    def _session_metric_value(
+        self,
+        prev_progress: Dict[str, Any],
+        payload: Dict[str, Any],
+        *,
+        total_field: str,
+        delta_field: str,
+    ) -> float | None:
+        if delta_field in payload and payload.get(delta_field) is not None:
+            previous = self._metric_number(prev_progress.get(total_field))
+            delta = max(0.0, self._metric_number(payload.get(delta_field)))
+            return previous + delta
+        value = payload.get(total_field)
+        return None if value is None else self._metric_number(value)
+
+    def _elapsed_time_ms(self, payload: Dict[str, Any]) -> int:
+        elapsed_time_ms = int(self._metric_number(payload.get("elapsed_time_ms")))
+        if elapsed_time_ms > 0:
+            return elapsed_time_ms
+        timestamp_ms = payload.get("timestamp_epoch_ms")
+        if self._start_time_epoch_ms and timestamp_ms:
+            return max(0, int(self._metric_number(timestamp_ms)) - self._start_time_epoch_ms)
+        import time
+        if self._start_time_epoch_ms:
+            return max(0, int(time.time() * 1000) - self._start_time_epoch_ms)
+        return 0

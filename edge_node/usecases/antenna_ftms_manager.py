@@ -13,6 +13,8 @@ from edge_node.infrastructure.antenna import protocol
 
 logger = logging.getLogger("edge_node.antenna_ftms_manager")
 MAC_ADDRESS_PATTERN = re.compile(r"^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$")
+# antenna board firmware hard limit: CONNECT silently ignores MACs beyond 3
+MAX_MACS_PER_CHANNEL = 3
 
 
 @dataclass(frozen=True)
@@ -30,9 +32,11 @@ class AntennaFtmsManager:
         on_telemetry: Callable[[TelemetryData], Awaitable[None]],
         serial_factory=None,
         scan_duration_sec: float = 8.0,
-        command_timeout_sec: float = 3.0,
-        report_interval_ms: int = 1000,
+        command_timeout_sec: float = 5.0,
+        report_interval_ms: int = 250,
         rssi_tie_threshold_db: int = 5,
+        reconnect_interval_sec: float = 30.0,
+        data_timeout_sec: float = 10.0,
         event_log=None,
     ):
         if not edge_config.antenna_channels:
@@ -44,6 +48,12 @@ class AntennaFtmsManager:
         self._command_timeout_sec = command_timeout_sec
         self._report_interval_ms = report_interval_ms
         self._rssi_tie_threshold_db = rssi_tie_threshold_db
+        self._reconnect_interval_sec = reconnect_interval_sec
+        self._data_timeout_sec = data_timeout_sec
+        self._last_data_by_mac: dict[str, float] = {}
+        self._last_raw_distance_by_mac: dict[str, float] = {}
+        self._last_raw_energy_by_mac: dict[str, float] = {}
+        self._assigned_macs_by_channel: dict[str, set[str]] = {}
         self._stop_event = threading.Event()
         self._task: asyncio.Task | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -79,31 +89,44 @@ class AntennaFtmsManager:
         }
         try:
             boot_has_list = self._ping_channels()
-            scan_results = self._scan_channels()
-            assignments = assign_devices_by_rssi(
-                scan_results,
-                self._edge_config.antenna_channels,
-                tie_threshold_db=self._rssi_tie_threshold_db,
-            )
-            assignments = filter_assignments_to_configured_macs(
-                assignments,
-                self._edge_config.equipment_bindings,
-            )
-            if any(assignments.values()):
-                self._bindings_by_mac = bind_assignments_to_streams(
-                    assignments,
-                    self._edge_config.equipment_bindings,
-                    self._edge_config.node_id,
-                )
-                self._disconnect_all_channels()
-                self._connect_assignments(assignments)
-            elif boot_has_list and all(boot_has_list.values()):
-                logger.warning(
-                    "Antenna scan found no configured targets; using saved target lists"
+            if boot_has_list and all(boot_has_list.values()):
+                # spec: HAS_LIST boards auto-reconnect their saved targets;
+                # don't tear them down, let the retry loop patch any gaps
+                logger.info(
+                    "All antenna boards report saved target lists; skipping startup scan"
                 )
                 self._set_report_interval_all()
             else:
-                logger.warning("Antenna scan found no configured targets")
+                scan_results = self._scan_channels()
+                assignments = assign_devices_by_rssi(
+                    scan_results,
+                    self._edge_config.antenna_channels,
+                    tie_threshold_db=self._rssi_tie_threshold_db,
+                )
+                assignments = filter_assignments_to_configured_macs(
+                    assignments,
+                    self._edge_config.equipment_bindings,
+                )
+                assignments = pin_assignments_to_configured_channels(
+                    assignments,
+                    self._edge_config.equipment_bindings,
+                    set(self._serials),
+                )
+                assignments = {
+                    channel_id: macs
+                    for channel_id, macs in assignments.items()
+                    if macs
+                }
+                if assignments:
+                    self._bindings_by_mac = bind_assignments_to_streams(
+                        assignments,
+                        self._edge_config.equipment_bindings,
+                        self._edge_config.node_id,
+                    )
+                    self._disconnect_all_channels(set(assignments))
+                    self._connect_assignments(assignments)
+                else:
+                    logger.warning("Antenna scan found no configured targets")
             self._read_telemetry_loop()
         finally:
             for serial_port in self._serials.values():
@@ -126,34 +149,88 @@ class AntennaFtmsManager:
             timeout=0.1,
         )
 
+    def _await_response(
+        self,
+        serial_port,
+        duration_sec: float,
+        channel_id: str | None = None,
+        ok_command: str | None = None,
+        wanted_types: frozenset[str] = frozenset(),
+    ) -> dict[str, Any] | None:
+        """Read until the response for a specific command arrives; forward
+        telemetry, skip stale/unrelated lines so desynced responses can't be
+        misread. Per spec, OK lines carry their command prefix and only that
+        prefix counts as this command's ack."""
+        deadline = time.monotonic() + max(0.1, duration_sec)
+        while time.monotonic() < deadline and not self._stop_event.is_set():
+            line = self._read_line(serial_port, channel_id)
+            if not line:
+                continue
+            parsed = protocol.parse_line(line)
+            kind = parsed.get("type")
+            if kind == "telemetry":
+                if channel_id:
+                    self._dispatch_telemetry(channel_id, parsed)
+                continue
+            if kind in wanted_types:
+                return parsed
+            if ok_command and (
+                kind == "error"
+                or (kind == "ok" and parsed.get("command") == ok_command)
+            ):
+                return parsed
+        return None
+
     def _ping_channels(self) -> dict[str, bool]:
         boot_has_list: dict[str, bool] = {}
         for channel_id, serial_port in self._serials.items():
-            self._write(serial_port, protocol.build_ping(), channel_id)
-            boot_lines = self._read_lines(
-                serial_port,
-                self._command_timeout_sec,
-                max_lines=1,
-                channel_id=channel_id,
-            )
-            logger.info("[%s] antenna boot response: %s", channel_id, boot_lines)
-            parsed = protocol.parse_line(boot_lines[0]) if boot_lines else {}
-            boot_has_list[channel_id] = bool(parsed.get("type") == "boot" and parsed.get("has_list"))
+            # drop stale lines a previous process left in the UART buffer
+            if hasattr(serial_port, "reset_input_buffer"):
+                serial_port.reset_input_buffer()
+            parsed = None
+            for _ in range(3):  # spec: resend PING until the board answers BOOT
+                self._write(serial_port, protocol.build_ping(), channel_id)
+                parsed = self._await_response(
+                    serial_port,
+                    self._command_timeout_sec,
+                    channel_id,
+                    wanted_types=frozenset({"boot"}),
+                )
+                if parsed or self._stop_event.is_set():
+                    break
+            logger.info("[%s] antenna boot response: %s", channel_id, parsed and parsed.get("raw"))
+            boot_has_list[channel_id] = bool(parsed and parsed.get("has_list"))
         return boot_has_list
 
-    def _scan_channels(self) -> dict[str, list[ScannedDevice]]:
-        for channel_id, serial_port in self._serials.items():
+    def _scan_channels(
+        self, channel_ids: set[str] | None = None
+    ) -> dict[str, list[ScannedDevice]]:
+        scanned = {
+            channel_id: serial_port
+            for channel_id, serial_port in self._serials.items()
+            if channel_ids is None or channel_id in channel_ids
+        }
+        for channel_id, serial_port in scanned.items():
             self._write(serial_port, protocol.build_scan_start(), channel_id)
 
-        scan_results = {channel_id: [] for channel_id in self._serials}
+        scan_results = {channel_id: [] for channel_id in scanned}
         deadline = time.monotonic() + max(0.1, self._scan_duration_sec)
         while time.monotonic() < deadline and not self._stop_event.is_set():
+            # read every channel so non-scanned channels keep streaming
             for channel_id, serial_port in self._serials.items():
                 line = self._read_line(serial_port, channel_id)
                 if not line:
                     continue
                 parsed = protocol.parse_line(line)
-                if parsed.get("type") == "device" and parsed.get("rssi") is not None:
+                if parsed.get("type") == "telemetry":
+                    # keep live streams flowing while a reconnect rescan runs
+                    self._dispatch_telemetry(channel_id, parsed)
+                    continue
+                if (
+                    channel_id in scan_results
+                    and parsed.get("type") == "device"
+                    and parsed.get("rssi") is not None
+                ):
                     scan_results[channel_id].append(
                         ScannedDevice(
                             address=parsed["address"],
@@ -165,57 +242,71 @@ class AntennaFtmsManager:
         for channel_id, devices in scan_results.items():
             logger.info("[%s] antenna scan found %s device(s)", channel_id, len(devices))
 
-        for channel_id, serial_port in self._serials.items():
+        for channel_id, serial_port in scanned.items():
             self._write(serial_port, protocol.build_scan_stop(), channel_id)
-        for channel_id, serial_port in self._serials.items():
+        for channel_id, serial_port in scanned.items():
             self._read_lines(serial_port, self._command_timeout_sec, channel_id=channel_id)
         return scan_results
 
     def _set_report_interval_all(self):
         for channel_id, serial_port in self._serials.items():
             self._write(serial_port, protocol.build_report_interval(self._report_interval_ms), channel_id)
-            lines = self._read_lines(
-                serial_port,
-                self._command_timeout_sec,
-                max_lines=1,
-                channel_id=channel_id,
+            parsed = self._await_response(
+                serial_port, self._command_timeout_sec, channel_id, ok_command="REPORT"
             )
-            logger.info("[%s] antenna report interval response: %s", channel_id, lines)
+            logger.info("[%s] antenna report interval response: %s", channel_id, parsed and parsed.get("raw"))
 
-    def _disconnect_all_channels(self):
+    def _disconnect_all_channels(self, channel_ids: set[str] | None = None):
         for channel_id, serial_port in self._serials.items():
+            if channel_ids is not None and channel_id not in channel_ids:
+                continue
             self._write(serial_port, protocol.build_disconnect_all(), channel_id)
-            lines = self._read_lines(
-                serial_port,
-                self._command_timeout_sec,
-                max_lines=1,
-                channel_id=channel_id,
+            parsed = self._await_response(
+                serial_port, self._command_timeout_sec, channel_id, ok_command="DISCONNECT"
             )
-            logger.info("[%s] antenna disconnect all response: %s", channel_id, lines)
+            logger.info("[%s] antenna disconnect all response: %s", channel_id, parsed and parsed.get("raw"))
 
     def _connect_assignments(self, assignments: dict[str, list[str]]):
         for channel_id, macs in assignments.items():
             if not macs:
                 logger.warning("[%s] no antenna devices assigned after scan", channel_id)
                 continue
+            if len(macs) > MAX_MACS_PER_CHANNEL:
+                # keep this channel's configured targets; firmware silently
+                # ignores MACs beyond its limit, so a long list loses devices
+                configured = {
+                    _normalize_device_id(binding.ble_target)
+                    for binding in self._edge_config.equipment_bindings
+                    if binding.antenna_channel == channel_id and binding.ble_target
+                }
+                macs = sorted(
+                    macs,
+                    key=lambda mac: _normalize_device_id(mac) not in configured,
+                )
+                dropped = macs[MAX_MACS_PER_CHANNEL:]
+                macs = macs[:MAX_MACS_PER_CHANNEL]
+                logger.warning(
+                    "[%s] antenna connect list exceeds board limit %s, dropping %s",
+                    channel_id,
+                    MAX_MACS_PER_CHANNEL,
+                    dropped,
+                )
             serial_port = self._serials[channel_id]
+            self._assigned_macs_by_channel[channel_id] = {
+                _normalize_device_id(mac) for mac in macs
+            }
             self._write(serial_port, protocol.build_connect(macs), channel_id)
-            connect_lines = self._read_lines(
-                serial_port,
-                self._command_timeout_sec,
-                max_lines=1,
-                channel_id=channel_id,
+            parsed = self._await_response(
+                serial_port, self._command_timeout_sec, channel_id, ok_command="CONNECT"
             )
-            logger.info("[%s] antenna connect %s -> %s", channel_id, macs, connect_lines)
+            logger.info("[%s] antenna connect %s -> %s", channel_id, macs, parsed and parsed.get("raw"))
             self._write(serial_port, protocol.build_report_interval(self._report_interval_ms), channel_id)
-            self._read_lines(
-                serial_port,
-                self._command_timeout_sec,
-                max_lines=1,
-                channel_id=channel_id,
+            self._await_response(
+                serial_port, self._command_timeout_sec, channel_id, ok_command="REPORT"
             )
 
     def _read_telemetry_loop(self):
+        next_retry = time.monotonic() + self._reconnect_interval_sec
         while not self._stop_event.is_set():
             for channel_id, serial_port in self._serials.items():
                 line = self._read_line(serial_port, channel_id)
@@ -224,15 +315,87 @@ class AntennaFtmsManager:
                 parsed = protocol.parse_line(line)
                 if parsed.get("type") != "telemetry":
                     continue
-                telemetry = self._to_telemetry(channel_id, parsed)
-                if not self._loop:
-                    continue
-                asyncio.run_coroutine_threadsafe(self._on_telemetry(telemetry), self._loop)
+                self._dispatch_telemetry(channel_id, parsed)
+            if time.monotonic() >= next_retry:
+                self._reconnect_missing_targets()
+                next_retry = time.monotonic() + self._reconnect_interval_sec
+
+    def _dispatch_telemetry(self, channel_id: str, parsed: dict[str, Any]):
+        mac = _normalize_device_id(parsed.get("address"))
+        if mac:
+            self._last_data_by_mac[mac] = time.monotonic()
+            # a device holds one BLE link; keep channel target lists disjoint
+            # so two boards never fight over the same machine
+            for other_id, macs in self._assigned_macs_by_channel.items():
+                if other_id != channel_id:
+                    macs.discard(mac)
+            self._assigned_macs_by_channel.setdefault(channel_id, set()).add(mac)
+        telemetry = self._to_telemetry(channel_id, parsed)
+        if not self._loop:
+            return
+        asyncio.run_coroutine_threadsafe(self._on_telemetry(telemetry), self._loop)
+
+    def _reconnect_missing_targets(self):
+        """Spec-compliant recovery: STATUS decides, not data silence.
+        Idle machines produce no FTMS rows while staying connected, so the
+        only reliable disconnect signal is connected < target. Recovery is a
+        plain CONNECT with the channel's configured list — no scan, no
+        DISCONNECT, so healthy links and the data stream stay untouched."""
+        expected_by_channel: dict[str, list[str]] = {}
+        for binding in self._edge_config.equipment_bindings:
+            if not binding.ble_target or not MAC_ADDRESS_PATTERN.match(binding.ble_target):
+                continue
+            if binding.antenna_channel not in self._serials:
+                continue  # ponytail: MACs without a configured channel are not recovered
+            expected_by_channel.setdefault(binding.antenna_channel, []).append(
+                _normalize_device_id(binding.ble_target)
+            )
+        for channel_id, expected in expected_by_channel.items():
+            serial_port = self._serials[channel_id]
+            self._write(serial_port, protocol.build_status(), channel_id)
+            status = self._await_response(
+                serial_port,
+                self._command_timeout_sec,
+                channel_id,
+                wanted_types=frozenset({"status"}),
+            )
+            if status is None:
+                logger.warning("[%s] antenna STATUS not answered", channel_id)
+                continue
+            connected = status.get("connected")
+            if connected is None or connected >= len(expected):
+                continue
+            logger.warning(
+                "[%s] antenna connected %s/%s targets, reissuing CONNECT %s",
+                channel_id,
+                connected,
+                len(expected),
+                sorted(expected),
+            )
+            self._connect_assignments({channel_id: sorted(expected)})
 
     def _to_telemetry(self, channel_id: str, parsed: dict[str, Any]) -> TelemetryData:
         mac = parsed["address"]
         binding = self._binding_for_mac(channel_id, mac)
         equipment_type = parsed.get("equipment_type") or "unknown"
+        normalized_mac = _normalize_device_id(mac)
+        raw_distance_m = float(parsed.get("distance_m") or 0.0)
+        raw_energy_kcal = parsed.get("total_energy_kcal")
+        raw_energy_value = float(raw_energy_kcal) if raw_energy_kcal is not None else None
+        delta_distance_m = self._delta_from_previous(
+            self._last_raw_distance_by_mac,
+            normalized_mac,
+            raw_distance_m,
+        )
+        delta_energy_kcal = (
+            self._delta_from_previous(
+                self._last_raw_energy_by_mac,
+                normalized_mac,
+                raw_energy_value,
+            )
+            if raw_energy_value is not None
+            else None
+        )
         return TelemetryData(
             node_id=binding.node_id if binding else f"{self._edge_config.node_id}-{mac.replace(':', '').lower()}",
             edge_node_id=self._edge_config.node_id,
@@ -246,30 +409,51 @@ class AntennaFtmsManager:
             pace_sec_per_500m=parsed.get("pace_sec_per_500m"),
             power_watts=int(parsed.get("power_watts") or 0),
             heart_rate_bpm=0,
-            distance_m=float(parsed.get("distance_m") or 0.0),
+            distance_m=raw_distance_m,
+            raw_total_distance_m=raw_distance_m,
+            delta_distance_m=delta_distance_m,
             total_energy_kcal=parsed.get("total_energy_kcal"),
             calories=parsed.get("total_energy_kcal"),
+            raw_total_energy_kcal=raw_energy_value,
+            delta_energy_kcal=delta_energy_kcal,
             elapsed_time_ms=0,
             timestamp_epoch_ms=int(time.time() * 1000),
             ftms_payload=parsed.get("ftms_payload"),
             raw_payload=parsed.get("raw_payload") or parsed.get("payload"),
         )
 
+    def _delta_from_previous(
+        self,
+        previous_by_mac: dict[str, float],
+        mac: str,
+        current_value: float | None,
+    ) -> float:
+        if current_value is None:
+            return 0.0
+        previous_value = previous_by_mac.get(mac)
+        previous_by_mac[mac] = current_value
+        if previous_value is None or current_value < previous_value:
+            return 0.0
+        return current_value - previous_value
+
     def _binding_for_mac(self, channel_id: str, mac: str) -> EquipmentBinding | None:
         binding = self._bindings_by_mac.get(mac)
         if binding:
             return binding
+
+        # exact MAC match wins regardless of which channel delivered the data,
+        # otherwise a device heard on the "wrong" antenna gets someone else's stream
+        for candidate in self._edge_config.equipment_bindings:
+            if _normalize_device_id(candidate.ble_target) == _normalize_device_id(mac):
+                self._bindings_by_mac[mac] = candidate
+                logger.info("[%s] matched antenna target %s to %s", channel_id, mac, candidate.node_id)
+                return candidate
 
         channel_bindings = [
             binding
             for binding in self._edge_config.equipment_bindings
             if binding.antenna_channel == channel_id
         ]
-        for candidate in channel_bindings:
-            if _normalize_device_id(candidate.ble_target) == _normalize_device_id(mac):
-                self._bindings_by_mac[mac] = candidate
-                logger.info("[%s] matched antenna target %s to %s", channel_id, mac, candidate.node_id)
-                return candidate
 
         used_node_ids = {
             binding.node_id for binding in self._bindings_by_mac.values()
@@ -300,10 +484,20 @@ class AntennaFtmsManager:
         lines: list[str] = []
         while time.monotonic() < deadline and not self._stop_event.is_set():
             line = self._read_line(serial_port, channel_id)
-            if line:
-                lines.append(line)
-                if max_lines is not None and len(lines) >= max_lines:
-                    break
+            if not line:
+                continue
+            parsed = protocol.parse_line(line)
+            # telemetry interleaves with command responses on a live link;
+            # forward it instead of dropping it while waiting for an ack
+            if parsed.get("type") == "telemetry":
+                if channel_id:
+                    self._dispatch_telemetry(channel_id, parsed)
+                continue
+            if parsed.get("type") == "device":
+                continue
+            lines.append(line)
+            if max_lines is not None and len(lines) >= max_lines:
+                break
         return lines
 
     def _read_line(self, serial_port, channel_id: str | None = None) -> str | None:
@@ -378,6 +572,25 @@ def assign_devices_by_rssi(
         winner = min(close, key=lambda channel_id: (len(assignments[channel_id]), channel_ids.index(channel_id)))
         assignments[winner].append(mac)
     return assignments
+
+
+def pin_assignments_to_configured_channels(
+    assignments: dict[str, list[str]],
+    bindings: list[EquipmentBinding],
+    valid_channels: set[str],
+) -> dict[str, list[str]]:
+    """Move each MAC with a configured antenna_channel onto that channel."""
+    configured = {
+        _normalize_device_id(binding.ble_target): binding.antenna_channel
+        for binding in bindings
+        if binding.ble_target and binding.antenna_channel in valid_channels
+    }
+    result: dict[str, list[str]] = {channel_id: [] for channel_id in assignments}
+    for channel_id, macs in assignments.items():
+        for mac in macs:
+            target = configured.get(_normalize_device_id(mac), channel_id)
+            result.setdefault(target, []).append(mac)
+    return result
 
 
 def filter_assignments_to_configured_macs(

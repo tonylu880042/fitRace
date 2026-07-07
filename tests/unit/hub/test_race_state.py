@@ -139,6 +139,40 @@ def test_race_manager_valid_flow():
     assert len(manager.get_registered_nodes()) == 0
 
 
+def test_distance_race_accumulates_delta_instead_of_raw_equipment_total():
+    manager = RaceManager()
+    config = RaceConfig(race_type="distance", target_value=100.0)
+    manager.configure(config)
+    manager.register_node("treadmill-01", "Runner A")
+    manager.start_race()
+    start_ms = manager.get_start_time_epoch_ms()
+
+    progress = manager.update_telemetry(
+        {
+            "node_id": "treadmill-01",
+            "distance_m": 20_000.0,
+            "raw_total_distance_m": 20_000.0,
+            "delta_distance_m": 0.0,
+            "timestamp_epoch_ms": start_ms + 250,
+        }
+    )
+    assert progress["treadmill-01"]["distance_m"] == 0.0
+    assert progress["treadmill-01"]["progress_percent"] == 0.0
+
+    progress = manager.update_telemetry(
+        {
+            "node_id": "treadmill-01",
+            "distance_m": 20_003.0,
+            "raw_total_distance_m": 20_003.0,
+            "delta_distance_m": 3.0,
+            "timestamp_epoch_ms": start_ms + 500,
+        }
+    )
+    assert progress["treadmill-01"]["distance_m"] == 3.0
+    assert progress["treadmill-01"]["progress_percent"] == 3.0
+    assert progress["treadmill-01"]["elapsed_time_ms"] == 500
+
+
 def test_calorie_challenge():
     manager = RaceManager()
     config = RaceConfig(race_type="calories", target_value=50.0)  # 50 kcal target

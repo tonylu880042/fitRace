@@ -20,6 +20,52 @@ class NodeRegistry:
         self._nodes[status.edge_node_id] = status
         return status
 
+    def update_telemetry(self, payload: dict) -> EdgeNodeStatus | None:
+        node_id = payload.get("node_id")
+        edge_node_id = payload.get("edge_node_id")
+        if not node_id or not edge_node_id:
+            return None
+
+        now_ms = self._now_ms()
+        status = self._nodes.get(edge_node_id)
+        if status is None:
+            status = EdgeNodeStatus(
+                edge_node_id=edge_node_id,
+                status="online",
+                last_seen_epoch_ms=now_ms,
+                equipment_streams=[],
+            )
+
+        data = status.model_dump()
+        data["status"] = "online"
+        data["last_seen_epoch_ms"] = now_ms
+        streams = data.setdefault("equipment_streams", [])
+        stream = next(
+            (item for item in streams if item.get("node_id") == node_id),
+            None,
+        )
+        if stream is None:
+            stream = {"node_id": node_id}
+            streams.append(stream)
+
+        stream.update(
+            {
+                "node_id": node_id,
+                "equipment_id": payload.get("equipment_id") or stream.get("equipment_id"),
+                "equipment_type": payload.get("equipment_type") or stream.get("equipment_type"),
+                "mac_address": payload.get("mac_address") or stream.get("mac_address"),
+                "rssi": payload.get("rssi"),
+                "status": "online",
+                "last_telemetry_epoch_ms": payload.get("timestamp_epoch_ms") or now_ms,
+            }
+        )
+        if payload.get("ftms_type"):
+            stream["ftms_type"] = payload.get("ftms_type")
+
+        updated = EdgeNodeStatus.model_validate(data)
+        self._nodes[updated.edge_node_id] = updated
+        return updated
+
     def list_nodes(self) -> list[dict]:
         now_ms = self._now_ms()
         nodes = []

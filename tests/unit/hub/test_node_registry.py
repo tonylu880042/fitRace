@@ -53,3 +53,40 @@ def test_node_registry_uses_topic_edge_id_when_payload_omits_identity():
 
     nodes = registry.list_nodes()
     assert nodes[0]["edge_node_id"] == "fitrace-edge-02"
+
+
+def test_node_registry_updates_stream_health_from_telemetry():
+    registry = NodeRegistry(now_ms=lambda: 3_000_000)
+    registry.update_status(
+        {
+            "edge_node_id": "fitrace-edge-01",
+            "status": "online",
+            "last_seen_epoch_ms": 2_999_000,
+            "equipment_streams": [
+                {
+                    "node_id": "fitrace-edge-01-01",
+                    "equipment_id": "TREAD_01",
+                    "equipment_type": "treadmill",
+                    "status": "configured",
+                }
+            ],
+        }
+    )
+
+    registry.update_telemetry(
+        {
+            "edge_node_id": "fitrace-edge-01",
+            "node_id": "fitrace-edge-01-01",
+            "equipment_id": "TREAD_01",
+            "equipment_type": "treadmill",
+            "mac_address": "AA:BB:CC:DD:EE:01",
+            "rssi": -71,
+            "timestamp_epoch_ms": 3_000_000,
+        }
+    )
+
+    stream = registry.list_nodes()[0]["equipment_streams"][0]
+    assert stream["status"] == "online"
+    assert stream["last_telemetry_epoch_ms"] == 3_000_000
+    assert stream["mac_address"] == "AA:BB:CC:DD:EE:01"
+    assert stream["rssi"] == -71

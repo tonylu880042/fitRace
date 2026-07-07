@@ -34,6 +34,10 @@ def test_telemetry_data_dict_serialization():
         power_watts=150,
         heart_rate_bpm=130,
         distance_m=200.0,
+        raw_total_distance_m=1200.0,
+        delta_distance_m=2.5,
+        raw_total_energy_kcal=80,
+        delta_energy_kcal=1,
         elapsed_time_ms=60000,
         timestamp_epoch_ms=123456789,
     )
@@ -42,6 +46,10 @@ def test_telemetry_data_dict_serialization():
     assert data_dict["equipment_type"] == "fan_bike"
     assert data_dict["instantaneous_speed_kph"] == 12.0
     assert data_dict["distance_m"] == 200.0
+    assert data_dict["raw_total_distance_m"] == 1200.0
+    assert data_dict["delta_distance_m"] == 2.5
+    assert data_dict["raw_total_energy_kcal"] == 80
+    assert data_dict["delta_energy_kcal"] == 1
 
 
 def test_telemetry_data_serializes_type_specific_ftms_payload():
