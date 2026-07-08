@@ -78,9 +78,9 @@ class HyroxService:
             raise RuntimeError("Configure a venue before registering athletes")
         self._roster.add_member(subject_id, division, member_tag, member_name)
         if self._engine.state_of(subject_id) is None:
-            state = self._engine.register_subject(subject_id)
-            if self._is_active:
-                state.stage_start_ms[state.current_stage] = _now_ms()
+            # The clock starts on the athlete's first activity, not at
+            # registration -- see HyroxCourseEngine._ensure_started.
+            self._engine.register_subject(subject_id)
 
     def start(self):
         if self._engine is None:

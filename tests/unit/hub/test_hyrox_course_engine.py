@@ -133,6 +133,24 @@ def test_force_complete_stage_advances():
     assert engine.state_of("alex").current_stage == HyroxStage.SKI_ERG
 
 
+def test_clock_starts_on_first_activity_per_athlete():
+    # Two athletes registered together but starting at different times must get
+    # independent run_1 start stamps (no shared gun).
+    engine, store, _ = _engine()
+    engine.register_subject("alex")
+    engine.register_subject("bella")
+    engine.start(0)  # no global stamp
+    assert HyroxStage.RUN_1 not in engine.state_of("alex").stage_start_ms
+
+    store.claim("treadmill-01", "alex", "TAG_ALEX", HyroxStage.RUN_1, ClaimSource.OPERATOR, 0)
+    store.claim("treadmill-02", "bella", "TAG_BELLA", HyroxStage.RUN_1, ClaimSource.OPERATOR, 0)
+    engine.process(_ftms("treadmill-01", "run_treadmills", 0), 1000)   # alex starts at 1000
+    engine.process(_ftms("treadmill-02", "run_treadmills", 0), 5000)   # bella starts at 5000
+
+    assert engine.state_of("alex").stage_start_ms[HyroxStage.RUN_1] == 1000
+    assert engine.state_of("bella").stage_start_ms[HyroxStage.RUN_1] == 5000
+
+
 def test_finished_after_last_stage():
     engine, store, _ = _engine()
     state = engine.register_subject("alex")

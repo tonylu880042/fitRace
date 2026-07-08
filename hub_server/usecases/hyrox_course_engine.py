@@ -67,8 +67,16 @@ class HyroxCourseEngine:
         return state
 
     def start(self, now_ms: int):
-        for state in self._subjects.values():
-            state.stage_start_ms[state.current_stage] = now_ms
+        # No global gun: each athlete's clock starts on their own first activity
+        # (see _ensure_started). With limited resources some athletes queue, so a
+        # shared start time would make every individual total identical and count
+        # queue waiting against athletes who have not begun.
+        pass
+
+    @staticmethod
+    def _ensure_started(state: SubjectState, now_ms: int):
+        if HyroxStage.RUN_1 not in state.stage_start_ms:
+            state.stage_start_ms[HyroxStage.RUN_1] = now_ms
 
     def state_of(self, subject_id: str) -> Optional[SubjectState]:
         return self._subjects.get(subject_id)
@@ -98,6 +106,7 @@ class HyroxCourseEngine:
         state = self._subjects.get(attribution.subject_id)
         if state is None or state.status != "racing":
             return
+        self._ensure_started(state, now_ms)
 
         stage_def = self._def.get(state.current_stage)
         if stage_def is None:
@@ -139,6 +148,7 @@ class HyroxCourseEngine:
         state = self._subjects.get(subject_id)
         if state is None or state.status != "racing":
             return
+        self._ensure_started(state, now_ms)
         self._tracker.force_complete(subject_id, state.current_stage)
         self._advance(state, now_ms)
 
