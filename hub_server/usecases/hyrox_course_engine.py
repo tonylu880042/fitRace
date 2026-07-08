@@ -73,6 +73,22 @@ class HyroxCourseEngine:
     def state_of(self, subject_id: str) -> Optional[SubjectState]:
         return self._subjects.get(subject_id)
 
+    def current_stage_of(self, subject_id: str) -> Optional[HyroxStage]:
+        state = self._subjects.get(subject_id)
+        return state.current_stage if state else None
+
+    def stage_definition(self, stage: HyroxStage) -> Optional[HyroxStageDefinition]:
+        return self._def.get(stage)
+
+    def allows(self, subject_id: str, resource_group_id: str) -> bool:
+        """Whether the subject's current stage accepts events from this group.
+        Used by dynamic claim to bind only in-sequence reads."""
+        state = self._subjects.get(subject_id)
+        if state is None or state.status != "racing":
+            return False
+        stage_def = self._def.get(state.current_stage)
+        return stage_def is not None and resource_group_id in stage_def.allowed_resource_groups
+
     # --- Event processing ---
 
     def process(self, event: HyroxTelemetryEvent, now_ms: int):

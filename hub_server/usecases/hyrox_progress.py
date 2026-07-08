@@ -127,3 +127,18 @@ class HyroxProgressTracker:
         st = self._rep.setdefault(key, _RepState())
         st.count += 1
         return ProgressUpdate(st.count, target, st.count >= target, True)
+
+    def value_of(self, subject_id: str, stage: HyroxStage,
+                 target_type: HyroxTargetType) -> float:
+        """Current accumulated progress for a (subject, stage), 0 if none."""
+        key = (subject_id, stage)
+        if target_type == HyroxTargetType.DISTANCE_M:
+            st = self._distance.get(key)
+            return st.accumulated if st else 0.0
+        if target_type == HyroxTargetType.LENGTHS:
+            st = self._length.get(key)
+            return float(st.count) if st else 0.0
+        if target_type == HyroxTargetType.REPS:
+            st = self._rep.get(key)
+            return float(st.count) if st else 0.0
+        return 0.0

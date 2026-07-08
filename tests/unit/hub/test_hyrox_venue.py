@@ -13,6 +13,7 @@ from hub_server.domain.hyrox_venue import (
     HyroxTargetType,
     HyroxVenueConfig,
     validate_venue_config,
+    venue_readiness,
 )
 
 
@@ -96,8 +97,10 @@ def _valid_profile():
     )
 
 
+# --- Structural validation (venue only) ---
+
 def test_valid_config_has_no_errors():
-    assert validate_venue_config(_valid_venue(), _valid_profile()) == []
+    assert validate_venue_config(_valid_venue()) == []
 
 
 def test_shared_turf_lane_may_declare_multiple_stage_candidates():
@@ -105,7 +108,54 @@ def test_shared_turf_lane_may_declare_multiple_stage_candidates():
     venue = _valid_venue()
     turf = next(g for g in venue.resource_groups if g.group_id == "shared_turf_lanes")
     assert len(turf.stage_candidates) > 1
-    assert validate_venue_config(venue, _valid_profile()) == []
+    assert validate_venue_config(venue) == []
+
+
+def test_duplicate_antenna_is_rejected():
+    venue = _valid_venue()
+    # Reuse turf-lane-1's start antenna on turf-lane-2's finish
+    lane2 = _lane("turf-lane-2", "rfid-01", "L2_START", "L1_START")
+    venue.resource_groups[1].units[1] = lane2
+    errors = validate_venue_config(venue)
+    assert any("Duplicate RFID read zone" in e for e in errors)
+
+
+def test_rfid_pair_missing_finish_is_rejected():
+    venue = _valid_venue()
+    lane = venue.resource_groups[1].units[0]
+    lane.finish_endpoint = None
+    errors = validate_venue_config(venue)
+    assert any("requires both" in e for e in errors)
+
+
+def test_rfid_pair_same_start_and_finish_is_rejected():
+    venue = _valid_venue()
+    lane = venue.resource_groups[1].units[0]
+    lane.finish_endpoint = HyroxEndpointSensor(
+        node_id=lane.start_endpoint.node_id, antenna_id=lane.start_endpoint.antenna_id
+    )
+    errors = validate_venue_config(venue)
+    assert any("different" in e for e in errors)
+
+
+def test_duplicate_resource_id_is_rejected():
+    venue = _valid_venue()
+    venue.resource_groups[0].units[1].resource_id = "treadmill-01"
+    errors = validate_venue_config(venue)
+    assert any("Duplicate resource id" in e for e in errors)
+
+
+def test_finished_is_not_a_valid_stage_candidate():
+    venue = _valid_venue()
+    venue.resource_groups[0].stage_candidates.append(HyroxStage.FINISHED)
+    errors = validate_venue_config(venue)
+    assert any("finished" in e for e in errors)
+
+
+# --- Readiness (venue + course profile) ---
+
+def test_ready_venue_has_no_readiness_errors():
+    assert venue_readiness(_valid_venue(), _valid_profile()) == []
 
 
 def test_ftms_maps_to_run_row_ski_stages():
@@ -116,63 +166,30 @@ def test_ftms_maps_to_run_row_ski_stages():
         HyroxStageDefinition(stage=HyroxStage.SKI_ERG, target_type=HyroxTargetType.DISTANCE_M,
                              target_value=1000, allowed_resource_groups=["run_treadmills"])
     )
-    assert validate_venue_config(venue, profile) == []
+    assert venue_readiness(venue, profile) == []
 
 
-def test_duplicate_antenna_is_rejected():
+def test_multi_option_run_is_ready_when_only_one_option_exists():
+    # A run allowing treadmills OR track is servable when only treadmills exist.
     venue = _valid_venue()
-    # Reuse turf-lane-1's start antenna on turf-lane-2's finish
-    lane2 = _lane("turf-lane-2", "rfid-01", "L2_START", "L1_START")
-    venue.resource_groups[1].units[1] = lane2
-    errors = validate_venue_config(venue, _valid_profile())
-    assert any("Duplicate RFID read zone" in e for e in errors)
+    profile = _valid_profile()
+    profile.stages[0].allowed_resource_groups = ["run_treadmills", "run_track"]
+    assert venue_readiness(venue, profile) == []
 
 
-def test_rfid_pair_missing_finish_is_rejected():
-    venue = _valid_venue()
-    lane = venue.resource_groups[1].units[0]
-    lane.finish_endpoint = None
-    errors = validate_venue_config(venue, _valid_profile())
-    assert any("requires both" in e for e in errors)
-
-
-def test_rfid_pair_same_start_and_finish_is_rejected():
-    venue = _valid_venue()
-    lane = venue.resource_groups[1].units[0]
-    lane.finish_endpoint = HyroxEndpointSensor(
-        node_id=lane.start_endpoint.node_id, antenna_id=lane.start_endpoint.antenna_id
-    )
-    errors = validate_venue_config(venue, _valid_profile())
-    assert any("different" in e for e in errors)
-
-
-def test_target_resource_mismatch_is_rejected():
-    # A lengths stage pointing at an FTMS treadmill pool cannot be counted.
+def test_target_resource_mismatch_is_a_readiness_error():
+    # A lengths stage whose only group is an FTMS pool cannot be produced.
     venue = _valid_venue()
     profile = _valid_profile()
     sled = next(s for s in profile.stages if s.stage == HyroxStage.SLED_PUSH)
     sled.allowed_resource_groups = ["run_treadmills"]
-    errors = validate_venue_config(venue, profile)
-    assert any("cannot" in e and "produce" in e for e in errors)
+    errors = venue_readiness(venue, profile)
+    assert any("can produce" in e for e in errors)
 
 
-def test_unknown_resource_group_reference_is_rejected():
+def test_stage_with_no_configured_group_is_a_readiness_error():
     venue = _valid_venue()
     profile = _valid_profile()
     profile.stages[0].allowed_resource_groups = ["nonexistent_group"]
-    errors = validate_venue_config(venue, profile)
-    assert any("unknown resource group" in e for e in errors)
-
-
-def test_duplicate_resource_id_is_rejected():
-    venue = _valid_venue()
-    venue.resource_groups[0].units[1].resource_id = "treadmill-01"
-    errors = validate_venue_config(venue, _valid_profile())
-    assert any("Duplicate resource id" in e for e in errors)
-
-
-def test_finished_is_not_a_valid_stage_candidate():
-    venue = _valid_venue()
-    venue.resource_groups[0].stage_candidates.append(HyroxStage.FINISHED)
-    errors = validate_venue_config(venue, _valid_profile())
-    assert any("finished" in e for e in errors)
+    errors = venue_readiness(venue, profile)
+    assert any("no configured resource group" in e for e in errors)

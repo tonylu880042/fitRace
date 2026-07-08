@@ -138,24 +138,17 @@ def _endpoint_addr(ep: HyroxEndpointSensor) -> tuple[str, str]:
     return (ep.node_id, ep.antenna_id)
 
 
-def validate_venue_config(
-    venue: HyroxVenueConfig, profile: HyroxCourseProfile
-) -> list[str]:
-    """Return a list of human-readable config errors; empty means valid.
+def validate_venue_config(venue: HyroxVenueConfig) -> list[str]:
+    """Structural validation of a venue, independent of any course profile.
 
-    Covers the Phase 1 rules: duplicate sensors, missing/duplicate RFID
-    endpoint pairs, unique ids, unknown resource-group references, and
-    target/resource-class mismatch.
+    Errors here mean the wiring is wrong: duplicate ids, duplicate sensor
+    addresses, incomplete RFID endpoint pairs, or an FTMS unit with no node.
+    Whether the venue can actually run a full Hyrox (every stage has a resource)
+    is a readiness question -- see venue_readiness().
     """
     errors: list[str] = []
 
-    # --- Unique group ids and resource ids ---
     seen_groups: set[str] = set()
-    for group in venue.resource_groups:
-        if group.group_id in seen_groups:
-            errors.append(f"Duplicate resource group id: {group.group_id}.")
-        seen_groups.add(group.group_id)
-
     seen_resources: set[str] = set()
     # Every physical sensor address (node_id, antenna_id) must be unique across
     # the whole venue; likewise an FTMS node may back only one resource unit.
@@ -163,8 +156,12 @@ def validate_venue_config(
     seen_ftms_nodes: dict[str, str] = {}
 
     for group in venue.resource_groups:
-        if not group.stage_candidates:
-            errors.append(f"Resource group {group.group_id} has no stage candidates.")
+        if group.group_id in seen_groups:
+            errors.append(f"Duplicate resource group id: {group.group_id}.")
+        seen_groups.add(group.group_id)
+
+        # stage_candidates is advisory; the course profile is authoritative for
+        # which group serves a stage. Only a stray 'finished' is a data mistake.
         if HyroxStage.FINISHED in group.stage_candidates:
             errors.append(
                 f"Resource group {group.group_id} lists 'finished', which is not a workout stage."
@@ -218,28 +215,44 @@ def validate_venue_config(
                 else:
                     seen_ftms_nodes[unit.node_id] = unit.resource_id
 
-    # --- Stage definitions: unique, resolvable groups, target/sensor match ---
+    return errors
+
+
+def venue_readiness(
+    venue: HyroxVenueConfig, profile: HyroxCourseProfile
+) -> list[str]:
+    """Completeness check: can this venue actually run the whole course?
+
+    A stage's allowed_resource_groups are OPTIONS (a run may use treadmills OR a
+    track). A stage is servable if at least one option exists in the venue and
+    can produce the stage's target. Unservable stages are readiness problems,
+    not structural config errors, so this is separate from validate_venue_config.
+    """
+    errors: list[str] = []
     group_by_id = {g.group_id: g for g in venue.resource_groups}
     seen_stages: set[HyroxStage] = set()
+
     for stage_def in profile.stages:
         if stage_def.stage in seen_stages:
             errors.append(f"Duplicate stage definition: {stage_def.stage.value}.")
         seen_stages.add(stage_def.stage)
 
         allowed_sensors = _TARGET_SENSORS[stage_def.target_type]
-        for group_id in stage_def.allowed_resource_groups:
-            group = group_by_id.get(group_id)
-            if group is None:
-                errors.append(
-                    f"Stage {stage_def.stage.value} references unknown resource group {group_id}."
-                )
-                continue
-            unit_classes = {u.sensor_class for u in group.units}
-            if not (unit_classes & allowed_sensors):
-                errors.append(
-                    f"Stage {stage_def.stage.value} ({stage_def.target_type.value}) allows group "
-                    f"{group_id}, whose sensors {sorted(c.value for c in unit_classes)} cannot "
-                    f"produce {stage_def.target_type.value}."
-                )
+        existing = [group_by_id[g] for g in stage_def.allowed_resource_groups
+                    if g in group_by_id]
+        if not existing:
+            errors.append(
+                f"Stage {stage_def.stage.value} has no configured resource group."
+            )
+            continue
+        servable = any(
+            {u.sensor_class for u in group.units} & allowed_sensors
+            for group in existing
+        )
+        if not servable:
+            errors.append(
+                f"Stage {stage_def.stage.value} ({stage_def.target_type.value}) has no "
+                f"configured group whose sensors can produce it."
+            )
 
     return errors
