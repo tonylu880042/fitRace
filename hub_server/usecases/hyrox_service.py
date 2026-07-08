@@ -11,10 +11,13 @@ clean state.
 Everything is in-memory; persistence is Phase 7.
 """
 
+import secrets
 import time
 from typing import Optional
 
 from hub_server.domain.models import HyroxStage
+from hub_server.domain.hyrox_results import HyroxAthleteResult, HyroxRaceResults
+from hub_server.usecases.hyrox_results_store import HyroxResultsStore, build_athlete_result
 from hub_server.domain.hyrox_venue import (
     HyroxCourseProfile,
     HyroxVenueConfig,
@@ -33,9 +36,13 @@ def _now_ms() -> int:
 
 
 class HyroxService:
-    def __init__(self, profile: Optional[HyroxCourseProfile] = None):
+    def __init__(self, profile: Optional[HyroxCourseProfile] = None,
+                 results_store: Optional[HyroxResultsStore] = None):
         self._profile = profile or default_hyrox_course_profile()
         self._stage_def = {s.stage: s for s in self._profile.stages}
+        self._stage_order = [s.stage for s in self._profile.stages]
+        self._targets = {s.stage: (s.target_type.value, s.target_value)
+                         for s in self._profile.stages}
         self._mode = "training"  # training (dynamic claim) | competition (operator assign)
         self._venue: Optional[HyroxVenueConfig] = None
         self._registry: Optional[HyroxSensorRegistry] = None
@@ -46,10 +53,19 @@ class HyroxService:
         self._is_active = False
         self._resource_heartbeats: dict[str, int] = {}
         self._queues: dict[str, tuple[str, int]] = {}
+        # Results persistence (attached at runtime; None in unit tests)
+        self._results = results_store
+        self._race_id: Optional[str] = None
+        self._result_tokens: dict[str, str] = {}   # subject_id -> token
+        self._finalized: set[str] = set()
+
+    def attach_results_store(self, store: HyroxResultsStore):
+        self._results = store
 
     # --- Configuration ---
 
-    def configure_venue(self, venue: HyroxVenueConfig, mode: str = "training"):
+    def configure_venue(self, venue: HyroxVenueConfig, mode: str = "training",
+                        race_id: Optional[str] = None):
         # Structural validation is a hard gate; full course readiness (every
         # stage has a resource) is a separate start-time / UI concern.
         errors = validate_venue_config(venue)
@@ -57,6 +73,7 @@ class HyroxService:
             raise ValueError("; ".join(errors))
         self._venue = venue
         self._mode = mode
+        self._race_id = race_id or f"race-{_now_ms()}"
         self._registry = HyroxSensorRegistry(venue)
         # A new venue resets the race.
         self._roster = HyroxRoster()
@@ -66,6 +83,8 @@ class HyroxService:
         self._is_active = False
         self._resource_heartbeats = {}
         self._queues = {}
+        self._result_tokens = {}
+        self._finalized = set()
 
     @property
     def is_configured(self) -> bool:
@@ -73,7 +92,10 @@ class HyroxService:
 
     # --- Roster and race control ---
 
-    def register(self, subject_id: str, division: str, member_tag: str, member_name: str):
+    def register(self, subject_id: str, division: str, member_tag: str,
+                 member_name: str) -> str:
+        """Register an athlete/team member. Returns the subject's result token
+        (issued once per subject, for post-race result retrieval)."""
         if self._engine is None:
             raise RuntimeError("Configure a venue before registering athletes")
         self._roster.add_member(subject_id, division, member_tag, member_name)
@@ -81,12 +103,21 @@ class HyroxService:
             # The clock starts on the athlete's first activity, not at
             # registration -- see HyroxCourseEngine._ensure_started.
             self._engine.register_subject(subject_id)
+        return self._result_tokens.setdefault(subject_id, secrets.token_urlsafe(12))
+
+    def token_for(self, subject_id: str) -> Optional[str]:
+        return self._result_tokens.get(subject_id)
 
     def start(self):
         if self._engine is None:
             raise RuntimeError("Configure a venue before starting")
         self._is_active = True
         self._engine.start(_now_ms())
+        if self._results is not None and self._venue is not None:
+            self._results.create_race(
+                self._race_id, self._venue.venue_id, self._mode,
+                self._profile.course_profile_id, _now_ms(),
+            )
 
     # --- Telemetry ingestion ---
 
@@ -101,6 +132,7 @@ class HyroxService:
         self._maybe_dynamic_claim(event, tag_id, ts)
         self._resource_heartbeats[event.resource_id] = ts
         self._engine.process(event, ts)
+        self._finalize_done()
 
     def ingest_node(self, node_id: str, metrics: Optional[dict] = None,
                     timestamp_ms: Optional[int] = None):
@@ -115,6 +147,7 @@ class HyroxService:
             return
         self._resource_heartbeats[event.resource_id] = ts
         self._engine.process(event, ts)
+        self._finalize_done()
 
     def _maybe_dynamic_claim(self, event, tag_id: str, ts: int):
         # Training mode only: the first in-sequence read on a free resource
@@ -153,6 +186,7 @@ class HyroxService:
         if self._engine is None:
             return
         self._engine.abandon(subject_id, timestamp_ms or _now_ms())
+        self._finalize_done()
 
     def abandon_by_tag(self, tag_id: str, timestamp_ms: Optional[int] = None):
         """Abandon button read: resolve the member tag to its subject."""
@@ -164,6 +198,49 @@ class HyroxService:
         if self._engine is None:
             return
         self._engine.force_complete_stage(subject_id, timestamp_ms or _now_ms())
+        self._finalize_done()
+
+    # --- Results finalization and retrieval ---
+
+    @property
+    def race_id(self) -> Optional[str]:
+        return self._race_id
+
+    def _finalize_done(self):
+        """Persist the result of any subject that has newly reached a terminal
+        state (finished / abandoned). Idempotent -- each subject once."""
+        if self._results is None or self._engine is None:
+            return
+        for entry in self._roster.all():
+            sid = entry.subject_id
+            if sid in self._finalized:
+                continue
+            state = self._engine.state_of(sid)
+            if state is None or state.status not in ("finished", "abandoned"):
+                continue
+            token = self._result_tokens.get(sid)
+            if token is None:
+                continue
+            name = (sid if entry.division != "individual"
+                    else (entry.member_names[0] if entry.member_names else sid))
+            result = build_athlete_result(
+                race_id=self._race_id, result_token=token, subject_id=sid,
+                display_name=name, division=entry.division, members=entry.member_names,
+                state=state, stage_order=self._stage_order, targets=self._targets,
+                progress_of=lambda stg: self._tracker.value_of(
+                    sid, stg, self._stage_def[stg].target_type),
+            )
+            self._results.finalize_athlete(result)
+            self._finalized.add(sid)
+
+    def result_by_token(self, token: str) -> Optional[HyroxAthleteResult]:
+        return self._results.get_by_token(token) if self._results else None
+
+    def race_results(self, race_id: str) -> Optional[HyroxRaceResults]:
+        return self._results.get_race(race_id) if self._results else None
+
+    def export_csv(self, race_id: str) -> str:
+        return self._results.export_csv(race_id) if self._results else ""
 
     # --- State projection (clean, resource-aware shape) ---
 

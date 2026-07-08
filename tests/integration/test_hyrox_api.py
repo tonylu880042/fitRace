@@ -115,3 +115,40 @@ def test_god_view_endpoint(monkeypatch):
     assert len(data["resource_groups"]) == 1
     assert "treadmill-01" in data["resources"]
     assert data["resources"]["treadmill-01"]["status"] == "free"
+
+
+def test_results_finalized_and_retrievable(monkeypatch, tmp_path):
+    # Placed last: configures the shared service, so it must not run before the
+    # tests that assume an unconfigured service.
+    monkeypatch.setenv("FITRACE_ENABLE_HYROX", "1")
+    monkeypatch.delenv("FITRACE_ADMIN_TOKEN", raising=False)
+    from hub_server.usecases.hyrox_results_store import HyroxResultsStore
+    hyrox_service.attach_results_store(HyroxResultsStore(str(tmp_path / "r.db")))
+    try:
+        client = TestClient(app)
+        client.post("/api/hyrox/venue-config", json=_venue_body())
+        token = client.post("/api/hyrox/register", json={
+            "athlete_name": "Alex", "rfid_tag_id": "TAG_ALEX"}).json()["result_token"]
+        assert token
+        client.post("/api/hyrox/start")
+
+        # Force the athlete through all 16 stages to FINISHED.
+        for _ in range(16):
+            client.post("/api/hyrox/complete-stage", json={"subject_id": "TAG_ALEX"})
+
+        res = client.get(f"/api/hyrox/result/{token}")
+        assert res.status_code == 200
+        body = res.json()
+        assert body["status"] == "finished"
+        assert body["rank"] == 1
+        assert len(body["splits"]) == 16
+
+        race_id = hyrox_service.race_id
+        full = client.get(f"/api/hyrox/results/{race_id}")
+        assert full.status_code == 200 and len(full.json()["athletes"]) == 1
+        csv = client.get(f"/api/hyrox/results/{race_id}/export.csv")
+        assert csv.status_code == 200 and "Alex" in csv.text
+
+        assert client.get("/api/hyrox/result/nope").status_code == 404
+    finally:
+        hyrox_service.attach_results_store(None)

@@ -25,6 +25,14 @@ async def main_async():
     app_host = "0.0.0.0"
     app_port = 8000
 
+    # Durable Hyrox results (SQLite). Attached at runtime so importing the app
+    # for tests does not create a database file.
+    import os
+    from hub_server.usecases.hyrox_results_store import HyroxResultsStore
+    hyrox_service.attach_results_store(
+        HyroxResultsStore(os.getenv("FITRACE_HYROX_DB", "data/hyrox.db"))
+    )
+
     # Initialize and connect MQTT
     mqtt_client = AsyncMqttClient(
         host=mqtt_host, port=mqtt_port, client_id="fitrace-hub-server"

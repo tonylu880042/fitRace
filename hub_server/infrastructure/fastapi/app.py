@@ -288,7 +288,7 @@ def register_hyrox_athlete(payload: HyroxRegisterPayload):
     if not hyrox_service.is_configured:
         raise HTTPException(status_code=409, detail="Load a venue config first")
     try:
-        hyrox_service.register(
+        token = hyrox_service.register(
             subject_id=_subject_id_for(payload),
             division=payload.division,
             member_tag=payload.rfid_tag_id,
@@ -296,7 +296,36 @@ def register_hyrox_athlete(payload: HyroxRegisterPayload):
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    return {"status": "ok"}
+    # The athlete saves this link to look up their result after the race.
+    return {"status": "ok", "result_token": token, "result_url": f"/hyrox/result/{token}"}
+
+
+@app.get("/api/hyrox/result/{token}")
+def get_hyrox_result(token: str):
+    result = hyrox_service.result_by_token(token)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Result not found")
+    return result
+
+
+@app.get("/api/hyrox/results/{race_id}")
+def get_hyrox_race_results(race_id: str, request: Request):
+    require_admin(request)
+    race = hyrox_service.race_results(race_id)
+    if race is None:
+        raise HTTPException(status_code=404, detail="Race not found")
+    return race
+
+
+@app.get("/api/hyrox/results/{race_id}/export.csv")
+def export_hyrox_results(race_id: str, request: Request):
+    from fastapi.responses import PlainTextResponse
+    require_admin(request)
+    csv_text = hyrox_service.export_csv(race_id)
+    return PlainTextResponse(
+        csv_text, media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{race_id}.csv"'},
+    )
 
 
 @app.post("/api/hyrox/start")
