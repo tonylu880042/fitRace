@@ -65,6 +65,7 @@ class HyroxResourceUnit(BaseModel):
     # Identity reader that binds an athlete to an otherwise-anonymous unit
     # (e.g. the RFID gate in front of a treadmill).
     entry_gate: HyroxEndpointSensor | None = None
+    pulse_to_meter: float | None = None
 
 
 class HyroxResourceGroup(BaseModel):

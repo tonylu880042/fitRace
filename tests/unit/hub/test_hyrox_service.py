@@ -27,6 +27,7 @@ def _venue():
                     resource_id="treadmill-01", display_name="TM1",
                     sensor_class=HyroxSensorClass.FTMS_MACHINE, node_id="edge-tm-01",
                     entry_gate=HyroxEndpointSensor(node_id="rfid-tm-01", antenna_id="T1_GATE"),
+                    pulse_to_meter=250.0,
                 )],
             ),
             HyroxResourceGroup(
@@ -163,3 +164,21 @@ def test_roster_flags_overfilled_team():
     roster.add_member("duo", "doubles", "T2", "B")
     roster.add_member("duo", "doubles", "T3", "C")  # one too many
     assert "duo" in roster.overfilled()
+
+
+def test_pulse_to_meter_progresses_run():
+    svc = _svc(mode="training")
+    svc.register("alex", "individual", "TAG_ALEX", "Alex")
+    svc.start()
+
+    # Athlete taps the treadmill entry gate -> dynamic claim binds treadmill-01.
+    svc.ingest_rfid("rfid-tm-01", "T1_GATE", "TAG_ALEX")
+
+    # Send 4 pulses of 250m each (no distance_m in metrics)
+    svc.ingest_node("edge-tm-01", metrics=None)  # 250m
+    svc.ingest_node("edge-tm-01", metrics=None)  # 500m
+    svc.ingest_node("edge-tm-01", metrics=None)  # 750m
+    svc.ingest_node("edge-tm-01", metrics=None)  # 1000m -> completed!
+
+    st = svc.get_state()
+    assert st["subjects"][0]["current_stage"] == "ski_erg"

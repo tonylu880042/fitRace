@@ -89,6 +89,12 @@ class HyroxProgressTracker:
         st = self._distance.setdefault(key, _DistanceState())
         raw = (event.metrics or {}).get("distance_m")
         if raw is None:
+            # Pulse-based machines add a fixed distance per node event. Only
+            # genuine node telemetry counts -- an RFID read on the same unit
+            # (e.g. the entry-gate bind tap) carries an endpoint and must not.
+            if event.pulse_to_meter is not None and event.endpoint is None:
+                st.accumulated += event.pulse_to_meter
+                return ProgressUpdate(st.accumulated, target, st.accumulated >= target, True)
             return ProgressUpdate(st.accumulated, target, st.accumulated >= target, False)
         if st.last_raw is None:
             # First reading is the baseline; it adds nothing on its own.

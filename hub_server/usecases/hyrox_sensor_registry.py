@@ -32,6 +32,7 @@ class RfidResolution:
     role: str  # START_LINE | FINISH_LINE | ENTRY_GATE
     sensor_class: HyroxSensorClass
     stage_candidates: tuple[HyroxStage, ...]
+    pulse_to_meter: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -40,6 +41,7 @@ class NodeResolution:
     group_id: str
     sensor_class: HyroxSensorClass
     stage_candidates: tuple[HyroxStage, ...]
+    pulse_to_meter: Optional[float] = None
 
 
 class HyroxTelemetryEvent(BaseModel):
@@ -53,6 +55,7 @@ class HyroxTelemetryEvent(BaseModel):
     timestamp_epoch_ms: int
     metrics: Optional[dict] = None  # FTMS/rep metrics
     raw_payload: dict = Field(default_factory=dict)
+    pulse_to_meter: Optional[float] = None
 
 
 class HyroxSensorRegistry:
@@ -89,6 +92,7 @@ class HyroxSensorRegistry:
                 role=role,
                 sensor_class=unit.sensor_class,
                 stage_candidates=stage_candidates,
+                pulse_to_meter=unit.pulse_to_meter,
             )
 
     def _index_node(self, group: HyroxResourceGroup, unit: HyroxResourceUnit):
@@ -110,6 +114,7 @@ class HyroxSensorRegistry:
             group_id=group.group_id,
             sensor_class=unit.sensor_class,
             stage_candidates=tuple(group.stage_candidates),
+            pulse_to_meter=unit.pulse_to_meter,
         )
 
     # --- Resolution ---
@@ -141,6 +146,7 @@ class HyroxSensorRegistry:
             tag_id=tag_id,
             timestamp_epoch_ms=timestamp_epoch_ms,
             raw_payload=raw_payload or {},
+            pulse_to_meter=res.pulse_to_meter,
         )
 
     def normalize_node(
@@ -162,4 +168,5 @@ class HyroxSensorRegistry:
             timestamp_epoch_ms=timestamp_epoch_ms,
             metrics=metrics,
             raw_payload=raw_payload or {},
+            pulse_to_meter=res.pulse_to_meter,
         )

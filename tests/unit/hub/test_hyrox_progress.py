@@ -131,6 +131,32 @@ def test_reps_increment_to_target():
     assert final.value == 75 and final.complete is True
 
 
+def test_pulse_to_meter_node_events_add_distance():
+    t = HyroxProgressTracker()
+    ev = HyroxTelemetryEvent(
+        sensor_class=HyroxSensorClass.FTMS_MACHINE, resource_group_id="run_treadmills",
+        resource_id="tm-1", endpoint=None, timestamp_epoch_ms=1, pulse_to_meter=250.0,
+    )
+    for _ in range(3):
+        upd = t.apply(ev, "alex", HyroxStage.RUN_1, HyroxTargetType.DISTANCE_M, 1000)
+    assert upd.value == 750
+    upd = t.apply(ev, "alex", HyroxStage.RUN_1, HyroxTargetType.DISTANCE_M, 1000)
+    assert upd.value == 1000 and upd.complete is True
+
+
+def test_entry_gate_tap_does_not_add_pulse_distance():
+    # A pulse-based treadmill's entry-gate bind tap carries pulse_to_meter but
+    # an endpoint; it must not add phantom distance.
+    t = HyroxProgressTracker()
+    gate = HyroxTelemetryEvent(
+        sensor_class=HyroxSensorClass.RFID_ENTRY_GATE, resource_group_id="run_treadmills",
+        resource_id="tm-1", endpoint="entry_gate", tag_id="TAG", timestamp_epoch_ms=1,
+        pulse_to_meter=250.0,
+    )
+    upd = t.apply(gate, "alex", HyroxStage.RUN_1, HyroxTargetType.DISTANCE_M, 1000)
+    assert upd.value == 0 and upd.counted is False
+
+
 def test_entry_gate_rfid_read_does_not_count_as_a_rep():
     # The bind tap that co-locates with a wall-ball target must not add a rep.
     t = HyroxProgressTracker()
