@@ -28,8 +28,10 @@ class SubjectState:
     subject_id: str
     current_stage: HyroxStage
     status: str = "racing"  # racing | finished | abandoned
-    stage_start_ms: dict[HyroxStage, int] = field(default_factory=dict)
-    stage_end_ms: dict[HyroxStage, int] = field(default_factory=dict)
+    stage_start_ms: dict[HyroxStage, int] = field(default_factory=dict)  # became current
+    stage_arrived_ms: dict[HyroxStage, int] = field(default_factory=dict)  # first activity
+    stage_end_ms: dict[HyroxStage, int] = field(default_factory=dict)  # completed
+    stage_resource: dict[HyroxStage, str] = field(default_factory=dict)  # resource used
 
 
 @dataclass
@@ -125,6 +127,13 @@ class HyroxCourseEngine:
                 now_ms,
             )
             return
+
+        # First valid activity at this station: record arrival (for the roxzone
+        # split) and which resource is being used.
+        stage = state.current_stage
+        if stage not in state.stage_arrived_ms:
+            state.stage_arrived_ms[stage] = now_ms
+        state.stage_resource[stage] = event.resource_id
 
         update = self._tracker.apply(
             event, state.subject_id, state.current_stage,
