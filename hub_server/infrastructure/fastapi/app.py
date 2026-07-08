@@ -176,6 +176,12 @@ class HyroxAssignPayload(BaseModel):
     resource_id: str
 
 
+class HyroxQueuePayload(BaseModel):
+    subject_id: str
+    group_id: str
+    wait_start_epoch_ms: Optional[int] = None
+
+
 class HyroxVenuePayload(BaseModel):
     venue: HyroxVenueConfig
     mode: str = "training"
@@ -250,6 +256,20 @@ def get_hyrox_state():
     return hyrox_service.get_state()
 
 
+@app.get("/api/hyrox/god-view")
+def get_hyrox_god_view():
+    return hyrox_service.get_god_view_state()
+
+
+@app.post("/api/hyrox/venue-config/validate")
+def validate_hyrox_venue(payload: HyroxVenuePayload):
+    # Dry run: no state change, so no admin token required.
+    return {
+        "structural": validate_venue_config(payload.venue),
+        "readiness": venue_readiness(payload.venue, default_hyrox_course_profile()),
+    }
+
+
 @app.post("/api/hyrox/venue-config")
 def configure_hyrox_venue(payload: HyroxVenuePayload, request: Request):
     require_admin(request)
@@ -286,6 +306,15 @@ def start_hyrox_race(request: Request):
         raise HTTPException(status_code=409, detail="Load a venue config first")
     hyrox_service.start()
     return {"status": "started"}
+
+
+@app.post("/api/hyrox/queue")
+def update_hyrox_queue(payload: HyroxQueuePayload, request: Request):
+    require_admin(request)
+    if not hyrox_service.is_configured:
+        raise HTTPException(status_code=409, detail="Load a venue config first")
+    hyrox_service.set_queue(payload.subject_id, payload.group_id, payload.wait_start_epoch_ms)
+    return {"status": "ok"}
 
 
 @app.post("/api/hyrox/assign")
@@ -1070,3 +1099,8 @@ def read_hyrox_admin():
 @app.get("/hyrox/signup")
 def read_hyrox_signup():
     return RedirectResponse(url="/static/hyrox_signup.html")
+
+
+@app.get("/hyrox/god-view")
+def read_hyrox_god_view():
+    return RedirectResponse(url="/static/hyrox_god_view.html")

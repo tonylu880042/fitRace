@@ -73,6 +73,7 @@ class HyroxAssignmentStore:
         self._closed: list[ResourceAssignment] = []            # history / audit
         self.diagnostics: list[AssignmentDiagnostic] = []
         self._counter = 0
+        self._recently_closed: dict[str, int] = {}
 
     def _next_id(self) -> str:
         self._counter += 1
@@ -154,6 +155,7 @@ class HyroxAssignmentStore:
         assignment = self._by_resource.pop(resource_id, None)
         if assignment is None:
             return None
+        self._recently_closed[resource_id] = timestamp_epoch_ms
         assignment.status = "closed"
         assignment.close_reason = reason
         assignment.closed_at_epoch_ms = timestamp_epoch_ms
@@ -193,6 +195,12 @@ class HyroxAssignmentStore:
     def _attribute_anonymous(self, resource_id: str, ts: int) -> Attribution:
         assignment = self._by_resource.get(resource_id)
         if assignment is None:
+            # Trailing telemetry within 3 seconds of resource release is normal
+            # (due to physical inertia of machines or network polling lag). Ignore silently.
+            closed_at = self._recently_closed.get(resource_id)
+            if closed_at is not None and (ts - closed_at < 3000):
+                return Attribution(subject_id=None)
+
             d = self._diag(
                 "anonymous_no_binding", resource_id,
                 "anonymous telemetry with no active assignment",

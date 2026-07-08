@@ -44,6 +44,8 @@ class HyroxService:
         self._tracker = HyroxProgressTracker()
         self._engine: Optional[HyroxCourseEngine] = None
         self._is_active = False
+        self._resource_heartbeats: dict[str, int] = {}
+        self._queues: dict[str, tuple[str, int]] = {}
 
     # --- Configuration ---
 
@@ -62,6 +64,8 @@ class HyroxService:
         self._tracker = HyroxProgressTracker()
         self._engine = HyroxCourseEngine(self._profile, self._store, self._tracker)
         self._is_active = False
+        self._resource_heartbeats = {}
+        self._queues = {}
 
     @property
     def is_configured(self) -> bool:
@@ -74,7 +78,9 @@ class HyroxService:
             raise RuntimeError("Configure a venue before registering athletes")
         self._roster.add_member(subject_id, division, member_tag, member_name)
         if self._engine.state_of(subject_id) is None:
-            self._engine.register_subject(subject_id)
+            state = self._engine.register_subject(subject_id)
+            if self._is_active:
+                state.stage_start_ms[state.current_stage] = _now_ms()
 
     def start(self):
         if self._engine is None:
@@ -93,6 +99,7 @@ class HyroxService:
         if event is None:
             return  # unknown sensor
         self._maybe_dynamic_claim(event, tag_id, ts)
+        self._resource_heartbeats[event.resource_id] = ts
         self._engine.process(event, ts)
 
     def ingest_node(self, node_id: str, metrics: Optional[dict] = None,
@@ -106,6 +113,7 @@ class HyroxService:
         event = self._registry.normalize_node(node_id, ts, metrics=metrics)
         if event is None:
             return
+        self._resource_heartbeats[event.resource_id] = ts
         self._engine.process(event, ts)
 
     def _maybe_dynamic_claim(self, event, tag_id: str, ts: int):
@@ -210,3 +218,110 @@ class HyroxService:
                 for d in self._store.diagnostics[-20:]
             ],
         }
+
+    def get_god_view_state(self) -> dict:
+        if self._venue is None:
+            return {
+                "is_active": self._is_active,
+                "mode": self._mode,
+                "venue_configured": False,
+                "resource_groups": [],
+                "resources": {},
+                "diagnostics": [],
+            }
+
+        resources_detail = {}
+        for g in self._venue.resource_groups:
+            for u in g.units:
+                assignment = self._store.active_on(u.resource_id)
+                status = "free"
+                subject_id = None
+                subject_name = None
+                current_stage = None
+                progress_value = 0.0
+                progress_target = 0.0
+                progress_type = None
+
+                if assignment is not None:
+                    status = "in_use"
+                    subject_id = assignment.subject_id
+                    entry = self._roster.get(subject_id)
+                    if entry is not None:
+                        if entry.division != "individual":
+                            subject_name = subject_id
+                        else:
+                            subject_name = entry.member_names[0] if entry.member_names else subject_id
+                    else:
+                        subject_name = subject_id
+
+                    # Get athlete progress details
+                    state = self._engine.state_of(subject_id) if self._engine else None
+                    if state:
+                        current_stage = state.current_stage.value
+                        stage_def = self._stage_def.get(state.current_stage)
+                        if stage_def:
+                            progress_value = self._tracker.value_of(subject_id, state.current_stage, stage_def.target_type)
+                            progress_target = stage_def.target_value
+                            progress_type = stage_def.target_type.value
+
+                resources_detail[u.resource_id] = {
+                    "status": status,
+                    "subject_id": subject_id,
+                    "subject_name": subject_name,
+                    "current_stage": current_stage,
+                    "progress_value": progress_value,
+                    "progress_target": progress_target,
+                    "progress_type": progress_type,
+                    "last_heartbeat_epoch_ms": self._resource_heartbeats.get(u.resource_id),
+                }
+
+        return {
+            "is_active": self._is_active,
+            "mode": self._mode,
+            "venue_configured": True,
+            "venue_id": self._venue.venue_id,
+            "resource_groups": [
+                {
+                    "group_id": g.group_id,
+                    "resource_type": g.resource_type,
+                    "stage_candidates": [s.value for s in g.stage_candidates],
+                    "units": [
+                        {
+                            "resource_id": u.resource_id,
+                            "display_name": u.display_name,
+                            "sensor_class": u.sensor_class.value,
+                            "node_id": u.node_id,
+                        }
+                        for u in g.units
+                    ]
+                }
+                for g in self._venue.resource_groups
+            ],
+            "resources": resources_detail,
+            "diagnostics": [
+                {
+                    "kind": d.kind, "resource_id": d.resource_id, "detail": d.detail,
+                    "timestamp": d.timestamp_epoch_ms
+                }
+                for d in self._store.diagnostics[-20:]
+            ],
+            "queues": [
+                {
+                    "subject_id": sid,
+                    "subject_name": (
+                        self._roster.get(sid).member_names[0]
+                        if self._roster.get(sid) and self._roster.get(sid).member_names
+                        else sid
+                    ),
+                    "group_id": gid,
+                    "wait_start_epoch_ms": ts,
+                }
+                for sid, (gid, ts) in self._queues.items()
+            ],
+        }
+
+    def set_queue(self, subject_id: str, group_id: str, wait_start_epoch_ms: Optional[int]):
+        if wait_start_epoch_ms is None:
+            self._queues.pop(subject_id, None)
+        else:
+            self._queues[subject_id] = (group_id, wait_start_epoch_ms)

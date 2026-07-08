@@ -93,3 +93,25 @@ def test_admin_endpoints_require_token_when_configured(monkeypatch):
     # Registration stays open for self-service signup.
     assert client.post("/api/hyrox/register", json={
         "athlete_name": "Alex", "rfid_tag_id": "TAG_ALEX"}).status_code == 200
+
+
+def test_god_view_endpoint(monkeypatch):
+    monkeypatch.setenv("FITRACE_ENABLE_HYROX", "1")
+    monkeypatch.delenv("FITRACE_ADMIN_TOKEN", raising=False)
+    client = TestClient(app)
+
+    # Configure venue config and register athlete
+    client.post("/api/hyrox/venue-config", json=_venue_body())
+    client.post("/api/hyrox/register", json={
+        "athlete_name": "Alex", "rfid_tag_id": "TAG_ALEX"})
+    client.post("/api/hyrox/start")
+
+    # Access god-view endpoint
+    resp = client.get("/api/hyrox/god-view")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["venue_configured"] is True
+    assert data["venue_id"] == "hq"
+    assert len(data["resource_groups"]) == 1
+    assert "treadmill-01" in data["resources"]
+    assert data["resources"]["treadmill-01"]["status"] == "free"

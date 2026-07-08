@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FitRaceStudio - Hyrox 上帝視角部署看板</title>
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;700;800&family=Outfit:wght@400;600;800&family=Noto+Sans+TC:wght@500;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #09090b;
+      --surface: #18181b;
+      --border: #27272a;
+      --text: #f8fafc;
+      --accent: #e2ff3b;
+      --amber: #f59e0b;
+      --red: #f43f5e;
+      --green: #10b981;
+      --zinc-400: #a1a1aa;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Outfit", "Noto Sans TC", sans-serif;
+      padding: 24px;
+      overflow-x: hidden;
+    }
+
+    /* Header Bar */
+    .header-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 24px;
+      border: 2px solid var(--border);
+      border-radius: 4px;
+      background: var(--surface);
+      position: relative;
+      overflow: hidden;
+      margin-bottom: 24px;
+    }
+
+    .header-bar::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 6px;
+      background: var(--accent);
+    }
+
+    .title {
+      font-family: "Oswald", sans-serif;
+      font-size: 24px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin: 0;
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .title span.sub {
+      font-family: "Outfit", sans-serif;
+      font-size: 14px;
+      font-weight: 400;
+      color: var(--zinc-400);
+      letter-spacing: 0;
+      text-transform: none;
+    }
+
+    .status-badge {
+      font-family: "Oswald", sans-serif;
+      font-weight: 800;
+      background: #27272a;
+      color: #a1a1aa;
+      padding: 6px 14px;
+      border-radius: 4px;
+      font-size: 14px;
+      letter-spacing: 0.05em;
+    }
+
+    .status-badge.status-active {
+      background: rgba(245, 158, 11, 0.15);
+      color: var(--amber);
+      border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+
+    /* Stats Grid */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 16px;
+      border-radius: 4px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .stat-label {
+      font-size: 12px;
+      font-weight: 800;
+      color: var(--zinc-400);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .stat-value {
+      font-size: 28px;
+      font-family: "Oswald", sans-serif;
+      font-weight: 700;
+    }
+
+    /* Layout Sections */
+    .section-title {
+      font-family: "Oswald", sans-serif;
+      font-size: 20px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      border-bottom: 2px solid var(--border);
+      padding-bottom: 8px;
+      margin: 32px 0 16px 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #e4e4e7;
+    }
+
+    .section-title span.count {
+      background: #27272a;
+      color: #d4d4d8;
+      font-size: 12px;
+      padding: 2px 8px;
+      border-radius: 10px;
+    }
+
+    .nodes-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px;
+    }
+
+    /* Node Card Styling */
+    .node-card {
+      background: var(--surface);
+      border: 2px solid var(--border);
+      border-radius: 4px;
+      padding: 16px;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      transition: all 0.2s ease-in-out;
+    }
+
+    .node-card.active {
+      border-color: var(--accent);
+      box-shadow: 0 0 12px rgba(226, 255, 59, 0.15);
+    }
+
+    .node-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+
+    .node-title-group {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .node-name {
+      font-size: 18px;
+      font-weight: 800;
+      margin: 0;
+      color: #f4f4f5;
+    }
+
+    .node-id {
+      font-size: 11px;
+      color: var(--zinc-400);
+      font-family: monospace;
+    }
+
+    .sensor-class-badge {
+      font-size: 10px;
+      font-weight: 800;
+      background: #27272a;
+      color: #d4d4d8;
+      padding: 2px 6px;
+      border-radius: 2px;
+      text-transform: uppercase;
+    }
+
+    /* Athlete details inside card */
+    .athlete-panel {
+      background: rgba(9, 9, 11, 0.5);
+      border: 1px solid var(--border);
+      padding: 10px;
+      border-radius: 4px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .athlete-name {
+      font-size: 14px;
+      font-weight: 800;
+      color: var(--accent);
+      margin: 0;
+    }
+
+    .athlete-stage {
+      font-size: 12px;
+      color: #e4e4e7;
+    }
+
+    .progress-bar {
+      height: 4px;
+      background: #27272a;
+      border-radius: 2px;
+      overflow: hidden;
+      margin-top: 4px;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: var(--accent);
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+
+    .progress-text {
+      font-size: 11px;
+      color: var(--zinc-400);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    /* Heartbeat Radar Signal Indicator */
+    .heartbeat-container {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--zinc-400);
+      margin-top: auto;
+    }
+
+    .radar-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--zinc-400);
+      position: relative;
+    }
+
+    .radar-dot.pinging {
+      background: var(--green);
+    }
+
+    .radar-dot.pinging::after {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      background: var(--green);
+      animation: radar-ping 1.5s infinite ease-out;
+    }
+
+    @keyframes radar-ping {
+      0% {
+        transform: scale(1);
+        opacity: 0.8;
+      }
+      100% {
+        transform: scale(3.5);
+        opacity: 0;
+      }
+    }
+
+    /* Diagnostics Alerts List */
+    .alerts-panel {
+      background: rgba(244, 63, 94, 0.05);
+      border: 1px solid rgba(244, 63, 94, 0.2);
+      border-radius: 4px;
+      padding: 16px;
+      margin-top: 24px;
+    }
+
+    .alerts-title {
+      font-family: "Oswald", sans-serif;
+      font-size: 16px;
+      color: var(--red);
+      margin: 0 0 12px 0;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .alerts-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 150px;
+      overflow-y: auto;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .alert-item {
+      font-size: 12px;
+      color: #fda4af;
+      padding: 6px 10px;
+      background: rgba(244, 63, 94, 0.1);
+      border-left: 3px solid var(--red);
+      border-radius: 2px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header-bar">
+    <h1 class="title">
+      🛰️ Hyrox Deployment God-View
+      <span class="sub">感測器上帝視角部署畫板</span>
+    </h1>
+    <div id="race-status" class="status-badge">IDLE / 待機</div>
+  </div>
+
+  <div class="stats-grid">
+    <div class="stat-card">
+      <span class="stat-label">System Mode 系統模式</span>
+      <span id="stat-mode" class="stat-value" style="color: var(--accent);">--</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Total Sensors 部署總量</span>
+      <span id="stat-total" class="stat-value">0</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Active Cardio &amp; Lanes 活動站點</span>
+      <span id="stat-active" class="stat-value" style="color: var(--green);">0</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Recent Pulses / Heartbeats 實時遙測數</span>
+      <span id="stat-telemetry" class="stat-value" style="color: var(--amber);">0</span>
+    </div>
+  </div>
+
+  <div id="queue-panel" style="display: none; background: var(--surface); border: 2px solid var(--amber); border-radius: 4px; padding: 16px; margin-bottom: 24px;">
+    <h3 style="margin: 0 0 12px 0; color: var(--amber); display: flex; align-items: center; gap: 8px; font-family: 'Oswald', sans-serif; text-transform: uppercase; font-size: 16px;">
+      ⏳ WAITING QUEUE / 等待排隊區 <span id="queue-count" style="background: #27272a; color: var(--amber); font-size: 12px; padding: 2px 8px; border-radius: 10px;">0</span>
+    </h3>
+    <div id="queue-list" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px;">
+      <!-- Queue items dynamically rendered -->
+    </div>
+  </div>
+
+  <div id="god-view-container">
+    <!-- Categories will render dynamically here -->
+  </div>
+
+  <div id="alerts-panel" class="alerts-panel" style="display: none;">
+    <h3 class="alerts-title">⚠️ Diagnostic &amp; Conflict Alerts 異常與衝突警報</h3>
+    <ul id="alerts-list" class="alerts-list"></ul>
+  </div>
+
+  <script>
+    const GROUPS_CHINESE = {
+      "run_treadmills": "跑步機工作站 (Treadmills)",
+      "ski_erg_pool": "滑雪機工作站 (SkiErg Pool)",
+      "row_pool": "划船機工作站 (Row Pool)",
+      "shared_turf_lanes": "草地跑道工作站 (Shared Turf Lanes)",
+      "wall_ball_targets": "牆球目標工作站 (Wall Balls)"
+    };
+
+    function formatTimeAgo(ms) {
+      if (!ms) return "No telemetry 無信號";
+      const seconds = Math.floor((Date.now() - ms) / 1000);
+      if (seconds < 1) return "Active Now 正在感應";
+      if (seconds < 60) return `Active ${seconds}s ago (${seconds}秒前有信號)`;
+      return `Active >1m ago (>1分鐘前)`;
+    }
+
+    async function updateGodView() {
+      try {
+        const res = await fetch('/api/hyrox/god-view');
+        if (!res.ok) return;
+        const data = await res.json();
+
+        // Update system status
+        const statusEl = document.getElementById('race-status');
+        if (data.is_active) {
+          statusEl.textContent = 'RUNNING / 賽事進行中';
+          statusEl.className = 'status-badge status-active';
+        } else {
+          statusEl.textContent = 'IDLE / 賽事待機中';
+          statusEl.className = 'status-badge';
+        }
+
+        document.getElementById('stat-mode').textContent = data.mode ? data.mode.toUpperCase() : '--';
+
+        // Update Queues List
+        const queuePanel = document.getElementById('queue-panel');
+        const queueList = document.getElementById('queue-list');
+        const queueCount = document.getElementById('queue-count');
+        
+        if (data.queues && data.queues.length > 0) {
+          queuePanel.style.display = 'block';
+          queueCount.textContent = data.queues.length;
+          queueList.innerHTML = '';
+          
+          data.queues.forEach(q => {
+            const duration = q.wait_start_epoch_ms ? ((Date.now() - q.wait_start_epoch_ms) / 1000).toFixed(1) : '0.0';
+            const item = document.createElement('div');
+            item.style.cssText = "background: rgba(9, 9, 11, 0.5); border: 1px solid var(--border); padding: 12px; border-radius: 4px; display: flex; flex-direction: column; gap: 4px;";
+            
+            const groupChinese = GROUPS_CHINESE[q.group_id] || q.group_id;
+            
+            item.innerHTML = `
+              <div style="font-weight: 800; color: var(--text); display: flex; align-items: center; gap: 6px;">👤 ${q.subject_name}</div>
+              <div style="font-size: 12px; color: var(--zinc-400);">等待項目: <span style="color: var(--amber); font-weight: 800;">${groupChinese}</span></div>
+              <div style="font-size: 11px; color: var(--zinc-400);">排隊時間: <span style="font-family: monospace; color: #f4f4f5; font-weight: 800; font-size: 12px;">${duration}s</span></div>
+            `;
+            queueList.appendChild(item);
+          });
+        } else {
+          queuePanel.style.display = 'none';
+        }
+
+        const container = document.getElementById('god-view-container');
+        container.innerHTML = '';
+
+        if (!data.venue_configured) {
+          container.innerHTML = `
+            <div style="text-align: center; padding: 48px; border: 2px dashed var(--border); border-radius: 4px; color: var(--zinc-400);">
+              <h3>No Venue Config Loaded / 尚未載入賽道場地配置</h3>
+              <p>請至管理主控台載入 Venue Config 檔案以啟動上帝視角監控。</p>
+            </div>
+          `;
+          return;
+        }
+
+        let totalSensors = 0;
+        let activeSensors = 0;
+        let telemetrySignals = 0;
+
+        data.resource_groups.forEach(group => {
+          const section = document.createElement('div');
+          section.className = 'group-section';
+
+          const title = document.createElement('h2');
+          title.className = 'section-title';
+          const chineseName = GROUPS_CHINESE[group.group_id] || group.group_id;
+          title.innerHTML = `⚙️ ${chineseName} <span class="count">${group.units.length} units</span>`;
+          section.appendChild(title);
+
+          const grid = document.createElement('div');
+          grid.className = 'nodes-grid';
+
+          group.units.forEach(unit => {
+            totalSensors++;
+            const detail = data.resources[unit.resource_id] || { status: "free" };
+            const isActive = detail.status === "in_use";
+            if (isActive) activeSensors++;
+
+            const card = document.createElement('div');
+            card.className = `node-card ${isActive ? 'active' : ''}`;
+
+            // Check if heartbeat is within last 5 seconds (active signal)
+            const lastMs = detail.last_heartbeat_epoch_ms;
+            const isPinging = lastMs && (Date.now() - lastMs < 5000);
+            if (isPinging) {
+              telemetrySignals++;
+            }
+
+            let athleteHtml = '';
+            if (isActive) {
+              const value = Math.round(detail.progress_value || 0);
+              const target = Math.round(detail.progress_target || 0);
+              const pct = target > 0 ? Math.min(100, Math.round((value / target) * 100)) : 0;
+              
+              let progressLabel = `${value}/${target}`;
+              if (detail.progress_type === "reps") progressLabel += " REPS";
+              else if (detail.progress_type === "lengths") progressLabel += " LENGTHS";
+              else if (detail.progress_type === "distance_m") progressLabel += " M";
+
+              athleteHtml = `
+                <div class="athlete-panel">
+                  <h4 class="athlete-name">👤 ${detail.subject_name}</h4>
+                  <div class="athlete-stage">📍 Stage: ${detail.current_stage || '--'}</div>
+                  <div class="progress-bar">
+                    <div class="progress-fill" style="width: ${pct}%"></div>
+                  </div>
+                  <div class="progress-text">
+                    <span>PROGRESS 進度</span>
+                    <span>${progressLabel} (${pct}%)</span>
+                  </div>
+                </div>
+              `;
+            } else {
+              athleteHtml = `
+                <div class="athlete-panel" style="background: transparent; border-style: dashed; justify-content: center; height: 75px; text-align: center; display: flex; align-items: center; color: var(--zinc-400); font-size: 13px;">
+                  STANDBY 閒置等待選手感應
+                </div>
+              `;
+            }
+
+            card.innerHTML = `
+              <div class="node-header">
+                <div class="node-title-group">
+                  <h3 class="node-name">${unit.display_name}</h3>
+                  <span class="node-id">ID: ${unit.resource_id} [Node: ${unit.node_id || 'RFID Loop'}]</span>
+                </div>
+                <span class="sensor-class-badge">${unit.sensor_class}</span>
+              </div>
+              ${athleteHtml}
+              <div class="heartbeat-container">
+                <div class="radar-dot ${isPinging ? 'pinging' : ''}"></div>
+                <span>${formatTimeAgo(lastMs)}</span>
+              </div>
+            `;
+
+            grid.appendChild(card);
+          });
+
+          section.appendChild(grid);
+          container.appendChild(section);
+        });
+
+        // Update stats values
+        document.getElementById('stat-total').textContent = totalSensors;
+        document.getElementById('stat-active').textContent = activeSensors;
+        document.getElementById('stat-telemetry').textContent = telemetrySignals;
+
+        // Render diagnostics & alerts
+        const alertsPanel = document.getElementById('alerts-panel');
+        const alertsList = document.getElementById('alerts-list');
+        alertsList.innerHTML = '';
+
+        if (data.diagnostics && data.diagnostics.length > 0) {
+          alertsPanel.style.display = 'block';
+          data.diagnostics.forEach(diag => {
+            const li = document.createElement('li');
+            li.className = 'alert-item';
+            const timeStr = diag.timestamp ? new Date(diag.timestamp).toLocaleTimeString() : '';
+            li.textContent = `[${timeStr}] [${diag.kind.toUpperCase()}] Resource: ${diag.resource_id} - ${diag.detail}`;
+            alertsList.appendChild(li);
+          });
+        } else {
+          alertsPanel.style.display = 'none';
+        }
+
+      } catch (err) {
+        console.error("God-View error:", err);
+      }
+    }
+
+    // Refresh every 1 second
+    setInterval(updateGodView, 1000);
+    updateGodView();
+  </script>
+</body>
+</html>
