@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FitRaceStudio - Hyrox 成績</title>
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;700;800&family=Outfit:wght@400;600;800&family=JetBrains+Mono:wght@400;700&family=Noto+Sans+TC:wght@500;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #09090b; --surface: #18181b; --border: #27272a; --strong: #3f3f46;
+      --text: #fafafa; --muted: #a1a1aa; --accent: #e2ff3b; --amber: #f59e0b; --red: #f43f5e;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text);
+           font-family: "Outfit", "Noto Sans TC", sans-serif; padding: 24px;
+           display: grid; place-items: start center; min-height: 100vh; }
+    .shell { width: min(760px, 100%); display: grid; gap: 20px; }
+    h1 { font-family: "Oswald", sans-serif; font-weight: 800; text-transform: uppercase;
+         letter-spacing: 0.08em; color: var(--accent); margin: 0; }
+    .panel { border: 2px solid var(--border); background: var(--surface);
+             border-radius: 4px; padding: 20px; }
+    .panel.done { border-color: var(--accent); }
+    .panel.dnf { border-color: var(--red); }
+    .name { font-family: "Oswald", sans-serif; font-size: 32px; font-weight: 800; margin: 0; }
+    .chip { display: inline-block; font-size: 12px; text-transform: uppercase; font-weight: 700;
+            border: 1px solid var(--accent); color: var(--accent); border-radius: 3px;
+            padding: 2px 8px; letter-spacing: 0.06em; }
+    .chip.dnf { border-color: var(--red); color: var(--red); }
+    .totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin-top: 16px; }
+    .stat { background: #101012; border: 1px solid var(--strong); border-radius: 4px; padding: 12px; }
+    .stat .k { font-family: "Oswald", sans-serif; font-size: 11px; text-transform: uppercase;
+               letter-spacing: 0.1em; color: var(--muted); }
+    .stat .v { font-family: "JetBrains Mono", monospace; font-size: 22px; font-weight: 700;
+               font-variant-numeric: tabular-nums; margin-top: 4px; }
+    .stat .v.big { color: var(--accent); font-size: 28px; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { text-align: right; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+    th:first-child, td:first-child { text-align: left; }
+    th { font-family: "Oswald", sans-serif; text-transform: uppercase; font-size: 11px;
+         letter-spacing: 0.08em; color: var(--muted); }
+    td.mono { font-family: "JetBrains Mono", monospace; font-variant-numeric: tabular-nums; }
+    tr.run td:first-child { color: var(--accent); }
+    .actions { display: flex; gap: 12px; flex-wrap: wrap; }
+    button { background: var(--accent); color: #000; border: none; padding: 12px 18px;
+             font-family: "Oswald", sans-serif; font-weight: 800; text-transform: uppercase;
+             border-radius: 4px; cursor: pointer; }
+    button.ghost { background: transparent; color: var(--text); border: 1px solid var(--strong); }
+    .muted { color: var(--muted); }
+    .table-wrap { overflow-x: auto; }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <h1>Hyrox 成績 // RESULT</h1>
+    <div id="content"><p class="muted">載入中… (Loading)</p></div>
+  </div>
+
+  <script>
+    const token = location.pathname.split('/').filter(Boolean).pop();
+
+    function fmt(ms) {
+      if (ms == null) return "--";
+      const t = Math.max(0, Math.round(ms / 1000));
+      const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = t % 60;
+      const mm = String(m).padStart(2, "0"), ss = String(s).padStart(2, "0");
+      return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+    }
+    const STAGE_ZH = {
+      run_1:"跑步 1", ski_erg:"滑雪機", run_2:"跑步 2", sled_push:"推雪橇", run_3:"跑步 3",
+      sled_pull:"拉雪橇", run_4:"跑步 4", burpee_broad:"波比跳遠", run_5:"跑步 5", row:"划船機",
+      run_6:"跑步 6", farmers_carry:"農夫走路", run_7:"跑步 7", sandbag_lunges:"沙袋弓步",
+      run_8:"跑步 8", wall_balls:"牆球"
+    };
+
+    function download(name, text, type) {
+      const blob = new Blob([text], { type });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob); a.download = name; a.click();
+      URL.revokeObjectURL(a.href);
+    }
+    function splitsCsv(r) {
+      const rows = [["stage","arrived_ms","work_ms","roxzone_before_ms","split_ms","cumulative_ms","resource"]];
+      r.splits.forEach(s => rows.push([s.stage, s.arrived_ms, s.work_ms, s.roxzone_before_ms,
+        s.split_ms, s.cumulative_ms, s.resource_id || ""]));
+      return rows.map(row => row.join(",")).join("\n");
+    }
+
+    async function load() {
+      const c = document.getElementById('content');
+      let r;
+      try {
+        const res = await fetch(`/api/hyrox/result/${token}`);
+        if (res.status === 404) { c.innerHTML = `<div class="panel"><p class="muted">尚無成績。請在完賽後再回來查詢。<br>No result yet — check back after the race.</p></div>`; return; }
+        if (!res.ok) { c.innerHTML = `<div class="panel"><p class="muted">查詢失敗 (HTTP ${res.status})</p></div>`; return; }
+        r = await res.json();
+      } catch (e) { c.innerHTML = `<div class="panel"><p class="muted">網路錯誤:${e}</p></div>`; return; }
+
+      const dnf = r.status === 'dnf';
+      const rows = r.splits.map(s => {
+        const isRun = s.stage.startsWith('run_');
+        return `<tr class="${isRun ? 'run' : ''}">
+          <td>${STAGE_ZH[s.stage] || s.stage}</td>
+          <td class="mono">${fmt(s.work_ms)}</td>
+          <td class="mono">${fmt(s.roxzone_before_ms)}</td>
+          <td class="mono">${fmt(s.cumulative_ms)}</td>
+          <td class="muted">${s.resource_id || '--'}</td>
+        </tr>`;
+      }).join('');
+
+      c.innerHTML = `
+        <div class="panel ${dnf ? 'dnf' : 'done'}">
+          <h2 class="name">${r.display_name}</h2>
+          <span class="chip">${r.division}</span>
+          <span class="chip ${dnf ? 'dnf' : ''}">${dnf ? 'DNF 棄賽 @ ' + (STAGE_ZH[r.dnf_stage] || r.dnf_stage) : 'FINISHED 完賽'}</span>
+          <div class="totals">
+            <div class="stat"><div class="k">總時間 Total</div><div class="v big">${fmt(r.total_time_ms)}</div></div>
+            <div class="stat"><div class="k">名次 Rank</div><div class="v">${r.rank ? '#' + r.rank : '--'}</div></div>
+            <div class="stat"><div class="k">跑步 Run</div><div class="v">${fmt(r.run_total_ms)}</div></div>
+            <div class="stat"><div class="k">器械 Workout</div><div class="v">${fmt(r.workout_total_ms)}</div></div>
+            <div class="stat"><div class="k">Roxzone 轉場</div><div class="v">${fmt(r.roxzone_total_ms)}</div></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="table-wrap"><table>
+            <thead><tr><th>站別 Stage</th><th>器械 Work</th><th>Roxzone</th><th>累計 Cumulative</th><th>資源 Resource</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table></div>
+        </div>
+        <div class="actions">
+          <button id="dl-csv">下載 CSV</button>
+          <button id="dl-json" class="ghost">下載 JSON</button>
+        </div>
+        <p class="muted" style="font-size:12px">Roxzone(轉場時間)已含在總時間內,依官方規則單獨列出。</p>
+      `;
+      document.getElementById('dl-csv').onclick = () => download(`${r.display_name}_splits.csv`, splitsCsv(r), 'text/csv');
+      document.getElementById('dl-json').onclick = () => download(`${r.display_name}_result.json`, JSON.stringify(r, null, 2), 'application/json');
+    }
+    load();
+  </script>
+</body>
+</html>

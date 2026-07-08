@@ -1133,3 +1133,11 @@ def read_hyrox_signup():
 @app.get("/hyrox/god-view")
 def read_hyrox_god_view():
     return RedirectResponse(url="/static/hyrox_god_view.html")
+
+
+@app.get("/hyrox/result/{token}")
+def read_hyrox_result_page(token: str):
+    # Serve the page at the clean /hyrox/result/{token} URL; its JS reads the
+    # token from the path and fetches /api/hyrox/result/{token}.
+    from fastapi.responses import FileResponse
+    return FileResponse(os.path.join(static_dir, "hyrox_result.html"))

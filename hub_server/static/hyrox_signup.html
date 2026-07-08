@@ -213,12 +213,20 @@
         });
 
         if (res.ok) {
-          document.getElementById('success-message').textContent = '登記成功！祝您獲得好成績！';
+          const data = await res.json();
+          const link = data.result_url ? (location.origin + data.result_url) : '';
+          const box = document.getElementById('success-message');
+          box.innerHTML = `登記成功！祝您獲得好成績！`
+            + (link ? `<div style="margin-top:12px; padding:14px; border:1px solid var(--border); border-radius:4px; background:#09090b;">
+                 <div style="font-size:13px; color:#a1a1aa; margin-bottom:6px;">賽後憑此連結查詢您的個人成績(請截圖保存):</div>
+                 <a href="${link}" style="color:#e2ff3b; word-break:break-all; font-family:monospace;">${link}</a>
+                 <button type="button" id="copy-link" style="margin-left:8px; padding:4px 10px; font-size:12px; background:#27272a; color:#f8fafc; border:1px solid #3f3f46; border-radius:3px; cursor:pointer;">複製</button>
+               </div>` : '');
           document.getElementById('signup-form').reset();
           updateTeamFields();
-          setTimeout(() => document.getElementById('success-message').textContent = '', 4000);
+          const copyBtn = document.getElementById('copy-link');
+          if (copyBtn) copyBtn.onclick = () => { navigator.clipboard?.writeText(link); copyBtn.textContent = '已複製'; };
         } else {
-
           const err = await res.json();
           alert("登記失敗: " + JSON.stringify(err.detail));
         }
