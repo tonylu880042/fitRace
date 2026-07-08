@@ -92,6 +92,48 @@ class HyroxVenueConfig(BaseModel):
     resource_groups: list[HyroxResourceGroup]
 
 
+# Standard Hyrox target per workout stage. Runs, SkiErg and Row are distance;
+# the five turf-lane stations are counted in lengths; wall balls in reps.
+_STANDARD_TARGETS: dict[HyroxStage, tuple[HyroxTargetType, float, list[str]]] = {
+    HyroxStage.RUN_1: (HyroxTargetType.DISTANCE_M, 1000, ["run_treadmills", "run_track"]),
+    HyroxStage.SKI_ERG: (HyroxTargetType.DISTANCE_M, 1000, ["ski_erg_pool"]),
+    HyroxStage.RUN_2: (HyroxTargetType.DISTANCE_M, 1000, ["run_treadmills", "run_track"]),
+    HyroxStage.SLED_PUSH: (HyroxTargetType.LENGTHS, 4, ["shared_turf_lanes"]),
+    HyroxStage.RUN_3: (HyroxTargetType.DISTANCE_M, 1000, ["run_treadmills", "run_track"]),
+    HyroxStage.SLED_PULL: (HyroxTargetType.LENGTHS, 4, ["shared_turf_lanes"]),
+    HyroxStage.RUN_4: (HyroxTargetType.DISTANCE_M, 1000, ["run_treadmills", "run_track"]),
+    HyroxStage.BURPEE_BROAD: (HyroxTargetType.LENGTHS, 4, ["shared_turf_lanes"]),
+    HyroxStage.RUN_5: (HyroxTargetType.DISTANCE_M, 1000, ["run_treadmills", "run_track"]),
+    HyroxStage.ROW: (HyroxTargetType.DISTANCE_M, 1000, ["row_pool"]),
+    HyroxStage.RUN_6: (HyroxTargetType.DISTANCE_M, 1000, ["run_treadmills", "run_track"]),
+    HyroxStage.FARMERS_CARRY: (HyroxTargetType.LENGTHS, 4, ["shared_turf_lanes"]),
+    HyroxStage.RUN_7: (HyroxTargetType.DISTANCE_M, 1000, ["run_treadmills", "run_track"]),
+    HyroxStage.SANDBAG_LUNGES: (HyroxTargetType.LENGTHS, 4, ["shared_turf_lanes"]),
+    HyroxStage.RUN_8: (HyroxTargetType.DISTANCE_M, 1000, ["run_treadmills", "run_track"]),
+    HyroxStage.WALL_BALLS: (HyroxTargetType.REPS, 75, ["wall_ball_targets"]),
+}
+
+
+def default_hyrox_course_profile(
+    course_profile_id: str = "hyrox_standard_2026",
+) -> HyroxCourseProfile:
+    """The standard Hyrox stage order and targets. The stage sequence follows
+    the HyroxStage enum declaration order; allowed_resource_groups use the
+    conventional group ids a venue is expected to define (override per venue)."""
+    return HyroxCourseProfile(
+        course_profile_id=course_profile_id,
+        stages=[
+            HyroxStageDefinition(
+                stage=stage,
+                target_type=target_type,
+                target_value=target_value,
+                allowed_resource_groups=groups,
+            )
+            for stage, (target_type, target_value, groups) in _STANDARD_TARGETS.items()
+        ],
+    )
+
+
 def _endpoint_addr(ep: HyroxEndpointSensor) -> tuple[str, str]:
     return (ep.node_id, ep.antenna_id)
 
