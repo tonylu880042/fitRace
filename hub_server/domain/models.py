@@ -91,38 +91,6 @@ class HyroxStage(str, Enum):
     WALL_BALLS = "wall_balls"
     FINISHED = "finished"
 
-
-class AthleteTagBinding(BaseModel):
-    athlete_name: str
-    team_name: str | None = None
-    rfid_tag_id: str
-    station_number: int | None = None
-    division: Literal["individual", "doubles", "relay"] = "individual"
-
-
-class HyroxConfig(BaseModel):
-    competition_mode: Literal["individual", "doubles", "relay"] = Field(
-        "individual", description="Hyrox race format"
-    )
-    session_type: Literal["training", "competition"] = Field(
-        "training", description="Type of session (training or official competition)"
-    )
-    # Site calibration knobs: antenna power and mat placement vary per venue
-    rssi_threshold_dbm: float = Field(
-        -60.0, description="RFID reads weaker than this are ignored (spillover filter)"
-    )
-    run_lap_debounce_ms: int = Field(
-        1000, description="Minimum ms between counted running-track crossings per tag"
-    )
-
-
-class AthleteHyroxState(BaseModel):
-    athlete_name: str
-    team_name: str | None = None
-    station_number: int
-    division: Literal["individual", "doubles", "relay"] = "individual"
-    current_stage: HyroxStage = HyroxStage.RUN_1
-    stage_laps: dict[str, int] = Field(default_factory=dict)  # stage_name -> completed_laps/reps
-    stage_start_times: dict[str, int] = Field(default_factory=dict)  # stage_name -> epoch_ms
-    stage_end_times: dict[str, int] = Field(default_factory=dict)  # stage_name -> epoch_ms
-    total_elapsed_time_ms: int = 0
+# HyroxStage is shared with the resource-aware Hyrox subsystem
+# (hub_server/domain/hyrox_venue.py and hub_server/usecases/hyrox_*). The old
+# station-based HyroxManager models were removed when it was retired in Phase 6.

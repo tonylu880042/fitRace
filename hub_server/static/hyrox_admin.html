@@ -133,26 +133,10 @@
     </header>
 
     <div class="control-panel">
-      <!-- Session Settings -->
-      <div class="form-group">
-        <label for="session-type">紀錄類型 (Record Type)</label>
-        <select id="session-type">
-          <option value="training">訓練模式 (Training Log)</option>
-          <option value="competition">競賽模式 (Official Competition)</option>
-        </select>
-      </div>
-
-      <!-- Division Selection -->
-      <div class="form-group">
-        <label for="competition-mode">組別編制 (Division Format)</label>
-        <select id="competition-mode">
-          <option value="individual">個人組 (Individual)</option>
-          <option value="doubles">雙人組 (Doubles)</option>
-          <option value="relay">四人接力組 (Relay)</option>
-        </select>
-      </div>
-
-      <button id="btn-save-config">套用設定 // APPLY CONFIG</button>
+      <p class="subtitle" style="margin:0 0 4px 0;">
+        場館與賽道設定(Venue &amp; lane setup)請至系統設定主控台載入;
+        組別(個人/雙人/接力)於選手報名時選擇。此處負責啟動計時。
+      </p>
       <button id="btn-start-race" style="background: var(--amber);">啟動計時 // START RACE</button>
       <p id="feedback" class="success-msg"></p>
     </div>
@@ -184,22 +168,6 @@
       document.getElementById('feedback').textContent = text;
       setTimeout(() => document.getElementById('feedback').textContent = '', 3000);
     }
-
-    document.getElementById('btn-save-config').onclick = async () => {
-      const mode = document.getElementById('competition-mode').value;
-      const type = document.getElementById('session-type').value;
-
-      try {
-        const res = await adminPost('/api/hyrox/configure', { competition_mode: mode, session_type: type });
-        if (res.ok) {
-          showFeedback('設定套用成功！');
-        } else {
-          alert('設定套用失敗: HTTP ' + res.status);
-        }
-      } catch (err) {
-        alert("設定套用失敗: " + err);
-      }
-    };
 
     document.getElementById('btn-start-race').onclick = async () => {
       try {

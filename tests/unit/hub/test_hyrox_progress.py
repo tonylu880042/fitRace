@@ -131,6 +131,17 @@ def test_reps_increment_to_target():
     assert final.value == 75 and final.complete is True
 
 
+def test_entry_gate_rfid_read_does_not_count_as_a_rep():
+    # The bind tap that co-locates with a wall-ball target must not add a rep.
+    t = HyroxProgressTracker()
+    gate = HyroxTelemetryEvent(
+        sensor_class=HyroxSensorClass.RFID_ENTRY_GATE, resource_group_id="wall_ball_targets",
+        resource_id="wb-1", endpoint="entry_gate", tag_id="TAG", timestamp_epoch_ms=1,
+    )
+    upd = t.apply(gate, "alex", HyroxStage.WALL_BALLS, HyroxTargetType.REPS, 75)
+    assert upd.value == 0 and upd.counted is False
+
+
 # --- manual override ---
 
 def test_manual_force_complete():

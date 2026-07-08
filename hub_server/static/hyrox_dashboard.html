@@ -657,140 +657,85 @@
         const grid = document.getElementById('athletes-grid');
         grid.innerHTML = '';
 
-        const STAGE_TARGETS = {
-          "sled_push": 4,
-          "sled_pull": 4,
-          "burpee_broad": 4,
-          "row": 1, // Mock metric target
-          "farmers_carry": 4,
-          "sandbag_lunges": 4,
-          "wall_balls": 75
-        };
-
         const STAGE_ORDER = [
           "run_1", "ski_erg", "run_2", "sled_push", "run_3", "sled_pull", "run_4", "burpee_broad",
           "run_5", "row", "run_6", "farmers_carry", "run_7", "sandbag_lunges", "run_8", "wall_balls", "finished"
         ];
 
-        // Grouping logic
-        const grouped = {};
-        for (const [tagId, athlete] of Object.entries(data.athletes)) {
-          const isGroup = athlete.division !== 'individual' && athlete.team_name;
-          const key = isGroup ? `${athlete.division}:${athlete.team_name}` : `ind:${tagId}`;
+        // Subjects are already grouped by the backend (a team is one subject).
+        const subjects = (data.subjects || []).map(s => ({
+          ...s,
+          stageIdx: STAGE_ORDER.indexOf(s.current_stage),
+        }));
 
-          if (!grouped[key]) {
-            grouped[key] = {
-              names: [athlete.athlete_name],
-              division: athlete.division,
-              team_name: athlete.team_name || null,
-              station_number: athlete.station_number || 0,
-              current_stage: athlete.current_stage,
-              athletes: [athlete]
-            };
-          } else {
-            grouped[key].names.push(athlete.athlete_name);
-            grouped[key].athletes.push(athlete);
-            if (athlete.station_number > grouped[key].station_number) {
-              grouped[key].station_number = athlete.station_number;
-            }
-            // Group stage is the furthest stage reached by any member
-            const currentIdx = STAGE_ORDER.indexOf(grouped[key].current_stage);
-            const newIdx = STAGE_ORDER.indexOf(athlete.current_stage);
-            if (newIdx > currentIdx) {
-              grouped[key].current_stage = athlete.current_stage;
-            }
-          }
-        }
-
-        // Rank entries: furthest stage first; finished by time, others by laps
-        const entries = Object.entries(grouped).map(([key, group]) => {
-          const stageIdx = STAGE_ORDER.indexOf(group.current_stage);
-          let currentLaps = 0;
-          let maxElapsedTime = 0;
-          for (const ath of group.athletes) {
-            currentLaps += (ath.stage_laps[group.current_stage] || 0);
-            if (ath.total_elapsed_time_ms > maxElapsedTime) {
-              maxElapsedTime = ath.total_elapsed_time_ms;
-            }
-          }
-          return { key, group, stageIdx, currentLaps, maxElapsedTime };
-        });
-
-        entries.sort((a, b) => {
+        // Rank: furthest stage first; finished by time, others by progress.
+        subjects.sort((a, b) => {
           if (a.stageIdx !== b.stageIdx) return b.stageIdx - a.stageIdx;
-          if (a.group.current_stage === 'finished') return a.maxElapsedTime - b.maxElapsedTime;
-          return b.currentLaps - a.currentLaps;
+          if (a.current_stage === 'finished') return (a.elapsed_ms || 0) - (b.elapsed_ms || 0);
+          return (b.progress_value || 0) - (a.progress_value || 0);
         });
 
-        entries.forEach(({ key, group, stageIdx, currentLaps, maxElapsedTime }, i) => {
+        subjects.forEach((s, i) => {
           const rank = i + 1;
-          const displayName = group.team_name ? group.team_name : group.names[0];
-          const memberChips = group.team_name
-            ? `<div class="member-chips">${group.names.map(n => `<span class="member-chip">${n}</span>`).join('')}</div>`
+          const isTeam = s.division !== 'individual';
+          const displayName = isTeam ? s.subject_id : ((s.members && s.members[0]) || s.subject_id);
+          const memberChips = isTeam && s.members && s.members.length
+            ? `<div class="member-chips">${s.members.map(n => `<span class="member-chip">${n}</span>`).join('')}</div>`
             : '';
 
-          const currentStage = group.current_stage;
+          const currentStage = s.current_stage;
           const isRun = currentStage.startsWith('run_');
           const isFinished = currentStage === 'finished';
+          const isAbandoned = s.status === 'abandoned';
           const meta = stageMeta(currentStage);
-          const targetLaps = STAGE_TARGETS[currentStage] || 4;
-          const pct = isFinished ? 100 : Math.min(100, Math.round((currentLaps / targetLaps) * 100));
 
-          // Elapsed time
-          const run1Start = group.athletes[0].stage_start_times["run_1"];
-          let elapsedStr = "--:--";
-          if (run1Start) {
-            if (isFinished) {
-              elapsedStr = fmtTime(maxElapsedTime);
-            } else if (data.is_active) {
-              elapsedStr = fmtTime(Date.now() - run1Start);
-            } else {
-              elapsedStr = "00:00";
-            }
-          }
+          const value = Math.round(s.progress_value || 0);
+          const target = Math.round(s.progress_target || 0);
+          const pct = isFinished ? 100 : (target > 0 ? Math.min(100, Math.round((value / target) * 100)) : 0);
 
-          // Progress text per stage type
-          let lapText = `${currentLaps} LAPS`;
-          if (currentStage === "wall_balls") {
-            lapText = `${currentLaps} / ${targetLaps} REPS`;
-          } else if (["sled_push", "sled_pull", "burpee_broad", "farmers_carry", "sandbag_lunges"].includes(currentStage)) {
-            lapText = `${currentLaps} / ${targetLaps} LENGTHS`;
-          } else if (["ski_erg", "row"].includes(currentStage)) {
-            lapText = "IN PROGRESS";
-          } else if (isFinished) {
-            lapText = "8 / 8 STATIONS";
-          }
+          const elapsedStr = s.elapsed_ms ? fmtTime(s.elapsed_ms) : (data.is_active ? "00:00" : "--:--");
 
-          // 8-station spine: dot i maps to the workout at STAGE_ORDER index 2i-1
+          // Progress text per target type
+          let lapText = "IN PROGRESS";
+          if (s.progress_type === "reps") lapText = `${value} / ${target} REPS`;
+          else if (s.progress_type === "lengths") lapText = `${value} / ${target} LENGTHS`;
+          else if (s.progress_type === "distance_m") lapText = `${value} / ${target} M`;
+          if (isFinished) lapText = "8 / 8 STATIONS";
+          if (isAbandoned) lapText = "DNF 棄賽";
+
+          // 8-station spine: dot d maps to the workout at STAGE_ORDER index 2d-1
           let spineDots = '';
           for (let d = 1; d <= 8; d++) {
             const wIdx = 2 * d - 1;
             let cls = '';
-            if (stageIdx > wIdx) cls = 'done';
-            else if (stageIdx === wIdx) cls = 'now';
-            else if (stageIdx === wIdx - 1) cls = 'next';
+            if (s.stageIdx > wIdx) cls = 'done';
+            else if (s.stageIdx === wIdx) cls = 'now';
+            else if (s.stageIdx === wIdx - 1) cls = 'next';
             spineDots += `<div class="spine-dot ${cls}"></div>`;
           }
 
-          const panelLabel = isFinished ? 'RACE COMPLETE 完賽'
+          const panelLabel = isAbandoned ? 'DID NOT FINISH 棄賽'
+            : isFinished ? 'RACE COMPLETE 完賽'
             : isRun ? 'ON THE TRACK 跑道上'
             : 'CURRENT STATION 工作站';
 
-          let tileCls = isFinished ? 'done' : isRun ? 'running' : (data.is_active ? 'working' : '');
+          let tileCls = isFinished ? 'done' : isRun ? 'running' : (data.is_active && !isAbandoned ? 'working' : '');
           if (meta.mirror) tileCls += ' mirror';
 
+          const resourceLabel = s.assigned_resource || '--';
+
           const card = document.createElement('div');
-          card.className = `athlete-card ${isFinished ? 'done' : (!isRun && data.is_active ? 'working' : '')}`;
+          card.className = `athlete-card ${isFinished ? 'done' : (!isRun && data.is_active && !isAbandoned ? 'working' : '')}`;
 
           card.innerHTML = `
             <div class="card-header">
               <div class="rank-num"><small>#</small>${rank}</div>
               <div style="flex: 1; min-width: 0;">
                 <h2 class="athlete-name">${displayName}</h2>
-                <span class="division-chip">${group.division}</span>
+                <span class="division-chip">${s.division}</span>
                 ${memberChips}
               </div>
-              <span class="station-num">ST ${group.station_number || '--'}</span>
+              <span class="station-num">${resourceLabel}</span>
             </div>
             <div class="spine">${spineDots}</div>
             <div class="station-panel">
@@ -811,41 +756,30 @@
           `;
           grid.appendChild(card);
 
-          if (isFinished && data.is_active && !finishedAthletes.has(key)) {
-            finishedAthletes.add(key);
+          if (isFinished && data.is_active && !finishedAthletes.has(s.subject_id)) {
+            finishedAthletes.add(s.subject_id);
             showFinishToast(displayName, elapsedStr);
           }
         });
 
-        // Celebration & Auto-clear logic
+        // Celebration & Auto-clear logic. "Done" = finished or abandoned; the
+        // podium ranks only finishers by elapsed time.
         const overlay = document.getElementById('celebration-overlay');
-        let allFinished = Object.keys(grouped).length > 0;
-        for (const key of Object.keys(grouped)) {
-          if (grouped[key].current_stage !== 'finished') {
-            allFinished = false;
-            break;
-          }
-        }
+        const allDone = subjects.length > 0 &&
+          subjects.every(s => s.current_stage === 'finished' || s.status === 'abandoned');
+        const anyFinished = subjects.some(s => s.current_stage === 'finished');
 
-        if (data.is_active && allFinished) {
+        if (data.is_active && allDone && anyFinished) {
           if (!clearTimer) {
             createConfetti();
             overlay.classList.add('show');
 
-            // Find podium positions
-            const sorted = Object.entries(grouped)
-              .map(([key, g]) => {
-                let maxElapsedTime = 0;
-                for (const ath of g.athletes) {
-                  if (ath.total_elapsed_time_ms > maxElapsedTime) {
-                    maxElapsedTime = ath.total_elapsed_time_ms;
-                  }
-                }
-                return {
-                  name: g.team_name || g.names[0],
-                  time: maxElapsedTime
-                };
-              })
+            const sorted = subjects
+              .filter(s => s.current_stage === 'finished')
+              .map(s => ({
+                name: s.division !== 'individual' ? s.subject_id : ((s.members && s.members[0]) || s.subject_id),
+                time: s.elapsed_ms || 0,
+              }))
               .sort((a, b) => a.time - b.time);
 
             document.getElementById('podium-1st-name').textContent = sorted[0] ? sorted[0].name : '--';
@@ -873,30 +807,15 @@
               }
             }, 1000);
 
-            clearTimer = setTimeout(async () => {
-              try {
-                // configure requires the admin token; reuse the one stored by the admin pages
-                const headers = { 'Content-Type': 'application/json' };
-                const token = localStorage.getItem('fitrace.adminPassword') || localStorage.getItem('fitrace.adminToken') || '';
-                if (token) headers['X-FitRace-Admin-Token'] = token;
-                const res = await fetch('/api/hyrox/configure', {
-                  method: 'POST',
-                  headers,
-                  body: JSON.stringify({ competition_mode: 'individual', session_type: 'training' })
-                });
-                if (!res.ok) {
-                  console.error("Auto-clear failed: HTTP " + res.status + " (set admin token via /hyrox/admin on this device)");
-                  return;
-                }
-                overlay.classList.remove('show');
-                document.querySelectorAll('.confetti-particle').forEach(p => p.remove());
-                clearTimer = null;
-                if (countdownInterval) {
-                  clearInterval(countdownInterval);
-                  countdownInterval = null;
-                }
-              } catch (e) {
-                console.error("Failed to reset session:", e);
+            clearTimer = setTimeout(() => {
+              // Local dismiss only. Resetting the race now means loading a new
+              // venue config from the admin console, not a client-side call.
+              overlay.classList.remove('show');
+              document.querySelectorAll('.confetti-particle').forEach(p => p.remove());
+              clearTimer = null;
+              if (countdownInterval) {
+                clearInterval(countdownInterval);
+                countdownInterval = null;
               }
             }, 90000);
           }

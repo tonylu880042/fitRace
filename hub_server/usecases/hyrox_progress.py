@@ -69,7 +69,7 @@ class HyroxProgressTracker:
         if target_type == HyroxTargetType.LENGTHS:
             return self._length_reduce(subject_id, stage, event, target_value)
         if target_type == HyroxTargetType.REPS:
-            return self._rep_reduce(subject_id, stage, target_value)
+            return self._rep_reduce(subject_id, stage, event, target_value)
         # manual / time_ms are not advanced by sensor events
         return ProgressUpdate(0.0, target_value, self._is_forced(subject_id, stage),
                               counted=False)
@@ -122,9 +122,14 @@ class HyroxProgressTracker:
         st.last_endpoint = endpoint
         return ProgressUpdate(st.count, target, st.count >= target, True)
 
-    def _rep_reduce(self, subject_id, stage, target) -> ProgressUpdate:
+    def _rep_reduce(self, subject_id, stage, event, target) -> ProgressUpdate:
         key = (subject_id, stage)
         st = self._rep.setdefault(key, _RepState())
+        # Only genuine rep-counter (node) events count. An RFID read on the same
+        # resource -- e.g. the entry-gate bind tap -- carries an endpoint and
+        # must not be counted as a rep.
+        if event.endpoint is not None:
+            return ProgressUpdate(st.count, target, st.count >= target, False)
         st.count += 1
         return ProgressUpdate(st.count, target, st.count >= target, True)
 

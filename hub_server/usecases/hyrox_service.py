@@ -146,12 +146,29 @@ class HyroxService:
             return
         self._engine.abandon(subject_id, timestamp_ms or _now_ms())
 
+    def abandon_by_tag(self, tag_id: str, timestamp_ms: Optional[int] = None):
+        """Abandon button read: resolve the member tag to its subject."""
+        subject_id = self._roster.subject_for_tag(tag_id)
+        if subject_id is not None:
+            self.abandon(subject_id, timestamp_ms)
+
     def complete_stage(self, subject_id: str, timestamp_ms: Optional[int] = None):
         if self._engine is None:
             return
         self._engine.force_complete_stage(subject_id, timestamp_ms or _now_ms())
 
     # --- State projection (clean, resource-aware shape) ---
+
+    def _elapsed_ms(self, state) -> int:
+        if state is None or HyroxStage.RUN_1 not in state.stage_start_ms:
+            return 0
+        start = state.stage_start_ms[HyroxStage.RUN_1]
+        if state.status == "racing":
+            return max(0, _now_ms() - start)
+        # finished / abandoned: freeze at the last recorded stage-end.
+        if state.stage_end_ms:
+            return max(0, max(state.stage_end_ms.values()) - start)
+        return 0
 
     def get_state(self) -> dict:
         subjects = []
@@ -175,7 +192,7 @@ class HyroxService:
                 "progress_value": value,
                 "progress_target": target,
                 "progress_type": stage_def.target_type.value if stage_def else None,
-                "stage_start_ms": {s.value: t for s, t in state.stage_start_ms.items()} if state else {},
+                "elapsed_ms": self._elapsed_ms(state),
             })
         resource_ids = [
             u.resource_id

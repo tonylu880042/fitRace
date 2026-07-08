@@ -12,9 +12,10 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Requ
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
-from hub_server.domain.models import RaceState, RaceConfig, HyroxConfig, AthleteTagBinding
+from hub_server.domain.models import RaceState, RaceConfig
+from hub_server.domain.hyrox_venue import HyroxVenueConfig, default_hyrox_course_profile, venue_readiness
 from hub_server.usecases.race_manager import RaceManager
-from hub_server.usecases.hyrox_manager import HyroxManager
+from hub_server.usecases.hyrox_service import HyroxService
 from hub_server.usecases.node_registry import NodeRegistry
 from hub_server.usecases.race_event_engine import RaceEventEngine
 from hub_server.usecases.race_result_store import RaceResultStore
@@ -92,7 +93,7 @@ async def check_hyrox_enabled(request: Request, call_next):
 
 # Global instances (Shared Context)
 race_manager = RaceManager()
-hyrox_manager = HyroxManager()
+hyrox_service = HyroxService()
 ws_manager = WebSocketManager()
 node_registry = NodeRegistry()
 race_event_engine = RaceEventEngine()
@@ -159,8 +160,25 @@ class PowerActionPayload(BaseModel):
     confirmation: Optional[str] = None
 
 
-class HyroxCompleteStagePayload(BaseModel):
+class HyroxRegisterPayload(BaseModel):
+    athlete_name: str
     rfid_tag_id: str
+    division: str = "individual"
+    team_name: Optional[str] = None
+
+
+class HyroxSubjectPayload(BaseModel):
+    subject_id: str
+
+
+class HyroxAssignPayload(BaseModel):
+    subject_id: str
+    resource_id: str
+
+
+class HyroxVenuePayload(BaseModel):
+    venue: HyroxVenueConfig
+    mode: str = "training"
 
 
 class DiagnosticTelemetryPayload(BaseModel):
@@ -220,46 +238,75 @@ def health_check():
     return {"status": "ok", "version": APP_VERSION}
 
 
+def _subject_id_for(payload: HyroxRegisterPayload) -> str:
+    # Teams group under their name; individuals are a team of one keyed by tag.
+    if payload.division != "individual" and payload.team_name:
+        return payload.team_name
+    return payload.rfid_tag_id
+
+
 @app.get("/api/hyrox/state")
 def get_hyrox_state():
-    return hyrox_manager.get_state()
+    return hyrox_service.get_state()
 
 
-@app.post("/api/hyrox/configure")
-def configure_hyrox(config: HyroxConfig, request: Request):
+@app.post("/api/hyrox/venue-config")
+def configure_hyrox_venue(payload: HyroxVenuePayload, request: Request):
     require_admin(request)
-    hyrox_manager.configure(config)
-    return config
+    try:
+        hyrox_service.configure_venue(payload.venue, mode=payload.mode)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {
+        "status": "ok",
+        "readiness": venue_readiness(payload.venue, default_hyrox_course_profile()),
+    }
 
 
 @app.post("/api/hyrox/register")
-def register_hyrox_athlete(payload: AthleteTagBinding):
-    hyrox_manager.register_athlete(
-        athlete_name=payload.athlete_name,
-        rfid_tag_id=payload.rfid_tag_id,
-        station_number=payload.station_number,
-        team_name=payload.team_name,
-        division=payload.division,
-    )
+def register_hyrox_athlete(payload: HyroxRegisterPayload):
+    if not hyrox_service.is_configured:
+        raise HTTPException(status_code=409, detail="Load a venue config first")
+    try:
+        hyrox_service.register(
+            subject_id=_subject_id_for(payload),
+            division=payload.division,
+            member_tag=payload.rfid_tag_id,
+            member_name=payload.athlete_name,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     return {"status": "ok"}
 
 
 @app.post("/api/hyrox/start")
 def start_hyrox_race(request: Request):
     require_admin(request)
-    hyrox_manager.start_race()
+    if not hyrox_service.is_configured:
+        raise HTTPException(status_code=409, detail="Load a venue config first")
+    hyrox_service.start()
     return {"status": "started"}
 
 
-@app.post("/api/hyrox/complete-stage")
-def complete_hyrox_stage(payload: HyroxCompleteStagePayload, request: Request):
+@app.post("/api/hyrox/assign")
+def assign_hyrox_resource(payload: HyroxAssignPayload, request: Request):
     require_admin(request)
-    now_ms = int(time.time() * 1000)
-    if not hyrox_manager.complete_current_stage(payload.rfid_tag_id, now_ms):
-        raise HTTPException(
-            status_code=409,
-            detail="Race not active, tag unknown, or athlete already finished",
-        )
+    if not hyrox_service.assign(payload.subject_id, payload.resource_id):
+        raise HTTPException(status_code=409, detail="Resource occupied or unknown subject")
+    return {"status": "ok"}
+
+
+@app.post("/api/hyrox/abandon")
+def abandon_hyrox_subject(payload: HyroxSubjectPayload, request: Request):
+    require_admin(request)
+    hyrox_service.abandon(payload.subject_id)
+    return {"status": "ok"}
+
+
+@app.post("/api/hyrox/complete-stage")
+def complete_hyrox_stage(payload: HyroxSubjectPayload, request: Request):
+    require_admin(request)
+    hyrox_service.complete_stage(payload.subject_id)
     return {"status": "ok"}
 
 
