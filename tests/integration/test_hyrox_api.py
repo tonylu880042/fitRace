@@ -3,7 +3,9 @@
 import pytest
 from fastapi.testclient import TestClient
 
+import hub_server.infrastructure.fastapi.app as hub_app
 from hub_server.infrastructure.fastapi.app import app, hyrox_service
+from hub_server.usecases.hyrox_service import HyroxService
 
 
 def _venue_body():
@@ -53,6 +55,64 @@ def test_hyrox_endpoints_404_when_disabled(monkeypatch):
     client = TestClient(app)
     assert client.get("/api/hyrox/state").status_code == 404
     assert client.post("/api/hyrox/venue-config", json=_venue_body()).status_code == 404
+
+
+def test_validate_venue_config_endpoint(monkeypatch):
+    monkeypatch.setenv("FITRACE_ENABLE_HYROX", "1")
+    client = TestClient(app)
+
+    resp = client.post("/api/hyrox/venue-config/validate", json=_venue_body())
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["structural"] == []
+    assert isinstance(body["readiness"], list)
+    assert body["readiness"]  # single treadmill can't serve every stage
+
+
+def test_get_venue_config_before_and_after_setup(monkeypatch):
+    monkeypatch.setenv("FITRACE_ENABLE_HYROX", "1")
+    monkeypatch.delenv("FITRACE_ADMIN_TOKEN", raising=False)
+    # Isolated service instance: the module-level hyrox_service is a shared
+    # singleton other tests configure, so a fresh one is required to observe
+    # an honest "not yet configured" state regardless of test order.
+    monkeypatch.setattr(hub_app, "hyrox_service", HyroxService())
+    client = TestClient(app)
+
+    before = client.get("/api/hyrox/venue-config")
+    assert before.status_code == 200
+    before_body = before.json()
+    assert before_body["configured"] is False
+    assert before_body["mode"] is None
+    assert before_body["venue"] is None
+
+    body = _venue_body()
+    assert client.post("/api/hyrox/venue-config", json=body).status_code == 200
+
+    after = client.get("/api/hyrox/venue-config")
+    assert after.status_code == 200
+    after_body = after.json()
+    assert after_body["configured"] is True
+    assert after_body["mode"] == "training"
+    assert after_body["venue"]["venue_id"] == "hq"
+
+
+def test_get_venue_config_requires_admin_token_when_configured(monkeypatch):
+    monkeypatch.setenv("FITRACE_ENABLE_HYROX", "1")
+    monkeypatch.setenv("FITRACE_ADMIN_TOKEN", "secret")
+    monkeypatch.setattr(hub_app, "hyrox_service", HyroxService())
+    client = TestClient(app)
+
+    assert client.get("/api/hyrox/venue-config").status_code == 401
+    headers = {"X-FitRace-Admin-Token": "secret"}
+    assert client.get("/api/hyrox/venue-config", headers=headers).status_code == 200
+
+
+def test_hyrox_venue_page_redirect(monkeypatch):
+    monkeypatch.setenv("FITRACE_ENABLE_HYROX", "1")
+    client = TestClient(app)
+    resp = client.get("/hyrox/venue", follow_redirects=False)
+    assert resp.status_code in (302, 307)
+    assert resp.headers["location"] == "/static/hyrox_venue_admin.html"
 
 
 def test_venue_config_register_start_flow(monkeypatch):

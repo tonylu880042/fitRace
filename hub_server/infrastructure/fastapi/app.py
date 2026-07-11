@@ -283,6 +283,12 @@ def get_hyrox_god_view():
     return hyrox_service.get_god_view_state()
 
 
+@app.get("/api/hyrox/venue-config")
+def get_hyrox_venue_config(request: Request):
+    require_admin(request)
+    return hyrox_service.venue_snapshot()
+
+
 @app.post("/api/hyrox/venue-config/validate")
 def validate_hyrox_venue(payload: HyroxVenuePayload):
     # Dry run: no state change, so no admin token required.
@@ -1157,6 +1163,11 @@ def read_hyrox_dashboard():
 @app.get("/hyrox/admin")
 def read_hyrox_admin():
     return RedirectResponse(url="/static/hyrox_admin.html")
+
+
+@app.get("/hyrox/venue")
+def read_hyrox_venue_admin():
+    return RedirectResponse(url="/static/hyrox_venue_admin.html")
 
 
 @app.get("/hyrox/signup")
