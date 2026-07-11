@@ -120,6 +120,17 @@ def test_duplicate_antenna_is_rejected():
     assert any("Duplicate RFID read zone" in e for e in errors)
 
 
+def test_abandon_endpoint_must_be_unique_across_all_read_zones():
+    venue = _valid_venue()
+    venue.resource_groups[0].units[0].abandon_endpoint = HyroxEndpointSensor(
+        node_id="rfid-01", antenna_id="L1_START"
+    )
+
+    errors = validate_venue_config(venue)
+
+    assert any("Duplicate RFID read zone" in error for error in errors)
+
+
 def test_rfid_pair_missing_finish_is_rejected():
     venue = _valid_venue()
     lane = venue.resource_groups[1].units[0]

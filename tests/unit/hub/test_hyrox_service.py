@@ -3,6 +3,7 @@ driven end to end through HyroxService."""
 
 import pytest
 
+from hub_server.domain.models import HyroxStage
 from hub_server.domain.hyrox_venue import (
     HyroxEndpointSensor,
     HyroxResourceGroup,
@@ -11,6 +12,7 @@ from hub_server.domain.hyrox_venue import (
     HyroxVenueConfig,
 )
 from hub_server.usecases.hyrox_roster import HyroxRoster
+from hub_server.usecases.hyrox_results_store import HyroxResultsStore
 from hub_server.usecases.hyrox_service import HyroxService
 from hub_server.usecases.hyrox_sensor_registry import START_LINE, FINISH_LINE
 
@@ -27,6 +29,9 @@ def _venue():
                     resource_id="treadmill-01", display_name="TM1",
                     sensor_class=HyroxSensorClass.FTMS_MACHINE, node_id="edge-tm-01",
                     entry_gate=HyroxEndpointSensor(node_id="rfid-tm-01", antenna_id="T1_GATE"),
+                    abandon_endpoint=HyroxEndpointSensor(
+                        node_id="abandon-tm-01", antenna_id="T1_BUTTON"
+                    ),
                     pulse_to_meter=250.0,
                 )],
             ),
@@ -48,6 +53,29 @@ def _svc(mode="training"):
     svc = HyroxService()
     svc.configure_venue(_venue(), mode=mode)
     return svc
+
+
+def _venue_with_rep_counter():
+    venue = _venue()
+    venue.resource_groups.append(
+        HyroxResourceGroup(
+            group_id="wall_ball_targets",
+            resource_type="rep_counter_pool",
+            stage_candidates=[],
+            units=[
+                HyroxResourceUnit(
+                    resource_id="wallball-01",
+                    display_name="Wall Ball 1",
+                    sensor_class=HyroxSensorClass.REP_COUNTER,
+                    node_id="edge-wb-01",
+                    entry_gate=HyroxEndpointSensor(
+                        node_id="rfid-wb-01", antenna_id="WB1_GATE"
+                    ),
+                )
+            ],
+        )
+    )
+    return venue
 
 
 def test_configure_register_start_and_state():
@@ -95,6 +123,73 @@ def test_training_dynamic_claim_then_ftms_progresses_run():
     assert st["resources"]["treadmill-01"] == "free"             # released
 
 
+def test_ftms_cached_before_start_seeds_dynamic_claim_baseline():
+    svc = _svc(mode="training")
+    svc.ingest_node("edge-tm-01", metrics={"distance_m": 5000}, timestamp_ms=1)
+    svc.register("alex", "individual", "TAG_ALEX", "Alex")
+    svc.start()
+
+    svc.ingest_rfid("rfid-tm-01", "T1_GATE", "TAG_ALEX", timestamp_ms=2)
+    svc.ingest_node("edge-tm-01", metrics={"distance_m": 5100}, timestamp_ms=3)
+
+    assert svc.get_state()["subjects"][0]["progress_value"] == 100
+
+
+def test_operator_assignment_seeds_baseline_and_duplicate_does_not_reset_progress():
+    svc = _svc(mode="competition")
+    svc.register("alex", "individual", "TAG_ALEX", "Alex")
+    svc.start()
+    svc.ingest_node("edge-tm-01", metrics={"distance_m": 5000}, timestamp_ms=1)
+
+    assert svc.assign("alex", "treadmill-01", timestamp_ms=2) is True
+    svc.ingest_node("edge-tm-01", metrics={"distance_m": 5100}, timestamp_ms=3)
+    assert svc.assign("alex", "treadmill-01", timestamp_ms=4) is True
+    svc.ingest_node("edge-tm-01", metrics={"distance_m": 5200}, timestamp_ms=5)
+
+    assert svc.get_state()["subjects"][0]["progress_value"] == 200
+
+
+def test_ftms_without_pre_bind_read_uses_first_reading_as_baseline():
+    svc = _svc(mode="training")
+    svc.register("alex", "individual", "TAG_ALEX", "Alex")
+    svc.start()
+    svc.ingest_rfid("rfid-tm-01", "T1_GATE", "TAG_ALEX", timestamp_ms=1)
+
+    svc.ingest_node("edge-tm-01", metrics={"distance_m": 5100}, timestamp_ms=2)
+    assert svc.get_state()["subjects"][0]["progress_value"] == 0
+    svc.ingest_node("edge-tm-01", metrics={"distance_m": 5200}, timestamp_ms=3)
+
+    assert svc.get_state()["subjects"][0]["progress_value"] == 100
+
+
+def test_seeded_ftms_progress_stays_monotonic_across_counter_reset():
+    svc = _svc(mode="training")
+    svc.ingest_node("edge-tm-01", metrics={"distance_m": 5000}, timestamp_ms=1)
+    svc.register("alex", "individual", "TAG_ALEX", "Alex")
+    svc.start()
+    svc.ingest_rfid("rfid-tm-01", "T1_GATE", "TAG_ALEX", timestamp_ms=2)
+
+    svc.ingest_node("edge-tm-01", metrics={"distance_m": 5100}, timestamp_ms=3)
+    svc.ingest_node("edge-tm-01", metrics={"distance_m": 50}, timestamp_ms=4)
+
+    assert svc.get_state()["subjects"][0]["progress_value"] == 150
+
+
+def test_generic_distance_from_rep_counter_does_not_count_as_rep():
+    svc = HyroxService()
+    svc.configure_venue(_venue_with_rep_counter(), mode="training")
+    svc.register("alex", "individual", "TAG_ALEX", "Alex")
+    svc.start()
+    svc._engine.state_of("alex").current_stage = HyroxStage.WALL_BALLS
+    svc.ingest_rfid("rfid-wb-01", "WB1_GATE", "TAG_ALEX", timestamp_ms=1)
+
+    svc.ingest_node("edge-wb-01", metrics={"distance_m": 42}, timestamp_ms=2)
+    assert svc.get_state()["subjects"][0]["progress_value"] == 0
+
+    svc.ingest_node("edge-wb-01", metrics=None, timestamp_ms=3)
+    assert svc.get_state()["subjects"][0]["progress_value"] == 1
+
+
 def test_unregistered_tag_does_not_claim():
     svc = _svc(mode="training")
     svc.register("alex", "individual", "TAG_ALEX", "Alex")
@@ -113,6 +208,79 @@ def test_competition_mode_requires_operator_assignment():
     # Operator assigns explicitly.
     assert svc.assign("alex", "treadmill-01") is True
     assert svc.get_state()["resources"]["treadmill-01"] == "in_use"
+
+
+def test_operator_assignment_is_rejected_in_training_mode():
+    svc = _svc(mode="training")
+    svc.register("alex", "individual", "TAG_ALEX", "Alex")
+
+    with pytest.raises(ValueError, match="competition mode"):
+        svc.assign("alex", "treadmill-01")
+
+    assert svc.get_state()["resources"]["treadmill-01"] == "free"
+
+
+def test_operator_assignment_rejects_unknown_subject_and_resource():
+    svc = _svc(mode="competition")
+    svc.register("alex", "individual", "TAG_ALEX", "Alex")
+
+    with pytest.raises(ValueError, match="Subject .* not found"):
+        svc.assign("missing", "treadmill-01")
+    with pytest.raises(ValueError, match="Resource .* not found"):
+        svc.assign("alex", "does-not-exist")
+
+    assert svc.get_state()["subjects"][0]["assigned_resource"] is None
+
+
+def test_operator_assignment_rejects_resource_for_wrong_stage():
+    svc = _svc(mode="competition")
+    svc.register("alex", "individual", "TAG_ALEX", "Alex")
+
+    with pytest.raises(ValueError, match="not allowed for stage run_1"):
+        svc.assign("alex", "turf-lane-1")
+
+    assert svc.get_state()["resources"]["turf-lane-1"] == "free"
+
+
+@pytest.mark.parametrize("terminal_status", ["abandoned", "finished"])
+def test_operator_assignment_rejects_terminal_subject(terminal_status):
+    svc = _svc(mode="competition")
+    svc.register("alex", "individual", "TAG_ALEX", "Alex")
+    svc._engine.state_of("alex").status = terminal_status
+
+    with pytest.raises(ValueError, match="is not racing"):
+        svc.assign("alex", "treadmill-01")
+
+    assert svc.get_state()["resources"]["treadmill-01"] == "free"
+
+
+def test_team_assignment_requires_a_registered_active_tag():
+    svc = _svc(mode="competition")
+    svc.register("duo", "doubles", "TAG_ONE", "One")
+    svc.register("duo", "doubles", "TAG_TWO", "Two")
+
+    with pytest.raises(ValueError, match="active_tag_id is required"):
+        svc.assign("duo", "treadmill-01")
+    with pytest.raises(ValueError, match="does not belong to subject duo"):
+        svc.assign("duo", "treadmill-01", active_tag_id="TAG_STRANGER")
+
+    assert svc.get_state()["resources"]["treadmill-01"] == "free"
+    assert svc.assign("duo", "treadmill-01", active_tag_id="TAG_TWO") is True
+    assert svc._store.active_on("treadmill-01").active_tag_id == "TAG_TWO"
+
+
+def test_pre_start_assignment_is_allowed_and_occupied_resource_conflicts():
+    svc = _svc(mode="competition")
+    svc.register("alex", "individual", "TAG_ALEX", "Alex")
+    svc.register("bella", "individual", "TAG_BELLA", "Bella")
+
+    assert svc.assign("alex", "treadmill-01") is True
+    with pytest.raises(ValueError, match="occupied"):
+        svc.assign("bella", "treadmill-01")
+
+    state = svc.get_state()
+    assert state["subjects"][0]["assigned_resource"] == "treadmill-01"
+    assert state["subjects"][1]["assigned_resource"] is None
 
 
 def test_lane_lengths_progress_and_complete():
@@ -141,6 +309,122 @@ def test_abandon_and_complete_stage():
     assert svc.get_state()["subjects"][0]["current_stage"] == "ski_erg"
     svc.abandon("alex")
     assert svc.get_state()["subjects"][0]["status"] == "abandoned"
+
+
+def test_sensor_abandon_requires_matching_active_assignment_and_finalizes(tmp_path):
+    store = HyroxResultsStore(str(tmp_path / "sensor-abandon.db"))
+    svc = HyroxService(results_store=store)
+    svc.configure_venue(_venue(), mode="training", race_id="sensor-abandon")
+    token = svc.register("alex", "individual", "TAG_ALEX", "Alex")
+    svc.start()
+    svc.ingest_rfid("rfid-tm-01", "T1_GATE", "TAG_ALEX", timestamp_ms=1)
+
+    svc.ingest_abandon(
+        "abandon-tm-01", "T1_BUTTON", "TAG_ALEX", timestamp_ms=0
+    )
+    svc.ingest_abandon(
+        "abandon-tm-01", "T1_BUTTON", "TAG_ALEX", timestamp_ms=0
+    )
+
+    state = svc.get_state()
+    assert state["subjects"][0]["status"] == "abandoned"
+    assert state["resources"]["treadmill-01"] == "free"
+    assert svc.result_by_token(token).status == "dnf"
+    assert svc._finalized == {"alex"}
+    store.close()
+
+
+def test_sensor_abandon_rejects_wrong_tag_without_releasing_assignment():
+    svc = _svc(mode="training")
+    svc.register("alex", "individual", "TAG_ALEX", "Alex")
+    svc.start()
+    svc.ingest_rfid("rfid-tm-01", "T1_GATE", "TAG_ALEX", timestamp_ms=1)
+
+    svc.ingest_abandon(
+        "abandon-tm-01", "T1_BUTTON", "TAG_WRONG", timestamp_ms=2
+    )
+
+    state = svc.get_state()
+    assert state["subjects"][0]["status"] == "racing"
+    assert state["resources"]["treadmill-01"] == "in_use"
+    assert state["diagnostics"][-1]["kind"] == "abandon_tag_mismatch"
+
+
+def test_sensor_abandon_rejects_unassigned_resource_with_diagnostic():
+    svc = _svc(mode="training")
+    svc.register("alex", "individual", "TAG_ALEX", "Alex")
+    svc.start()
+
+    svc.ingest_abandon(
+        "abandon-tm-01", "T1_BUTTON", "TAG_ALEX", timestamp_ms=3
+    )
+
+    state = svc.get_state()
+    assert state["subjects"][0]["status"] == "racing"
+    assert state["diagnostics"][-1]["kind"] == "abandon_unassigned"
+
+
+def test_sensor_abandon_rejects_unknown_sensor_with_diagnostic():
+    svc = _svc(mode="training")
+    svc.register("alex", "individual", "TAG_ALEX", "Alex")
+    svc.start()
+
+    svc.ingest_abandon("unknown", "UNKNOWN", "TAG_ALEX", timestamp_ms=4)
+
+    state = svc.get_state()
+    assert state["subjects"][0]["status"] == "racing"
+    assert state["diagnostics"][-1]["kind"] == "abandon_unknown_sensor"
+
+
+def test_pre_activity_abandon_finalizes_dnf_at_supplied_zero_timestamp(tmp_path):
+    store = HyroxResultsStore(str(tmp_path / "dnf.db"))
+    svc = HyroxService(results_store=store)
+    svc.configure_venue(_venue(), race_id="race-dnf")
+    token = svc.register("alex", "individual", "TAG_ALEX", "Alex")
+    svc.start()
+
+    svc.abandon("alex", timestamp_ms=0)
+
+    result = svc.result_by_token(token)
+    assert result is not None
+    assert result.status == "dnf"
+    assert result.started_at_ms == 0
+    assert result.finished_at_ms is None
+    assert result.total_time_ms is None
+    assert result.splits == []
+    store.close()
+
+
+def test_force_complete_stage_preserves_supplied_zero_timestamp():
+    svc = _svc()
+    svc.register("alex", "individual", "TAG_ALEX", "Alex")
+    svc.start()
+
+    svc.complete_stage("alex", timestamp_ms=0)
+
+    state = svc._engine.state_of("alex")
+    assert state.stage_start_ms[HyroxStage.RUN_1] == 0
+    assert state.stage_end_ms[HyroxStage.RUN_1] == 0
+
+
+def test_one_pre_activity_dnf_does_not_block_another_finalization(tmp_path):
+    store = HyroxResultsStore(str(tmp_path / "multiple-dnfs.db"))
+    svc = HyroxService(results_store=store)
+    svc.configure_venue(_venue(), race_id="race-multiple-dnfs")
+    alex_token = svc.register("alex", "individual", "TAG_ALEX", "Alex")
+    bella_token = svc.register("bella", "individual", "TAG_BELLA", "Bella")
+    svc.start()
+
+    svc.abandon("alex", timestamp_ms=10)
+    svc.abandon("bella", timestamp_ms=20)
+
+    alex = svc.result_by_token(alex_token)
+    bella = svc.result_by_token(bella_token)
+    assert alex is not None and alex.status == "dnf"
+    assert bella is not None and bella.status == "dnf"
+    assert alex.started_at_ms == 10
+    assert bella.started_at_ms == 20
+    store.close()
 
 
 def test_ingest_ignored_before_start_or_config():

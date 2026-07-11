@@ -44,6 +44,13 @@ class NodeResolution:
     pulse_to_meter: Optional[float] = None
 
 
+@dataclass(frozen=True)
+class AbandonResolution:
+    resource_id: str
+    group_id: str
+    sensor_class: HyroxSensorClass = HyroxSensorClass.ABANDON_BUTTON
+
+
 class HyroxTelemetryEvent(BaseModel):
     """Resource-aware event; all downstream logic consumes this, not raw MQTT."""
 
@@ -64,10 +71,12 @@ class HyroxSensorRegistry:
     def __init__(self, venue: HyroxVenueConfig):
         self._rfid: dict[tuple[str, str], RfidResolution] = {}
         self._nodes: dict[str, NodeResolution] = {}
+        self._abandon: dict[tuple[str, str], AbandonResolution] = {}
 
         for group in venue.resource_groups:
             for unit in group.units:
                 self._index_rfid(group, unit)
+                self._index_abandon(group, unit)
                 self._index_node(group, unit)
 
     def _index_rfid(self, group: HyroxResourceGroup, unit: HyroxResourceUnit):
@@ -81,10 +90,11 @@ class HyroxSensorRegistry:
             if ep is None:
                 continue
             key = (ep.node_id, ep.antenna_id)
-            if key in self._rfid:
+            if key in self._rfid or key in self._abandon:
+                existing = self._rfid.get(key) or self._abandon[key]
                 raise ValueError(
                     f"Duplicate RFID read zone {key[0]}/{key[1]} for "
-                    f"{self._rfid[key].resource_id} and {unit.resource_id}"
+                    f"{existing.resource_id} and {unit.resource_id}"
                 )
             self._rfid[key] = RfidResolution(
                 resource_id=unit.resource_id,
@@ -94,6 +104,22 @@ class HyroxSensorRegistry:
                 stage_candidates=stage_candidates,
                 pulse_to_meter=unit.pulse_to_meter,
             )
+
+    def _index_abandon(self, group: HyroxResourceGroup, unit: HyroxResourceUnit):
+        endpoint = unit.abandon_endpoint
+        if endpoint is None:
+            return
+        key = (endpoint.node_id, endpoint.antenna_id)
+        if key in self._rfid or key in self._abandon:
+            existing = self._rfid.get(key) or self._abandon[key]
+            raise ValueError(
+                f"Duplicate RFID read zone {key[0]}/{key[1]} for "
+                f"{existing.resource_id} and {unit.resource_id}"
+            )
+        self._abandon[key] = AbandonResolution(
+            resource_id=unit.resource_id,
+            group_id=group.group_id,
+        )
 
     def _index_node(self, group: HyroxResourceGroup, unit: HyroxResourceUnit):
         # Node-addressed sensors (FTMS machines, rep counters) resolve by node_id.
@@ -124,6 +150,11 @@ class HyroxSensorRegistry:
 
     def resolve_node(self, node_id: str) -> Optional[NodeResolution]:
         return self._nodes.get(node_id)
+
+    def resolve_abandon(
+        self, node_id: str, antenna_id: str
+    ) -> Optional[AbandonResolution]:
+        return self._abandon.get((node_id, antenna_id))
 
     # --- Normalization (raw address -> resource-aware event, None if unknown) ---
 
@@ -169,4 +200,25 @@ class HyroxSensorRegistry:
             metrics=metrics,
             raw_payload=raw_payload or {},
             pulse_to_meter=res.pulse_to_meter,
+        )
+
+    def normalize_abandon(
+        self,
+        node_id: str,
+        antenna_id: str,
+        tag_id: str,
+        timestamp_epoch_ms: int,
+        raw_payload: Optional[dict] = None,
+    ) -> Optional[HyroxTelemetryEvent]:
+        res = self.resolve_abandon(node_id, antenna_id)
+        if res is None:
+            return None
+        return HyroxTelemetryEvent(
+            sensor_class=HyroxSensorClass.ABANDON_BUTTON,
+            resource_group_id=res.group_id,
+            resource_id=res.resource_id,
+            endpoint=None,
+            tag_id=tag_id,
+            timestamp_epoch_ms=timestamp_epoch_ms,
+            raw_payload=raw_payload or {},
         )

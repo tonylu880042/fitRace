@@ -20,6 +20,7 @@ from hub_server.domain.hyrox_results import HyroxAthleteResult, HyroxRaceResults
 from hub_server.usecases.hyrox_results_store import HyroxResultsStore, build_athlete_result
 from hub_server.domain.hyrox_venue import (
     HyroxCourseProfile,
+    HyroxSensorClass,
     HyroxVenueConfig,
     default_hyrox_course_profile,
     validate_venue_config,
@@ -33,6 +34,15 @@ from hub_server.usecases.hyrox_course_engine import HyroxCourseEngine
 
 def _now_ms() -> int:
     return int(time.time() * 1000)
+
+
+class HyroxAssignmentError(ValueError):
+    """A rejected operator assignment with a stable API-facing reason code."""
+
+    def __init__(self, code: str, detail: str):
+        super().__init__(detail)
+        self.code = code
+        self.detail = detail
 
 
 class HyroxService:
@@ -52,6 +62,7 @@ class HyroxService:
         self._engine: Optional[HyroxCourseEngine] = None
         self._is_active = False
         self._resource_heartbeats: dict[str, int] = {}
+        self._latest_ftms_distance: dict[str, float] = {}
         self._queues: dict[str, tuple[str, int]] = {}
         # Results persistence (attached at runtime; None in unit tests)
         self._results = results_store
@@ -82,6 +93,7 @@ class HyroxService:
         self._engine = HyroxCourseEngine(self._profile, self._store, self._tracker)
         self._is_active = False
         self._resource_heartbeats = {}
+        self._latest_ftms_distance = {}
         self._queues = {}
         self._result_tokens = {}
         self._finalized = set()
@@ -139,15 +151,72 @@ class HyroxService:
         """FTMS distance and rep-counter events -- anonymous, attributed via the
         active assignment on the resource (bound earlier by an entry-gate read
         or an operator assignment)."""
-        if not (self._is_active and self._registry and self._engine):
+        if not (self._registry and self._engine):
             return
         ts = timestamp_ms if timestamp_ms is not None else _now_ms()
         event = self._registry.normalize_node(node_id, ts, metrics=metrics)
         if event is None:
             return
+        distance_m = (metrics or {}).get("distance_m")
+        if event.sensor_class == HyroxSensorClass.FTMS_MACHINE:
+            if distance_m is not None:
+                self._latest_ftms_distance[event.resource_id] = float(distance_m)
+        elif distance_m is not None:
+            # Generic Edge telemetry also reaches this method. A distance field
+            # from a rep-counter node is not a discrete rep event.
+            return
+        if not self._is_active:
+            return
         self._resource_heartbeats[event.resource_id] = ts
         self._engine.process(event, ts)
         self._finalize_done()
+
+    def ingest_abandon(
+        self,
+        node_id: str,
+        antenna_id: str,
+        tag_id: str,
+        timestamp_ms: Optional[int] = None,
+    ):
+        """Process a resource-addressed abandon button event safely."""
+        if self._registry is None or self._engine is None:
+            return
+        ts = timestamp_ms if timestamp_ms is not None else _now_ms()
+        event = self._registry.normalize_abandon(node_id, antenna_id, tag_id, ts)
+        if event is None:
+            self._store.record_diagnostic(
+                "abandon_unknown_sensor",
+                f"{node_id}/{antenna_id}",
+                "abandon rejected because the sensor is not configured",
+                ts,
+            )
+            return
+        if not self._is_active:
+            self._store.record_diagnostic(
+                "abandon_inactive",
+                event.resource_id,
+                "abandon rejected because the race is not active",
+                ts,
+            )
+            return
+        assignment = self._store.active_on(event.resource_id)
+        if assignment is None:
+            self._store.record_diagnostic(
+                "abandon_unassigned",
+                event.resource_id,
+                "abandon rejected because the resource is unassigned",
+                ts,
+            )
+            return
+        if assignment.active_tag_id != tag_id:
+            self._store.record_diagnostic(
+                "abandon_tag_mismatch",
+                event.resource_id,
+                f"abandon tag {tag_id} does not match the active assignment",
+                ts,
+            )
+            return
+        self.abandon(assignment.subject_id, ts)
 
     def _maybe_dynamic_claim(self, event, tag_id: str, ts: int):
         # Training mode only: the first in-sequence read on a free resource
@@ -160,44 +229,133 @@ class HyroxService:
         if self._store.active_on(event.resource_id) is not None:
             return  # occupied; claim() would reject/idempotent-noop anyway
         if self._engine.allows(subject_id, event.resource_group_id):
-            self._store.claim(
+            assignment = self._store.claim(
                 event.resource_id, subject_id, tag_id,
                 self._engine.current_stage_of(subject_id),
                 ClaimSource.DYNAMIC_CLAIM, ts,
             )
+            if assignment is not None:
+                self._seed_ftms_baseline(
+                    assignment.subject_id, assignment.stage, assignment.resource_id
+                )
+
+    def _seed_ftms_baseline(
+        self, subject_id: str, stage: HyroxStage, resource_id: str
+    ) -> None:
+        raw_distance_m = self._latest_ftms_distance.get(resource_id)
+        if raw_distance_m is not None:
+            self._tracker.seed_distance_baseline(subject_id, stage, raw_distance_m)
 
     # --- Operator actions ---
 
-    def assign(self, subject_id: str, resource_id: str,
-               timestamp_ms: Optional[int] = None) -> bool:
+    def assign(
+        self,
+        subject_id: str,
+        resource_id: str,
+        timestamp_ms: Optional[int] = None,
+        active_tag_id: Optional[str] = None,
+    ) -> bool:
         """Competition-mode explicit assignment of a resource to a subject."""
+        if self._engine is None or self._venue is None:
+            raise HyroxAssignmentError(
+                "not_configured", "Load a venue config before assigning resources"
+            )
+        if self._mode != "competition":
+            raise HyroxAssignmentError(
+                "wrong_mode", "Operator assignment is only available in competition mode"
+            )
+
         entry = self._roster.get(subject_id)
-        if entry is None or not entry.member_tags or self._engine is None:
-            return False
-        ts = timestamp_ms if timestamp_ms is not None else _now_ms()
-        active_tag = entry.member_tags[0]  # relay handoff refinement: per-member later
-        stage = self._engine.current_stage_of(subject_id)
-        assignment = self._store.claim(
-            resource_id, subject_id, active_tag, stage, ClaimSource.OPERATOR, ts
+        if entry is None:
+            raise HyroxAssignmentError(
+                "unknown_subject", f"Subject {subject_id} not found"
+            )
+        state = self._engine.state_of(subject_id)
+        if state is None:
+            raise HyroxAssignmentError(
+                "unknown_subject", f"Subject {subject_id} not found"
+            )
+        if state.status != "racing":
+            raise HyroxAssignmentError(
+                "not_racing", f"Subject {subject_id} is not racing"
+            )
+
+        resource_group_id = next(
+            (
+                group.group_id
+                for group in self._venue.resource_groups
+                if any(unit.resource_id == resource_id for unit in group.units)
+            ),
+            None,
         )
-        return assignment is not None
+        if resource_group_id is None:
+            raise HyroxAssignmentError(
+                "unknown_resource", f"Resource {resource_id} not found"
+            )
+        stage = state.current_stage
+        stage_definition = self._engine.stage_definition(stage)
+        if (
+            stage_definition is None
+            or resource_group_id not in stage_definition.allowed_resource_groups
+        ):
+            raise HyroxAssignmentError(
+                "wrong_stage",
+                f"Resource {resource_id} is not allowed for stage {stage.value}",
+            )
+
+        if entry.division == "individual":
+            if len(entry.member_tags) != 1:
+                raise HyroxAssignmentError(
+                    "invalid_tag",
+                    f"Individual subject {subject_id} must have exactly one registered tag",
+                )
+            selected_tag = (
+                active_tag_id if active_tag_id is not None else entry.member_tags[0]
+            )
+        else:
+            if active_tag_id is None:
+                raise HyroxAssignmentError(
+                    "active_tag_required",
+                    "active_tag_id is required for doubles and relay assignments",
+                )
+            selected_tag = active_tag_id
+        if selected_tag not in entry.member_tags:
+            raise HyroxAssignmentError(
+                "invalid_tag",
+                f"Tag {selected_tag} does not belong to subject {subject_id}",
+            )
+
+        existing = self._store.active_on(resource_id)
+        if existing is not None and existing.subject_id != subject_id:
+            raise HyroxAssignmentError(
+                "occupied", f"Resource {resource_id} is occupied"
+            )
+
+        ts = timestamp_ms if timestamp_ms is not None else _now_ms()
+        assignment = self._store.claim(
+            resource_id, subject_id, selected_tag, stage, ClaimSource.OPERATOR, ts
+        )
+        if assignment is None:
+            raise HyroxAssignmentError(
+                "occupied", f"Resource {resource_id} is occupied"
+            )
+        self._seed_ftms_baseline(
+            assignment.subject_id, assignment.stage, assignment.resource_id
+        )
+        return True
 
     def abandon(self, subject_id: str, timestamp_ms: Optional[int] = None):
         if self._engine is None:
             return
-        self._engine.abandon(subject_id, timestamp_ms or _now_ms())
+        ts = timestamp_ms if timestamp_ms is not None else _now_ms()
+        self._engine.abandon(subject_id, ts)
         self._finalize_done()
-
-    def abandon_by_tag(self, tag_id: str, timestamp_ms: Optional[int] = None):
-        """Abandon button read: resolve the member tag to its subject."""
-        subject_id = self._roster.subject_for_tag(tag_id)
-        if subject_id is not None:
-            self.abandon(subject_id, timestamp_ms)
 
     def complete_stage(self, subject_id: str, timestamp_ms: Optional[int] = None):
         if self._engine is None:
             return
-        self._engine.force_complete_stage(subject_id, timestamp_ms or _now_ms())
+        ts = timestamp_ms if timestamp_ms is not None else _now_ms()
+        self._engine.force_complete_stage(subject_id, ts)
         self._finalize_done()
 
     # --- Results finalization and retrieval ---

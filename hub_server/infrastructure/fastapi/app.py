@@ -7,15 +7,20 @@ import time
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Annotated, Dict, Any, Literal, Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints, model_validator
 from hub_server.domain.models import RaceState, RaceConfig
-from hub_server.domain.hyrox_venue import HyroxVenueConfig, default_hyrox_course_profile, venue_readiness
+from hub_server.domain.hyrox_venue import (
+    HyroxVenueConfig,
+    default_hyrox_course_profile,
+    validate_venue_config,
+    venue_readiness,
+)
 from hub_server.usecases.race_manager import RaceManager
-from hub_server.usecases.hyrox_service import HyroxService
+from hub_server.usecases.hyrox_service import HyroxAssignmentError, HyroxService
 from hub_server.usecases.node_registry import NodeRegistry
 from hub_server.usecases.race_event_engine import RaceEventEngine
 from hub_server.usecases.race_result_store import RaceResultStore
@@ -160,11 +165,27 @@ class PowerActionPayload(BaseModel):
     confirmation: Optional[str] = None
 
 
+HyroxName = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=80),
+]
+HyroxTagId = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=128),
+]
+
+
 class HyroxRegisterPayload(BaseModel):
-    athlete_name: str
-    rfid_tag_id: str
-    division: str = "individual"
-    team_name: Optional[str] = None
+    athlete_name: HyroxName
+    rfid_tag_id: HyroxTagId
+    division: Literal["individual", "doubles", "relay"] = "individual"
+    team_name: Optional[HyroxName] = None
+
+    @model_validator(mode="after")
+    def require_team_name_for_team_division(self):
+        if self.division in ("doubles", "relay") and self.team_name is None:
+            raise ValueError("team_name is required for doubles and relay divisions")
+        return self
 
 
 class HyroxSubjectPayload(BaseModel):
@@ -174,6 +195,7 @@ class HyroxSubjectPayload(BaseModel):
 class HyroxAssignPayload(BaseModel):
     subject_id: str
     resource_id: str
+    active_tag_id: Optional[HyroxTagId] = None
 
 
 class HyroxQueuePayload(BaseModel):
@@ -184,7 +206,7 @@ class HyroxQueuePayload(BaseModel):
 
 class HyroxVenuePayload(BaseModel):
     venue: HyroxVenueConfig
-    mode: str = "training"
+    mode: Literal["training", "competition"] = "training"
 
 
 class DiagnosticTelemetryPayload(BaseModel):
@@ -349,8 +371,20 @@ def update_hyrox_queue(payload: HyroxQueuePayload, request: Request):
 @app.post("/api/hyrox/assign")
 def assign_hyrox_resource(payload: HyroxAssignPayload, request: Request):
     require_admin(request)
-    if not hyrox_service.assign(payload.subject_id, payload.resource_id):
-        raise HTTPException(status_code=409, detail="Resource occupied or unknown subject")
+    try:
+        hyrox_service.assign(
+            payload.subject_id,
+            payload.resource_id,
+            active_tag_id=payload.active_tag_id,
+        )
+    except HyroxAssignmentError as exc:
+        status_code = {
+            "unknown_subject": 404,
+            "unknown_resource": 404,
+            "active_tag_required": 422,
+            "invalid_tag": 422,
+        }.get(exc.code, 409)
+        raise HTTPException(status_code=status_code, detail=exc.detail) from exc
     return {"status": "ok"}
 
 

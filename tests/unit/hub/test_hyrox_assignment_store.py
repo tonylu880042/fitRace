@@ -132,3 +132,18 @@ def test_availability_is_a_projection():
     _claim(store, "treadmill-01", "alex", "TAG_ALEX")
     avail = store.availability(["treadmill-01", "treadmill-02"])
     assert avail == {"treadmill-01": "in_use", "treadmill-02": "free"}
+
+
+def test_public_diagnostic_records_rejected_abandon_event():
+    store = HyroxAssignmentStore()
+
+    diagnostic = store.record_diagnostic(
+        "abandon_unassigned",
+        "treadmill-01",
+        "abandon rejected because the resource is unassigned",
+        0,
+    )
+
+    assert diagnostic in store.diagnostics
+    assert diagnostic.kind == "abandon_unassigned"
+    assert diagnostic.timestamp_epoch_ms == 0

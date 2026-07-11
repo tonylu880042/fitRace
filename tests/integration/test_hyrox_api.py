@@ -30,6 +30,24 @@ def _venue_body():
     }
 
 
+def _assignment_venue_body():
+    body = _venue_body()
+    body["mode"] = "competition"
+    body["venue"]["resource_groups"].append({
+        "group_id": "shared_turf_lanes",
+        "resource_type": "rfid_lane_pool",
+        "stage_candidates": [],
+        "units": [{
+            "resource_id": "turf-lane-1",
+            "display_name": "Lane 1",
+            "sensor_class": "rfid_endpoint_pair",
+            "start_endpoint": {"node_id": "rfid-01", "antenna_id": "L1_START"},
+            "finish_endpoint": {"node_id": "rfid-01", "antenna_id": "L1_FINISH"},
+        }],
+    })
+    return body
+
+
 def test_hyrox_endpoints_404_when_disabled(monkeypatch):
     monkeypatch.setenv("FITRACE_ENABLE_HYROX", "0")
     client = TestClient(app)
@@ -78,6 +96,114 @@ def test_invalid_venue_config_is_rejected(monkeypatch):
     assert client.post("/api/hyrox/venue-config", json=body).status_code == 400
 
 
+def test_venue_config_validation_endpoint_returns_readiness(monkeypatch):
+    monkeypatch.setenv("FITRACE_ENABLE_HYROX", "1")
+    client = TestClient(app)
+
+    response = client.post("/api/hyrox/venue-config/validate", json=_venue_body())
+
+    assert response.status_code == 200
+    assert response.json()["structural"] == []
+    assert "readiness" in response.json()
+
+
+@pytest.mark.parametrize("division", ["solo", "open", "Individual"])
+def test_registration_rejects_unknown_division(monkeypatch, division):
+    monkeypatch.setenv("FITRACE_ENABLE_HYROX", "1")
+    client = TestClient(app)
+
+    response = client.post("/api/hyrox/register", json={
+        "athlete_name": "Alex",
+        "rfid_tag_id": "TAG_ALEX",
+        "division": division,
+    })
+
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize("mode", ["practice", "race", "Training"])
+def test_venue_config_rejects_unknown_mode(monkeypatch, mode):
+    monkeypatch.setenv("FITRACE_ENABLE_HYROX", "1")
+    client = TestClient(app)
+    body = _venue_body()
+    body["mode"] = mode
+
+    response = client.post("/api/hyrox/venue-config/validate", json=body)
+
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize("division", ["doubles", "relay"])
+@pytest.mark.parametrize("team_name", [None, "", "   "])
+def test_team_registration_requires_non_empty_team_name(
+    monkeypatch, division, team_name,
+):
+    monkeypatch.setenv("FITRACE_ENABLE_HYROX", "1")
+    client = TestClient(app)
+
+    response = client.post("/api/hyrox/register", json={
+        "athlete_name": "Alex",
+        "rfid_tag_id": "TAG_ALEX",
+        "division": division,
+        "team_name": team_name,
+    })
+
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("athlete_name", " "),
+        ("athlete_name", "A" * 81),
+        ("rfid_tag_id", " "),
+        ("rfid_tag_id", "T" * 129),
+        ("team_name", " "),
+        ("team_name", "T" * 81),
+    ],
+)
+def test_registration_rejects_invalid_text_fields(monkeypatch, field, value):
+    monkeypatch.setenv("FITRACE_ENABLE_HYROX", "1")
+    client = TestClient(app)
+    body = {
+        "athlete_name": "Alex",
+        "rfid_tag_id": "TAG_ALEX",
+        "division": "individual",
+    }
+    body[field] = value
+
+    response = client.post("/api/hyrox/register", json=body)
+
+    assert response.status_code == 422
+
+
+def test_registration_trims_text_fields(monkeypatch):
+    monkeypatch.setenv("FITRACE_ENABLE_HYROX", "1")
+    monkeypatch.delenv("FITRACE_ADMIN_TOKEN", raising=False)
+    client = TestClient(app)
+    assert client.post("/api/hyrox/venue-config", json=_venue_body()).status_code == 200
+
+    response = client.post("/api/hyrox/register", json={
+        "athlete_name": "  Alex  ",
+        "rfid_tag_id": "  TAG_ALEX  ",
+        "division": "doubles",
+        "team_name": "  Team One  ",
+    })
+    individual_response = client.post("/api/hyrox/register", json={
+        "athlete_name": "  Blair  ",
+        "rfid_tag_id": "  TAG_BLAIR  ",
+    })
+
+    assert response.status_code == 200
+    assert individual_response.status_code == 200
+    state = client.get("/api/hyrox/state").json()
+    assert len(state["subjects"]) == 2
+    assert state["subjects"][0]["subject_id"] == "Team One"
+    assert state["subjects"][0]["members"] == ["Alex"]
+    assert state["subjects"][1]["subject_id"] == "TAG_BLAIR"
+    assert state["subjects"][1]["members"] == ["Blair"]
+
+
 def test_admin_endpoints_require_token_when_configured(monkeypatch):
     monkeypatch.setenv("FITRACE_ENABLE_HYROX", "1")
     monkeypatch.setenv("FITRACE_ADMIN_TOKEN", "secret")
@@ -115,6 +241,169 @@ def test_god_view_endpoint(monkeypatch):
     assert len(data["resource_groups"]) == 1
     assert "treadmill-01" in data["resources"]
     assert data["resources"]["treadmill-01"]["status"] == "free"
+
+
+def test_assignment_api_rejects_unknown_and_wrong_stage_resources(monkeypatch):
+    monkeypatch.setenv("FITRACE_ENABLE_HYROX", "1")
+    monkeypatch.delenv("FITRACE_ADMIN_TOKEN", raising=False)
+    client = TestClient(app)
+    assert client.post(
+        "/api/hyrox/venue-config", json=_assignment_venue_body()
+    ).status_code == 200
+    assert client.post("/api/hyrox/register", json={
+        "athlete_name": "Alex",
+        "rfid_tag_id": "TAG_ALEX",
+    }).status_code == 200
+
+    unknown_subject = client.post("/api/hyrox/assign", json={
+        "subject_id": "missing",
+        "resource_id": "treadmill-01",
+    })
+    unknown_resource = client.post("/api/hyrox/assign", json={
+        "subject_id": "TAG_ALEX",
+        "resource_id": "does-not-exist",
+    })
+    wrong_stage = client.post("/api/hyrox/assign", json={
+        "subject_id": "TAG_ALEX",
+        "resource_id": "turf-lane-1",
+    })
+
+    assert unknown_subject.status_code == 404
+    assert unknown_subject.json()["detail"] == "Subject missing not found"
+    assert unknown_resource.status_code == 404
+    assert unknown_resource.json()["detail"] == "Resource does-not-exist not found"
+    assert wrong_stage.status_code == 409
+    assert "not allowed for stage run_1" in wrong_stage.json()["detail"]
+    state = client.get("/api/hyrox/state").json()
+    assert state["subjects"][0]["assigned_resource"] is None
+    assert state["resources"]["turf-lane-1"] == "free"
+
+
+def test_assignment_api_requires_competition_mode_and_racing_subject(monkeypatch):
+    monkeypatch.setenv("FITRACE_ENABLE_HYROX", "1")
+    monkeypatch.delenv("FITRACE_ADMIN_TOKEN", raising=False)
+    client = TestClient(app)
+    assert client.post("/api/hyrox/venue-config", json=_venue_body()).status_code == 200
+    assert client.post("/api/hyrox/register", json={
+        "athlete_name": "Alex",
+        "rfid_tag_id": "TAG_ALEX",
+    }).status_code == 200
+
+    training = client.post("/api/hyrox/assign", json={
+        "subject_id": "TAG_ALEX",
+        "resource_id": "treadmill-01",
+    })
+
+    assert training.status_code == 409
+    assert "competition mode" in training.json()["detail"]
+
+    competition = _assignment_venue_body()
+    assert client.post("/api/hyrox/venue-config", json=competition).status_code == 200
+    assert client.post("/api/hyrox/register", json={
+        "athlete_name": "Alex",
+        "rfid_tag_id": "TAG_ALEX",
+    }).status_code == 200
+    assert client.post(
+        "/api/hyrox/abandon", json={"subject_id": "TAG_ALEX"}
+    ).status_code == 200
+
+    terminal = client.post("/api/hyrox/assign", json={
+        "subject_id": "TAG_ALEX",
+        "resource_id": "treadmill-01",
+    })
+
+    assert terminal.status_code == 409
+    assert terminal.json()["detail"] == "Subject TAG_ALEX is not racing"
+    assert client.get("/api/hyrox/state").json()["resources"]["treadmill-01"] == "free"
+
+
+def test_assignment_api_team_tag_and_pre_start_conflict_guards(monkeypatch):
+    monkeypatch.setenv("FITRACE_ENABLE_HYROX", "1")
+    monkeypatch.delenv("FITRACE_ADMIN_TOKEN", raising=False)
+    client = TestClient(app)
+    assert client.post(
+        "/api/hyrox/venue-config", json=_assignment_venue_body()
+    ).status_code == 200
+    for name, tag in (("One", "TAG_ONE"), ("Two", "TAG_TWO")):
+        assert client.post("/api/hyrox/register", json={
+            "athlete_name": name,
+            "rfid_tag_id": tag,
+            "division": "doubles",
+            "team_name": "Duo",
+        }).status_code == 200
+    assert client.post("/api/hyrox/register", json={
+        "athlete_name": "Bella",
+        "rfid_tag_id": "TAG_BELLA",
+    }).status_code == 200
+
+    missing_tag = client.post("/api/hyrox/assign", json={
+        "subject_id": "Duo",
+        "resource_id": "treadmill-01",
+    })
+    wrong_tag = client.post("/api/hyrox/assign", json={
+        "subject_id": "Duo",
+        "resource_id": "treadmill-01",
+        "active_tag_id": "TAG_STRANGER",
+    })
+
+    assert missing_tag.status_code == 422
+    assert wrong_tag.status_code == 422
+    assert client.get("/api/hyrox/state").json()["resources"]["treadmill-01"] == "free"
+
+    assigned = client.post("/api/hyrox/assign", json={
+        "subject_id": "Duo",
+        "resource_id": "treadmill-01",
+        "active_tag_id": "TAG_TWO",
+    })
+    occupied = client.post("/api/hyrox/assign", json={
+        "subject_id": "TAG_BELLA",
+        "resource_id": "treadmill-01",
+    })
+
+    assert assigned.status_code == 200
+    assert occupied.status_code == 409
+    assert occupied.json()["detail"] == "Resource treadmill-01 is occupied"
+    state = client.get("/api/hyrox/state").json()
+    subjects = {subject["subject_id"]: subject for subject in state["subjects"]}
+    assert subjects["Duo"]["assigned_resource"] == "treadmill-01"
+    assert subjects["TAG_BELLA"]["assigned_resource"] is None
+
+
+def test_abandon_before_activity_finalizes_retrievable_dnf(monkeypatch, tmp_path):
+    monkeypatch.setenv("FITRACE_ENABLE_HYROX", "1")
+    monkeypatch.delenv("FITRACE_ADMIN_TOKEN", raising=False)
+    from hub_server.usecases.hyrox_results_store import HyroxResultsStore
+
+    store = HyroxResultsStore(str(tmp_path / "pre-activity-dnf.db"))
+    hyrox_service.attach_results_store(store)
+    try:
+        client = TestClient(app)
+        assert client.post(
+            "/api/hyrox/venue-config", json=_venue_body()
+        ).status_code == 200
+        registration = client.post("/api/hyrox/register", json={
+            "athlete_name": "Alex",
+            "rfid_tag_id": "TAG_ALEX",
+        })
+        token = registration.json()["result_token"]
+        assert client.post("/api/hyrox/start").status_code == 200
+
+        abandoned = client.post(
+            "/api/hyrox/abandon", json={"subject_id": "TAG_ALEX"}
+        )
+
+        assert abandoned.status_code == 200
+        result_response = client.get(f"/api/hyrox/result/{token}")
+        assert result_response.status_code == 200
+        result = result_response.json()
+        assert isinstance(result["started_at_ms"], int)
+        assert result["status"] == "dnf"
+        assert result["finished_at_ms"] is None
+        assert result["total_time_ms"] is None
+        assert result["splits"] == []
+    finally:
+        hyrox_service.attach_results_store(None)
+        store.close()
 
 
 def test_results_finalized_and_retrievable(monkeypatch, tmp_path):

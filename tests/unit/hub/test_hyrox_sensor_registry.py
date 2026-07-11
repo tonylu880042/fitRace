@@ -34,6 +34,9 @@ def _venue():
                     sensor_class=HyroxSensorClass.FTMS_MACHINE,
                     node_id="edge-tm-01",
                     entry_gate=HyroxEndpointSensor(node_id="rfid-tm-01", antenna_id="T1_GATE"),
+                    abandon_endpoint=HyroxEndpointSensor(
+                        node_id="abandon-tm-01", antenna_id="T1_BUTTON"
+                    ),
                 )],
             ),
             HyroxResourceGroup(
@@ -83,6 +86,34 @@ def test_entry_gate_resolves_to_treadmill():
     assert res.role == ENTRY_GATE
 
 
+def test_abandon_address_resolves_separately_from_progress_rfid():
+    reg = HyroxSensorRegistry(_venue())
+
+    resolution = reg.resolve_abandon("abandon-tm-01", "T1_BUTTON")
+
+    assert resolution.resource_id == "treadmill-01"
+    assert resolution.sensor_class == HyroxSensorClass.ABANDON_BUTTON
+    assert reg.resolve_rfid("abandon-tm-01", "T1_BUTTON") is None
+
+
+def test_normalize_abandon_produces_resource_aware_button_event():
+    reg = HyroxSensorRegistry(_venue())
+
+    event = reg.normalize_abandon(
+        "abandon-tm-01",
+        "T1_BUTTON",
+        tag_id="TAG_A",
+        timestamp_epoch_ms=0,
+    )
+
+    assert event.resource_id == "treadmill-01"
+    assert event.resource_group_id == "run_treadmills"
+    assert event.sensor_class == HyroxSensorClass.ABANDON_BUTTON
+    assert event.endpoint is None
+    assert event.tag_id == "TAG_A"
+    assert event.timestamp_epoch_ms == 0
+
+
 def test_node_resolves_to_one_ftms_unit():
     reg = HyroxSensorRegistry(_venue())
     res = reg.resolve_node("edge-tm-01")
@@ -101,6 +132,7 @@ def test_unknown_sensor_resolves_to_none():
     reg = HyroxSensorRegistry(_venue())
     assert reg.resolve_rfid("rfid-99", "NOPE") is None
     assert reg.resolve_node("edge-unknown") is None
+    assert reg.resolve_abandon("abandon-unknown", "NOPE") is None
 
 
 def test_normalize_rfid_produces_resource_aware_event():
@@ -128,6 +160,7 @@ def test_normalize_unknown_returns_none():
     reg = HyroxSensorRegistry(_venue())
     assert reg.normalize_rfid("x", "y", tag_id="T", timestamp_epoch_ms=1) is None
     assert reg.normalize_node("x", timestamp_epoch_ms=1) is None
+    assert reg.normalize_abandon("x", "y", tag_id="T", timestamp_epoch_ms=1) is None
 
 
 def test_duplicate_sensor_address_fails_registry_build():
@@ -136,5 +169,15 @@ def test_duplicate_sensor_address_fails_registry_build():
     venue.resource_groups[0].units[0].entry_gate = HyroxEndpointSensor(
         node_id="rfid-01", antenna_id="L1_START"
     )
+    with pytest.raises(ValueError, match="Duplicate RFID read zone"):
+        HyroxSensorRegistry(venue)
+
+
+def test_abandon_address_cannot_overlap_progress_sensor_in_registry():
+    venue = _venue()
+    venue.resource_groups[0].units[0].abandon_endpoint = HyroxEndpointSensor(
+        node_id="rfid-01", antenna_id="L1_START"
+    )
+
     with pytest.raises(ValueError, match="Duplicate RFID read zone"):
         HyroxSensorRegistry(venue)

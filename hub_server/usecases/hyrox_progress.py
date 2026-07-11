@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from hub_server.domain.models import HyroxStage
-from hub_server.domain.hyrox_venue import HyroxTargetType
+from hub_server.domain.hyrox_venue import HyroxSensorClass, HyroxTargetType
 from hub_server.usecases.hyrox_sensor_registry import (
     FINISH_LINE,
     START_LINE,
@@ -56,6 +56,14 @@ class HyroxProgressTracker:
         self._rep: dict[tuple[str, HyroxStage], _RepState] = {}
         self._forced: set[tuple[str, HyroxStage]] = set()
 
+    def seed_distance_baseline(
+        self, subject_id: str, stage: HyroxStage, raw_distance_m: float
+    ) -> None:
+        """Set the bind-time FTMS baseline without resetting existing progress."""
+        state = self._distance.setdefault((subject_id, stage), _DistanceState())
+        if state.last_raw is None:
+            state.last_raw = raw_distance_m
+
     def apply(
         self,
         event: HyroxTelemetryEvent,
@@ -88,6 +96,8 @@ class HyroxProgressTracker:
         key = (subject_id, stage)
         st = self._distance.setdefault(key, _DistanceState())
         raw = (event.metrics or {}).get("distance_m")
+        if raw is not None and event.sensor_class != HyroxSensorClass.FTMS_MACHINE:
+            return ProgressUpdate(st.accumulated, target, st.accumulated >= target, False)
         if raw is None:
             # Pulse-based machines add a fixed distance per node event. Only
             # genuine node telemetry counts -- an RFID read on the same unit
@@ -134,7 +144,7 @@ class HyroxProgressTracker:
         # Only genuine rep-counter (node) events count. An RFID read on the same
         # resource -- e.g. the entry-gate bind tap -- carries an endpoint and
         # must not be counted as a rep.
-        if event.endpoint is not None:
+        if event.endpoint is not None or "distance_m" in (event.metrics or {}):
             return ProgressUpdate(st.count, target, st.count >= target, False)
         st.count += 1
         return ProgressUpdate(st.count, target, st.count >= target, True)

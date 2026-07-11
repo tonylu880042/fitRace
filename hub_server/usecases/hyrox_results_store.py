@@ -39,6 +39,8 @@ def build_athlete_result(
     """Turn a finished/abandoned SubjectState into a finalized result with a
     per-station split and Roxzone breakdown (see spec section 3)."""
     race_start = state.stage_start_ms.get(HyroxStage.RUN_1)
+    if race_start is None:
+        raise ValueError("Terminal athlete result requires a start timestamp")
     finished = state.status == "finished"
     splits: list[HyroxStageSplit] = []
     run_total = workout_total = roxzone_total = 0

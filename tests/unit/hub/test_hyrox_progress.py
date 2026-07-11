@@ -1,7 +1,5 @@
 """Phase 4 stage-reducer tests (architecture plan section 15)."""
 
-import pytest
-
 from hub_server.domain.models import HyroxStage
 from hub_server.domain.hyrox_venue import HyroxSensorClass, HyroxTargetType
 from hub_server.usecases.hyrox_sensor_registry import (
@@ -34,13 +32,14 @@ def _cross(resource_id, endpoint, ts=0):
     )
 
 
-def _rep(resource_id, ts=0):
+def _rep(resource_id, ts=0, metrics=None):
     return HyroxTelemetryEvent(
         sensor_class=HyroxSensorClass.REP_COUNTER,
         resource_group_id="wall_ball_targets",
         resource_id=resource_id,
         tag_id=None,
         timestamp_epoch_ms=ts,
+        metrics=metrics,
     )
 
 
@@ -71,6 +70,25 @@ def test_distance_is_monotonic_across_counter_reset():
     after_reset = _distance(t, "alex", _ftms("tm-1", 50))
     assert after_reset.value == 350                    # 300 + 50, never below 300
     assert _distance(t, "alex", _ftms("tm-1", 90)).value == 390
+
+
+def test_seeded_distance_baseline_counts_first_post_bind_delta():
+    t = HyroxProgressTracker()
+    t.seed_distance_baseline("alex", HyroxStage.RUN_1, 5000)
+
+    update = _distance(t, "alex", _ftms("tm-1", 5100))
+
+    assert update.value == 100
+
+
+def test_seeding_distance_baseline_is_idempotent():
+    t = HyroxProgressTracker()
+    t.seed_distance_baseline("alex", HyroxStage.RUN_1, 5000)
+    assert _distance(t, "alex", _ftms("tm-1", 5100)).value == 100
+
+    t.seed_distance_baseline("alex", HyroxStage.RUN_1, 9000)
+
+    assert _distance(t, "alex", _ftms("tm-1", 5200)).value == 200
 
 
 def test_distance_ignores_event_without_distance_metric():
@@ -129,6 +147,21 @@ def test_reps_increment_to_target():
         t.apply(_rep("wb-1"), "alex", HyroxStage.WALL_BALLS, HyroxTargetType.REPS, 75)
     final = t.apply(_rep("wb-1"), "alex", HyroxStage.WALL_BALLS, HyroxTargetType.REPS, 75)
     assert final.value == 75 and final.complete is True
+
+
+def test_generic_distance_metric_does_not_count_as_rep():
+    t = HyroxProgressTracker()
+
+    update = t.apply(
+        _rep("wb-1", metrics={"distance_m": 42}),
+        "alex",
+        HyroxStage.WALL_BALLS,
+        HyroxTargetType.REPS,
+        75,
+    )
+
+    assert update.value == 0
+    assert update.counted is False
 
 
 def test_pulse_to_meter_node_events_add_distance():

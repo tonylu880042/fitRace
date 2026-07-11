@@ -426,7 +426,7 @@
         if (data.queues && data.queues.length > 0) {
           queuePanel.style.display = 'block';
           queueCount.textContent = data.queues.length;
-          queueList.innerHTML = '';
+          queueList.replaceChildren();
           
           data.queues.forEach(q => {
             const duration = q.wait_start_epoch_ms ? ((Date.now() - q.wait_start_epoch_ms) / 1000).toFixed(1) : '0.0';
@@ -435,11 +435,24 @@
             
             const groupChinese = GROUPS_CHINESE[q.group_id] || q.group_id;
             
-            item.innerHTML = `
-              <div style="font-weight: 800; color: var(--text); display: flex; align-items: center; gap: 6px;">👤 ${q.subject_name}</div>
-              <div style="font-size: 12px; color: var(--zinc-400);">等待項目: <span style="color: var(--amber); font-weight: 800;">${groupChinese}</span></div>
-              <div style="font-size: 11px; color: var(--zinc-400);">排隊時間: <span style="font-family: monospace; color: #f4f4f5; font-weight: 800; font-size: 12px;">${duration}s</span></div>
-            `;
+            const subject = document.createElement('div');
+            subject.style.cssText = 'font-weight: 800; color: var(--text); display: flex; align-items: center; gap: 6px;';
+            subject.textContent = `👤 ${q.subject_name}`;
+            const group = document.createElement('div');
+            group.style.cssText = 'font-size: 12px; color: var(--zinc-400);';
+            group.append('等待項目: ');
+            const groupName = document.createElement('span');
+            groupName.style.cssText = 'color: var(--amber); font-weight: 800;';
+            groupName.textContent = groupChinese;
+            group.appendChild(groupName);
+            const wait = document.createElement('div');
+            wait.style.cssText = 'font-size: 11px; color: var(--zinc-400);';
+            wait.append('排隊時間: ');
+            const waitDuration = document.createElement('span');
+            waitDuration.style.cssText = 'font-family: monospace; color: #f4f4f5; font-weight: 800; font-size: 12px;';
+            waitDuration.textContent = `${duration}s`;
+            wait.appendChild(waitDuration);
+            item.append(subject, group, wait);
             queueList.appendChild(item);
           });
         } else {
@@ -447,15 +460,17 @@
         }
 
         const container = document.getElementById('god-view-container');
-        container.innerHTML = '';
+        container.replaceChildren();
 
         if (!data.venue_configured) {
-          container.innerHTML = `
-            <div style="text-align: center; padding: 48px; border: 2px dashed var(--border); border-radius: 4px; color: var(--zinc-400);">
-              <h3>No Venue Config Loaded / 尚未載入賽道場地配置</h3>
-              <p>請至管理主控台載入 Venue Config 檔案以啟動上帝視角監控。</p>
-            </div>
-          `;
+          const empty = document.createElement('div');
+          empty.style.cssText = 'text-align: center; padding: 48px; border: 2px dashed var(--border); border-radius: 4px; color: var(--zinc-400);';
+          const heading = document.createElement('h3');
+          heading.textContent = 'No Venue Config Loaded / 尚未載入賽道場地配置';
+          const message = document.createElement('p');
+          message.textContent = '請至管理主控台載入 Venue Config 檔案以啟動上帝視角監控。';
+          empty.append(heading, message);
+          container.appendChild(empty);
           return;
         }
 
@@ -470,7 +485,11 @@
           const title = document.createElement('h2');
           title.className = 'section-title';
           const chineseName = GROUPS_CHINESE[group.group_id] || group.group_id;
-          title.innerHTML = `⚙️ ${chineseName} <span class="count">${group.units.length} units</span>`;
+          title.append(`⚙️ ${chineseName} `);
+          const count = document.createElement('span');
+          count.className = 'count';
+          count.textContent = `${group.units.length} units`;
+          title.appendChild(count);
           section.appendChild(title);
 
           const grid = document.createElement('div');
@@ -492,7 +511,8 @@
               telemetrySignals++;
             }
 
-            let athleteHtml = '';
+            const athletePanel = document.createElement('div');
+            athletePanel.className = 'athlete-panel';
             if (isActive) {
               const value = Math.round(detail.progress_value || 0);
               const target = Math.round(detail.progress_target || 0);
@@ -503,41 +523,55 @@
               else if (detail.progress_type === "lengths") progressLabel += " LENGTHS";
               else if (detail.progress_type === "distance_m") progressLabel += " M";
 
-              athleteHtml = `
-                <div class="athlete-panel">
-                  <h4 class="athlete-name">👤 ${detail.subject_name}</h4>
-                  <div class="athlete-stage">📍 Stage: ${detail.current_stage || '--'}</div>
-                  <div class="progress-bar">
-                    <div class="progress-fill" style="width: ${pct}%"></div>
-                  </div>
-                  <div class="progress-text">
-                    <span>PROGRESS 進度</span>
-                    <span>${progressLabel} (${pct}%)</span>
-                  </div>
-                </div>
-              `;
+              const athleteName = document.createElement('h4');
+              athleteName.className = 'athlete-name';
+              athleteName.textContent = `👤 ${detail.subject_name}`;
+              const athleteStage = document.createElement('div');
+              athleteStage.className = 'athlete-stage';
+              athleteStage.textContent = `📍 Stage: ${detail.current_stage || '--'}`;
+              const progress = document.createElement('div');
+              progress.className = 'progress-bar';
+              const progressFill = document.createElement('div');
+              progressFill.className = 'progress-fill';
+              progressFill.style.width = `${pct}%`;
+              progress.appendChild(progressFill);
+              const progressText = document.createElement('div');
+              progressText.className = 'progress-text';
+              const progressLabelEl = document.createElement('span');
+              progressLabelEl.textContent = 'PROGRESS 進度';
+              const progressValue = document.createElement('span');
+              progressValue.textContent = `${progressLabel} (${pct}%)`;
+              progressText.append(progressLabelEl, progressValue);
+              athletePanel.append(athleteName, athleteStage, progress, progressText);
             } else {
-              athleteHtml = `
-                <div class="athlete-panel" style="background: transparent; border-style: dashed; justify-content: center; height: 75px; text-align: center; display: flex; align-items: center; color: var(--zinc-400); font-size: 13px;">
-                  STANDBY 閒置等待選手感應
-                </div>
-              `;
+              athletePanel.style.cssText = 'background: transparent; border-style: dashed; justify-content: center; height: 75px; text-align: center; display: flex; align-items: center; color: var(--zinc-400); font-size: 13px;';
+              athletePanel.textContent = 'STANDBY 閒置等待選手感應';
             }
 
-            card.innerHTML = `
-              <div class="node-header">
-                <div class="node-title-group">
-                  <h3 class="node-name">${unit.display_name}</h3>
-                  <span class="node-id">ID: ${unit.resource_id} [Node: ${unit.node_id || 'RFID Loop'}]</span>
-                </div>
-                <span class="sensor-class-badge">${unit.sensor_class}</span>
-              </div>
-              ${athleteHtml}
-              <div class="heartbeat-container">
-                <div class="radar-dot ${isPinging ? 'pinging' : ''}"></div>
-                <span>${formatTimeAgo(lastMs)}</span>
-              </div>
-            `;
+            const nodeHeader = document.createElement('div');
+            nodeHeader.className = 'node-header';
+            const nodeTitleGroup = document.createElement('div');
+            nodeTitleGroup.className = 'node-title-group';
+            const nodeName = document.createElement('h3');
+            nodeName.className = 'node-name';
+            nodeName.textContent = unit.display_name;
+            const nodeId = document.createElement('span');
+            nodeId.className = 'node-id';
+            nodeId.textContent = `ID: ${unit.resource_id} [Node: ${unit.node_id || 'RFID Loop'}]`;
+            nodeTitleGroup.append(nodeName, nodeId);
+            const sensorClass = document.createElement('span');
+            sensorClass.className = 'sensor-class-badge';
+            sensorClass.textContent = unit.sensor_class;
+            nodeHeader.append(nodeTitleGroup, sensorClass);
+            const heartbeat = document.createElement('div');
+            heartbeat.className = 'heartbeat-container';
+            const radar = document.createElement('div');
+            radar.className = `radar-dot ${isPinging ? 'pinging' : ''}`;
+            const heartbeatText = document.createElement('span');
+            heartbeatText.textContent = formatTimeAgo(lastMs);
+            heartbeat.append(radar, heartbeatText);
+
+            card.append(nodeHeader, athletePanel, heartbeat);
 
             grid.appendChild(card);
           });
@@ -554,7 +588,7 @@
         // Render diagnostics & alerts
         const alertsPanel = document.getElementById('alerts-panel');
         const alertsList = document.getElementById('alerts-list');
-        alertsList.innerHTML = '';
+        alertsList.replaceChildren();
 
         if (data.diagnostics && data.diagnostics.length > 0) {
           alertsPanel.style.display = 'block';

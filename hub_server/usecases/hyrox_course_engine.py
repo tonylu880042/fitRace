@@ -149,6 +149,9 @@ class HyroxCourseEngine:
         state = self._subjects.get(subject_id)
         if state is None or state.status != "racing":
             return
+        # Terminal states always carry a start timestamp. For an athlete who
+        # abandons before their first activity, the DNF time is their start.
+        self._ensure_started(state, now_ms)
         state.status = "abandoned"
         self._release(subject_id, AssignmentCloseReason.ABANDONED, now_ms)
 

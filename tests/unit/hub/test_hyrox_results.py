@@ -75,6 +75,17 @@ def test_dnf_stops_at_abandoned_stage():
     assert [sp.stage for sp in r.splits] == [HyroxStage.RUN_1, HyroxStage.SKI_ERG]
 
 
+def test_terminal_result_requires_an_explicit_start_timestamp():
+    state = SubjectState(
+        subject_id="alex",
+        current_stage=HyroxStage.RUN_1,
+        status="abandoned",
+    )
+
+    with pytest.raises(ValueError, match="start timestamp"):
+        _result(state)
+
+
 def test_missing_arrival_falls_back_to_prev_end():
     # Operator force-complete leaves no arrival: roxzone 0, work == split.
     s = _finished_state()

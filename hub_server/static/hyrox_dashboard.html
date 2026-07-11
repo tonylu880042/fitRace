@@ -603,7 +603,10 @@
     function showFinishToast(name, timeStr) {
       const toast = document.createElement('div');
       toast.className = 'finish-toast';
-      toast.innerHTML = `🎉 恭喜 <strong>${name}</strong> 完賽！時間：${timeStr} 🎉`;
+      toast.append('🎉 恭喜 ');
+      const nameEl = document.createElement('strong');
+      nameEl.textContent = name;
+      toast.append(nameEl, ` 完賽！時間：${timeStr} 🎉`);
       document.body.appendChild(toast);
 
       triggerLocalConfetti();
@@ -655,7 +658,7 @@
 
         // Render athletes
         const grid = document.getElementById('athletes-grid');
-        grid.innerHTML = '';
+        grid.replaceChildren();
 
         const STAGE_ORDER = [
           "run_1", "ski_erg", "run_2", "sled_push", "run_3", "sled_pull", "run_4", "burpee_broad",
@@ -679,9 +682,6 @@
           const rank = i + 1;
           const isTeam = s.division !== 'individual';
           const displayName = isTeam ? s.subject_id : ((s.members && s.members[0]) || s.subject_id);
-          const memberChips = isTeam && s.members && s.members.length
-            ? `<div class="member-chips">${s.members.map(n => `<span class="member-chip">${n}</span>`).join('')}</div>`
-            : '';
 
           const currentStage = s.current_stage;
           const isRun = currentStage.startsWith('run_');
@@ -704,16 +704,6 @@
           if (isAbandoned) lapText = "DNF 棄賽";
 
           // 8-station spine: dot d maps to the workout at STAGE_ORDER index 2d-1
-          let spineDots = '';
-          for (let d = 1; d <= 8; d++) {
-            const wIdx = 2 * d - 1;
-            let cls = '';
-            if (s.stageIdx > wIdx) cls = 'done';
-            else if (s.stageIdx === wIdx) cls = 'now';
-            else if (s.stageIdx === wIdx - 1) cls = 'next';
-            spineDots += `<div class="spine-dot ${cls}"></div>`;
-          }
-
           const panelLabel = isAbandoned ? 'DID NOT FINISH 棄賽'
             : isFinished ? 'RACE COMPLETE 完賽'
             : isRun ? 'ON THE TRACK 跑道上'
@@ -727,33 +717,94 @@
           const card = document.createElement('div');
           card.className = `athlete-card ${isFinished ? 'done' : (!isRun && data.is_active && !isAbandoned ? 'working' : '')}`;
 
-          card.innerHTML = `
-            <div class="card-header">
-              <div class="rank-num"><small>#</small>${rank}</div>
-              <div style="flex: 1; min-width: 0;">
-                <h2 class="athlete-name">${displayName}</h2>
-                <span class="division-chip">${s.division}</span>
-                ${memberChips}
-              </div>
-              <span class="station-num">${resourceLabel}</span>
-            </div>
-            <div class="spine">${spineDots}</div>
-            <div class="station-panel">
-              <div class="icon-tile ${tileCls}"><span class="msym">${meta.icon}</span></div>
-              <div style="min-width: 0;">
-                <div class="panel-label">${panelLabel}</div>
-                <div class="stage-name">${meta.en}<span class="zh">${meta.zh}</span></div>
-                <div class="stage-laps">${lapText}</div>
-              </div>
-            </div>
-            <div class="progress-bar-container">
-              <div class="progress-bar-fill" style="width: ${pct}%"></div>
-            </div>
-            <div class="timing">
-              <span>ELAPSED 總時間</span>
-              <span class="elapsed">${elapsedStr}</span>
-            </div>
-          `;
+          const header = document.createElement('div');
+          header.className = 'card-header';
+          const rankEl = document.createElement('div');
+          rankEl.className = 'rank-num';
+          const rankPrefix = document.createElement('small');
+          rankPrefix.textContent = '#';
+          rankEl.append(rankPrefix, String(rank));
+          const identity = document.createElement('div');
+          identity.style.cssText = 'flex: 1; min-width: 0;';
+          const nameEl = document.createElement('h2');
+          nameEl.className = 'athlete-name';
+          nameEl.textContent = displayName;
+          const divisionEl = document.createElement('span');
+          divisionEl.className = 'division-chip';
+          divisionEl.textContent = s.division;
+          identity.append(nameEl, divisionEl);
+          if (isTeam && s.members && s.members.length) {
+            const membersEl = document.createElement('div');
+            membersEl.className = 'member-chips';
+            s.members.forEach(member => {
+              const chip = document.createElement('span');
+              chip.className = 'member-chip';
+              chip.textContent = member;
+              membersEl.appendChild(chip);
+            });
+            identity.appendChild(membersEl);
+          }
+          const resourceEl = document.createElement('span');
+          resourceEl.className = 'station-num';
+          resourceEl.textContent = resourceLabel;
+          header.append(rankEl, identity, resourceEl);
+
+          const spine = document.createElement('div');
+          spine.className = 'spine';
+          for (let d = 1; d <= 8; d++) {
+            const wIdx = 2 * d - 1;
+            let cls = '';
+            if (s.stageIdx > wIdx) cls = 'done';
+            else if (s.stageIdx === wIdx) cls = 'now';
+            else if (s.stageIdx === wIdx - 1) cls = 'next';
+            const dot = document.createElement('div');
+            dot.className = `spine-dot ${cls}`;
+            spine.appendChild(dot);
+          }
+
+          const stationPanel = document.createElement('div');
+          stationPanel.className = 'station-panel';
+          const iconTile = document.createElement('div');
+          iconTile.className = `icon-tile ${tileCls}`;
+          const icon = document.createElement('span');
+          icon.className = 'msym';
+          icon.textContent = meta.icon;
+          iconTile.appendChild(icon);
+          const stageInfo = document.createElement('div');
+          stageInfo.style.cssText = 'min-width: 0;';
+          const panelLabelEl = document.createElement('div');
+          panelLabelEl.className = 'panel-label';
+          panelLabelEl.textContent = panelLabel;
+          const stageName = document.createElement('div');
+          stageName.className = 'stage-name';
+          stageName.append(meta.en);
+          const stageZh = document.createElement('span');
+          stageZh.className = 'zh';
+          stageZh.textContent = meta.zh;
+          stageName.appendChild(stageZh);
+          const stageLaps = document.createElement('div');
+          stageLaps.className = 'stage-laps';
+          stageLaps.textContent = lapText;
+          stageInfo.append(panelLabelEl, stageName, stageLaps);
+          stationPanel.append(iconTile, stageInfo);
+
+          const progress = document.createElement('div');
+          progress.className = 'progress-bar-container';
+          const progressFill = document.createElement('div');
+          progressFill.className = 'progress-bar-fill';
+          progressFill.style.width = `${pct}%`;
+          progress.appendChild(progressFill);
+
+          const timing = document.createElement('div');
+          timing.className = 'timing';
+          const timingLabel = document.createElement('span');
+          timingLabel.textContent = 'ELAPSED 總時間';
+          const elapsed = document.createElement('span');
+          elapsed.className = 'elapsed';
+          elapsed.textContent = elapsedStr;
+          timing.append(timingLabel, elapsed);
+
+          card.append(header, spine, stationPanel, progress, timing);
           grid.appendChild(card);
 
           if (isFinished && data.is_active && !finishedAthletes.has(s.subject_id)) {

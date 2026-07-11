@@ -136,7 +136,7 @@ class MqttSubscriber:
             metrics = {"distance_m": float(payload["distance_m"])}
         self._hyrox_service.ingest_node(
             str(node_id), metrics=metrics,
-            timestamp_ms=int(timestamp_ms) if timestamp_ms else None,
+            timestamp_ms=int(timestamp_ms) if timestamp_ms is not None else None,
         )
 
     async def _handle_wallball(self, payload: dict):
@@ -152,14 +152,20 @@ class MqttSubscriber:
             )
 
     async def _handle_abandon(self, payload: dict):
-        # Abandon button co-located with a reader; the read tag identifies who.
+        # The sensor address identifies the resource; the tag must match that
+        # resource's active assignment before the service accepts the DNF.
         if not self._hyrox_service:
             return
+        node_id = payload.get("node_id")
+        antenna_id = payload.get("antenna_id")
         tag_id = payload.get("tag_id")
         timestamp_ms = payload.get("timestamp_epoch_ms")
-        if tag_id:
-            self._hyrox_service.abandon_by_tag(
-                str(tag_id), int(timestamp_ms) if timestamp_ms else None
+        if node_id and antenna_id and tag_id:
+            self._hyrox_service.ingest_abandon(
+                str(node_id),
+                str(antenna_id),
+                str(tag_id),
+                int(timestamp_ms) if timestamp_ms is not None else None,
             )
 
     async def _handle_node_status(self, payload: dict, edge_node_id: str):
@@ -184,6 +190,17 @@ class MqttSubscriber:
 
         telemetry_payload = telemetry.model_dump(exclude_none=True)
         node_id = telemetry_payload["node_id"]
+        if self._hyrox_service:
+            distance_m = (
+                telemetry.raw_total_distance_m
+                if telemetry.raw_total_distance_m is not None
+                else telemetry.distance_m
+            )
+            self._hyrox_service.ingest_node(
+                node_id,
+                metrics={"distance_m": distance_m},
+                timestamp_ms=telemetry.timestamp_epoch_ms,
+            )
         if self._node_registry:
             self._node_registry.update_telemetry(telemetry_payload)
 

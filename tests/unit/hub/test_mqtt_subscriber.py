@@ -193,8 +193,10 @@ class FakeHyroxService:
     def ingest_node(self, node_id, metrics=None, timestamp_ms=None):
         self.nodes.append((node_id, metrics, timestamp_ms))
 
-    def abandon_by_tag(self, tag_id, timestamp_ms=None):
-        self.abandons.append((tag_id, timestamp_ms))
+    def ingest_abandon(
+        self, node_id, antenna_id, tag_id, timestamp_ms=None
+    ):
+        self.abandons.append((node_id, antenna_id, tag_id, timestamp_ms))
 
 
 def _subscriber(service):
@@ -241,6 +243,67 @@ async def test_mqtt_subscriber_routes_ftms_payload():
 
 
 @pytest.mark.asyncio
+async def test_generic_telemetry_routes_raw_ftms_distance_to_legacy_and_hyrox():
+    race_manager = FakeRaceManager(progress={})
+    ws_manager = FakeWebSocketManager()
+    service = FakeHyroxService()
+    subscriber = MqttSubscriber(
+        async_mqtt_client=None,
+        race_manager=race_manager,
+        ws_manager=ws_manager,
+        hyrox_service=service,
+    )
+
+    await subscriber._handle_telemetry(
+        {
+            "node_id": "edge-tm-01",
+            "distance_m": 250.0,
+            "raw_total_distance_m": 1250.0,
+            "timestamp_epoch_ms": 0,
+        }
+    )
+
+    assert race_manager.payloads[0]["distance_m"] == 250.0
+    assert service.nodes == [("edge-tm-01", {"distance_m": 1250.0}, 0)]
+
+
+@pytest.mark.asyncio
+async def test_generic_telemetry_falls_back_to_normalized_ftms_distance():
+    race_manager = FakeRaceManager(progress={})
+    ws_manager = FakeWebSocketManager()
+    service = FakeHyroxService()
+    subscriber = MqttSubscriber(
+        async_mqtt_client=None,
+        race_manager=race_manager,
+        ws_manager=ws_manager,
+        hyrox_service=service,
+    )
+
+    await subscriber._handle_telemetry(
+        {
+            "node_id": "edge-row-01",
+            "distance_m": 375.0,
+            "timestamp_epoch_ms": 1780000000000,
+        }
+    )
+
+    assert service.nodes == [
+        ("edge-row-01", {"distance_m": 375.0}, 1780000000000)
+    ]
+
+
+@pytest.mark.asyncio
+async def test_special_ftms_topic_preserves_zero_timestamp():
+    service = FakeHyroxService()
+
+    await _subscriber(service)._handle_ftms(
+        {"node_id": "edge-tm-01", "distance_m": 250.0, "timestamp_epoch_ms": 0},
+    )
+
+    assert service.nodes == [("edge-tm-01", {"distance_m": 250.0}, 0)]
+
+
+@pytest.mark.asyncio
 async def test_mqtt_subscriber_routes_wallball_payload():
     service = FakeHyroxService()
     await _subscriber(service)._handle_wallball(
@@ -253,6 +316,30 @@ async def test_mqtt_subscriber_routes_wallball_payload():
 async def test_mqtt_subscriber_routes_abandon_payload():
     service = FakeHyroxService()
     await _subscriber(service)._handle_abandon(
-        {"tag_id": "EPC_ATHLETE_123", "timestamp_epoch_ms": 1780000900000},
+        {
+            "node_id": "abandon-tm-01",
+            "antenna_id": "T1_BUTTON",
+            "tag_id": "EPC_ATHLETE_123",
+            "timestamp_epoch_ms": 0,
+        },
     )
-    assert service.abandons == [("EPC_ATHLETE_123", 1780000900000)]
+    assert service.abandons == [
+        ("abandon-tm-01", "T1_BUTTON", "EPC_ATHLETE_123", 0)
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"antenna_id": "T1_BUTTON", "tag_id": "TAG"},
+        {"node_id": "abandon-tm-01", "tag_id": "TAG"},
+        {"node_id": "abandon-tm-01", "antenna_id": "T1_BUTTON"},
+    ],
+)
+async def test_mqtt_subscriber_rejects_incomplete_abandon_payload(payload):
+    service = FakeHyroxService()
+
+    await _subscriber(service)._handle_abandon(payload)
+
+    assert service.abandons == []

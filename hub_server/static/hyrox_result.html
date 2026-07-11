@@ -85,53 +85,126 @@
       return rows.map(row => row.join(",")).join("\n");
     }
 
+    function showMessage(container, message) {
+      const panel = document.createElement('div');
+      panel.className = 'panel';
+      const text = document.createElement('p');
+      text.className = 'muted';
+      text.textContent = message;
+      panel.appendChild(text);
+      container.replaceChildren(panel);
+    }
+
+    function appendStat(container, label, value, big = false) {
+      const stat = document.createElement('div');
+      stat.className = 'stat';
+      const key = document.createElement('div');
+      key.className = 'k';
+      key.textContent = label;
+      const valueEl = document.createElement('div');
+      valueEl.className = big ? 'v big' : 'v';
+      valueEl.textContent = value;
+      stat.append(key, valueEl);
+      container.appendChild(stat);
+    }
+
     async function load() {
       const c = document.getElementById('content');
       let r;
       try {
         const res = await fetch(`/api/hyrox/result/${token}`);
-        if (res.status === 404) { c.innerHTML = `<div class="panel"><p class="muted">尚無成績。請在完賽後再回來查詢。<br>No result yet — check back after the race.</p></div>`; return; }
-        if (!res.ok) { c.innerHTML = `<div class="panel"><p class="muted">查詢失敗 (HTTP ${res.status})</p></div>`; return; }
+        if (res.status === 404) {
+          showMessage(c, '尚無成績。請在完賽後再回來查詢。\nNo result yet — check back after the race.');
+          return;
+        }
+        if (!res.ok) {
+          showMessage(c, `查詢失敗 (HTTP ${res.status})`);
+          return;
+        }
         r = await res.json();
-      } catch (e) { c.innerHTML = `<div class="panel"><p class="muted">網路錯誤:${e}</p></div>`; return; }
+      } catch (e) {
+        showMessage(c, `網路錯誤: ${e}`);
+        return;
+      }
 
       const dnf = r.status === 'dnf';
-      const rows = r.splits.map(s => {
-        const isRun = s.stage.startsWith('run_');
-        return `<tr class="${isRun ? 'run' : ''}">
-          <td>${STAGE_ZH[s.stage] || s.stage}</td>
-          <td class="mono">${fmt(s.work_ms)}</td>
-          <td class="mono">${fmt(s.roxzone_before_ms)}</td>
-          <td class="mono">${fmt(s.cumulative_ms)}</td>
-          <td class="muted">${s.resource_id || '--'}</td>
-        </tr>`;
-      }).join('');
 
-      c.innerHTML = `
-        <div class="panel ${dnf ? 'dnf' : 'done'}">
-          <h2 class="name">${r.display_name}</h2>
-          <span class="chip">${r.division}</span>
-          <span class="chip ${dnf ? 'dnf' : ''}">${dnf ? 'DNF 棄賽 @ ' + (STAGE_ZH[r.dnf_stage] || r.dnf_stage) : 'FINISHED 完賽'}</span>
-          <div class="totals">
-            <div class="stat"><div class="k">總時間 Total</div><div class="v big">${fmt(r.total_time_ms)}</div></div>
-            <div class="stat"><div class="k">名次 Rank</div><div class="v">${r.rank ? '#' + r.rank : '--'}</div></div>
-            <div class="stat"><div class="k">跑步 Run</div><div class="v">${fmt(r.run_total_ms)}</div></div>
-            <div class="stat"><div class="k">器械 Workout</div><div class="v">${fmt(r.workout_total_ms)}</div></div>
-            <div class="stat"><div class="k">Roxzone 轉場</div><div class="v">${fmt(r.roxzone_total_ms)}</div></div>
-          </div>
-        </div>
-        <div class="panel">
-          <div class="table-wrap"><table>
-            <thead><tr><th>站別 Stage</th><th>器械 Work</th><th>Roxzone</th><th>累計 Cumulative</th><th>資源 Resource</th></tr></thead>
-            <tbody>${rows}</tbody>
-          </table></div>
-        </div>
-        <div class="actions">
-          <button id="dl-csv">下載 CSV</button>
-          <button id="dl-json" class="ghost">下載 JSON</button>
-        </div>
-        <p class="muted" style="font-size:12px">Roxzone(轉場時間)已含在總時間內,依官方規則單獨列出。</p>
-      `;
+      const summary = document.createElement('div');
+      summary.className = `panel ${dnf ? 'dnf' : 'done'}`;
+      const name = document.createElement('h2');
+      name.className = 'name';
+      name.textContent = r.display_name;
+      const division = document.createElement('span');
+      division.className = 'chip';
+      division.textContent = r.division;
+      const status = document.createElement('span');
+      status.className = `chip ${dnf ? 'dnf' : ''}`;
+      status.textContent = dnf
+        ? `DNF 棄賽 @ ${STAGE_ZH[r.dnf_stage] || r.dnf_stage || '--'}`
+        : 'FINISHED 完賽';
+      const totals = document.createElement('div');
+      totals.className = 'totals';
+      appendStat(totals, '總時間 Total', fmt(r.total_time_ms), true);
+      appendStat(totals, '名次 Rank', r.rank ? `#${r.rank}` : '--');
+      appendStat(totals, '跑步 Run', fmt(r.run_total_ms));
+      appendStat(totals, '器械 Workout', fmt(r.workout_total_ms));
+      appendStat(totals, 'Roxzone 轉場', fmt(r.roxzone_total_ms));
+      summary.append(name, division, status, totals);
+
+      const splitsPanel = document.createElement('div');
+      splitsPanel.className = 'panel';
+      const tableWrap = document.createElement('div');
+      tableWrap.className = 'table-wrap';
+      const table = document.createElement('table');
+      const thead = document.createElement('thead');
+      const headingRow = document.createElement('tr');
+      ['站別 Stage', '器械 Work', 'Roxzone', '累計 Cumulative', '資源 Resource'].forEach(label => {
+        const heading = document.createElement('th');
+        heading.textContent = label;
+        headingRow.appendChild(heading);
+      });
+      thead.appendChild(headingRow);
+      const tbody = document.createElement('tbody');
+      r.splits.forEach(s => {
+        const row = document.createElement('tr');
+        row.className = String(s.stage).startsWith('run_') ? 'run' : '';
+        const values = [
+          STAGE_ZH[s.stage] || s.stage,
+          fmt(s.work_ms),
+          fmt(s.roxzone_before_ms),
+          fmt(s.cumulative_ms),
+          s.resource_id || '--',
+        ];
+        values.forEach((value, index) => {
+          const cell = document.createElement('td');
+          if (index >= 1 && index <= 3) cell.className = 'mono';
+          if (index === 4) cell.className = 'muted';
+          cell.textContent = value;
+          row.appendChild(cell);
+        });
+        tbody.appendChild(row);
+      });
+      table.append(thead, tbody);
+      tableWrap.appendChild(table);
+      splitsPanel.appendChild(tableWrap);
+
+      const actions = document.createElement('div');
+      actions.className = 'actions';
+      const csvButton = document.createElement('button');
+      csvButton.id = 'dl-csv';
+      csvButton.textContent = '下載 CSV';
+      const jsonButton = document.createElement('button');
+      jsonButton.id = 'dl-json';
+      jsonButton.className = 'ghost';
+      jsonButton.textContent = '下載 JSON';
+      actions.append(csvButton, jsonButton);
+
+      const note = document.createElement('p');
+      note.className = 'muted';
+      note.style.fontSize = '12px';
+      note.textContent = 'Roxzone(轉場時間)已含在總時間內,依官方規則單獨列出。';
+      c.replaceChildren(summary, splitsPanel, actions, note);
+
       document.getElementById('dl-csv').onclick = () => download(`${r.display_name}_splits.csv`, splitsCsv(r), 'text/csv');
       document.getElementById('dl-json').onclick = () => download(`${r.display_name}_result.json`, JSON.stringify(r, null, 2), 'application/json');
     }

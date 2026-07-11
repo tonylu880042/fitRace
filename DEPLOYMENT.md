@@ -103,6 +103,15 @@ Set hostname:
 sudo hostnamectl set-hostname fitrace-edge-01
 ```
 
+Default OS login for prepared Raspberry Pi OS Lite SD cards:
+
+```text
+Username: ucare
+Password: fitRace26
+```
+
+This account is for first boot, SSH access, and local maintenance before a site-specific credential rotation is applied. Do not confuse this OS login password with the shipped AP Wi-Fi credential.
+
 Install and enable mDNS:
 
 ```bash

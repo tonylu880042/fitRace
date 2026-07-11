@@ -65,6 +65,8 @@ class HyroxResourceUnit(BaseModel):
     # Identity reader that binds an athlete to an otherwise-anonymous unit
     # (e.g. the RFID gate in front of a treadmill).
     entry_gate: HyroxEndpointSensor | None = None
+    # Reader co-located with the resource's physical abandon button.
+    abandon_endpoint: HyroxEndpointSensor | None = None
     pulse_to_meter: float | None = None
 
 
@@ -195,7 +197,12 @@ def validate_venue_config(venue: HyroxVenueConfig) -> list[str]:
                 )
 
             # Collect every occupied sensor address and flag reuse.
-            for ep in (unit.start_endpoint, unit.finish_endpoint, unit.entry_gate):
+            for ep in (
+                unit.start_endpoint,
+                unit.finish_endpoint,
+                unit.entry_gate,
+                unit.abandon_endpoint,
+            ):
                 if ep is None:
                     continue
                 addr = _endpoint_addr(ep)

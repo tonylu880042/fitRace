@@ -85,6 +85,12 @@ class HyroxAssignmentStore:
         self.diagnostics.append(d)
         return d
 
+    def record_diagnostic(
+        self, kind: str, resource_id: str, detail: str, timestamp_epoch_ms: int
+    ) -> AssignmentDiagnostic:
+        """Record a rejected external event without exposing private internals."""
+        return self._diag(kind, resource_id, detail, timestamp_epoch_ms)
+
     # --- Queries ---
 
     def active_on(self, resource_id: str) -> Optional[ResourceAssignment]:
