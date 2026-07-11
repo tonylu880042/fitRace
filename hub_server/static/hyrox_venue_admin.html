@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FitRaceStudio - Hyrox 場館設定編輯器</title>
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;700;800&family=Outfit:wght@400;600;800&family=Noto+Sans+TC:wght@500;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #09090b;
+      --surface: #18181b;
+      --border: #27272a;
+      --text: #f8fafc;
+      --accent: #e2ff3b;
+      --amber: #f59e0b;
+      --red: #f43f5e;
+      --green: #22c55e;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Outfit", "Noto Sans TC", sans-serif;
+      padding: 24px;
+      display: flex;
+      justify-content: center;
+      min-height: 100vh;
+    }
+
+    .shell {
+      width: min(1100px, 100%);
+      display: grid;
+      gap: 20px;
+    }
+
+    header {
+      border: 2px solid var(--border);
+      background: var(--surface);
+      padding: 24px;
+      border-radius: 4px;
+      position: relative;
+    }
+
+    header::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 6px;
+      background: var(--accent);
+    }
+
+    h1 {
+      font-family: "Oswald", sans-serif;
+      font-weight: 800;
+      text-transform: uppercase;
+      margin: 0 0 6px 0;
+      color: var(--accent);
+      letter-spacing: 0.1em;
+    }
+
+    .subtitle {
+      margin: 0;
+      color: #a1a1aa;
+    }
+
+    .panel {
+      border: 2px solid var(--border);
+      background: var(--surface);
+      padding: 24px;
+      border-radius: 4px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    label {
+      font-family: "Oswald", sans-serif;
+      text-transform: uppercase;
+      font-weight: 700;
+      font-size: 14px;
+      color: #a1a1aa;
+    }
+
+    select {
+      background: #09090b;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 10px 12px;
+      border-radius: 4px;
+      font-family: inherit;
+      font-size: 15px;
+    }
+
+    textarea {
+      background: #09090b;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 14px;
+      border-radius: 4px;
+      font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.5;
+      width: 100%;
+      min-height: 480px;
+      resize: vertical;
+      tab-size: 2;
+    }
+
+    button {
+      background: var(--accent);
+      color: #000;
+      border: none;
+      padding: 12px 18px;
+      font-family: "Oswald", sans-serif;
+      font-weight: 800;
+      text-transform: uppercase;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 15px;
+      transition: background 0.2s;
+      white-space: nowrap;
+    }
+
+    button:hover {
+      background: #c5e02c;
+    }
+
+    button.secondary {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    button.secondary:hover {
+      background: var(--border);
+    }
+
+    button.danger {
+      background: var(--red);
+      color: var(--text);
+    }
+
+    button.danger:hover {
+      background: #e11d48;
+    }
+
+    .status-line {
+      font-size: 14px;
+      color: #a1a1aa;
+    }
+
+    .status-line.ok { color: var(--green); }
+    .status-line.error { color: var(--red); }
+
+    .result-block {
+      display: none;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .result-block.show { display: flex; }
+
+    .issue-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      gap: 6px;
+    }
+
+    .issue-list li {
+      padding: 10px 12px;
+      border-radius: 4px;
+      font-size: 14px;
+      border-left: 4px solid transparent;
+    }
+
+    .issue-list.errors li {
+      background: rgba(244, 63, 94, 0.12);
+      border-left-color: var(--red);
+      color: #fecdd3;
+    }
+
+    .issue-list.readiness li {
+      background: rgba(244, 63, 94, 0.12);
+      border-left-color: var(--red);
+      color: #fecdd3;
+    }
+
+    .all-clear {
+      padding: 10px 12px;
+      border-radius: 4px;
+      background: rgba(34, 197, 94, 0.12);
+      border-left: 4px solid var(--green);
+      color: #bbf7d0;
+      font-size: 14px;
+    }
+
+    .section-title {
+      font-family: "Oswald", sans-serif;
+      text-transform: uppercase;
+      font-weight: 700;
+      font-size: 13px;
+      color: #a1a1aa;
+      margin: 0;
+    }
+
+    pre.parse-error {
+      background: rgba(244, 63, 94, 0.12);
+      border-left: 4px solid var(--red);
+      color: #fecdd3;
+      padding: 10px 12px;
+      border-radius: 4px;
+      font-size: 13px;
+      white-space: pre-wrap;
+      margin: 0;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="shell">
+    <header>
+      <h1>Hyrox Venue Config Editor</h1>
+      <p class="subtitle">場館與賽道設定編輯器 -- 以 JSON 直接編輯場館資源配置</p>
+    </header>
+
+    <div class="panel">
+      <div class="row">
+        <label for="mode-select">模式 (Mode)</label>
+        <select id="mode-select">
+          <option value="training">Training (動態認領)</option>
+          <option value="competition">Competition (操作員指派)</option>
+        </select>
+        <span id="load-status" class="status-line">載入中... (Loading...)</span>
+      </div>
+
+      <div class="row">
+        <button id="btn-template" class="secondary" type="button">產生範本 (Generate template)</button>
+        <button id="btn-validate" class="secondary" type="button">驗證 (Validate)</button>
+        <button id="btn-save" type="button">儲存並套用 (Save &amp; Apply)</button>
+      </div>
+
+      <textarea id="venue-editor" spellcheck="false" placeholder="{ &quot;venue_id&quot;: ... }"></textarea>
+      <p id="feedback" class="status-line"></p>
+    </div>
+
+    <div id="result-panel" class="panel result-block">
+      <div>
+        <p class="section-title">結構驗證 (Structural errors)</p>
+        <div id="structural-out"></div>
+      </div>
+      <div>
+        <p class="section-title">賽事就緒狀態 (Readiness)</p>
+        <div id="readiness-out"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Same admin-token storage convention as hyrox_admin.html / systemAdmin.html.
+    function adminHeaders(extra) {
+      extra = extra || {};
+      const headers = Object.assign({}, extra);
+      const token = localStorage.getItem('fitrace.adminPassword') || localStorage.getItem('fitrace.adminToken') || '';
+      if (token) headers['X-FitRace-Admin-Token'] = token;
+      return headers;
+    }
+
+    async function adminFetch(url, options) {
+      options = options || {};
+      options.headers = adminHeaders(options.headers);
+      let res = await fetch(url, options);
+      if (res.status === 401) {
+        const token = prompt('請輸入管理員密碼 (Admin Token)');
+        if (token) {
+          localStorage.setItem('fitrace.adminToken', token);
+          localStorage.setItem('fitrace.adminPassword', token);
+          options.headers = adminHeaders(options.headers);
+          res = await fetch(url, options);
+        }
+      }
+      return res;
+    }
+
+    function adminGet(url) {
+      return adminFetch(url, { method: 'GET' });
+    }
+
+    function adminPost(url, body) {
+      return adminFetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    }
+
+    const editor = document.getElementById('venue-editor');
+    const modeSelect = document.getElementById('mode-select');
+    const feedback = document.getElementById('feedback');
+    const loadStatus = document.getElementById('load-status');
+    const resultPanel = document.getElementById('result-panel');
+    const structuralOut = document.getElementById('structural-out');
+    const readinessOut = document.getElementById('readiness-out');
+
+    function showFeedback(text, kind) {
+      feedback.textContent = text;
+      feedback.className = 'status-line' + (kind ? ' ' + kind : '');
+    }
+
+    // Builds an 8-treadmill / 4-ski-erg / 4-row / 4-turf-lane / 4-wall-ball
+    // venue, mirroring hyrox_simulator.py's build_venue(). Placeholder
+    // node_id/antenna_id values -- operators should replace them with the
+    // venue's real edge-node and antenna identifiers before saving.
+    function ftmsUnit(prefix, i, gate) {
+      return {
+        resource_id: `${prefix}-${i}`,
+        display_name: `${prefix} ${i}`,
+        sensor_class: 'ftms_machine',
+        node_id: `edge-${prefix}-${i}`,
+        entry_gate: { node_id: `rfid-${prefix}-${i}`, antenna_id: `${gate}${i}_GATE` },
+      };
+    }
+
+    function buildTemplateVenue() {
+      const treadmills = [];
+      for (let i = 1; i <= 8; i++) treadmills.push(ftmsUnit('treadmill', i, 'T'));
+      const skis = [];
+      for (let i = 1; i <= 4; i++) skis.push(ftmsUnit('ski', i, 'S'));
+      const rows = [];
+      for (let i = 1; i <= 4; i++) rows.push(ftmsUnit('row', i, 'R'));
+      const lanes = [];
+      for (let i = 1; i <= 4; i++) {
+        lanes.push({
+          resource_id: `lane-${i}`,
+          display_name: `Lane ${i}`,
+          sensor_class: 'rfid_endpoint_pair',
+          start_endpoint: { node_id: `rfid-lane-${i}`, antenna_id: `L${i}_START` },
+          finish_endpoint: { node_id: `rfid-lane-${i}`, antenna_id: `L${i}_FINISH` },
+        });
+      }
+      const wallballs = [];
+      for (let i = 1; i <= 4; i++) {
+        wallballs.push({
+          resource_id: `wallball-${i}`,
+          display_name: `Wall Ball ${i}`,
+          sensor_class: 'rep_counter',
+          node_id: `edge-wb-${i}`,
+          entry_gate: { node_id: `rfid-wb-${i}`, antenna_id: `W${i}_GATE` },
+        });
+      }
+
+      return {
+        venue_id: 'my-venue',
+        course_profile_id: 'hyrox_standard_2026',
+        resource_groups: [
+          { group_id: 'run_treadmills', resource_type: 'ftms_machine_pool', stage_candidates: [], units: treadmills },
+          { group_id: 'ski_erg_pool', resource_type: 'ftms_machine_pool', stage_candidates: [], units: skis },
+          { group_id: 'row_pool', resource_type: 'ftms_machine_pool', stage_candidates: [], units: rows },
+          { group_id: 'shared_turf_lanes', resource_type: 'rfid_lane_pool', stage_candidates: [], units: lanes },
+          { group_id: 'wall_ball_targets', resource_type: 'rep_counter_pool', stage_candidates: [], units: wallballs },
+        ],
+      };
+    }
+
+    function readEditorVenue() {
+      const raw = editor.value.trim();
+      if (!raw) {
+        throw new Error('編輯器內容是空的 (Editor is empty). 請先產生範本或載入設定。');
+      }
+      try {
+        return JSON.parse(raw);
+      } catch (err) {
+        throw new Error('JSON 格式錯誤 (Invalid JSON): ' + err.message);
+      }
+    }
+
+    function renderIssueList(container, issues, emptyMessage) {
+      container.innerHTML = '';
+      if (!issues || issues.length === 0) {
+        const div = document.createElement('div');
+        div.className = 'all-clear';
+        div.textContent = emptyMessage;
+        container.appendChild(div);
+        return;
+      }
+      const ul = document.createElement('ul');
+      ul.className = 'issue-list errors';
+      issues.forEach((issue) => {
+        const li = document.createElement('li');
+        li.textContent = issue;
+        ul.appendChild(li);
+      });
+      container.appendChild(ul);
+    }
+
+    function showParseError(message) {
+      resultPanel.classList.add('show');
+      structuralOut.innerHTML = '';
+      const pre = document.createElement('pre');
+      pre.className = 'parse-error';
+      pre.textContent = message;
+      structuralOut.appendChild(pre);
+      readinessOut.innerHTML = '';
+    }
+
+    async function loadCurrentConfig() {
+      try {
+        const res = await adminGet('/api/hyrox/venue-config');
+        if (!res.ok) {
+          loadStatus.textContent = `載入失敗 (Load failed): HTTP ${res.status}`;
+          loadStatus.className = 'status-line error';
+          return;
+        }
+        const data = await res.json();
+        if (data.configured && data.venue) {
+          editor.value = JSON.stringify(data.venue, null, 2);
+          modeSelect.value = data.mode || 'training';
+          loadStatus.textContent = `已載入現有場館設定 (Loaded existing venue: ${data.venue.venue_id})`;
+          loadStatus.className = 'status-line ok';
+        } else {
+          editor.value = '';
+          loadStatus.textContent = '尚未設定場館 (No venue configured yet). 點擊「產生範本」開始。';
+          loadStatus.className = 'status-line';
+        }
+      } catch (err) {
+        loadStatus.textContent = '載入失敗 (Load failed): ' + err.message;
+        loadStatus.className = 'status-line error';
+      }
+    }
+
+    document.getElementById('btn-template').onclick = () => {
+      editor.value = JSON.stringify(buildTemplateVenue(), null, 2);
+      showFeedback('已產生範本，請依實際場館編輯 node_id / antenna_id (Template generated -- edit node_id/antenna_id for your venue).', '');
+    };
+
+    document.getElementById('btn-validate').onclick = async () => {
+      let venue;
+      try {
+        venue = readEditorVenue();
+      } catch (err) {
+        showParseError(err.message);
+        return;
+      }
+      try {
+        const res = await fetch('/api/hyrox/venue-config/validate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ venue, mode: modeSelect.value }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          showParseError('驗證失敗 (Validation request failed): ' + (data.detail || res.statusText));
+          return;
+        }
+        resultPanel.classList.add('show');
+        renderIssueList(structuralOut, data.structural, '結構驗證通過，沒有錯誤 (No structural errors).');
+        renderIssueList(readinessOut, data.readiness, '所有賽道皆已就緒 (All stages are servable).');
+        showFeedback('驗證完成 (Validation complete).', '');
+      } catch (err) {
+        showFeedback('驗證失敗 (Validation failed): ' + err.message, 'error');
+      }
+    };
+
+    document.getElementById('btn-save').onclick = async () => {
+      let venue;
+      try {
+        venue = readEditorVenue();
+      } catch (err) {
+        showParseError(err.message);
+        return;
+      }
+      const confirmed = confirm(
+        '套用此場館設定將重置任何進行中的賽事。確定要繼續嗎？\n' +
+        '(Applying this venue config resets any in-progress race. Continue?)'
+      );
+      if (!confirmed) return;
+
+      try {
+        const res = await adminPost('/api/hyrox/venue-config', { venue, mode: modeSelect.value });
+        const data = await res.json();
+        if (!res.ok) {
+          showParseError('儲存失敗 (Save failed): ' + (data.detail || res.statusText));
+          return;
+        }
+        resultPanel.classList.add('show');
+        renderIssueList(structuralOut, [], '結構驗證通過，沒有錯誤 (No structural errors).');
+        renderIssueList(readinessOut, data.readiness, '所有賽道皆已就緒 (All stages are servable).');
+        showFeedback('已儲存並套用場館設定 (Venue config saved and applied).', 'ok');
+      } catch (err) {
+        showFeedback('儲存失敗 (Save failed): ' + err.message, 'error');
+      }
+    };
+
+    loadCurrentConfig();
+  </script>
+</body>
+</html>

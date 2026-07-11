@@ -90,6 +90,14 @@ class HyroxService:
     def is_configured(self) -> bool:
         return self._registry is not None and self._engine is not None
 
+    def venue_snapshot(self) -> dict:
+        """Read-only view of the current venue config for the admin editor."""
+        return {
+            "configured": self.is_configured,
+            "mode": self._mode if self.is_configured else None,
+            "venue": self._venue.model_dump() if self._venue is not None else None,
+        }
+
     # --- Roster and race control ---
 
     def register(self, subject_id: str, division: str, member_tag: str,

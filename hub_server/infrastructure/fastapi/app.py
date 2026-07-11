@@ -13,7 +13,12 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 from hub_server.domain.models import RaceState, RaceConfig
-from hub_server.domain.hyrox_venue import HyroxVenueConfig, default_hyrox_course_profile, venue_readiness
+from hub_server.domain.hyrox_venue import (
+    HyroxVenueConfig,
+    default_hyrox_course_profile,
+    validate_venue_config,
+    venue_readiness,
+)
 from hub_server.usecases.race_manager import RaceManager
 from hub_server.usecases.hyrox_service import HyroxService
 from hub_server.usecases.node_registry import NodeRegistry
@@ -259,6 +264,12 @@ def get_hyrox_state():
 @app.get("/api/hyrox/god-view")
 def get_hyrox_god_view():
     return hyrox_service.get_god_view_state()
+
+
+@app.get("/api/hyrox/venue-config")
+def get_hyrox_venue_config(request: Request):
+    require_admin(request)
+    return hyrox_service.venue_snapshot()
 
 
 @app.post("/api/hyrox/venue-config/validate")
@@ -1123,6 +1134,11 @@ def read_hyrox_dashboard():
 @app.get("/hyrox/admin")
 def read_hyrox_admin():
     return RedirectResponse(url="/static/hyrox_admin.html")
+
+
+@app.get("/hyrox/venue")
+def read_hyrox_venue_admin():
+    return RedirectResponse(url="/static/hyrox_venue_admin.html")
 
 
 @app.get("/hyrox/signup")
