@@ -441,3 +441,88 @@ def test_results_finalized_and_retrievable(monkeypatch, tmp_path):
         assert client.get("/api/hyrox/result/nope").status_code == 404
     finally:
         hyrox_service.attach_results_store(None)
+
+
+def test_diagnostics_and_races_endpoints_require_admin_and_return_data(monkeypatch, tmp_path):
+    monkeypatch.setenv("FITRACE_ENABLE_HYROX", "1")
+    monkeypatch.setenv("FITRACE_ADMIN_TOKEN", "secret")
+    from hub_server.usecases.hyrox_results_store import HyroxResultsStore
+
+    store = HyroxResultsStore(str(tmp_path / "diag.db"))
+    hyrox_service.attach_results_store(store)
+    try:
+        client = TestClient(app)
+        headers = {"X-FitRace-Admin-Token": "secret"}
+
+        # 401 without the admin token.
+        assert client.get("/api/hyrox/races").status_code == 401
+        assert client.get("/api/hyrox/diagnostics/some-race").status_code == 401
+
+        assert client.post(
+            "/api/hyrox/venue-config", json=_venue_body(), headers=headers
+        ).status_code == 200
+        race_id = hyrox_service.race_id
+        client.post("/api/hyrox/register", json={
+            "athlete_name": "Alex", "rfid_tag_id": "TAG_ALEX"})
+        client.post("/api/hyrox/start", headers=headers)
+        for _ in range(16):
+            client.post("/api/hyrox/complete-stage", json={"subject_id": "TAG_ALEX"},
+                       headers=headers)
+
+        # Seed a diagnostic the same way a rejected sensor event does in
+        # production (HyroxAssignmentStore.record_diagnostic -> the durable
+        # audit sink wired in HyroxService).
+        hyrox_service._store.record_diagnostic(
+            "conflict", "treadmill-01", "seeded for test", 123,
+        )
+
+        diagnostics = client.get(f"/api/hyrox/diagnostics/{race_id}", headers=headers)
+        assert diagnostics.status_code == 200
+        assert any(d["detail"] == "seeded for test" for d in diagnostics.json())
+
+        races = client.get("/api/hyrox/races", headers=headers)
+        assert races.status_code == 200
+        by_id = {r["race_id"]: r for r in races.json()}
+        assert race_id in by_id
+        assert by_id[race_id]["venue_id"] == "hq"
+        assert by_id[race_id]["finalized_count"] == 1
+    finally:
+        hyrox_service.attach_results_store(None)
+
+
+def test_restart_recovers_race_state_from_disk(monkeypatch, tmp_path):
+    # Simulates the Phase 7 recovery flow: the running Hub persists to a state
+    # file as it handles requests, and a freshly booted HyroxService loading
+    # that same file (as hub_server/main.py does at startup) picks up where
+    # the previous process left off.
+    monkeypatch.setenv("FITRACE_ENABLE_HYROX", "1")
+    monkeypatch.delenv("FITRACE_ADMIN_TOKEN", raising=False)
+    from hub_server.usecases.hyrox_service import HyroxService
+
+    state_path = tmp_path / "state.json"
+    assert hyrox_service.load_snapshot(str(state_path)) is False  # nothing yet
+    try:
+        client = TestClient(app)
+        assert client.post(
+            "/api/hyrox/venue-config", json=_assignment_venue_body()
+        ).status_code == 200
+        registration = client.post("/api/hyrox/register", json={
+            "athlete_name": "Alex", "rfid_tag_id": "TAG_ALEX"})
+        token = registration.json()["result_token"]
+        assert client.post("/api/hyrox/start").status_code == 200
+        assert client.post("/api/hyrox/assign", json={
+            "subject_id": "TAG_ALEX", "resource_id": "treadmill-01",
+        }).status_code == 200
+
+        restarted = HyroxService()
+        assert restarted.load_snapshot(str(state_path)) is True
+        assert restarted.recovered is True
+        assert restarted.race_id == hyrox_service.race_id
+        assert restarted.token_for("TAG_ALEX") == token
+        state = restarted.get_state()
+        assert state["recovered"] is True
+        assert state["subjects"][0]["assigned_resource"] == "treadmill-01"
+    finally:
+        # Disable persistence again so later tests in this module (which share
+        # the hyrox_service singleton) do not keep writing to this tmp_path.
+        hyrox_service._state_path = None

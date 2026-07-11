@@ -402,6 +402,21 @@ def complete_hyrox_stage(payload: HyroxSubjectPayload, request: Request):
     return {"status": "ok"}
 
 
+@app.get("/api/hyrox/diagnostics/{race_id}")
+def get_hyrox_diagnostics(race_id: str, request: Request):
+    """Full durable diagnostic history for a race (Phase 7 audit log), unlike
+    /api/hyrox/state's in-memory last-20 slice."""
+    require_admin(request)
+    return hyrox_service.diagnostics_for(race_id)
+
+
+@app.get("/api/hyrox/races")
+def list_hyrox_races(request: Request):
+    """Every race on record, newest first, with its finalized athlete count."""
+    require_admin(request)
+    return hyrox_service.list_races()
+
+
 def require_admin(request: Request):
     expected_token = os.getenv("FITRACE_ADMIN_TOKEN")
     if not expected_token:

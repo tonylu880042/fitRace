@@ -33,6 +33,14 @@ async def main_async():
         HyroxResultsStore(os.getenv("FITRACE_HYROX_DB", "data/hyrox.db"))
     )
 
+    # Race-state snapshot recovery (Phase 7). Restores an in-flight race after
+    # a Hub restart; a no-op (fresh state) on first boot or a clean shutdown.
+    state_path = os.getenv("FITRACE_HYROX_STATE_PATH", "data/hyrox_state.json")
+    if hyrox_service.load_snapshot(state_path):
+        logger.info(f"Recovered Hyrox race state from {state_path}")
+    else:
+        logger.info(f"No Hyrox race state to recover at {state_path}")
+
     # Initialize and connect MQTT
     mqtt_client = AsyncMqttClient(
         host=mqtt_host, port=mqtt_port, client_id="fitrace-hub-server"

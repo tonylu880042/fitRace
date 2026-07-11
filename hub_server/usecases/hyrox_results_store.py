@@ -105,6 +105,11 @@ CREATE TABLE IF NOT EXISTS stage_splits (
     work_ms INTEGER NOT NULL, roxzone_before_ms INTEGER NOT NULL, cumulative_ms INTEGER NOT NULL,
     value REAL, target REAL, PRIMARY KEY (result_token, seq)
 );
+CREATE TABLE IF NOT EXISTS diagnostics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, race_id TEXT, kind TEXT NOT NULL,
+    resource_id TEXT, detail TEXT, timestamp_epoch_ms INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_diagnostics_race ON diagnostics(race_id);
 """
 
 
@@ -229,6 +234,41 @@ class HyroxResultsStore:
                             a.run_total_ms, a.workout_total_ms, a.roxzone_total_ms,
                             a.dnf_stage.value if a.dnf_stage else ""])
         return out.getvalue()
+
+    def record_diagnostic(
+        self, race_id: Optional[str], kind: str, resource_id: Optional[str],
+        detail: str, timestamp_epoch_ms: int,
+    ) -> None:
+        """Append one diagnostic event to the durable audit log. Called for
+        every diagnostic raised while a results store is attached (Phase 7);
+        the in-memory last-20 lists used by the state APIs are unaffected."""
+        self._conn.execute(
+            "INSERT INTO diagnostics (race_id, kind, resource_id, detail, timestamp_epoch_ms) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (race_id, kind, resource_id, detail, timestamp_epoch_ms),
+        )
+        self._conn.commit()
+
+    def get_diagnostics(self, race_id: str) -> list[dict]:
+        """Full diagnostic history for a race, oldest first."""
+        rows = self._conn.execute(
+            "SELECT kind, resource_id, detail, timestamp_epoch_ms FROM diagnostics "
+            "WHERE race_id = ? ORDER BY id ASC",
+            (race_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_races(self) -> list[dict]:
+        """Every race on record, newest first, with its finalized athlete count."""
+        rows = self._conn.execute(
+            "SELECT r.race_id AS race_id, r.venue_id AS venue_id, r.mode AS mode, "
+            "r.started_at_ms AS started_at_ms, "
+            "COUNT(a.result_token) AS finalized_count "
+            "FROM races r LEFT JOIN athlete_results a ON a.race_id = r.race_id "
+            "GROUP BY r.race_id "
+            "ORDER BY r.started_at_ms IS NULL, r.started_at_ms DESC, r.race_id DESC"
+        ).fetchall()
+        return [dict(row) for row in rows]
 
     def close(self):
         self._conn.close()

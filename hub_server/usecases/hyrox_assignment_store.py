@@ -12,7 +12,7 @@ Phase 6 operator UI.
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
+from typing import Callable, Optional
 
 from hub_server.domain.models import HyroxStage
 from hub_server.usecases.hyrox_sensor_registry import HyroxTelemetryEvent
@@ -67,13 +67,16 @@ class Attribution:
 
 
 class HyroxAssignmentStore:
-    def __init__(self):
+    def __init__(self, on_diagnostic: Optional[Callable[[AssignmentDiagnostic], None]] = None):
         self._by_resource: dict[str, ResourceAssignment] = {}  # invariant lives here
         self._resource_of_subject: dict[str, str] = {}         # subject_id -> resource_id
         self._closed: list[ResourceAssignment] = []            # history / audit
         self.diagnostics: list[AssignmentDiagnostic] = []
         self._counter = 0
         self._recently_closed: dict[str, int] = {}
+        # Phase 7: durable audit sink (HyroxService wires this to the SQLite
+        # results store). Optional -- unit tests construct a bare store.
+        self._on_diagnostic = on_diagnostic
 
     def _next_id(self) -> str:
         self._counter += 1
@@ -83,6 +86,8 @@ class HyroxAssignmentStore:
         d = AssignmentDiagnostic(kind=kind, resource_id=resource_id, detail=detail,
                                  timestamp_epoch_ms=ts)
         self.diagnostics.append(d)
+        if self._on_diagnostic is not None:
+            self._on_diagnostic(d)
         return d
 
     def record_diagnostic(
@@ -215,3 +220,78 @@ class HyroxAssignmentStore:
             return Attribution(subject_id=None, diagnostic=d)
         return Attribution(subject_id=assignment.subject_id,
                            assignment_id=assignment.assignment_id)
+
+    # --- Persistence (Phase 7) ---
+
+    # Serialized diagnostics are capped -- the SQLite diagnostics table (see
+    # hyrox_results_store.py) is the durable, unbounded audit log; the JSON
+    # state snapshot only needs enough tail history to reconstruct the
+    # in-memory last-20 API view after a restart.
+    _SNAPSHOT_DIAGNOSTICS_LIMIT = 200
+
+    @staticmethod
+    def _assignment_to_dict(a: ResourceAssignment) -> dict:
+        return {
+            "assignment_id": a.assignment_id,
+            "resource_id": a.resource_id,
+            "subject_id": a.subject_id,
+            "active_tag_id": a.active_tag_id,
+            "stage": a.stage.value,
+            "source": a.source.value,
+            "assigned_at_epoch_ms": a.assigned_at_epoch_ms,
+            "status": a.status,
+            "close_reason": a.close_reason.value if a.close_reason else None,
+            "closed_at_epoch_ms": a.closed_at_epoch_ms,
+        }
+
+    @staticmethod
+    def _assignment_from_dict(a: dict) -> ResourceAssignment:
+        return ResourceAssignment(
+            assignment_id=a["assignment_id"],
+            resource_id=a["resource_id"],
+            subject_id=a["subject_id"],
+            active_tag_id=a["active_tag_id"],
+            stage=HyroxStage(a["stage"]),
+            source=ClaimSource(a["source"]),
+            assigned_at_epoch_ms=a["assigned_at_epoch_ms"],
+            status=a["status"],
+            close_reason=AssignmentCloseReason(a["close_reason"]) if a["close_reason"] else None,
+            closed_at_epoch_ms=a["closed_at_epoch_ms"],
+        )
+
+    def to_dict(self) -> dict:
+        return {
+            "active": [self._assignment_to_dict(a) for a in self._by_resource.values()],
+            "closed": [self._assignment_to_dict(a) for a in self._closed],
+            "diagnostics": [
+                {
+                    "kind": d.kind, "resource_id": d.resource_id, "detail": d.detail,
+                    "timestamp_epoch_ms": d.timestamp_epoch_ms,
+                }
+                for d in self.diagnostics[-self._SNAPSHOT_DIAGNOSTICS_LIMIT:]
+            ],
+            "counter": self._counter,
+            "recently_closed": dict(self._recently_closed),
+        }
+
+    @classmethod
+    def from_dict(
+        cls, data: dict, on_diagnostic: Optional[Callable[[AssignmentDiagnostic], None]] = None
+    ) -> "HyroxAssignmentStore":
+        store = cls(on_diagnostic=on_diagnostic)
+        for a in data.get("active", []):
+            assignment = cls._assignment_from_dict(a)
+            store._by_resource[assignment.resource_id] = assignment
+            store._resource_of_subject[assignment.subject_id] = assignment.resource_id
+        for a in data.get("closed", []):
+            store._closed.append(cls._assignment_from_dict(a))
+        store.diagnostics = [
+            AssignmentDiagnostic(
+                kind=d["kind"], resource_id=d["resource_id"], detail=d["detail"],
+                timestamp_epoch_ms=d["timestamp_epoch_ms"],
+            )
+            for d in data.get("diagnostics", [])
+        ]
+        store._counter = data.get("counter", 0)
+        store._recently_closed = dict(data.get("recently_closed", {}))
+        return store

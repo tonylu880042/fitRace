@@ -8,11 +8,19 @@ subjects, start, ingest telemetry (with training-mode dynamic claim and
 competition-mode operator assignment), abandon, force-complete, and project a
 clean state.
 
-Everything is in-memory; persistence is Phase 7.
+Phase 7 (docs/hyrox_system_architecture_plan.md section 15, Phase 7): the whole
+race state -- venue, roster, assignments, subject states, and progress -- can
+be snapshotted to a dict and restored from one, and that snapshot is written to
+a JSON file on disk after state-changing operations so the Hub survives a
+restart mid-race. Finalized results are already durable in HyroxResultsStore;
+this covers the in-flight state that lived only in memory before.
 """
 
+import json
+import os
 import secrets
 import time
+from pathlib import Path
 from typing import Optional
 
 from hub_server.domain.models import HyroxStage
@@ -30,6 +38,11 @@ from hub_server.usecases.hyrox_sensor_registry import HyroxSensorRegistry
 from hub_server.usecases.hyrox_assignment_store import ClaimSource, HyroxAssignmentStore
 from hub_server.usecases.hyrox_progress import HyroxProgressTracker
 from hub_server.usecases.hyrox_course_engine import HyroxCourseEngine
+
+DEFAULT_STATE_PATH = "data/hyrox_state.json"
+# High-frequency telemetry (FTMS/RFID) is throttled to at most one snapshot
+# write per second; every other state-changing operation writes immediately.
+TELEMETRY_PERSIST_INTERVAL_MS = 1000
 
 
 def _now_ms() -> int:
@@ -57,7 +70,7 @@ class HyroxService:
         self._venue: Optional[HyroxVenueConfig] = None
         self._registry: Optional[HyroxSensorRegistry] = None
         self._roster = HyroxRoster()
-        self._store = HyroxAssignmentStore()
+        self._store = HyroxAssignmentStore(on_diagnostic=self._on_diagnostic)
         self._tracker = HyroxProgressTracker()
         self._engine: Optional[HyroxCourseEngine] = None
         self._is_active = False
@@ -69,9 +82,25 @@ class HyroxService:
         self._race_id: Optional[str] = None
         self._result_tokens: dict[str, str] = {}   # subject_id -> token
         self._finalized: set[str] = set()
+        # Race-state snapshot persistence (Phase 7). None means disabled --
+        # unit tests construct a bare HyroxService and never touch disk.
+        # Enabled via load_snapshot() at hub startup.
+        self._state_path: Optional[str] = None
+        self._last_persist_ms = 0
+        self.recovered = False
 
     def attach_results_store(self, store: HyroxResultsStore):
         self._results = store
+
+    def _on_diagnostic(self, d) -> None:
+        """Durable audit sink shared by the assignment store and course
+        engine. Fires on every diagnostic; a no-op until a results store is
+        attached (see HyroxResultsStore.record_diagnostic)."""
+        if self._results is None:
+            return
+        self._results.record_diagnostic(
+            self._race_id, d.kind, d.resource_id, d.detail, d.timestamp_epoch_ms,
+        )
 
     # --- Configuration ---
 
@@ -88,15 +117,21 @@ class HyroxService:
         self._registry = HyroxSensorRegistry(venue)
         # A new venue resets the race.
         self._roster = HyroxRoster()
-        self._store = HyroxAssignmentStore()
+        self._store = HyroxAssignmentStore(on_diagnostic=self._on_diagnostic)
         self._tracker = HyroxProgressTracker()
-        self._engine = HyroxCourseEngine(self._profile, self._store, self._tracker)
+        self._engine = HyroxCourseEngine(
+            self._profile, self._store, self._tracker, on_diagnostic=self._on_diagnostic
+        )
         self._is_active = False
         self._resource_heartbeats = {}
         self._latest_ftms_distance = {}
         self._queues = {}
         self._result_tokens = {}
         self._finalized = set()
+        self.recovered = False
+        # A new race overwrites any stale snapshot on disk rather than leaving
+        # the previous race's mid-run state behind.
+        self._persist()
 
     @property
     def is_configured(self) -> bool:
@@ -115,7 +150,9 @@ class HyroxService:
             # The clock starts on the athlete's first activity, not at
             # registration -- see HyroxCourseEngine._ensure_started.
             self._engine.register_subject(subject_id)
-        return self._result_tokens.setdefault(subject_id, secrets.token_urlsafe(12))
+        token = self._result_tokens.setdefault(subject_id, secrets.token_urlsafe(12))
+        self._persist()
+        return token
 
     def token_for(self, subject_id: str) -> Optional[str]:
         return self._result_tokens.get(subject_id)
@@ -130,6 +167,7 @@ class HyroxService:
                 self._race_id, self._venue.venue_id, self._mode,
                 self._profile.course_profile_id, _now_ms(),
             )
+        self._persist()
 
     # --- Telemetry ingestion ---
 
@@ -145,6 +183,7 @@ class HyroxService:
         self._resource_heartbeats[event.resource_id] = ts
         self._engine.process(event, ts)
         self._finalize_done()
+        self._persist(throttled=True)
 
     def ingest_node(self, node_id: str, metrics: Optional[dict] = None,
                     timestamp_ms: Optional[int] = None):
@@ -161,6 +200,7 @@ class HyroxService:
         if event.sensor_class == HyroxSensorClass.FTMS_MACHINE:
             if distance_m is not None:
                 self._latest_ftms_distance[event.resource_id] = float(distance_m)
+                self._persist(throttled=True)
         elif distance_m is not None:
             # Generic Edge telemetry also reaches this method. A distance field
             # from a rep-counter node is not a discrete rep event.
@@ -170,6 +210,7 @@ class HyroxService:
         self._resource_heartbeats[event.resource_id] = ts
         self._engine.process(event, ts)
         self._finalize_done()
+        self._persist(throttled=True)
 
     def ingest_abandon(
         self,
@@ -342,6 +383,7 @@ class HyroxService:
         self._seed_ftms_baseline(
             assignment.subject_id, assignment.stage, assignment.resource_id
         )
+        self._persist()
         return True
 
     def abandon(self, subject_id: str, timestamp_ms: Optional[int] = None):
@@ -350,6 +392,7 @@ class HyroxService:
         ts = timestamp_ms if timestamp_ms is not None else _now_ms()
         self._engine.abandon(subject_id, ts)
         self._finalize_done()
+        self._persist()
 
     def complete_stage(self, subject_id: str, timestamp_ms: Optional[int] = None):
         if self._engine is None:
@@ -357,6 +400,7 @@ class HyroxService:
         ts = timestamp_ms if timestamp_ms is not None else _now_ms()
         self._engine.force_complete_stage(subject_id, ts)
         self._finalize_done()
+        self._persist()
 
     # --- Results finalization and retrieval ---
 
@@ -399,6 +443,12 @@ class HyroxService:
 
     def export_csv(self, race_id: str) -> str:
         return self._results.export_csv(race_id) if self._results else ""
+
+    def list_races(self) -> list[dict]:
+        return self._results.list_races() if self._results else []
+
+    def diagnostics_for(self, race_id: str) -> list[dict]:
+        return self._results.get_diagnostics(race_id) if self._results else []
 
     # --- State projection (clean, resource-aware shape) ---
 
@@ -446,6 +496,7 @@ class HyroxService:
             "is_active": self._is_active,
             "mode": self._mode,
             "venue_configured": self.is_configured,
+            "recovered": self.recovered,
             "subjects": subjects,
             "resources": self._store.availability(resource_ids),
             "diagnostics": [
@@ -560,3 +611,97 @@ class HyroxService:
             self._queues.pop(subject_id, None)
         else:
             self._queues[subject_id] = (group_id, wait_start_epoch_ms)
+
+    # --- Snapshot / restore (Phase 7) ---
+
+    def snapshot(self) -> dict:
+        """The full in-flight race state, JSON-safe. Finalized results are
+        already durable in HyroxResultsStore and are not duplicated here."""
+        return {
+            "version": 1,
+            "venue": self._venue.model_dump(mode="json") if self._venue else None,
+            "mode": self._mode,
+            "race_id": self._race_id,
+            "is_active": self._is_active,
+            "roster": self._roster.to_dict(),
+            "result_tokens": dict(self._result_tokens),
+            "assignments": self._store.to_dict(),
+            "engine": self._engine.to_dict() if self._engine else None,
+            "progress": self._tracker.to_dict(),
+            "queues": {sid: [gid, ts] for sid, (gid, ts) in self._queues.items()},
+            "finalized": sorted(self._finalized),
+            "latest_ftms_distance": dict(self._latest_ftms_distance),
+        }
+
+    def restore(self, snapshot: dict) -> None:
+        """Rebuild in-flight race state from a snapshot() dict. Finalized
+        results are not part of the snapshot -- they are read back from
+        HyroxResultsStore, unaffected by this call."""
+        venue_data = snapshot.get("venue")
+        self._venue = HyroxVenueConfig.model_validate(venue_data) if venue_data else None
+        self._registry = HyroxSensorRegistry(self._venue) if self._venue else None
+        self._mode = snapshot.get("mode", "training")
+        self._race_id = snapshot.get("race_id")
+        self._is_active = snapshot.get("is_active", False)
+        self._roster = HyroxRoster.from_dict(snapshot.get("roster", {}))
+        self._result_tokens = dict(snapshot.get("result_tokens", {}))
+        self._store = HyroxAssignmentStore.from_dict(
+            snapshot.get("assignments", {}), on_diagnostic=self._on_diagnostic
+        )
+        self._tracker = HyroxProgressTracker()
+        self._tracker.restore(snapshot.get("progress", {}))
+        if self._venue is not None:
+            self._engine = HyroxCourseEngine(
+                self._profile, self._store, self._tracker, on_diagnostic=self._on_diagnostic
+            )
+            engine_data = snapshot.get("engine")
+            if engine_data:
+                self._engine.restore(engine_data)
+        else:
+            self._engine = None
+        self._queues = {
+            sid: (gid_ts[0], gid_ts[1]) for sid, gid_ts in snapshot.get("queues", {}).items()
+        }
+        self._finalized = set(snapshot.get("finalized", []))
+        self._latest_ftms_distance = {
+            k: float(v) for k, v in snapshot.get("latest_ftms_distance", {}).items()
+        }
+        self._resource_heartbeats = {}
+
+    # --- Disk persistence (Phase 7) ---
+
+    def load_snapshot(self, path: Optional[str] = None) -> bool:
+        """Enable snapshot persistence to `path` (default DEFAULT_STATE_PATH,
+        overridable via FITRACE_HYROX_STATE_PATH) and, if a snapshot already
+        exists there, restore it. Call once at hub startup, next to
+        attach_results_store. Returns True when state was recovered."""
+        self._state_path = path or os.getenv("FITRACE_HYROX_STATE_PATH", DEFAULT_STATE_PATH)
+        p = Path(self._state_path)
+        if not p.exists():
+            self.recovered = False
+            return False
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            self.recovered = False
+            return False
+        self.restore(data)
+        self.recovered = True
+        return True
+
+    def _persist(self, throttled: bool = False) -> None:
+        """Write the current snapshot to disk. A no-op until load_snapshot()
+        has enabled a state path (unit tests never touch disk). When
+        throttled, high-frequency telemetry callers skip the write if one
+        already happened within TELEMETRY_PERSIST_INTERVAL_MS."""
+        if self._state_path is None:
+            return
+        now = _now_ms()
+        if throttled and (now - self._last_persist_ms) < TELEMETRY_PERSIST_INTERVAL_MS:
+            return
+        path = Path(self._state_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = path.with_name(path.name + ".tmp")
+        tmp_path.write_text(json.dumps(self.snapshot()), encoding="utf-8")
+        os.replace(tmp_path, path)
+        self._last_persist_ms = now
