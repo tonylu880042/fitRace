@@ -80,3 +80,35 @@ class HyroxRoster:
             if size is not None and len(entry.member_tags) > size:
                 bad.append(entry.subject_id)
         return bad
+
+    # --- Persistence (Phase 7) ---
+
+    def to_dict(self) -> dict:
+        """Serialize the roster for a state snapshot. tag_to_subject is not
+        stored -- it is fully derivable from each entry's member_tags."""
+        return {
+            "subjects": [
+                {
+                    "subject_id": e.subject_id,
+                    "division": e.division,
+                    "member_tags": list(e.member_tags),
+                    "member_names": list(e.member_names),
+                }
+                for e in self._subjects.values()
+            ],
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "HyroxRoster":
+        roster = cls()
+        for entry in data.get("subjects", []):
+            e = RosterEntry(
+                subject_id=entry["subject_id"],
+                division=entry["division"],
+                member_tags=list(entry.get("member_tags", [])),
+                member_names=list(entry.get("member_names", [])),
+            )
+            roster._subjects[e.subject_id] = e
+            for tag in e.member_tags:
+                roster._tag_to_subject[tag] = e.subject_id
+        return roster

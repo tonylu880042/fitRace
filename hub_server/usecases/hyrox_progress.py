@@ -163,3 +163,48 @@ class HyroxProgressTracker:
             st = self._rep.get(key)
             return float(st.count) if st else 0.0
         return 0.0
+
+    # --- Persistence (Phase 7) ---
+
+    def to_dict(self) -> dict:
+        """Serialize all per-(subject, stage) accumulators. Dict keys are tuples
+        and are not JSON-safe, so each map is flattened to a record list."""
+        return {
+            "distance": [
+                {"subject_id": sid, "stage": stage.value,
+                 "accumulated": st.accumulated, "last_raw": st.last_raw}
+                for (sid, stage), st in self._distance.items()
+            ],
+            "length": [
+                {"subject_id": sid, "stage": stage.value,
+                 "count": st.count, "last_endpoint": st.last_endpoint}
+                for (sid, stage), st in self._length.items()
+            ],
+            "rep": [
+                {"subject_id": sid, "stage": stage.value, "count": st.count}
+                for (sid, stage), st in self._rep.items()
+            ],
+            "forced": [
+                {"subject_id": sid, "stage": stage.value}
+                for (sid, stage) in self._forced
+            ],
+        }
+
+    def restore(self, data: dict) -> None:
+        self._distance = {
+            (r["subject_id"], HyroxStage(r["stage"])):
+                _DistanceState(accumulated=r["accumulated"], last_raw=r["last_raw"])
+            for r in data.get("distance", [])
+        }
+        self._length = {
+            (r["subject_id"], HyroxStage(r["stage"])):
+                _LengthState(count=r["count"], last_endpoint=r["last_endpoint"])
+            for r in data.get("length", [])
+        }
+        self._rep = {
+            (r["subject_id"], HyroxStage(r["stage"])): _RepState(count=r["count"])
+            for r in data.get("rep", [])
+        }
+        self._forced = {
+            (r["subject_id"], HyroxStage(r["stage"])) for r in data.get("forced", [])
+        }

@@ -126,3 +126,40 @@ def test_store_unknown_token_is_none(tmp_path):
     store = HyroxResultsStore(db_path=str(tmp_path / "t.db"))
     assert store.get_by_token("NOPE") is None
     store.close()
+
+
+def test_record_diagnostic_and_get_diagnostics(tmp_path):
+    # Phase 7: the durable audit log, independent of the in-memory last-20
+    # lists the state APIs use.
+    store = HyroxResultsStore(db_path=str(tmp_path / "t.db"))
+    store.create_race("race-1", "hq", "competition", "hyrox_standard_2026", 0)
+    store.record_diagnostic("race-1", "conflict", "treadmill-01", "occupied", 10)
+    store.record_diagnostic("race-1", "anonymous_no_binding", "treadmill-02", "no binding", 20)
+    store.record_diagnostic("race-2", "conflict", "lane-1", "wrong race", 5)
+
+    events = store.get_diagnostics("race-1")
+
+    assert len(events) == 2
+    assert events[0]["kind"] == "conflict" and events[0]["timestamp_epoch_ms"] == 10
+    assert events[1]["kind"] == "anonymous_no_binding"
+    assert store.get_diagnostics("unknown-race") == []
+    store.close()
+
+
+def test_list_races_newest_first_with_finalized_count(tmp_path):
+    store = HyroxResultsStore(db_path=str(tmp_path / "t.db"))
+    store.create_race("race-early", "hq", "training", "hyrox_standard_2026", 100)
+    store.create_race("race-late", "hq", "competition", "hyrox_standard_2026", 200)
+    # race-early has no finalized athletes; race-late has one.
+    late_result = _result(_finished_state(), token="B", subject_id="bella")
+    late_result = late_result.model_copy(update={"race_id": "race-late"})
+    store.finalize_athlete(late_result)
+
+    races = store.list_races()
+
+    race_ids = [r["race_id"] for r in races]
+    assert race_ids[0] == "race-late"  # newest (highest started_at_ms) first
+    by_id = {r["race_id"]: r for r in races}
+    assert by_id["race-late"]["finalized_count"] == 1
+    assert by_id["race-early"]["finalized_count"] == 0
+    store.close()

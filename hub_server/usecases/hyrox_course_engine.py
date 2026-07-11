@@ -11,7 +11,7 @@ cutover happens with the Phase 6 UI.
 """
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Callable, Optional
 
 from hub_server.domain.models import HyroxStage
 from hub_server.domain.hyrox_venue import HyroxCourseProfile, HyroxStageDefinition
@@ -49,6 +49,7 @@ class HyroxCourseEngine:
         profile: HyroxCourseProfile,
         store: HyroxAssignmentStore,
         tracker: HyroxProgressTracker,
+        on_diagnostic: Optional[Callable[[EngineDiagnostic], None]] = None,
     ):
         # Stage order and targets are config-driven, derived from the profile.
         self._order: list[HyroxStage] = [s.stage for s in profile.stages]
@@ -60,6 +61,9 @@ class HyroxCourseEngine:
         self._tracker = tracker
         self._subjects: dict[str, SubjectState] = {}
         self.diagnostics: list[EngineDiagnostic] = []
+        # Phase 7: durable audit sink (HyroxService wires this to the SQLite
+        # results store). Optional -- unit tests construct a bare engine.
+        self._on_diagnostic = on_diagnostic
 
     # --- Setup ---
 
@@ -190,7 +194,66 @@ class HyroxCourseEngine:
             self._store.close(assignment.resource_id, reason, now_ms)
 
     def _diag(self, kind, subject_id, resource_id, detail, ts):
-        self.diagnostics.append(
-            EngineDiagnostic(kind=kind, subject_id=subject_id, resource_id=resource_id,
+        d = EngineDiagnostic(kind=kind, subject_id=subject_id, resource_id=resource_id,
                              detail=detail, timestamp_epoch_ms=ts)
-        )
+        self.diagnostics.append(d)
+        if self._on_diagnostic is not None:
+            self._on_diagnostic(d)
+
+    # --- Persistence (Phase 7) ---
+
+    _SNAPSHOT_DIAGNOSTICS_LIMIT = 200  # see HyroxAssignmentStore for rationale
+
+    def to_dict(self) -> dict:
+        return {
+            "subjects": {
+                sid: {
+                    "current_stage": s.current_stage.value,
+                    "status": s.status,
+                    "stage_start_ms": {k.value: v for k, v in s.stage_start_ms.items()},
+                    "stage_arrived_ms": {k.value: v for k, v in s.stage_arrived_ms.items()},
+                    "stage_end_ms": {k.value: v for k, v in s.stage_end_ms.items()},
+                    "stage_resource": {k.value: v for k, v in s.stage_resource.items()},
+                }
+                for sid, s in self._subjects.items()
+            },
+            "diagnostics": [
+                {
+                    "kind": d.kind, "subject_id": d.subject_id, "resource_id": d.resource_id,
+                    "detail": d.detail, "timestamp_epoch_ms": d.timestamp_epoch_ms,
+                }
+                for d in self.diagnostics[-self._SNAPSHOT_DIAGNOSTICS_LIMIT:]
+            ],
+        }
+
+    def restore(self, data: dict) -> None:
+        """Rebuild subject states and diagnostics in place. The engine itself
+        must already be constructed (it is wired to the store/tracker it will
+        process against), so this mutates rather than replaces the instance."""
+        subjects: dict[str, SubjectState] = {}
+        for sid, s in data.get("subjects", {}).items():
+            subjects[sid] = SubjectState(
+                subject_id=sid,
+                current_stage=HyroxStage(s["current_stage"]),
+                status=s.get("status", "racing"),
+                stage_start_ms={
+                    HyroxStage(k): v for k, v in s.get("stage_start_ms", {}).items()
+                },
+                stage_arrived_ms={
+                    HyroxStage(k): v for k, v in s.get("stage_arrived_ms", {}).items()
+                },
+                stage_end_ms={
+                    HyroxStage(k): v for k, v in s.get("stage_end_ms", {}).items()
+                },
+                stage_resource={
+                    HyroxStage(k): v for k, v in s.get("stage_resource", {}).items()
+                },
+            )
+        self._subjects = subjects
+        self.diagnostics = [
+            EngineDiagnostic(
+                kind=d["kind"], subject_id=d["subject_id"], resource_id=d["resource_id"],
+                detail=d["detail"], timestamp_epoch_ms=d["timestamp_epoch_ms"],
+            )
+            for d in data.get("diagnostics", [])
+        ]
