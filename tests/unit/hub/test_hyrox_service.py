@@ -407,6 +407,39 @@ def test_force_complete_stage_preserves_supplied_zero_timestamp():
     assert state.stage_end_ms[HyroxStage.RUN_1] == 0
 
 
+def test_abandon_zone_rfid_read_routes_to_abandon_flow(tmp_path):
+    store = HyroxResultsStore(str(tmp_path / "abandon-rfid.db"))
+    svc = HyroxService(results_store=store)
+    svc.configure_venue(_venue(), mode="training", race_id="abandon-rfid")
+    token = svc.register("alex", "individual", "TAG_ALEX", "Alex")
+    svc.start()
+    svc.ingest_rfid("rfid-tm-01", "T1_GATE", "TAG_ALEX", timestamp_ms=1)
+
+    # Athlete taps the abandon button via the regular RFID topic.
+    svc.ingest_rfid("abandon-tm-01", "T1_BUTTON", "TAG_ALEX", timestamp_ms=2)
+
+    state = svc.get_state()
+    assert state["subjects"][0]["status"] == "abandoned"
+    assert state["resources"]["treadmill-01"] == "free"
+    assert svc.result_by_token(token).status == "dnf"
+    store.close()
+
+
+def test_abandon_zone_rfid_read_rejects_wrong_tag_via_rfid():
+    svc = _svc(mode="training")
+    svc.register("alex", "individual", "TAG_ALEX", "Alex")
+    svc.start()
+    svc.ingest_rfid("rfid-tm-01", "T1_GATE", "TAG_ALEX", timestamp_ms=1)
+
+    # Different tag taps the abandon button via the regular RFID topic.
+    svc.ingest_rfid("abandon-tm-01", "T1_BUTTON", "TAG_WRONG", timestamp_ms=2)
+
+    state = svc.get_state()
+    assert state["subjects"][0]["status"] == "racing"
+    assert state["resources"]["treadmill-01"] == "in_use"
+    assert state["diagnostics"][-1]["kind"] == "abandon_tag_mismatch"
+
+
 def test_one_pre_activity_dnf_does_not_block_another_finalization(tmp_path):
     store = HyroxResultsStore(str(tmp_path / "multiple-dnfs.db"))
     svc = HyroxService(results_store=store)

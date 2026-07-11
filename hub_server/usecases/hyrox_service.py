@@ -181,12 +181,17 @@ class HyroxService:
 
     def ingest_rfid(self, node_id: str, antenna_id: str, tag_id: str,
                     timestamp_ms: Optional[int] = None):
-        if not (self._is_active and self._registry and self._engine):
+        if not (self._registry and self._engine):
             return
         ts = timestamp_ms if timestamp_ms is not None else _now_ms()
         event = self._registry.normalize_rfid(node_id, antenna_id, tag_id, ts)
         if event is None:
-            return  # unknown sensor
+            # Abandon zones arrive on the regular RFID topic; route to the dedicated handler.
+            if self._registry.resolve_abandon(node_id, antenna_id) is not None:
+                self.ingest_abandon(node_id, antenna_id, tag_id, timestamp_ms)
+            return
+        if not self._is_active:
+            return
         self._maybe_dynamic_claim(event, tag_id, ts)
         self._resource_heartbeats[event.resource_id] = ts
         self._engine.process(event, ts)
