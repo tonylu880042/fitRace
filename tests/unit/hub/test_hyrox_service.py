@@ -459,6 +459,128 @@ def test_one_pre_activity_dnf_does_not_block_another_finalization(tmp_path):
     store.close()
 
 
+# --- Phase 8: DQ, penalties, reinstate ---
+
+
+def test_disqualify_finalizes_as_dq_with_reason(tmp_path):
+    from hub_server.usecases.hyrox_service import HyroxAssignmentError
+
+    store = HyroxResultsStore(str(tmp_path / "dq.db"))
+    svc = HyroxService(results_store=store)
+    svc.configure_venue(_venue(), race_id="race-dq")
+    token = svc.register("alex", "individual", "TAG_ALEX", "Alex")
+    svc.start()
+
+    svc.disqualify("alex", "left station before work complete", timestamp_ms=50)
+
+    state = svc.get_state()["subjects"][0]
+    assert state["status"] == "disqualified"
+    assert state["dq_reason"] == "left station before work complete"
+    result = svc.result_by_token(token)
+    assert result.status == "dq"
+    assert result.dq_reason == "left station before work complete"
+    assert svc._finalized == {"alex"}
+
+    with pytest.raises(HyroxAssignmentError) as exc:
+        svc.disqualify("ghost", "no such subject")
+    assert exc.value.code == "unknown_subject"
+
+    with pytest.raises(HyroxAssignmentError) as exc:
+        svc.disqualify("alex", "already terminal")  # no longer racing
+    assert exc.value.code == "not_racing"
+    store.close()
+
+
+def test_add_penalty_sums_into_total_ms_and_affects_rank(tmp_path):
+    store = HyroxResultsStore(str(tmp_path / "penalty.db"))
+    svc = HyroxService(results_store=store)
+    svc.configure_venue(_venue(), race_id="race-penalty")
+    alex_token = svc.register("alex", "individual", "TAG_ALEX", "Alex")
+    bella_token = svc.register("bella", "individual", "TAG_BELLA", "Bella")
+    svc.start()
+
+    svc.add_penalty("alex", 5_000, "movement standard breach", timestamp_ms=1)
+
+    for i in range(16):
+        svc.complete_stage("alex", timestamp_ms=10 + i)   # race_start=10, finish=25, raw=15
+    for i in range(16):
+        svc.complete_stage("bella", timestamp_ms=5 + i)   # race_start=5, finish=20, raw=15
+
+    alex = svc.result_by_token(alex_token)
+    bella = svc.result_by_token(bella_token)
+    assert alex.status == "finished"
+    assert alex.total_time_ms == 15 + 5_000
+    assert [p.penalty_ms for p in alex.penalties] == [5_000]
+    assert bella.total_time_ms == 15
+    # Bella's unpenalized raw time beats Alex's penalized total.
+    assert bella.rank == 1
+    assert alex.rank == 2
+    store.close()
+
+
+def test_add_penalty_unknown_subject_raises():
+    from hub_server.usecases.hyrox_service import HyroxAssignmentError
+
+    svc = _svc()
+    with pytest.raises(HyroxAssignmentError) as exc:
+        svc.add_penalty("ghost", 1_000, "no such subject")
+    assert exc.value.code == "unknown_subject"
+
+
+def test_reinstate_unfinalizes_and_recomputes_ranks(tmp_path):
+    store = HyroxResultsStore(str(tmp_path / "reinstate.db"))
+    svc = HyroxService(results_store=store)
+    svc.configure_venue(_venue(), race_id="race-reinstate")
+    alex_token = svc.register("alex", "individual", "TAG_ALEX", "Alex")
+    bella_token = svc.register("bella", "individual", "TAG_BELLA", "Bella")
+    svc.start()
+
+    for _ in range(16):
+        svc.complete_stage("alex", timestamp_ms=100)  # finishes first, rank 1
+    svc.abandon("bella", timestamp_ms=50)              # DNF, not ranked
+
+    assert svc.result_by_token(alex_token).rank == 1
+    assert svc._finalized == {"alex", "bella"}
+
+    # Operator overturns bella's DNF -- a button misfire.
+    svc.reinstate("bella", timestamp_ms=200)
+
+    state = svc.get_state()
+    bella_state = next(s for s in state["subjects"] if s["subject_id"] == "bella")
+    assert bella_state["status"] == "racing"
+    assert svc.result_by_token(bella_token) is None   # un-finalized
+    assert "bella" not in svc._finalized
+    assert svc.result_by_token(alex_token).rank == 1   # alex's rank recomputed, unaffected
+
+    # Reinstated athlete can resume: gate claim binds a fresh resource.
+    svc.ingest_rfid("rfid-tm-01", "T1_GATE", "TAG_BELLA", timestamp_ms=210)
+    assert svc.get_state()["resources"]["treadmill-01"] == "in_use"
+
+
+def test_reinstate_from_disqualified_and_idempotent_guard(tmp_path):
+    from hub_server.usecases.hyrox_service import HyroxAssignmentError
+
+    store = HyroxResultsStore(str(tmp_path / "reinstate-dq.db"))
+    svc = HyroxService(results_store=store)
+    svc.configure_venue(_venue(), race_id="race-reinstate-dq")
+    svc.register("alex", "individual", "TAG_ALEX", "Alex")
+    svc.start()
+    svc.disqualify("alex", "equipment misuse", timestamp_ms=30)
+
+    svc.reinstate("alex", timestamp_ms=40)
+    assert svc.get_state()["subjects"][0]["status"] == "racing"
+
+    # Idempotent guard: the subject is racing now, not abandoned/disqualified.
+    with pytest.raises(HyroxAssignmentError) as exc:
+        svc.reinstate("alex", timestamp_ms=50)
+    assert exc.value.code == "invalid_state"
+
+    with pytest.raises(HyroxAssignmentError) as exc:
+        svc.reinstate("ghost", timestamp_ms=50)
+    assert exc.value.code == "unknown_subject"
+    store.close()
+
+
 def test_ingest_ignored_before_start_or_config():
     svc = HyroxService()
     # Not configured: ingestion is a no-op, no crash.

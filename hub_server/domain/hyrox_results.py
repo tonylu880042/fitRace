@@ -11,6 +11,12 @@ from pydantic import BaseModel, Field
 from hub_server.domain.models import HyroxStage
 
 
+class HyroxPenalty(BaseModel):
+    penalty_ms: int
+    reason: str
+    issued_at_epoch_ms: int
+
+
 class HyroxStageSplit(BaseModel):
     stage: HyroxStage
     seq: int                          # stage order, 0..15
@@ -32,7 +38,7 @@ class HyroxAthleteResult(BaseModel):
     display_name: str
     division: Literal["individual", "doubles", "relay"] = "individual"
     members: list[str] = Field(default_factory=list)
-    status: Literal["finished", "dnf"]
+    status: Literal["finished", "dnf", "dq"]
     started_at_ms: int
     finished_at_ms: Optional[int] = None
     total_time_ms: Optional[int] = None
@@ -40,8 +46,10 @@ class HyroxAthleteResult(BaseModel):
     workout_total_ms: int = 0
     roxzone_total_ms: int = 0
     dnf_stage: Optional[HyroxStage] = None
+    dq_reason: Optional[str] = None
     rank: Optional[int] = None
     splits: list[HyroxStageSplit] = Field(default_factory=list)
+    penalties: list[HyroxPenalty] = Field(default_factory=list)
 
 
 class HyroxRaceResults(BaseModel):

@@ -13,6 +13,7 @@ from typing import Callable, Optional
 from hub_server.domain.models import HyroxStage
 from hub_server.domain.hyrox_results import (
     HyroxAthleteResult,
+    HyroxPenalty,
     HyroxRaceResults,
     HyroxStageSplit,
 )
@@ -42,6 +43,7 @@ def build_athlete_result(
     if race_start is None:
         raise ValueError("Terminal athlete result requires a start timestamp")
     finished = state.status == "finished"
+    disqualified = state.status == "disqualified"
     splits: list[HyroxStageSplit] = []
     run_total = workout_total = roxzone_total = 0
     prev_end = race_start
@@ -70,18 +72,31 @@ def build_athlete_result(
             workout_total += work
         prev_end = ended
 
+    # Penalties are a non-terminal sanction added to the final time (spec
+    # section 2); only a finisher has a total to add them to.
+    penalty_total_ms = sum(p.penalty_ms for p in state.penalties)
     finished_at = prev_end if finished else None
+    total_time_ms = (finished_at - race_start + penalty_total_ms) if finished else None
+    status = "finished" if finished else ("dq" if disqualified else "dnf")
     return HyroxAthleteResult(
         result_token=result_token, race_id=race_id, subject_id=subject_id,
         display_name=display_name, division=division, members=members,
-        status="finished" if finished else "dnf",
+        status=status,
         started_at_ms=race_start,
         finished_at_ms=finished_at,
-        total_time_ms=(finished_at - race_start) if finished else None,
+        total_time_ms=total_time_ms,
         run_total_ms=run_total, workout_total_ms=workout_total,
         roxzone_total_ms=roxzone_total,
         dnf_stage=None if finished else state.current_stage,
+        dq_reason=state.dq_reason,
         splits=splits,
+        penalties=[
+            HyroxPenalty(
+                penalty_ms=p.penalty_ms, reason=p.reason,
+                issued_at_epoch_ms=p.issued_at_epoch_ms,
+            )
+            for p in state.penalties
+        ],
     )
 
 
@@ -95,7 +110,7 @@ CREATE TABLE IF NOT EXISTS athlete_results (
     display_name TEXT NOT NULL, division TEXT NOT NULL, members TEXT NOT NULL,
     status TEXT NOT NULL, started_at_ms INTEGER NOT NULL, finished_at_ms INTEGER,
     total_time_ms INTEGER, run_total_ms INTEGER NOT NULL, workout_total_ms INTEGER NOT NULL,
-    roxzone_total_ms INTEGER NOT NULL, dnf_stage TEXT, rank INTEGER,
+    roxzone_total_ms INTEGER NOT NULL, dnf_stage TEXT, rank INTEGER, dq_reason TEXT,
     UNIQUE (race_id, subject_id)
 );
 CREATE INDEX IF NOT EXISTS idx_results_race ON athlete_results(race_id);
@@ -110,6 +125,11 @@ CREATE TABLE IF NOT EXISTS diagnostics (
     resource_id TEXT, detail TEXT, timestamp_epoch_ms INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_diagnostics_race ON diagnostics(race_id);
+CREATE TABLE IF NOT EXISTS penalties (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, result_token TEXT NOT NULL,
+    penalty_ms INTEGER NOT NULL, reason TEXT NOT NULL, issued_at_epoch_ms INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_penalties_token ON penalties(result_token);
 """
 
 
@@ -123,7 +143,17 @@ class HyroxResultsStore:
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA synchronous=NORMAL")
         self._conn.executescript(_SCHEMA)
+        self._migrate()
         self._conn.commit()
+
+    def _migrate(self) -> None:
+        """Phase 8: existing production DBs (data/hyrox.db) predate the
+        dq_reason column. CREATE TABLE IF NOT EXISTS above already handles the
+        brand-new `penalties` table; this pragma-guarded ALTER TABLE handles
+        the column added to an existing table."""
+        cols = {row[1] for row in self._conn.execute("PRAGMA table_info(athlete_results)")}
+        if "dq_reason" not in cols:
+            self._conn.execute("ALTER TABLE athlete_results ADD COLUMN dq_reason TEXT")
 
     def create_race(self, race_id, venue_id, mode, course_profile_id, started_at_ms):
         self._conn.execute(
@@ -143,12 +173,13 @@ class HyroxResultsStore:
                 "INSERT OR REPLACE INTO athlete_results "
                 "(result_token, race_id, subject_id, display_name, division, members, "
                 " status, started_at_ms, finished_at_ms, total_time_ms, run_total_ms, "
-                " workout_total_ms, roxzone_total_ms, dnf_stage, rank) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                " workout_total_ms, roxzone_total_ms, dnf_stage, rank, dq_reason) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (r.result_token, r.race_id, r.subject_id, r.display_name, r.division,
                  json.dumps(r.members, ensure_ascii=False), r.status, r.started_at_ms,
                  r.finished_at_ms, r.total_time_ms, r.run_total_ms, r.workout_total_ms,
-                 r.roxzone_total_ms, r.dnf_stage.value if r.dnf_stage else None, None),
+                 r.roxzone_total_ms, r.dnf_stage.value if r.dnf_stage else None, None,
+                 r.dq_reason),
             )
             self._conn.execute("DELETE FROM stage_splits WHERE result_token = ?",
                                (r.result_token,))
@@ -161,7 +192,37 @@ class HyroxResultsStore:
                   s.ended_ms, s.split_ms, s.work_ms, s.roxzone_before_ms, s.cumulative_ms,
                   s.value, s.target) for s in r.splits],
             )
+            self._conn.execute("DELETE FROM penalties WHERE result_token = ?",
+                               (r.result_token,))
+            if r.penalties:
+                self._conn.executemany(
+                    "INSERT INTO penalties "
+                    "(result_token, penalty_ms, reason, issued_at_epoch_ms) "
+                    "VALUES (?,?,?,?)",
+                    [(r.result_token, p.penalty_ms, p.reason, p.issued_at_epoch_ms)
+                     for p in r.penalties],
+                )
             self._recompute_ranks(r.race_id)
+
+    def delete_athlete(self, result_token: str) -> bool:
+        """Un-finalize an athlete (Phase 8 reinstate): remove their result
+        row, splits, and penalties, then recompute ranks for the race they
+        were in. Returns False if the token is unknown."""
+        row = self._conn.execute(
+            "SELECT race_id FROM athlete_results WHERE result_token = ?", (result_token,)
+        ).fetchone()
+        if row is None:
+            return False
+        race_id = row["race_id"]
+        with self._conn:  # transaction
+            self._conn.execute("DELETE FROM athlete_results WHERE result_token = ?",
+                               (result_token,))
+            self._conn.execute("DELETE FROM stage_splits WHERE result_token = ?",
+                               (result_token,))
+            self._conn.execute("DELETE FROM penalties WHERE result_token = ?",
+                               (result_token,))
+            self._recompute_ranks(race_id)
+        return True
 
     def _recompute_ranks(self, race_id: str):
         rows = self._conn.execute(
@@ -203,6 +264,11 @@ class HyroxResultsStore:
             "SELECT * FROM stage_splits WHERE result_token = ? ORDER BY seq",
             (row["result_token"],),
         ).fetchall()
+        penalties = self._conn.execute(
+            "SELECT penalty_ms, reason, issued_at_epoch_ms FROM penalties "
+            "WHERE result_token = ? ORDER BY issued_at_epoch_ms",
+            (row["result_token"],),
+        ).fetchall()
         return HyroxAthleteResult(
             result_token=row["result_token"], race_id=row["race_id"],
             subject_id=row["subject_id"], display_name=row["display_name"],
@@ -212,6 +278,7 @@ class HyroxResultsStore:
             run_total_ms=row["run_total_ms"], workout_total_ms=row["workout_total_ms"],
             roxzone_total_ms=row["roxzone_total_ms"],
             dnf_stage=HyroxStage(row["dnf_stage"]) if row["dnf_stage"] else None,
+            dq_reason=row["dq_reason"],
             rank=row["rank"],
             splits=[HyroxStageSplit(
                 stage=HyroxStage(s["stage"]), seq=s["seq"], resource_id=s["resource_id"],
@@ -219,6 +286,10 @@ class HyroxResultsStore:
                 work_ms=s["work_ms"], roxzone_before_ms=s["roxzone_before_ms"],
                 cumulative_ms=s["cumulative_ms"], value=s["value"], target=s["target"],
             ) for s in splits],
+            penalties=[HyroxPenalty(
+                penalty_ms=p["penalty_ms"], reason=p["reason"],
+                issued_at_epoch_ms=p["issued_at_epoch_ms"],
+            ) for p in penalties],
         )
 
     def export_csv(self, race_id: str) -> str:

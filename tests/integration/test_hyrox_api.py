@@ -466,6 +466,113 @@ def test_abandon_before_activity_finalizes_retrievable_dnf(monkeypatch, tmp_path
         store.close()
 
 
+def test_dq_endpoint_finalizes_as_dq_and_reinstate_recovers(monkeypatch, tmp_path):
+    monkeypatch.setenv("FITRACE_ENABLE_HYROX", "1")
+    monkeypatch.delenv("FITRACE_ADMIN_TOKEN", raising=False)
+    from hub_server.usecases.hyrox_results_store import HyroxResultsStore
+
+    store = HyroxResultsStore(str(tmp_path / "dq-endpoint.db"))
+    hyrox_service.attach_results_store(store)
+    try:
+        client = TestClient(app)
+        assert client.post(
+            "/api/hyrox/venue-config", json=_venue_body()
+        ).status_code == 200
+        registration = client.post("/api/hyrox/register", json={
+            "athlete_name": "Alex", "rfid_tag_id": "TAG_ALEX"})
+        token = registration.json()["result_token"]
+        assert client.post("/api/hyrox/start").status_code == 200
+
+        dq = client.post("/api/hyrox/dq", json={
+            "subject_id": "TAG_ALEX", "reason": "left station before work complete"})
+        assert dq.status_code == 200
+
+        result = client.get(f"/api/hyrox/result/{token}").json()
+        assert result["status"] == "dq"
+        assert result["dq_reason"] == "left station before work complete"
+
+        state = client.get("/api/hyrox/state").json()
+        assert state["subjects"][0]["status"] == "disqualified"
+
+        # Operator overturns the call: reinstate un-finalizes the result.
+        reinstate = client.post("/api/hyrox/reinstate", json={"subject_id": "TAG_ALEX"})
+        assert reinstate.status_code == 200
+        assert client.get(f"/api/hyrox/result/{token}").status_code == 404
+        assert client.get("/api/hyrox/state").json()["subjects"][0]["status"] == "racing"
+
+        # Idempotent guard: no longer abandoned/disqualified.
+        again = client.post("/api/hyrox/reinstate", json={"subject_id": "TAG_ALEX"})
+        assert again.status_code == 409
+
+        unknown_dq = client.post("/api/hyrox/dq", json={"subject_id": "nope", "reason": "x"})
+        assert unknown_dq.status_code == 404
+        unknown_reinstate = client.post("/api/hyrox/reinstate", json={"subject_id": "nope"})
+        assert unknown_reinstate.status_code == 404
+    finally:
+        hyrox_service.attach_results_store(None)
+        store.close()
+
+
+def test_penalty_endpoint_sums_into_total_and_affects_rank(monkeypatch, tmp_path):
+    monkeypatch.setenv("FITRACE_ENABLE_HYROX", "1")
+    monkeypatch.delenv("FITRACE_ADMIN_TOKEN", raising=False)
+    from hub_server.usecases.hyrox_results_store import HyroxResultsStore
+
+    store = HyroxResultsStore(str(tmp_path / "penalty-endpoint.db"))
+    hyrox_service.attach_results_store(store)
+    try:
+        client = TestClient(app)
+        assert client.post(
+            "/api/hyrox/venue-config", json=_venue_body()
+        ).status_code == 200
+        registration = client.post("/api/hyrox/register", json={
+            "athlete_name": "Alex", "rfid_tag_id": "TAG_ALEX"})
+        token = registration.json()["result_token"]
+        assert client.post("/api/hyrox/start").status_code == 200
+
+        penalty = client.post("/api/hyrox/penalty", json={
+            "subject_id": "TAG_ALEX", "penalty_ms": 5000,
+            "reason": "movement standard breach",
+        })
+        assert penalty.status_code == 200
+
+        for _ in range(16):
+            client.post("/api/hyrox/complete-stage", json={"subject_id": "TAG_ALEX"})
+
+        result = client.get(f"/api/hyrox/result/{token}").json()
+        assert result["status"] == "finished"
+        assert len(result["penalties"]) == 1
+        assert result["penalties"][0]["penalty_ms"] == 5000
+        assert result["penalties"][0]["reason"] == "movement standard breach"
+
+        unknown = client.post("/api/hyrox/penalty", json={
+            "subject_id": "nope", "penalty_ms": 1000, "reason": "x"})
+        assert unknown.status_code == 404
+
+        invalid = client.post("/api/hyrox/penalty", json={
+            "subject_id": "TAG_ALEX", "penalty_ms": 0, "reason": "x"})
+        assert invalid.status_code == 422  # penalty_ms must be > 0
+    finally:
+        hyrox_service.attach_results_store(None)
+        store.close()
+
+
+def test_dq_penalty_reinstate_endpoints_require_admin_token(monkeypatch):
+    monkeypatch.setenv("FITRACE_ENABLE_HYROX", "1")
+    monkeypatch.setenv("FITRACE_ADMIN_TOKEN", "secret")
+    client = TestClient(app)
+
+    assert client.post(
+        "/api/hyrox/dq", json={"subject_id": "x", "reason": "y"}
+    ).status_code == 401
+    assert client.post(
+        "/api/hyrox/penalty", json={"subject_id": "x", "penalty_ms": 1000, "reason": "y"}
+    ).status_code == 401
+    assert client.post(
+        "/api/hyrox/reinstate", json={"subject_id": "x"}
+    ).status_code == 401
+
+
 def test_results_finalized_and_retrievable(monkeypatch, tmp_path):
     # Placed last: configures the shared service, so it must not run before the
     # tests that assume an unconfigured service.

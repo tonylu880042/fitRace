@@ -159,3 +159,104 @@ def test_finished_after_last_stage():
     engine.force_complete_stage("alex", 100)
     assert engine.state_of("alex").current_stage == HyroxStage.FINISHED
     assert engine.state_of("alex").status == "finished"
+
+
+# --- Phase 8: DQ, penalties, reinstate ---
+
+
+def test_disqualify_freezes_stage_and_releases_resource():
+    engine, store, _ = _engine()
+    state = engine.register_subject("alex")
+    engine.start(0)
+    state.current_stage = HyroxStage.WALL_BALLS
+    store.claim("wallball-1", "alex", "TAG_ALEX", HyroxStage.WALL_BALLS,
+                ClaimSource.OPERATOR, 0)
+
+    engine.disqualify("alex", "left station before work complete", 900)
+
+    state = engine.state_of("alex")
+    assert state.status == "disqualified"
+    assert state.current_stage == HyroxStage.WALL_BALLS  # frozen
+    assert state.dq_reason == "left station before work complete"
+    assert state.terminal_at_ms == 900
+    assert store.active_on("wallball-1") is None
+
+
+def test_disqualify_is_a_noop_on_unknown_or_non_racing_subject():
+    engine, store, _ = _engine()
+    engine.register_subject("alex")
+    engine.start(0)
+    engine.abandon("alex", 100)
+
+    engine.disqualify("alex", "too late", 200)
+    assert engine.state_of("alex").status == "abandoned"  # unchanged
+
+    engine.disqualify("ghost", "no such subject", 200)
+    assert engine.state_of("ghost") is None
+
+
+def test_add_penalty_appends_and_returns_false_for_unknown_subject():
+    engine, store, _ = _engine()
+    engine.register_subject("alex")
+    engine.start(0)
+
+    assert engine.add_penalty("alex", 10_000, "movement standard breach", 500) is True
+    assert engine.add_penalty("alex", 5_000, "second breach", 600) is True
+    assert engine.add_penalty("ghost", 1_000, "no such subject", 700) is False
+
+    penalties = engine.state_of("alex").penalties
+    assert [p.penalty_ms for p in penalties] == [10_000, 5_000]
+    assert penalties[0].reason == "movement standard breach"
+    assert penalties[1].issued_at_epoch_ms == 600
+
+
+def test_reinstate_returns_status_to_racing_and_keeps_frozen_progress():
+    engine, store, _ = _engine()
+    state = engine.register_subject("alex")
+    engine.start(0)
+    state.current_stage = HyroxStage.SKI_ERG
+    state.stage_arrived_ms[HyroxStage.SKI_ERG] = 50
+    engine.abandon("alex", 900)
+
+    assert engine.reinstate("alex", 1000) is True
+
+    state = engine.state_of("alex")
+    assert state.status == "racing"
+    assert state.current_stage == HyroxStage.SKI_ERG          # frozen, not reset
+    assert state.stage_arrived_ms[HyroxStage.SKI_ERG] == 50    # untouched
+    assert any(d.kind == "reinstate" for d in engine.diagnostics)
+
+
+def test_reinstate_works_from_disqualified_too():
+    engine, store, _ = _engine()
+    engine.register_subject("alex")
+    engine.start(0)
+    engine.disqualify("alex", "equipment misuse", 500)
+
+    assert engine.reinstate("alex", 600) is True
+    assert engine.state_of("alex").status == "racing"
+
+
+def test_reinstate_guard_rejects_racing_or_finished_or_unknown_subject():
+    engine, store, _ = _engine()
+    engine.register_subject("alex")
+    engine.start(0)
+
+    assert engine.reinstate("alex", 100) is False   # still racing
+
+    engine.force_complete_stage("alex", 100)
+    engine.state_of("alex").status = "finished"
+    assert engine.reinstate("alex", 200) is False   # finished, not DNF/DQ
+
+    assert engine.reinstate("ghost", 200) is False  # unknown subject
+
+
+def test_reinstate_is_idempotent_guarded():
+    engine, store, _ = _engine()
+    engine.register_subject("alex")
+    engine.start(0)
+    engine.abandon("alex", 900)
+
+    assert engine.reinstate("alex", 1000) is True
+    # Second call: status is now "racing", so the guard rejects it.
+    assert engine.reinstate("alex", 1100) is False

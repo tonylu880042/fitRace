@@ -419,6 +419,81 @@ class HyroxService:
         self._finalize_done()
         self._persist()
 
+    def disqualify(
+        self, subject_id: str, reason: str, timestamp_ms: Optional[int] = None
+    ):
+        """Judge-called DQ (Phase 8). Terminal exactly like abandon, but
+        requires a reason and is rejected for a subject that is not
+        currently racing (unknown or already terminal)."""
+        if self._engine is None:
+            raise HyroxAssignmentError(
+                "not_configured", "Load a venue config before disqualifying"
+            )
+        state = self._engine.state_of(subject_id)
+        if state is None:
+            raise HyroxAssignmentError(
+                "unknown_subject", f"Subject {subject_id} not found"
+            )
+        if state.status != "racing":
+            raise HyroxAssignmentError(
+                "not_racing", f"Subject {subject_id} is not racing"
+            )
+        ts = timestamp_ms if timestamp_ms is not None else _now_ms()
+        self._engine.disqualify(subject_id, reason, ts)
+        self._finalize_done()
+        self._persist()
+
+    def add_penalty(
+        self,
+        subject_id: str,
+        penalty_ms: int,
+        reason: str,
+        timestamp_ms: Optional[int] = None,
+    ):
+        """Non-terminal time sanction (Phase 8), summed into total_ms when
+        the athlete is finalized."""
+        if self._engine is None:
+            raise HyroxAssignmentError(
+                "not_configured", "Load a venue config before recording a penalty"
+            )
+        state = self._engine.state_of(subject_id)
+        if state is None:
+            raise HyroxAssignmentError(
+                "unknown_subject", f"Subject {subject_id} not found"
+            )
+        ts = timestamp_ms if timestamp_ms is not None else _now_ms()
+        self._engine.add_penalty(subject_id, penalty_ms, reason, ts)
+        self._persist()
+
+    def reinstate(self, subject_id: str, timestamp_ms: Optional[int] = None):
+        """Operator correction for a mistaken DNF/DQ (Phase 8). If the
+        subject was already finalized, un-finalizes them: deletes the
+        athlete_results row (and splits/penalties) and recomputes ranks.
+        Resources are NOT auto-restored."""
+        if self._engine is None:
+            raise HyroxAssignmentError(
+                "not_configured", "Load a venue config before reinstating"
+            )
+        state = self._engine.state_of(subject_id)
+        if state is None:
+            raise HyroxAssignmentError(
+                "unknown_subject", f"Subject {subject_id} not found"
+            )
+        if state.status not in ("abandoned", "disqualified"):
+            raise HyroxAssignmentError(
+                "invalid_state",
+                f"Subject {subject_id} is {state.status}; only abandoned or "
+                "disqualified subjects can be reinstated",
+            )
+        ts = timestamp_ms if timestamp_ms is not None else _now_ms()
+        self._engine.reinstate(subject_id, ts)
+        if subject_id in self._finalized:
+            token = self._result_tokens.get(subject_id)
+            if token is not None and self._results is not None:
+                self._results.delete_athlete(token)
+            self._finalized.discard(subject_id)
+        self._persist()
+
     def complete_stage(self, subject_id: str, timestamp_ms: Optional[int] = None):
         if self._engine is None:
             return
@@ -435,7 +510,8 @@ class HyroxService:
 
     def _finalize_done(self):
         """Persist the result of any subject that has newly reached a terminal
-        state (finished / abandoned). Idempotent -- each subject once."""
+        state (finished / abandoned / disqualified). Idempotent -- each
+        subject once."""
         if self._results is None or self._engine is None:
             return
         for entry in self._roster.all():
@@ -443,7 +519,7 @@ class HyroxService:
             if sid in self._finalized:
                 continue
             state = self._engine.state_of(sid)
-            if state is None or state.status not in ("finished", "abandoned"):
+            if state is None or state.status not in ("finished", "abandoned", "disqualified"):
                 continue
             token = self._result_tokens.get(sid)
             if token is None:
@@ -511,6 +587,8 @@ class HyroxService:
                 "progress_target": target,
                 "progress_type": stage_def.target_type.value if stage_def else None,
                 "elapsed_ms": self._elapsed_ms(state),
+                "dq_reason": state.dq_reason if state else None,
+                "penalty_total_ms": sum(p.penalty_ms for p in state.penalties) if state else 0,
             })
         resource_ids = [
             u.resource_id
@@ -641,9 +719,14 @@ class HyroxService:
 
     def snapshot(self) -> dict:
         """The full in-flight race state, JSON-safe. Finalized results are
-        already durable in HyroxResultsStore and are not duplicated here."""
+        already durable in HyroxResultsStore and are not duplicated here.
+
+        Version 2 (Phase 8): the engine's per-subject dq_reason/penalties are
+        included via engine.to_dict(). restore() accepts version-1 snapshots
+        unchanged -- HyroxCourseEngine.restore() defaults those fields when
+        absent, so no explicit version branching is needed here."""
         return {
-            "version": 1,
+            "version": 2,
             "venue": self._venue.model_dump(mode="json") if self._venue else None,
             "mode": self._mode,
             "race_id": self._race_id,
@@ -661,7 +744,12 @@ class HyroxService:
     def restore(self, snapshot: dict) -> None:
         """Rebuild in-flight race state from a snapshot() dict. Finalized
         results are not part of the snapshot -- they are read back from
-        HyroxResultsStore, unaffected by this call."""
+        HyroxResultsStore, unaffected by this call.
+
+        Accepts both version 1 (pre-Phase-8) and version 2 snapshots: the
+        version number is informational only here, since every new Phase 8
+        field is defaulted by the layer that owns it (HyroxCourseEngine)."""
+        snapshot.get("version", 1)
         venue_data = snapshot.get("venue")
         self._venue = HyroxVenueConfig.model_validate(venue_data) if venue_data else None
         self._registry = HyroxSensorRegistry(self._venue) if self._venue else None

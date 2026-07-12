@@ -211,6 +211,67 @@ def test_snapshot_restore_preserves_finished_and_abandoned_subjects(tmp_path):
     store.close()
 
 
+# --- Phase 8: snapshot version 2 (dq_reason, penalties) ---
+
+
+def test_snapshot_version_is_2_and_round_trips_dq_reason_and_penalties(tmp_path):
+    store = HyroxResultsStore(str(tmp_path / "r.db"))
+    svc = HyroxService(results_store=store)
+    svc.configure_venue(_venue(), mode="training", race_id="race-dq-snap")
+    svc.register("alex", "individual", "TAG_ALEX", "Alex")
+    svc.register("bella", "individual", "TAG_BELLA", "Bella")
+    svc.start()
+
+    svc.add_penalty("alex", 5_000, "movement standard breach", timestamp_ms=5)
+    svc.disqualify("bella", "equipment misuse", timestamp_ms=10)
+
+    snap = svc.snapshot()
+    assert snap["version"] == 2
+
+    fresh = HyroxService()
+    fresh.restore(snap)
+
+    subjects = {s["subject_id"]: s for s in fresh.get_state()["subjects"]}
+    assert subjects["alex"]["penalty_total_ms"] == 5_000
+    assert subjects["bella"]["status"] == "disqualified"
+    assert subjects["bella"]["dq_reason"] == "equipment misuse"
+
+    alex_state = fresh._engine.state_of("alex")
+    assert [p.penalty_ms for p in alex_state.penalties] == [5_000]
+    bella_state = fresh._engine.state_of("bella")
+    assert bella_state.dq_reason == "equipment misuse"
+    assert bella_state.terminal_at_ms == 10
+    store.close()
+
+
+def test_restore_accepts_a_version_1_snapshot_with_defaults(tmp_path):
+    store = HyroxResultsStore(str(tmp_path / "r.db"))
+    svc = HyroxService(results_store=store)
+    svc.configure_venue(_venue(), mode="training", race_id="race-v1")
+    svc.register("alex", "individual", "TAG_ALEX", "Alex")
+    svc.start()
+
+    snap = svc.snapshot()
+    assert snap["version"] == 2
+    # Simulate a pre-Phase-8 snapshot: version 1, and no dq_reason/penalties
+    # keys on the engine's subject dict (as an old build would have written).
+    snap["version"] = 1
+    for subject in snap["engine"]["subjects"].values():
+        subject.pop("dq_reason", None)
+        subject.pop("penalties", None)
+        subject.pop("terminal_at_ms", None)
+
+    fresh = HyroxService()
+    fresh.restore(snap)  # must not raise
+
+    state = fresh._engine.state_of("alex")
+    assert state.dq_reason is None
+    assert state.penalties == []
+    assert state.terminal_at_ms is None
+    assert fresh.get_state()["subjects"][0]["penalty_total_ms"] == 0
+    store.close()
+
+
 # --- Disk persistence ---
 
 def test_configure_venue_and_register_persist_to_disk(tmp_path):
