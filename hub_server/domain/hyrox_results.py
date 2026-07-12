@@ -29,6 +29,7 @@ class HyroxStageSplit(BaseModel):
     cumulative_ms: int = 0            # athlete start -> this stage end
     value: Optional[float] = None     # completed distance / lengths / reps
     target: Optional[float] = None
+    member_tag: Optional[str] = None  # relay: which member ran/worked this leg
 
 
 class HyroxAthleteResult(BaseModel):

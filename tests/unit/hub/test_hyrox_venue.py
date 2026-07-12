@@ -163,6 +163,41 @@ def test_finished_is_not_a_valid_stage_candidate():
     assert any("finished" in e for e in errors)
 
 
+# --- Phase 10: exchange_zones (relay Transition-Zone readers) ---
+
+def test_exchange_zone_must_be_unique_across_all_read_zones():
+    # exchange_zones is top-level, but its addresses still share the same
+    # physical RFID address space as every lane/gate/abandon zone.
+    venue = _valid_venue()
+    venue.exchange_zones = [
+        HyroxEndpointSensor(node_id="rfid-01", antenna_id="L1_START")
+    ]
+
+    errors = validate_venue_config(venue)
+
+    assert any("Duplicate RFID read zone" in error for error in errors)
+
+
+def test_exchange_zones_reject_duplicates_among_themselves():
+    venue = _valid_venue()
+    venue.exchange_zones = [
+        HyroxEndpointSensor(node_id="rfid-tz-01", antenna_id="TZ1"),
+        HyroxEndpointSensor(node_id="rfid-tz-01", antenna_id="TZ1"),
+    ]
+
+    errors = validate_venue_config(venue)
+
+    assert any("Duplicate RFID read zone" in error for error in errors)
+
+
+def test_exchange_zone_with_unique_address_is_valid():
+    venue = _valid_venue()
+    venue.exchange_zones = [
+        HyroxEndpointSensor(node_id="rfid-tz-01", antenna_id="TZ1")
+    ]
+    assert validate_venue_config(venue) == []
+
+
 # --- Readiness (venue + course profile) ---
 
 def test_ready_venue_has_no_readiness_errors():

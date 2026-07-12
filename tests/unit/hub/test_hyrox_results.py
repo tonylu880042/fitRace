@@ -63,6 +63,27 @@ def test_run_1_has_no_roxzone():
     assert run1.roxzone_before_ms == 0 and run1.work_ms == 100
 
 
+def test_split_member_tag_comes_from_stage_member():
+    # Phase 10: per-leg attribution -- stage_member is recorded by the engine
+    # and build_athlete_result just carries it through onto the split.
+    s = _finished_state()
+    s.stage_member = {
+        HyroxStage.RUN_1: "TAG_1",
+        HyroxStage.SKI_ERG: "TAG_1",
+        HyroxStage.RUN_2: "TAG_2",
+    }
+    r = _result(s)
+    by_stage = {sp.stage: sp.member_tag for sp in r.splits}
+    assert by_stage[HyroxStage.RUN_1] == "TAG_1"
+    assert by_stage[HyroxStage.SKI_ERG] == "TAG_1"
+    assert by_stage[HyroxStage.RUN_2] == "TAG_2"
+
+
+def test_split_member_tag_is_none_for_non_relay_or_unrecorded_stages():
+    r = _result(_finished_state())  # individual, stage_member never populated
+    assert all(sp.member_tag is None for sp in r.splits)
+
+
 def test_dnf_stops_at_abandoned_stage():
     s = _finished_state()
     s.status = "abandoned"
@@ -280,6 +301,50 @@ def test_migration_adds_dq_reason_column_to_pre_phase8_db(tmp_path):
     r = _result(_finished_state(), token="A", subject_id="alex")
     store.finalize_athlete(r)
     assert store.get_by_token("A").dq_reason is None
+    store.close()
+
+
+def test_migration_adds_member_tag_column_to_pre_phase10_stage_splits(tmp_path):
+    # Simulate a production DB created before Phase 10: stage_splits without
+    # the member_tag column (dq_reason/penalties already present, as any
+    # post-Phase-8 DB would have).
+    import sqlite3
+
+    db_path = str(tmp_path / "legacy.db")
+    conn = sqlite3.connect(db_path)
+    conn.executescript("""
+        CREATE TABLE athlete_results (
+            result_token TEXT PRIMARY KEY, race_id TEXT NOT NULL, subject_id TEXT NOT NULL,
+            display_name TEXT NOT NULL, division TEXT NOT NULL, members TEXT NOT NULL,
+            status TEXT NOT NULL, started_at_ms INTEGER NOT NULL, finished_at_ms INTEGER,
+            total_time_ms INTEGER, run_total_ms INTEGER NOT NULL, workout_total_ms INTEGER NOT NULL,
+            roxzone_total_ms INTEGER NOT NULL, dnf_stage TEXT, rank INTEGER, dq_reason TEXT,
+            UNIQUE (race_id, subject_id)
+        );
+        CREATE TABLE stage_splits (
+            result_token TEXT NOT NULL, seq INTEGER NOT NULL, stage TEXT NOT NULL,
+            resource_id TEXT, arrived_ms INTEGER, ended_ms INTEGER, split_ms INTEGER NOT NULL,
+            work_ms INTEGER NOT NULL, roxzone_before_ms INTEGER NOT NULL,
+            cumulative_ms INTEGER NOT NULL, value REAL, target REAL,
+            PRIMARY KEY (result_token, seq)
+        );
+    """)
+    conn.commit()
+    conn.close()
+
+    store = HyroxResultsStore(db_path=db_path)  # opening must migrate in place
+    cols = {row[1] for row in store._conn.execute("PRAGMA table_info(stage_splits)")}
+    assert "member_tag" in cols
+
+    # The store is now fully usable, including relay per-leg member_tag.
+    store.create_race("race-1", "hq", "competition", "hyrox_standard_2026", 0)
+    s = _finished_state()
+    s.stage_member = {HyroxStage.RUN_1: "TAG_1"}
+    r = _result(s, token="A", subject_id="alex")
+    store.finalize_athlete(r)
+    got = store.get_by_token("A")
+    run1 = next(sp for sp in got.splits if sp.stage == HyroxStage.RUN_1)
+    assert run1.member_tag == "TAG_1"
     store.close()
 
 

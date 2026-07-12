@@ -188,17 +188,44 @@ class HyroxService:
         ts = timestamp_ms if timestamp_ms is not None else _now_ms()
         event = self._registry.normalize_rfid(node_id, antenna_id, tag_id, ts)
         if event is None:
-            # Abandon zones arrive on the regular RFID topic; route to the dedicated handler.
+            # Abandon and exchange zones arrive on the regular RFID topic;
+            # route each to its dedicated handler (no edge firmware change).
             if self._registry.resolve_abandon(node_id, antenna_id) is not None:
                 self.ingest_abandon(node_id, antenna_id, tag_id, timestamp_ms)
+            elif self._registry.resolve_exchange(node_id, antenna_id) is not None:
+                self.ingest_exchange(node_id, antenna_id, tag_id, timestamp_ms)
             return
         if not self._is_active:
+            return
+        if self._reject_inactive_member_read(event, tag_id, ts):
             return
         self._maybe_dynamic_claim(event, tag_id, ts)
         self._resource_heartbeats[event.resource_id] = ts
         self._engine.process(event, ts)
         self._finalize_done()
         self._persist(throttled=True)
+
+    def _reject_inactive_member_read(self, event, tag_id: str, ts: int) -> bool:
+        """Relay attribution tightening (Phase 10): once a team has an active
+        member (set by a TZ exchange), a course RFID read from any other
+        member's tag is rejected -- only the tapped-in member races.
+        Individuals and doubles are unaffected."""
+        subject_id = self._roster.subject_for_tag(tag_id)
+        if subject_id is None:
+            return False
+        entry = self._roster.get(subject_id)
+        if entry is None or entry.division != "relay":
+            return False
+        state = self._engine.state_of(subject_id)
+        if state is None or state.active_member_tag is None:
+            return False
+        if tag_id == state.active_member_tag:
+            return False
+        self._store.record_diagnostic(
+            "inactive_member_read", event.resource_id,
+            f"read tag {tag_id} is not the active relay member for {subject_id}", ts,
+        )
+        return True
 
     def ingest_node(self, node_id: str, metrics: Optional[dict] = None,
                     timestamp_ms: Optional[int] = None):
@@ -264,7 +291,12 @@ class HyroxService:
                 ts,
             )
             return
-        if assignment.active_tag_id != tag_id:
+        # Abandon-zone taps stay open to ANY member tag of the assigned team
+        # (one member abandoning is a whole-team DNF) -- the interlock only
+        # requires membership of the assigned team, not the exact tag that
+        # claimed the resource. See docs/hyrox_team_race_spec.md section 4.
+        entry = self._roster.get(assignment.subject_id)
+        if entry is None or tag_id not in entry.member_tags:
             self._store.record_diagnostic(
                 "abandon_tag_mismatch",
                 event.resource_id,
@@ -273,6 +305,58 @@ class HyroxService:
             )
             return
         self.abandon(assignment.subject_id, ts)
+
+    def ingest_exchange(
+        self,
+        node_id: str,
+        antenna_id: str,
+        tag_id: str,
+        timestamp_ms: Optional[int] = None,
+    ):
+        """Process a Transition-Zone member-handoff read (Phase 10). Reads
+        reaching a configured exchange-zone address hand the current relay
+        leg over to a new member tag; see ingest_abandon for the parallel
+        sensor-guard structure and docs/hyrox_team_race_spec.md section 4."""
+        if self._registry is None or self._engine is None:
+            return
+        ts = timestamp_ms if timestamp_ms is not None else _now_ms()
+        resolution = self._registry.resolve_exchange(node_id, antenna_id)
+        if resolution is None:
+            self._store.record_diagnostic(
+                "exchange_unknown_sensor",
+                f"{node_id}/{antenna_id}",
+                "exchange rejected because the sensor is not configured",
+                ts,
+            )
+            return
+        subject_id = self._roster.subject_for_tag(tag_id)
+        if subject_id is None:
+            self._store.record_diagnostic(
+                "exchange_unknown_tag",
+                resolution.resource_id,
+                f"exchange rejected because tag {tag_id} is not registered",
+                ts,
+            )
+            return
+        entry = self._roster.get(subject_id)
+        if entry is None or entry.division != "relay":
+            self._store.record_diagnostic(
+                "exchange_not_member",
+                resolution.resource_id,
+                f"exchange rejected because {tag_id} does not belong to a relay team",
+                ts,
+            )
+            return
+        ok, diag_kind = self._engine.exchange(subject_id, tag_id, ts)
+        if not ok:
+            self._store.record_diagnostic(
+                diag_kind,
+                resolution.resource_id,
+                f"exchange rejected for {subject_id} ({diag_kind})",
+                ts,
+            )
+            return
+        self._persist()
 
     def _maybe_dynamic_claim(self, event, tag_id: str, ts: int):
         # Phase 9: in both training and competition modes, the first in-sequence

@@ -7,7 +7,7 @@ the MQTT ingestion path, or the existing /api/hyrox/configure endpoint.
 
 from enum import Enum
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from hub_server.domain.models import HyroxStage
 
@@ -19,6 +19,7 @@ class HyroxSensorClass(str, Enum):
     REP_COUNTER = "rep_counter"
     MANUAL_OVERRIDE = "manual_override"
     ABANDON_BUTTON = "abandon_button"
+    EXCHANGE_ZONE = "exchange_zone"
 
 
 class HyroxTargetType(str, Enum):
@@ -93,6 +94,10 @@ class HyroxVenueConfig(BaseModel):
     venue_id: str
     course_profile_id: str
     resource_groups: list[HyroxResourceGroup]
+    # Relay Transition-Zone readers (Phase 10): shared, venue-wide, not tied
+    # to any single resource unit -- a team's finishing member taps here to
+    # hand the leg to the next member. See docs/hyrox_team_race_spec.md sec 4.
+    exchange_zones: list[HyroxEndpointSensor] = Field(default_factory=list)
 
 
 # Standard Hyrox target per workout stage. Runs, SkiErg and Row are distance;
@@ -222,6 +227,20 @@ def validate_venue_config(venue: HyroxVenueConfig) -> list[str]:
                     )
                 else:
                     seen_ftms_nodes[unit.node_id] = unit.resource_id
+
+    # Exchange zones are venue-level (not owned by any resource unit) but
+    # still occupy a physical RFID read zone, so they must not collide with
+    # any lane/gate/abandon address above, nor with each other.
+    for idx, ep in enumerate(venue.exchange_zones):
+        addr = _endpoint_addr(ep)
+        label = f"exchange_zones[{idx}]"
+        if addr in seen_endpoints:
+            errors.append(
+                f"Duplicate RFID read zone {addr[0]}/{addr[1]} used by "
+                f"{seen_endpoints[addr]} and {label}."
+            )
+        else:
+            seen_endpoints[addr] = label
 
     return errors
 

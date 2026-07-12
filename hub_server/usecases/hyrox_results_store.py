@@ -64,6 +64,7 @@ def build_athlete_result(
             split_ms=split, work_ms=work, roxzone_before_ms=roxzone_before,
             cumulative_ms=ended - race_start,
             value=progress_of(stage), target=target_value,
+            member_tag=state.stage_member.get(stage),
         ))
         roxzone_total += roxzone_before
         if _is_run(stage):
@@ -118,7 +119,7 @@ CREATE TABLE IF NOT EXISTS stage_splits (
     result_token TEXT NOT NULL, seq INTEGER NOT NULL, stage TEXT NOT NULL,
     resource_id TEXT, arrived_ms INTEGER, ended_ms INTEGER, split_ms INTEGER NOT NULL,
     work_ms INTEGER NOT NULL, roxzone_before_ms INTEGER NOT NULL, cumulative_ms INTEGER NOT NULL,
-    value REAL, target REAL, PRIMARY KEY (result_token, seq)
+    value REAL, target REAL, member_tag TEXT, PRIMARY KEY (result_token, seq)
 );
 CREATE TABLE IF NOT EXISTS diagnostics (
     id INTEGER PRIMARY KEY AUTOINCREMENT, race_id TEXT, kind TEXT NOT NULL,
@@ -154,6 +155,11 @@ class HyroxResultsStore:
         cols = {row[1] for row in self._conn.execute("PRAGMA table_info(athlete_results)")}
         if "dq_reason" not in cols:
             self._conn.execute("ALTER TABLE athlete_results ADD COLUMN dq_reason TEXT")
+        # Phase 10: existing production DBs predate the per-leg member_tag
+        # column on stage_splits.
+        split_cols = {row[1] for row in self._conn.execute("PRAGMA table_info(stage_splits)")}
+        if "member_tag" not in split_cols:
+            self._conn.execute("ALTER TABLE stage_splits ADD COLUMN member_tag TEXT")
 
     def create_race(self, race_id, venue_id, mode, course_profile_id, started_at_ms):
         self._conn.execute(
@@ -186,11 +192,11 @@ class HyroxResultsStore:
             self._conn.executemany(
                 "INSERT INTO stage_splits "
                 "(result_token, seq, stage, resource_id, arrived_ms, ended_ms, split_ms, "
-                " work_ms, roxzone_before_ms, cumulative_ms, value, target) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                " work_ms, roxzone_before_ms, cumulative_ms, value, target, member_tag) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 [(r.result_token, s.seq, s.stage.value, s.resource_id, s.arrived_ms,
                   s.ended_ms, s.split_ms, s.work_ms, s.roxzone_before_ms, s.cumulative_ms,
-                  s.value, s.target) for s in r.splits],
+                  s.value, s.target, s.member_tag) for s in r.splits],
             )
             self._conn.execute("DELETE FROM penalties WHERE result_token = ?",
                                (r.result_token,))
@@ -285,6 +291,7 @@ class HyroxResultsStore:
                 arrived_ms=s["arrived_ms"], ended_ms=s["ended_ms"], split_ms=s["split_ms"],
                 work_ms=s["work_ms"], roxzone_before_ms=s["roxzone_before_ms"],
                 cumulative_ms=s["cumulative_ms"], value=s["value"], target=s["target"],
+                member_tag=s["member_tag"],
             ) for s in splits],
             penalties=[HyroxPenalty(
                 penalty_ms=p["penalty_ms"], reason=p["reason"],

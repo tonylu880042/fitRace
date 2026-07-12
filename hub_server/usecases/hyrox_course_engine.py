@@ -23,6 +23,10 @@ from hub_server.usecases.hyrox_assignment_store import (
 from hub_server.usecases.hyrox_progress import HyroxProgressTracker
 
 
+def _is_run_stage(stage: HyroxStage) -> bool:
+    return stage.value.startswith("run_")
+
+
 @dataclass
 class Penalty:
     """A time sanction added to an athlete's final result (Phase 8). Not
@@ -45,6 +49,11 @@ class SubjectState:
     dq_reason: Optional[str] = None  # required once status == disqualified
     penalties: list[Penalty] = field(default_factory=list)
     terminal_at_ms: Optional[int] = None  # timestamp of abandon/disqualify, for reinstate audit
+    # Relay Transition-Zone handoff (Phase 10). Unset until the first member
+    # produces activity or taps the TZ; see HyroxCourseEngine.exchange().
+    active_member_tag: Optional[str] = None
+    # Which member tag was active when each stage got its first activity.
+    stage_member: dict[HyroxStage, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -150,6 +159,19 @@ class HyroxCourseEngine:
         stage = state.current_stage
         if stage not in state.stage_arrived_ms:
             state.stage_arrived_ms[stage] = now_ms
+            # Per-leg attribution (Phase 10): credit the stage to the team's
+            # active member, falling back to whichever tag produced this
+            # activity if no TZ exchange has set one yet -- and let that first
+            # activity set active_member_tag when it was still unset.
+            producing_tag = event.tag_id
+            if producing_tag is None:
+                assignment = self._store.active_on(event.resource_id)
+                producing_tag = assignment.active_tag_id if assignment else None
+            member_tag = state.active_member_tag or producing_tag
+            if member_tag is not None:
+                state.stage_member[stage] = member_tag
+                if state.active_member_tag is None:
+                    state.active_member_tag = member_tag
         state.stage_resource[stage] = event.resource_id
 
         update = self._tracker.apply(
@@ -229,6 +251,45 @@ class HyroxCourseEngine:
         self._tracker.force_complete(subject_id, state.current_stage)
         self._advance(state, now_ms)
 
+    def exchange(self, subject_id: str, tag_id: str, now_ms: int) -> tuple[bool, Optional[str]]:
+        """Relay Transition-Zone member handoff (Phase 10, spec section 4).
+
+        Returns (True, None) on success, or (False, diagnostic_kind) for a
+        rejected tap. Guard order: terminal, same-tag, leg boundary. The
+        caller (HyroxService.ingest_exchange) is responsible for resolving
+        the sensor/tag to this subject_id and recording the rejection kind
+        as a live diagnostic; a successful exchange is recorded here as a
+        durable audit diagnostic, same as reinstate."""
+        state = self._subjects.get(subject_id)
+        if state is None or state.status != "racing":
+            return False, "exchange_terminal"
+        if tag_id == state.active_member_tag:
+            return False, "exchange_same_tag"
+
+        # Leg boundary: current_stage is a run that has not produced any
+        # activity yet, and no resource is currently claimed for the subject.
+        # stage_arrived_ms (not stage_start_ms) is the right signal here --
+        # stage_start_ms is set eagerly the instant a stage becomes current
+        # (see _advance), while stage_arrived_ms only appears on the first
+        # real telemetry event, which is exactly "has the leg actually begun".
+        stage = state.current_stage
+        at_leg_boundary = (
+            _is_run_stage(stage)
+            and stage not in state.stage_arrived_ms
+            and self._store.active_for_subject(subject_id) is None
+        )
+        if not at_leg_boundary:
+            return False, "exchange_mid_stage"
+
+        from_tag = state.active_member_tag
+        state.active_member_tag = tag_id
+        self._diag(
+            "exchange", subject_id, "",
+            f"{subject_id} exchange at {stage.value}: {from_tag} -> {tag_id}",
+            now_ms,
+        )
+        return True, None
+
     # --- Internals ---
 
     def _advance(self, state: SubjectState, now_ms: int):
@@ -285,6 +346,8 @@ class HyroxCourseEngine:
                         for p in s.penalties
                     ],
                     "terminal_at_ms": s.terminal_at_ms,
+                    "active_member_tag": s.active_member_tag,
+                    "stage_member": {k.value: v for k, v in s.stage_member.items()},
                 }
                 for sid, s in self._subjects.items()
             },
@@ -329,6 +392,10 @@ class HyroxCourseEngine:
                     for p in s.get("penalties", [])
                 ],
                 terminal_at_ms=s.get("terminal_at_ms"),
+                active_member_tag=s.get("active_member_tag"),
+                stage_member={
+                    HyroxStage(k): v for k, v in s.get("stage_member", {}).items()
+                },
             )
         self._subjects = subjects
         self.diagnostics = [

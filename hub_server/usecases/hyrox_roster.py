@@ -54,6 +54,12 @@ class HyroxRoster:
                 f"not {division}"
             )
         if member_tag not in entry.member_tags:
+            max_size = _DIVISION_SIZE.get(division)
+            if max_size is not None and len(entry.member_tags) >= max_size:
+                raise ValueError(
+                    f"{division} subject {subject_id} already has the maximum of "
+                    f"{max_size} member tag(s)"
+                )
             entry.member_tags.append(member_tag)
             entry.member_names.append(member_name)
             self._tag_to_subject[member_tag] = subject_id

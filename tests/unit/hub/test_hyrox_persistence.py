@@ -272,6 +272,35 @@ def test_restore_accepts_a_version_1_snapshot_with_defaults(tmp_path):
     store.close()
 
 
+# --- Phase 10: relay exchange snapshot round trip ---
+
+
+def test_snapshot_round_trips_active_member_tag_and_stage_member(tmp_path):
+    store = HyroxResultsStore(str(tmp_path / "r.db"))
+    svc = HyroxService(results_store=store)
+    venue = _venue()
+    venue.exchange_zones = [HyroxEndpointSensor(node_id="rfid-tz-01", antenna_id="TZ1")]
+    svc.configure_venue(venue, mode="training", race_id="race-exchange-snap")
+    for tag, name in [("TAG_1", "One"), ("TAG_2", "Two"), ("TAG_3", "Three"), ("TAG_4", "Four")]:
+        svc.register("team", "relay", tag, name)
+    svc.start()
+
+    # TZ tap sets the first active member before anyone taps the treadmill.
+    svc.ingest_rfid("rfid-tz-01", "TZ1", "TAG_1", timestamp_ms=1)
+    svc.ingest_rfid("rfid-tm-01", "T1_GATE", "TAG_1", timestamp_ms=2)
+    svc.ingest_node("edge-tm-01", metrics={"distance_m": 0}, timestamp_ms=3)
+    svc.ingest_node("edge-tm-01", metrics={"distance_m": 400}, timestamp_ms=4)
+
+    snap = svc.snapshot()
+    fresh = HyroxService()
+    fresh.restore(snap)
+
+    restored = fresh._engine.state_of("team")
+    assert restored.active_member_tag == "TAG_1"
+    assert restored.stage_member[HyroxStage.RUN_1] == "TAG_1"
+    store.close()
+
+
 # --- Disk persistence ---
 
 def test_configure_venue_and_register_persist_to_disk(tmp_path):

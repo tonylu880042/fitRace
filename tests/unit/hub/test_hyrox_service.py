@@ -78,6 +78,18 @@ def _venue_with_rep_counter():
     return venue
 
 
+def _venue_with_exchange():
+    venue = _venue()
+    venue.exchange_zones = [HyroxEndpointSensor(node_id="rfid-tz-01", antenna_id="TZ1")]
+    return venue
+
+
+def _svc_relay(mode="training"):
+    svc = HyroxService()
+    svc.configure_venue(_venue_with_exchange(), mode=mode)
+    return svc
+
+
 def test_configure_register_start_and_state():
     svc = _svc()
     svc.register("alex", "individual", "TAG_ALEX", "Alex")
@@ -596,11 +608,36 @@ def test_roster_rejects_duplicate_tag_across_subjects():
         roster.add_member("team-b", "doubles", "TAG_1", "Jerry")
 
 
-def test_roster_flags_overfilled_team():
+def test_roster_rejects_a_tag_beyond_the_division_maximum():
+    # Phase 10: the maximum per division is enforced on add -- 1 for
+    # individual, 2 for doubles, 4 for relay -- but partial rosters are fine
+    # (a half-formed relay team is normal mid-signup).
     roster = HyroxRoster()
     roster.add_member("duo", "doubles", "T1", "A")
     roster.add_member("duo", "doubles", "T2", "B")
-    roster.add_member("duo", "doubles", "T3", "C")  # one too many
+    with pytest.raises(ValueError):
+        roster.add_member("duo", "doubles", "T3", "C")  # one too many
+
+    roster.add_member("solo", "individual", "S1", "Solo")
+    with pytest.raises(ValueError):
+        roster.add_member("solo", "individual", "S2", "Solo2")
+
+    relay = HyroxRoster()
+    for i in range(1, 5):
+        relay.add_member("team", "relay", f"R{i}", f"Member {i}")  # 4 is fine
+    with pytest.raises(ValueError):
+        relay.add_member("team", "relay", "R5", "Member 5")
+
+
+def test_roster_overfilled_detects_data_restored_outside_add_member():
+    # overfilled() remains a defensive readiness check for state that bypassed
+    # add_member's guard entirely (e.g. a corrupt/hand-edited snapshot).
+    roster = HyroxRoster.from_dict({
+        "subjects": [
+            {"subject_id": "duo", "division": "doubles",
+             "member_tags": ["T1", "T2", "T3"], "member_names": ["A", "B", "C"]},
+        ],
+    })
     assert "duo" in roster.overfilled()
 
 
@@ -718,3 +755,193 @@ def test_competition_mode_out_of_sequence_tap_rejected():
     svc.ingest_rfid("rfid-tm-01", "T1_GATE", "TAG_ALEX")
     state = svc.get_state()
     assert state["resources"]["treadmill-01"] == "free"
+
+
+# --- Phase 10: relay Transition-Zone exchange ---
+
+
+def _register_relay(svc, subject_id="team"):
+    for tag, name in [("TAG_1", "One"), ("TAG_2", "Two"), ("TAG_3", "Three"), ("TAG_4", "Four")]:
+        svc.register(subject_id, "relay", tag, name)
+
+
+def test_exchange_zone_rfid_read_routes_to_exchange_flow_and_sets_active_member(tmp_path):
+    store = HyroxResultsStore(str(tmp_path / "exchange.db"))
+    svc = HyroxService(results_store=store)
+    svc.configure_venue(_venue_with_exchange(), mode="training", race_id="exchange-rfid")
+    _register_relay(svc)
+    svc.start()
+
+    # TZ tap arrives on the regular RFID topic, same trick as abandon zones.
+    svc.ingest_rfid("rfid-tz-01", "TZ1", "TAG_1", timestamp_ms=1)
+
+    assert svc._engine.state_of("team").active_member_tag == "TAG_1"
+
+
+def test_exchange_success_is_recorded_as_a_durable_diagnostic(tmp_path):
+    store = HyroxResultsStore(str(tmp_path / "exchange-diag.db"))
+    svc = HyroxService(results_store=store)
+    svc.configure_venue(_venue_with_exchange(), mode="training", race_id="exchange-diag")
+    _register_relay(svc)
+    svc.start()
+
+    svc.ingest_rfid("rfid-tz-01", "TZ1", "TAG_1", timestamp_ms=1)
+
+    diagnostics = svc.diagnostics_for("exchange-diag")
+    assert any(d["kind"] == "exchange" for d in diagnostics)
+    store.close()
+
+
+def test_exchange_switches_active_member_at_a_later_leg_boundary(tmp_path):
+    store = HyroxResultsStore(str(tmp_path / "relay-leg2.db"))
+    svc = HyroxService(results_store=store)
+    svc.configure_venue(_venue_with_exchange(), mode="training", race_id="relay-leg2")
+    _register_relay(svc)
+    svc.start()
+
+    svc.ingest_rfid("rfid-tz-01", "TZ1", "TAG_1", timestamp_ms=1)   # leg 1: TAG_1
+    svc.complete_stage("team", timestamp_ms=100)  # run_1 -> ski_erg (operator override)
+    svc.complete_stage("team", timestamp_ms=200)  # ski_erg -> run_2, a fresh leg boundary
+
+    svc.ingest_rfid("rfid-tz-01", "TZ1", "TAG_2", timestamp_ms=300)  # leg 2: TAG_2
+
+    state = svc._engine.state_of("team")
+    assert state.current_stage == HyroxStage.RUN_2
+    assert state.active_member_tag == "TAG_2"
+    store.close()
+
+
+def test_exchange_rejects_unknown_sensor_with_diagnostic():
+    svc = _svc_relay(mode="training")
+    _register_relay(svc)
+    svc.start()
+
+    svc.ingest_exchange("unknown", "UNKNOWN", "TAG_1", timestamp_ms=1)
+
+    state = svc.get_state()
+    assert state["diagnostics"][-1]["kind"] == "exchange_unknown_sensor"
+
+
+def test_exchange_rejects_unregistered_tag_with_diagnostic():
+    svc = _svc_relay(mode="training")
+    _register_relay(svc)
+    svc.start()
+
+    svc.ingest_rfid("rfid-tz-01", "TZ1", "TAG_UNREGISTERED", timestamp_ms=1)
+
+    state = svc.get_state()
+    assert state["diagnostics"][-1]["kind"] == "exchange_unknown_tag"
+
+
+def test_exchange_rejects_a_non_relay_tag_as_not_a_member():
+    svc = _svc_relay(mode="training")
+    svc.register("alex", "individual", "TAG_ALEX", "Alex")
+    svc.start()
+
+    svc.ingest_rfid("rfid-tz-01", "TZ1", "TAG_ALEX", timestamp_ms=1)
+
+    state = svc.get_state()
+    assert state["diagnostics"][-1]["kind"] == "exchange_not_member"
+
+
+def test_exchange_rejects_terminal_team_with_diagnostic():
+    svc = _svc_relay(mode="training")
+    _register_relay(svc)
+    svc.start()
+    svc.abandon("team", timestamp_ms=5)
+
+    svc.ingest_rfid("rfid-tz-01", "TZ1", "TAG_1", timestamp_ms=10)
+
+    state = svc.get_state()
+    assert state["diagnostics"][-1]["kind"] == "exchange_terminal"
+
+
+def test_exchange_rejects_the_same_tag_with_diagnostic():
+    svc = _svc_relay(mode="training")
+    _register_relay(svc)
+    svc.start()
+    svc.ingest_rfid("rfid-tz-01", "TZ1", "TAG_1", timestamp_ms=1)
+
+    svc.ingest_rfid("rfid-tz-01", "TZ1", "TAG_1", timestamp_ms=2)
+
+    state = svc.get_state()
+    assert state["diagnostics"][-1]["kind"] == "exchange_same_tag"
+    assert svc._engine.state_of("team").active_member_tag == "TAG_1"
+
+
+def test_exchange_rejects_mid_stage_tap_with_diagnostic():
+    svc = _svc_relay(mode="training")
+    _register_relay(svc)
+    svc.start()
+    svc.ingest_rfid("rfid-tz-01", "TZ1", "TAG_1", timestamp_ms=1)
+    svc.ingest_rfid("rfid-tm-01", "T1_GATE", "TAG_1", timestamp_ms=2)          # dynamic claim
+    svc.ingest_node("edge-tm-01", metrics={"distance_m": 0}, timestamp_ms=3)   # first activity
+
+    svc.ingest_rfid("rfid-tz-01", "TZ1", "TAG_2", timestamp_ms=4)
+
+    state = svc.get_state()
+    assert state["diagnostics"][-1]["kind"] == "exchange_mid_stage"
+    assert svc._engine.state_of("team").active_member_tag == "TAG_1"
+
+
+def test_inactive_member_course_read_rejected_for_relay():
+    svc = _svc_relay(mode="training")
+    _register_relay(svc)
+    svc.start()
+    svc.ingest_rfid("rfid-tz-01", "TZ1", "TAG_1", timestamp_ms=1)  # TAG_1 is active
+
+    # A different member's tag attempts a course read (entry gate) -- rejected,
+    # only the tapped-in member races.
+    svc.ingest_rfid("rfid-tm-01", "T1_GATE", "TAG_2", timestamp_ms=2)
+
+    state = svc.get_state()
+    assert state["resources"]["treadmill-01"] == "free"  # no dynamic claim happened
+    assert state["diagnostics"][-1]["kind"] == "inactive_member_read"
+
+    # The active member's own tag still works normally.
+    svc.ingest_rfid("rfid-tm-01", "T1_GATE", "TAG_1", timestamp_ms=3)
+    assert svc.get_state()["resources"]["treadmill-01"] == "in_use"
+
+
+def test_individual_course_reads_unaffected_by_relay_attribution_tightening():
+    svc = _svc_relay(mode="training")
+    svc.register("alex", "individual", "TAG_ALEX", "Alex")
+    svc.start()
+
+    svc.ingest_rfid("rfid-tm-01", "T1_GATE", "TAG_ALEX", timestamp_ms=1)
+
+    assert svc.get_state()["resources"]["treadmill-01"] == "in_use"
+
+
+def test_abandon_zone_accepts_any_relay_member_tag_for_whole_team_dnf(tmp_path):
+    store = HyroxResultsStore(str(tmp_path / "relay-abandon.db"))
+    svc = HyroxService(results_store=store)
+    svc.configure_venue(_venue_with_exchange(), mode="training", race_id="relay-abandon")
+    _register_relay(svc)
+    svc.start()
+    svc.ingest_rfid("rfid-tz-01", "TZ1", "TAG_1", timestamp_ms=1)
+    svc.ingest_rfid("rfid-tm-01", "T1_GATE", "TAG_1", timestamp_ms=2)  # TAG_1 claims the treadmill
+
+    # A DIFFERENT team member (never claimed the resource) taps the abandon
+    # button -- still a valid whole-team DNF.
+    svc.ingest_abandon("abandon-tm-01", "T1_BUTTON", "TAG_3", timestamp_ms=3)
+
+    state = svc.get_state()
+    assert state["subjects"][0]["status"] == "abandoned"
+    assert svc.result_by_token(svc.token_for("team")).status == "dnf"
+    store.close()
+
+
+def test_abandon_zone_still_rejects_a_tag_from_a_different_team():
+    svc = _svc_relay(mode="training")
+    _register_relay(svc)
+    svc.register("other", "individual", "TAG_OTHER", "Other")
+    svc.start()
+    svc.ingest_rfid("rfid-tz-01", "TZ1", "TAG_1", timestamp_ms=1)
+    svc.ingest_rfid("rfid-tm-01", "T1_GATE", "TAG_1", timestamp_ms=2)
+
+    svc.ingest_abandon("abandon-tm-01", "T1_BUTTON", "TAG_OTHER", timestamp_ms=3)
+
+    state = svc.get_state()
+    assert state["subjects"][0]["status"] == "racing"
+    assert state["diagnostics"][-1]["kind"] == "abandon_tag_mismatch"

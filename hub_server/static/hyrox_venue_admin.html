@@ -372,6 +372,11 @@
           { group_id: 'shared_turf_lanes', resource_type: 'rfid_lane_pool', stage_candidates: [], units: lanes },
           { group_id: 'wall_ball_targets', resource_type: 'rep_counter_pool', stage_candidates: [], units: wallballs },
         ],
+        // Relay Transition-Zone reader(s) (Phase 10): venue-level, shared by
+        // every relay team, not owned by any resource group/unit above.
+        exchange_zones: [
+          { node_id: 'rfid-tz-01', antenna_id: 'TZ1' },
+        ],
       };
     }
 

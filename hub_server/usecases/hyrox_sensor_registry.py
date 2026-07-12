@@ -51,6 +51,15 @@ class AbandonResolution:
     sensor_class: HyroxSensorClass = HyroxSensorClass.ABANDON_BUTTON
 
 
+@dataclass(frozen=True)
+class ExchangeResolution:
+    # Exchange zones are venue-level (HyroxVenueConfig.exchange_zones), not
+    # owned by any resource unit -- resource_id is a synthetic zone id used
+    # only for diagnostics/logging.
+    resource_id: str
+    sensor_class: HyroxSensorClass = HyroxSensorClass.EXCHANGE_ZONE
+
+
 class HyroxTelemetryEvent(BaseModel):
     """Resource-aware event; all downstream logic consumes this, not raw MQTT."""
 
@@ -72,12 +81,14 @@ class HyroxSensorRegistry:
         self._rfid: dict[tuple[str, str], RfidResolution] = {}
         self._nodes: dict[str, NodeResolution] = {}
         self._abandon: dict[tuple[str, str], AbandonResolution] = {}
+        self._exchange: dict[tuple[str, str], ExchangeResolution] = {}
 
         for group in venue.resource_groups:
             for unit in group.units:
                 self._index_rfid(group, unit)
                 self._index_abandon(group, unit)
                 self._index_node(group, unit)
+        self._index_exchange(venue.exchange_zones)
 
     def _index_rfid(self, group: HyroxResourceGroup, unit: HyroxResourceUnit):
         stage_candidates = tuple(group.stage_candidates)
@@ -121,6 +132,19 @@ class HyroxSensorRegistry:
             group_id=group.group_id,
         )
 
+    def _index_exchange(self, zones) -> None:
+        for idx, ep in enumerate(zones):
+            key = (ep.node_id, ep.antenna_id)
+            if key in self._rfid or key in self._abandon or key in self._exchange:
+                existing = (
+                    self._rfid.get(key) or self._abandon.get(key) or self._exchange.get(key)
+                )
+                raise ValueError(
+                    f"Duplicate RFID read zone {key[0]}/{key[1]} for "
+                    f"{existing.resource_id} and exchange_zone_{idx}"
+                )
+            self._exchange[key] = ExchangeResolution(resource_id=f"exchange_zone_{idx}")
+
     def _index_node(self, group: HyroxResourceGroup, unit: HyroxResourceUnit):
         # Node-addressed sensors (FTMS machines, rep counters) resolve by node_id.
         if not unit.node_id:
@@ -155,6 +179,11 @@ class HyroxSensorRegistry:
         self, node_id: str, antenna_id: str
     ) -> Optional[AbandonResolution]:
         return self._abandon.get((node_id, antenna_id))
+
+    def resolve_exchange(
+        self, node_id: str, antenna_id: str
+    ) -> Optional[ExchangeResolution]:
+        return self._exchange.get((node_id, antenna_id))
 
     # --- Normalization (raw address -> resource-aware event, None if unknown) ---
 
@@ -216,6 +245,27 @@ class HyroxSensorRegistry:
         return HyroxTelemetryEvent(
             sensor_class=HyroxSensorClass.ABANDON_BUTTON,
             resource_group_id=res.group_id,
+            resource_id=res.resource_id,
+            endpoint=None,
+            tag_id=tag_id,
+            timestamp_epoch_ms=timestamp_epoch_ms,
+            raw_payload=raw_payload or {},
+        )
+
+    def normalize_exchange(
+        self,
+        node_id: str,
+        antenna_id: str,
+        tag_id: str,
+        timestamp_epoch_ms: int,
+        raw_payload: Optional[dict] = None,
+    ) -> Optional[HyroxTelemetryEvent]:
+        res = self.resolve_exchange(node_id, antenna_id)
+        if res is None:
+            return None
+        return HyroxTelemetryEvent(
+            sensor_class=HyroxSensorClass.EXCHANGE_ZONE,
+            resource_group_id="exchange_zone",
             resource_id=res.resource_id,
             endpoint=None,
             tag_id=tag_id,

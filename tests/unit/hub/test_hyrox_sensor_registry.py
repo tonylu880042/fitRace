@@ -181,3 +181,56 @@ def test_abandon_address_cannot_overlap_progress_sensor_in_registry():
 
     with pytest.raises(ValueError, match="Duplicate RFID read zone"):
         HyroxSensorRegistry(venue)
+
+
+# --- Phase 10: exchange zones ---
+
+def test_exchange_zone_resolves_separately_from_progress_rfid():
+    venue = _venue()
+    venue.exchange_zones = [HyroxEndpointSensor(node_id="rfid-tz-01", antenna_id="TZ1")]
+    reg = HyroxSensorRegistry(venue)
+
+    resolution = reg.resolve_exchange("rfid-tz-01", "TZ1")
+
+    assert resolution is not None
+    assert resolution.resource_id == "exchange_zone_0"
+    assert resolution.sensor_class == HyroxSensorClass.EXCHANGE_ZONE
+    assert reg.resolve_rfid("rfid-tz-01", "TZ1") is None
+
+
+def test_normalize_exchange_produces_resource_aware_event():
+    venue = _venue()
+    venue.exchange_zones = [HyroxEndpointSensor(node_id="rfid-tz-01", antenna_id="TZ1")]
+    reg = HyroxSensorRegistry(venue)
+
+    event = reg.normalize_exchange("rfid-tz-01", "TZ1", tag_id="TAG_A", timestamp_epoch_ms=0)
+
+    assert event.resource_id == "exchange_zone_0"
+    assert event.sensor_class == HyroxSensorClass.EXCHANGE_ZONE
+    assert event.endpoint is None
+    assert event.tag_id == "TAG_A"
+    assert event.timestamp_epoch_ms == 0
+
+
+def test_normalize_exchange_unknown_returns_none():
+    reg = HyroxSensorRegistry(_venue())
+    assert reg.resolve_exchange("x", "y") is None
+    assert reg.normalize_exchange("x", "y", tag_id="T", timestamp_epoch_ms=1) is None
+
+
+def test_exchange_zone_cannot_overlap_progress_sensor_in_registry():
+    venue = _venue()
+    venue.exchange_zones = [HyroxEndpointSensor(node_id="rfid-01", antenna_id="L1_START")]
+
+    with pytest.raises(ValueError, match="Duplicate RFID read zone"):
+        HyroxSensorRegistry(venue)
+
+
+def test_exchange_zone_cannot_overlap_abandon_endpoint_in_registry():
+    venue = _venue()
+    venue.exchange_zones = [
+        HyroxEndpointSensor(node_id="abandon-tm-01", antenna_id="T1_BUTTON")
+    ]
+
+    with pytest.raises(ValueError, match="Duplicate RFID read zone"):
+        HyroxSensorRegistry(venue)

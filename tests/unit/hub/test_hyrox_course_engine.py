@@ -264,3 +264,171 @@ def test_reinstate_is_idempotent_guarded():
     assert engine.reinstate("alex", 1000) is True
     # Second call: status is now "racing", so the guard rejects it.
     assert engine.reinstate("alex", 1100) is False
+
+
+# --- Phase 10: relay Transition-Zone exchange ---
+
+
+def test_exchange_before_any_activity_sets_first_active_member():
+    engine, store, _ = _engine()
+    engine.register_subject("team")
+    engine.start(0)
+
+    ok, kind = engine.exchange("team", "TAG_1", 10)
+
+    assert ok is True and kind is None
+    assert engine.state_of("team").active_member_tag == "TAG_1"
+    assert any(d.kind == "exchange" for d in engine.diagnostics)
+
+
+def test_exchange_rejects_the_currently_active_tag():
+    engine, store, _ = _engine()
+    engine.register_subject("team")
+    engine.start(0)
+    engine.exchange("team", "TAG_1", 10)
+
+    ok, kind = engine.exchange("team", "TAG_1", 20)
+
+    assert ok is False and kind == "exchange_same_tag"
+    assert engine.state_of("team").active_member_tag == "TAG_1"  # unchanged
+
+
+def test_exchange_rejects_mid_run_once_activity_has_started():
+    engine, store, _ = _engine()
+    engine.register_subject("team")
+    engine.start(0)
+    engine.exchange("team", "TAG_1", 10)
+    store.claim("treadmill-01", "team", "TAG_1", HyroxStage.RUN_1, ClaimSource.OPERATOR, 15)
+    engine.process(_ftms("treadmill-01", "run_treadmills", 100), 20)  # first activity
+
+    ok, kind = engine.exchange("team", "TAG_2", 30)
+
+    assert ok is False and kind == "exchange_mid_stage"
+    assert engine.state_of("team").active_member_tag == "TAG_1"
+
+
+def test_exchange_rejects_when_a_resource_is_already_claimed_but_idle():
+    # Leg boundary requires BOTH no stage_arrived_ms AND no open assignment --
+    # an operator claim with no telemetry yet still blocks the handoff.
+    engine, store, _ = _engine()
+    engine.register_subject("team")
+    engine.start(0)
+    store.claim("treadmill-01", "team", "TAG_1", HyroxStage.RUN_1, ClaimSource.OPERATOR, 5)
+
+    ok, kind = engine.exchange("team", "TAG_2", 10)
+
+    assert ok is False and kind == "exchange_mid_stage"
+
+
+def test_exchange_rejects_mid_station():
+    engine, store, _ = _engine()
+    state = engine.register_subject("team")
+    engine.start(0)
+    state.current_stage = HyroxStage.SKI_ERG  # a station, not a run
+
+    ok, kind = engine.exchange("team", "TAG_2", 10)
+
+    assert ok is False and kind == "exchange_mid_stage"
+
+
+def test_exchange_rejects_terminal_team():
+    engine, store, _ = _engine()
+    engine.register_subject("team")
+    engine.start(0)
+    engine.abandon("team", 100)
+
+    ok, kind = engine.exchange("team", "TAG_2", 200)
+
+    assert ok is False and kind == "exchange_terminal"
+
+
+def test_exchange_rejects_unknown_subject():
+    engine, store, _ = _engine()
+    ok, kind = engine.exchange("ghost", "TAG_1", 10)
+    assert ok is False and kind == "exchange_terminal"
+
+
+def test_exchange_succeeds_again_at_the_next_leg_boundary():
+    # Even though _advance() eagerly stamps stage_start_ms for the new
+    # current stage, stage_arrived_ms (the real "has this leg begun" signal)
+    # is only set by an actual telemetry event, so the TZ tap works at every
+    # leg boundary, not just the very first one.
+    engine, store, _ = _engine()
+    state = engine.register_subject("team")
+    engine.start(0)
+    engine.exchange("team", "TAG_1", 10)
+    engine.force_complete_stage("team", 100)   # run_1 -> ski_erg
+    engine.force_complete_stage("team", 200)   # ski_erg -> run_2 (leg boundary)
+
+    assert state.current_stage == HyroxStage.RUN_2
+    assert HyroxStage.RUN_2 not in state.stage_arrived_ms
+    assert HyroxStage.RUN_2 in state.stage_start_ms  # eagerly stamped by _advance
+
+    ok, kind = engine.exchange("team", "TAG_2", 300)
+
+    assert ok is True and kind is None
+    assert state.active_member_tag == "TAG_2"
+
+
+def test_process_sets_stage_member_and_active_member_tag_on_first_activity():
+    engine, store, _ = _engine()
+    state = engine.register_subject("team")
+    engine.start(0)
+    store.claim("treadmill-01", "team", "TAG_1", HyroxStage.RUN_1, ClaimSource.OPERATOR, 0)
+
+    # Anonymous FTMS event: active_member_tag is unset, so it falls back to
+    # the assignment's active_tag_id, and that first activity also SETS
+    # active_member_tag.
+    engine.process(_ftms("treadmill-01", "run_treadmills", 100), 5)
+
+    assert state.stage_member[HyroxStage.RUN_1] == "TAG_1"
+    assert state.active_member_tag == "TAG_1"
+
+
+def test_process_credits_stage_member_to_the_already_active_member():
+    # An operator assignment can bind a resource under any team member's tag
+    # (it does not know about the TZ exchange concept) -- but stage_member
+    # still credits the TEAM's active member, not whichever tag happened to
+    # claim the resource.
+    engine, store, _ = _engine()
+    state = engine.register_subject("team")
+    engine.start(0)
+    engine.exchange("team", "TAG_1", 5)  # active_member_tag = TAG_1
+    store.claim("treadmill-01", "team", "TAG_2", HyroxStage.RUN_1, ClaimSource.OPERATOR, 6)
+
+    engine.process(_ftms("treadmill-01", "run_treadmills", 100), 10)
+
+    assert state.stage_member[HyroxStage.RUN_1] == "TAG_1"
+    assert state.active_member_tag == "TAG_1"  # unchanged, already set
+
+
+def test_exchange_and_stage_member_round_trip_through_snapshot():
+    engine, store, tracker = _engine()
+    state = engine.register_subject("team")
+    engine.start(0)
+    engine.exchange("team", "TAG_1", 10)
+    store.claim("treadmill-01", "team", "TAG_1", HyroxStage.RUN_1, ClaimSource.OPERATOR, 10)
+    engine.process(_ftms("treadmill-01", "run_treadmills", 100), 20)
+
+    fresh = HyroxCourseEngine(default_hyrox_course_profile(), store, tracker)
+    fresh.restore(engine.to_dict())
+
+    restored = fresh.state_of("team")
+    assert restored.active_member_tag == "TAG_1"
+    assert restored.stage_member[HyroxStage.RUN_1] == "TAG_1"
+
+
+def test_restore_defaults_active_member_tag_and_stage_member_for_old_snapshots():
+    engine, store, tracker = _engine()
+    engine.register_subject("team")
+    data = engine.to_dict()
+    for s in data["subjects"].values():
+        s.pop("active_member_tag", None)
+        s.pop("stage_member", None)
+
+    fresh = HyroxCourseEngine(default_hyrox_course_profile(), store, tracker)
+    fresh.restore(data)  # must not raise
+
+    restored = fresh.state_of("team")
+    assert restored.active_member_tag is None
+    assert restored.stage_member == {}
