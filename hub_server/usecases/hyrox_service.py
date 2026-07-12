@@ -35,7 +35,9 @@ from hub_server.domain.hyrox_venue import (
 )
 from hub_server.usecases.hyrox_roster import HyroxRoster
 from hub_server.usecases.hyrox_sensor_registry import HyroxSensorRegistry
-from hub_server.usecases.hyrox_assignment_store import ClaimSource, HyroxAssignmentStore
+from hub_server.usecases.hyrox_assignment_store import (
+    AssignmentCloseReason, ClaimSource, HyroxAssignmentStore,
+)
 from hub_server.usecases.hyrox_progress import HyroxProgressTracker
 from hub_server.usecases.hyrox_course_engine import HyroxCourseEngine
 
@@ -273,10 +275,10 @@ class HyroxService:
         self.abandon(assignment.subject_id, ts)
 
     def _maybe_dynamic_claim(self, event, tag_id: str, ts: int):
-        # Training mode only: the first in-sequence read on a free resource
-        # claims it. Competition mode requires an explicit operator assignment.
-        if self._mode != "training":
-            return
+        # Phase 9: in both training and competition modes, the first in-sequence
+        # read on a free resource claims it. The same guards apply: registered
+        # racing subject, in-sequence stage, resource free. Competition mode can
+        # also rely on explicit operator assignment.
         subject_id = self._roster.subject_for_tag(tag_id)
         if subject_id is None:
             return  # unregistered tag
@@ -379,13 +381,23 @@ class HyroxService:
                 f"Tag {selected_tag} does not belong to subject {subject_id}",
             )
 
+        ts = timestamp_ms if timestamp_ms is not None else _now_ms()
         existing = self._store.active_on(resource_id)
         if existing is not None and existing.subject_id != subject_id:
-            raise HyroxAssignmentError(
-                "occupied", f"Resource {resource_id} is occupied"
-            )
+            # Operator assignment can supersede a dynamic claim.
+            if existing.source == ClaimSource.DYNAMIC_CLAIM:
+                self._store.close(resource_id, AssignmentCloseReason.SUPERSEDED, ts)
+                self._store.record_diagnostic(
+                    "operator_supersede", resource_id,
+                    f"operator assignment by {subject_id} supersedes dynamic claim by {existing.subject_id}",
+                    ts,
+                )
+            else:
+                # Operator assignment cannot take over another operator's assignment.
+                raise HyroxAssignmentError(
+                    "occupied", f"Resource {resource_id} is occupied"
+                )
 
-        ts = timestamp_ms if timestamp_ms is not None else _now_ms()
         assignment = self._store.claim(
             resource_id, subject_id, selected_tag, stage, ClaimSource.OPERATOR, ts
         )

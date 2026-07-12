@@ -198,16 +198,15 @@ def test_unregistered_tag_does_not_claim():
     assert svc.get_state()["resources"]["treadmill-01"] == "free"
 
 
-def test_competition_mode_requires_operator_assignment():
+def test_competition_mode_supports_both_gate_claim_and_operator_assignment():
     svc = _svc(mode="competition")
     svc.register("alex", "individual", "TAG_ALEX", "Alex")
     svc.start()
-    # No dynamic claim in competition mode: an RFID read alone binds nothing.
+    # Phase 9: gate claim works in competition mode too.
     svc.ingest_rfid("rfid-tm-01", "T1_GATE", "TAG_ALEX")
-    assert svc.get_state()["resources"]["treadmill-01"] == "free"
-    # Operator assigns explicitly.
-    assert svc.assign("alex", "treadmill-01") is True
     assert svc.get_state()["resources"]["treadmill-01"] == "in_use"
+    # Operator assignment also works (demonstrated in other tests).
+    # This test just confirms both paths are available in competition mode.
 
 
 def test_operator_assignment_is_rejected_in_training_mode():
@@ -499,3 +498,101 @@ def test_pulse_to_meter_progresses_run():
 
     st = svc.get_state()
     assert st["subjects"][0]["current_stage"] == "ski_erg"
+
+
+# Phase 9 — Competition gate-claim tests
+
+def test_competition_mode_gate_tap_claims_free_resource():
+    """Phase 9: in-sequence gate tap claims a free resource in competition mode."""
+    svc = _svc(mode="competition")
+    svc.register("alex", "individual", "TAG_ALEX", "Alex")
+    svc.start()
+
+    # Seed baseline before gate tap (like real hardware would)
+    svc.ingest_node("edge-tm-01", metrics={"distance_m": 5000}, timestamp_ms=1)
+
+    # Gate tap claims the resource
+    svc.ingest_rfid("rfid-tm-01", "T1_GATE", "TAG_ALEX", timestamp_ms=2)
+    state = svc.get_state()
+    assert state["resources"]["treadmill-01"] == "in_use"
+    assert state["subjects"][0]["assigned_resource"] == "treadmill-01"
+
+    # Progress flows normally
+    svc.ingest_node("edge-tm-01", metrics={"distance_m": 5100}, timestamp_ms=3)
+    state = svc.get_state()
+    assert state["subjects"][0]["progress_value"] == 100
+
+
+def test_competition_mode_gate_tap_on_operator_held_resource_rejected():
+    """Phase 9: gate tap on a resource held by operator assignment is rejected."""
+    svc = _svc(mode="competition")
+    svc.register("alex", "individual", "TAG_ALEX", "Alex")
+    svc.register("bella", "individual", "TAG_BELLA", "Bella")
+    svc.start()
+
+    # Operator assigns to Alex
+    svc.assign("alex", "treadmill-01")
+
+    # Bella's gate tap is rejected
+    svc.ingest_rfid("rfid-tm-01", "T1_GATE", "TAG_BELLA")
+
+    # Resource still belongs to Alex, not Bella
+    state = svc.get_state()
+    assert state["subjects"][0]["assigned_resource"] == "treadmill-01"
+    assert state["subjects"][1]["assigned_resource"] is None
+
+    # Alex's occupant is unaffected
+    assert svc._store.active_on("treadmill-01").subject_id == "alex"
+
+
+def test_operator_assign_supersedes_dynamic_claim():
+    """Phase 9: operator assign() closes a dynamic claim as superseded."""
+    svc = _svc(mode="competition")
+    svc.register("alex", "individual", "TAG_ALEX", "Alex")
+    svc.register("bella", "individual", "TAG_BELLA", "Bella")
+    svc.start()
+
+    # Alex's gate tap claims the resource dynamically
+    svc.ingest_rfid("rfid-tm-01", "T1_GATE", "TAG_ALEX")
+    state = svc.get_state()
+    assert state["resources"]["treadmill-01"] == "in_use"
+    assert state["subjects"][0]["assigned_resource"] == "treadmill-01"
+
+    # Operator assigns the same resource to Bella (supersedes Alex's claim)
+    assert svc.assign("bella", "treadmill-01") is True
+
+    # Resource now belongs to Bella
+    state = svc.get_state()
+    assert state["subjects"][1]["assigned_resource"] == "treadmill-01"
+    assert svc._store.active_on("treadmill-01").subject_id == "bella"
+
+    # Alex's claim was closed as superseded
+    assert any(
+        asg.subject_id == "alex" and
+        asg.status == "closed" and
+        asg.close_reason == "superseded"
+        for asg in svc._store._closed
+    )
+
+    # A diagnostic was recorded
+    assert any(
+        diag.kind == "operator_supersede" and
+        "alex" in diag.detail and
+        "bella" in diag.detail
+        for diag in svc._store.diagnostics
+    )
+
+
+def test_competition_mode_out_of_sequence_tap_rejected():
+    """Phase 9: out-of-sequence gate tap in competition is still rejected."""
+    svc = _svc(mode="competition")
+    svc.register("alex", "individual", "TAG_ALEX", "Alex")
+    svc.start()
+
+    # Manually move Alex to a wrong stage for this resource
+    svc._engine.state_of("alex").current_stage = HyroxStage.SLED_PUSH
+
+    # Out-of-sequence tap is rejected (no claim)
+    svc.ingest_rfid("rfid-tm-01", "T1_GATE", "TAG_ALEX")
+    state = svc.get_state()
+    assert state["resources"]["treadmill-01"] == "free"
