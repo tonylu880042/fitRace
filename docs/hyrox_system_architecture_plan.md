@@ -830,11 +830,11 @@ It should simulate:
 
 ## 17. Open Questions
 
-1. Should competition mode require operator assignment for every resource, or allow auto-scheduler assignment when a resource is free?
+1. ~~Should competition mode require operator assignment for every resource, or allow auto-scheduler assignment when a resource is free?~~ **Resolved:** entry-gate tap claims a free in-sequence resource in competition mode too; operator assignment remains and supersedes. No auto-scheduler (see `hyrox_team_race_spec.md` Phase 9).
 2. For running, will the real venue use treadmills, track RFID lap gates, or both?
 3. ~~Should doubles and relay be modeled as one `team_id` with member tags, or as multiple athlete records under one team state?~~ **Resolved:** one `team_id` with member tags. Race status and resource assignments are held at the team level; the active member tag drives attribution and can abandon the whole team (Sections 8, 10, 11).
 4. Do we need heat-level capacity planning before start, for example maximum active participants by resource bottleneck?
-5. Should wall-ball targets be claimable by RFID entry gate, operator assignment, or both?
+5. ~~Should wall-ball targets be claimable by RFID entry gate, operator assignment, or both?~~ **Resolved:** both — entry gate primarily, operator assignment as fallback/override (see `hyrox_team_race_spec.md` Phase 9).
 
 ## 18. Recommended Next Step
 
