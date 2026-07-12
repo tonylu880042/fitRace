@@ -70,7 +70,11 @@ class Attribution:
 class HyroxAssignmentStore:
     def __init__(self, on_diagnostic: Optional[Callable[[AssignmentDiagnostic], None]] = None):
         self._by_resource: dict[str, ResourceAssignment] = {}  # invariant lives here
-        self._resource_of_subject: dict[str, str] = {}         # subject_id -> resource_id
+        # subject_id -> {active_tag_id: resource_id}. Individuals and relay
+        # subjects have at most one entry; doubles subjects may hold two
+        # concurrent run-stage entries, one per member tag (Phase 11, spec
+        # section 5).
+        self._resource_of_subject: dict[str, dict[str, str]] = {}
         self._closed: list[ResourceAssignment] = []            # history / audit
         self.diagnostics: list[AssignmentDiagnostic] = []
         self._counter = 0
@@ -103,8 +107,35 @@ class HyroxAssignmentStore:
         return self._by_resource.get(resource_id)
 
     def active_for_subject(self, subject_id: str) -> Optional[ResourceAssignment]:
-        rid = self._resource_of_subject.get(subject_id)
+        """One of the subject's open assignments (arbitrary but stable pick
+        via dict insertion order). For the common single-assignment case this
+        is unambiguous; doubles run stages should prefer
+        `active_for_subject_tag` or `all_active_for_subject`."""
+        tag_resources = self._resource_of_subject.get(subject_id)
+        if not tag_resources:
+            return None
+        rid = next(iter(tag_resources.values()))
+        return self._by_resource.get(rid)
+
+    def active_for_subject_tag(
+        self, subject_id: str, tag_id: str
+    ) -> Optional[ResourceAssignment]:
+        """The open assignment held specifically by this member tag (doubles
+        run stages, where a subject may hold two concurrent assignments)."""
+        tag_resources = self._resource_of_subject.get(subject_id)
+        if not tag_resources:
+            return None
+        rid = tag_resources.get(tag_id)
         return self._by_resource.get(rid) if rid else None
+
+    def all_active_for_subject(self, subject_id: str) -> list[ResourceAssignment]:
+        """Every open assignment currently held by the subject (0, 1, or --
+        for a doubles team mid-run -- 2)."""
+        tag_resources = self._resource_of_subject.get(subject_id, {})
+        return [
+            self._by_resource[rid] for rid in tag_resources.values()
+            if rid in self._by_resource
+        ]
 
     def availability(self, resource_ids) -> dict[str, str]:
         """Projection of assignments: free | in_use per resource."""
@@ -123,13 +154,27 @@ class HyroxAssignmentStore:
         stage: HyroxStage,
         source: ClaimSource,
         timestamp_epoch_ms: int,
+        allow_concurrent: bool = False,
     ) -> Optional[ResourceAssignment]:
         """Claim a resource for a subject. Returns the assignment, or None on a
-        rejected claim (resource already held by someone else -> diagnostic)."""
+        rejected claim (resource already held by someone else -> diagnostic).
+
+        `allow_concurrent` relaxes the per-subject invariant for a doubles
+        team on a run stage (spec section 5): the subject may hold up to two
+        open assignments, one per member tag, each on its own resource. The
+        per-resource invariant (one open assignment per resource) is
+        unaffected either way -- it is enforced above by the `existing`
+        check."""
         existing = self._by_resource.get(resource_id)
         if existing is not None:
             if existing.subject_id == subject_id:
-                # Idempotent re-claim; refresh the active member tag (relay handoff).
+                # Idempotent re-claim; refresh the active member tag (relay
+                # handoff) and drop any stale tag entry that pointed here.
+                tag_resources = self._resource_of_subject.setdefault(subject_id, {})
+                for tag, rid in list(tag_resources.items()):
+                    if rid == resource_id and tag != active_tag_id:
+                        del tag_resources[tag]
+                tag_resources[active_tag_id] = resource_id
                 existing.active_tag_id = active_tag_id
                 return existing
             self._diag(
@@ -139,10 +184,18 @@ class HyroxAssignmentStore:
             )
             return None
 
-        # A subject can hold only one active assignment: supersede any prior one.
-        prior_rid = self._resource_of_subject.get(subject_id)
-        if prior_rid and prior_rid != resource_id:
-            self.close(prior_rid, AssignmentCloseReason.SUPERSEDED, timestamp_epoch_ms)
+        tag_resources = self._resource_of_subject.get(subject_id, {})
+        if allow_concurrent:
+            # Only supersede this same tag's own prior resource; the other
+            # member's concurrent assignment is left untouched.
+            prior_rid = tag_resources.get(active_tag_id)
+            if prior_rid and prior_rid != resource_id:
+                self.close(prior_rid, AssignmentCloseReason.SUPERSEDED, timestamp_epoch_ms)
+        else:
+            # A subject can hold only one active assignment: supersede any prior one(s).
+            for other_rid in list(tag_resources.values()):
+                if other_rid != resource_id:
+                    self.close(other_rid, AssignmentCloseReason.SUPERSEDED, timestamp_epoch_ms)
 
         assignment = ResourceAssignment(
             assignment_id=self._next_id(),
@@ -154,7 +207,7 @@ class HyroxAssignmentStore:
             assigned_at_epoch_ms=timestamp_epoch_ms,
         )
         self._by_resource[resource_id] = assignment
-        self._resource_of_subject[subject_id] = resource_id
+        self._resource_of_subject.setdefault(subject_id, {})[active_tag_id] = resource_id
         return assignment
 
     def close(
@@ -171,8 +224,13 @@ class HyroxAssignmentStore:
         assignment.status = "closed"
         assignment.close_reason = reason
         assignment.closed_at_epoch_ms = timestamp_epoch_ms
-        if self._resource_of_subject.get(assignment.subject_id) == resource_id:
-            del self._resource_of_subject[assignment.subject_id]
+        tag_resources = self._resource_of_subject.get(assignment.subject_id)
+        if tag_resources:
+            for tag, rid in list(tag_resources.items()):
+                if rid == resource_id:
+                    del tag_resources[tag]
+            if not tag_resources:
+                del self._resource_of_subject[assignment.subject_id]
         self._closed.append(assignment)
         return assignment
 
@@ -283,7 +341,9 @@ class HyroxAssignmentStore:
         for a in data.get("active", []):
             assignment = cls._assignment_from_dict(a)
             store._by_resource[assignment.resource_id] = assignment
-            store._resource_of_subject[assignment.subject_id] = assignment.resource_id
+            store._resource_of_subject.setdefault(assignment.subject_id, {})[
+                assignment.active_tag_id
+            ] = assignment.resource_id
         for a in data.get("closed", []):
             store._closed.append(cls._assignment_from_dict(a))
         store.diagnostics = [

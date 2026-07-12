@@ -212,3 +212,35 @@ def test_manual_force_complete():
     ev = _ftms("ski-1", 10)
     state = t.apply(ev, "alex", HyroxStage.SKI_ERG, HyroxTargetType.MANUAL, 0)
     assert state.complete is True
+
+
+# --- Phase 11: doubles per-member distance tracking ---
+
+
+def test_doubles_run_distance_is_tracked_per_member_tag():
+    t = HyroxProgressTracker()
+    t.seed_distance_baseline("duo", HyroxStage.RUN_1, 0.0, member_tag="TAG_A")
+    t.seed_distance_baseline("duo", HyroxStage.RUN_1, 0.0, member_tag="TAG_B")
+
+    a = t.apply(_ftms("treadmill-01", 400), "duo", HyroxStage.RUN_1,
+                HyroxTargetType.DISTANCE_M, 1000, member_tag="TAG_A")
+    b = t.apply(_ftms("treadmill-02", 150), "duo", HyroxStage.RUN_1,
+                HyroxTargetType.DISTANCE_M, 1000, member_tag="TAG_B")
+
+    assert a.value == 400 and not a.complete
+    assert b.value == 150 and not b.complete
+    assert t.value_of("duo", HyroxStage.RUN_1, HyroxTargetType.DISTANCE_M,
+                       member_tag="TAG_A") == 400
+    assert t.value_of("duo", HyroxStage.RUN_1, HyroxTargetType.DISTANCE_M,
+                       member_tag="TAG_B") == 150
+    assert t.distance_values_for("duo", HyroxStage.RUN_1) == {"TAG_A": 400, "TAG_B": 150}
+
+
+def test_individual_distance_key_shape_unaffected_by_member_tag_default():
+    # Individuals/relay never pass member_tag, so their key stays
+    # (subject, stage, None) -- unchanged behavior from before Phase 11.
+    t = HyroxProgressTracker()
+    result = _distance(t, "alex", _ftms("tm-1", 500))
+    assert result.value == 0  # baseline
+    assert t.value_of("alex", HyroxStage.RUN_1, HyroxTargetType.DISTANCE_M) == 0
+    assert t.distance_values_for("alex", HyroxStage.RUN_1) == {}

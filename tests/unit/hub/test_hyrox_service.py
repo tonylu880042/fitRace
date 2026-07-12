@@ -90,6 +90,36 @@ def _svc_relay(mode="training"):
     return svc
 
 
+def _venue_with_second_treadmill():
+    # Doubles (Phase 11): each partner runs on their own treadmill. Also
+    # carries the wall-ball rep counter (station-merge tests need a station
+    # further down the course than RUN_1).
+    venue = _venue_with_rep_counter()
+    venue.resource_groups[0].units.append(
+        HyroxResourceUnit(
+            resource_id="treadmill-02", display_name="TM2",
+            sensor_class=HyroxSensorClass.FTMS_MACHINE, node_id="edge-tm-02",
+            entry_gate=HyroxEndpointSensor(node_id="rfid-tm-02", antenna_id="T2_GATE"),
+            abandon_endpoint=HyroxEndpointSensor(
+                node_id="abandon-tm-02", antenna_id="T2_BUTTON"
+            ),
+            pulse_to_meter=250.0,
+        )
+    )
+    return venue
+
+
+def _svc_doubles(mode="training"):
+    svc = HyroxService()
+    svc.configure_venue(_venue_with_second_treadmill(), mode=mode)
+    return svc
+
+
+def _register_doubles(svc, subject_id="duo"):
+    svc.register(subject_id, "doubles", "TAG_A", "Anna")
+    svc.register(subject_id, "doubles", "TAG_B", "Bo")
+
+
 def test_configure_register_start_and_state():
     svc = _svc()
     svc.register("alex", "individual", "TAG_ALEX", "Alex")
@@ -945,3 +975,113 @@ def test_abandon_zone_still_rejects_a_tag_from_a_different_team():
     state = svc.get_state()
     assert state["subjects"][0]["status"] == "racing"
     assert state["diagnostics"][-1]["kind"] == "abandon_tag_mismatch"
+
+
+# --- Phase 11: doubles dual-run semantics ---
+
+
+def test_doubles_gate_taps_claim_two_treadmills_concurrently():
+    svc = _svc_doubles(mode="training")
+    _register_doubles(svc)
+    svc.start()
+
+    svc.ingest_rfid("rfid-tm-01", "T1_GATE", "TAG_A", timestamp_ms=1)
+    svc.ingest_rfid("rfid-tm-02", "T2_GATE", "TAG_B", timestamp_ms=2)
+
+    state = svc.get_state()
+    assert state["resources"]["treadmill-01"] == "in_use"
+    assert state["resources"]["treadmill-02"] == "in_use"
+    assert svc._store.active_for_subject_tag("duo", "TAG_A").resource_id == "treadmill-01"
+    assert svc._store.active_for_subject_tag("duo", "TAG_B").resource_id == "treadmill-02"
+
+
+def test_doubles_operator_assign_two_treadmills_concurrently():
+    svc = _svc_doubles(mode="competition")
+    _register_doubles(svc)
+    svc.start()
+
+    assert svc.assign("duo", "treadmill-01", active_tag_id="TAG_A") is True
+    assert svc.assign("duo", "treadmill-02", active_tag_id="TAG_B") is True
+
+    state = svc.get_state()
+    # Assigning the second treadmill must not supersede the first -- the
+    # per-subject invariant only relaxes for a doubles team on a run stage.
+    assert state["resources"]["treadmill-01"] == "in_use"
+    assert state["resources"]["treadmill-02"] == "in_use"
+    assert sorted(state["subjects"][0]["assigned_resources"]) == ["treadmill-01", "treadmill-02"]
+
+
+def test_doubles_run_completes_only_when_both_partners_finish():
+    svc = _svc_doubles(mode="training")
+    _register_doubles(svc)
+    svc.start()
+    svc.ingest_rfid("rfid-tm-01", "T1_GATE", "TAG_A", timestamp_ms=1)
+    svc.ingest_rfid("rfid-tm-02", "T2_GATE", "TAG_B", timestamp_ms=2)
+
+    svc.ingest_node("edge-tm-01", metrics={"distance_m": 0}, timestamp_ms=3)     # A baseline
+    svc.ingest_node("edge-tm-01", metrics={"distance_m": 1000}, timestamp_ms=4)  # A finishes first
+
+    state = svc.get_state()
+    assert state["subjects"][0]["current_stage"] == "run_1"     # stage waits for B
+    assert state["resources"]["treadmill-01"] == "free"         # A's treadmill released...
+    assert state["resources"]["treadmill-02"] == "in_use"       # ...B keeps running
+
+    svc.ingest_node("edge-tm-02", metrics={"distance_m": 0}, timestamp_ms=5)     # B baseline
+    svc.ingest_node("edge-tm-02", metrics={"distance_m": 1000}, timestamp_ms=6)  # B finishes
+
+    state = svc.get_state()
+    assert state["subjects"][0]["current_stage"] == "ski_erg"   # both done -> advance
+    assert state["resources"]["treadmill-01"] == "free"
+    assert state["resources"]["treadmill-02"] == "free"
+
+
+def test_doubles_station_reps_merge_across_partners():
+    svc = _svc_doubles(mode="training")
+    _register_doubles(svc)
+    svc.start()
+    svc._engine.state_of("duo").current_stage = HyroxStage.WALL_BALLS
+
+    # Partner A claims the shared wall-ball station and logs a rep.
+    svc.ingest_rfid("rfid-wb-01", "WB1_GATE", "TAG_A", timestamp_ms=1)
+    svc.ingest_node("edge-wb-01", metrics=None, timestamp_ms=2)
+    assert svc.get_state()["subjects"][0]["progress_value"] == 1
+
+    # Partner B takes over the SAME station (one shared resource, either
+    # partner's tag may bind it) -- reps keep accumulating for the team.
+    svc.ingest_rfid("rfid-wb-01", "WB1_GATE", "TAG_B", timestamp_ms=3)
+    svc.ingest_node("edge-wb-01", metrics=None, timestamp_ms=4)
+
+    state = svc.get_state()
+    assert state["subjects"][0]["progress_value"] == 2
+    assert svc._store.active_on("wallball-01").subject_id == "duo"
+
+
+def test_doubles_abandon_releases_both_open_treadmills():
+    svc = _svc_doubles(mode="training")
+    _register_doubles(svc)
+    svc.start()
+    svc.ingest_rfid("rfid-tm-01", "T1_GATE", "TAG_A", timestamp_ms=1)
+    svc.ingest_rfid("rfid-tm-02", "T2_GATE", "TAG_B", timestamp_ms=2)
+
+    svc.abandon("duo", timestamp_ms=10)
+
+    state = svc.get_state()
+    assert state["subjects"][0]["status"] == "abandoned"
+    assert state["resources"]["treadmill-01"] == "free"
+    assert state["resources"]["treadmill-02"] == "free"
+
+
+def test_individual_dynamic_claim_unaffected_by_doubles_concurrency():
+    # Regression: an individual on the same doubles-capable venue still gets
+    # the ordinary single-assignment behavior.
+    svc = _svc_doubles(mode="training")
+    svc.register("alex", "individual", "TAG_ALEX", "Alex")
+    svc.start()
+
+    svc.ingest_rfid("rfid-tm-01", "T1_GATE", "TAG_ALEX", timestamp_ms=1)
+    svc.ingest_node("edge-tm-01", metrics={"distance_m": 0}, timestamp_ms=2)
+    svc.ingest_node("edge-tm-01", metrics={"distance_m": 1000}, timestamp_ms=3)
+
+    state = svc.get_state()
+    assert state["subjects"][0]["current_stage"] == "ski_erg"
+    assert state["resources"]["treadmill-01"] == "free"

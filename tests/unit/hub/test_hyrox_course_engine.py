@@ -432,3 +432,97 @@ def test_restore_defaults_active_member_tag_and_stage_member_for_old_snapshots()
     restored = fresh.state_of("team")
     assert restored.active_member_tag is None
     assert restored.stage_member == {}
+
+
+# --- Phase 11: doubles dual-run semantics ---
+
+
+def _claim_doubles_treadmills(store, subject_id="duo"):
+    store.claim("treadmill-01", subject_id, "TAG_A", HyroxStage.RUN_1,
+                ClaimSource.OPERATOR, 0, allow_concurrent=True)
+    store.claim("treadmill-02", subject_id, "TAG_B", HyroxStage.RUN_1,
+                ClaimSource.OPERATOR, 0, allow_concurrent=True)
+
+
+def test_doubles_run_stage_waits_for_both_members_then_advances():
+    engine, store, _ = _engine()
+    engine.register_subject("duo")
+    engine.set_member_tags("duo", ["TAG_A", "TAG_B"])
+    engine.start(0)
+    _claim_doubles_treadmills(store)
+
+    # Partner A reaches the 1 km target first.
+    engine.process(_ftms("treadmill-01", "run_treadmills", 0), 1)
+    engine.process(_ftms("treadmill-01", "run_treadmills", 1000), 2)
+
+    state = engine.state_of("duo")
+    assert state.current_stage == HyroxStage.RUN_1        # stage waits for B
+    assert store.active_on("treadmill-01") is None          # A's treadmill released...
+    assert store.active_on("treadmill-02") is not None       # ...B keeps running
+
+    # Partner B finishes.
+    engine.process(_ftms("treadmill-02", "run_treadmills", 0), 3)
+    engine.process(_ftms("treadmill-02", "run_treadmills", 1000), 4)
+
+    state = engine.state_of("duo")
+    assert state.current_stage == HyroxStage.SKI_ERG        # both done -> advance
+    assert store.active_on("treadmill-02") is None
+
+
+def test_doubles_abandon_releases_all_open_assignments():
+    engine, store, _ = _engine()
+    engine.register_subject("duo")
+    engine.set_member_tags("duo", ["TAG_A", "TAG_B"])
+    engine.start(0)
+    _claim_doubles_treadmills(store)
+
+    engine.abandon("duo", 500)
+
+    assert engine.state_of("duo").status == "abandoned"
+    assert store.active_on("treadmill-01") is None
+    assert store.active_on("treadmill-02") is None
+
+
+def test_doubles_stage_member_finish_round_trips_through_snapshot():
+    profile = default_hyrox_course_profile()
+    store = HyroxAssignmentStore()
+    tracker = HyroxProgressTracker()
+    engine = HyroxCourseEngine(profile, store, tracker)
+    engine.register_subject("duo")
+    engine.set_member_tags("duo", ["TAG_A", "TAG_B"])
+    engine.start(0)
+    _claim_doubles_treadmills(store)
+
+    # A finishes; B has not -- the stage must not have advanced yet.
+    engine.process(_ftms("treadmill-01", "run_treadmills", 0), 1)
+    engine.process(_ftms("treadmill-01", "run_treadmills", 1000), 2)
+    assert engine.state_of("duo").current_stage == HyroxStage.RUN_1
+
+    fresh = HyroxCourseEngine(profile, store, tracker)
+    fresh.set_member_tags("duo", ["TAG_A", "TAG_B"])
+    fresh.restore(engine.to_dict())
+
+    assert fresh.state_of("duo").stage_member_finish[HyroxStage.RUN_1] == {"TAG_A"}
+
+    # B finishes post-restore: the stage now advances exactly once, with no
+    # memory loss of A's earlier finish.
+    fresh.process(_ftms("treadmill-02", "run_treadmills", 0), 3)
+    fresh.process(_ftms("treadmill-02", "run_treadmills", 1000), 4)
+    assert fresh.state_of("duo").current_stage == HyroxStage.SKI_ERG
+
+
+def test_individual_run_completion_unaffected_by_doubles_gate():
+    # Regression: member_tags defaults to a single tag for individuals, so
+    # the doubles dual-completion branch never engages for them.
+    engine, store, _ = _engine()
+    engine.register_subject("alex")
+    engine.set_member_tags("alex", ["TAG_ALEX"])
+    engine.start(0)
+    store.claim("treadmill-01", "alex", "TAG_ALEX", HyroxStage.RUN_1,
+                ClaimSource.OPERATOR, 0)
+
+    engine.process(_ftms("treadmill-01", "run_treadmills", 0), 1)
+    engine.process(_ftms("treadmill-01", "run_treadmills", 1000), 2)
+
+    assert engine.state_of("alex").current_stage == HyroxStage.SKI_ERG
+    assert store.active_on("treadmill-01") is None

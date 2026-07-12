@@ -39,7 +39,7 @@ from hub_server.usecases.hyrox_assignment_store import (
     AssignmentCloseReason, ClaimSource, HyroxAssignmentStore,
 )
 from hub_server.usecases.hyrox_progress import HyroxProgressTracker
-from hub_server.usecases.hyrox_course_engine import HyroxCourseEngine
+from hub_server.usecases.hyrox_course_engine import HyroxCourseEngine, is_run_stage
 
 DEFAULT_STATE_PATH = "data/hyrox_state.json"
 # High-frequency telemetry (FTMS/RFID) is throttled to at most one snapshot
@@ -155,11 +155,15 @@ class HyroxService:
         (issued once per subject, for post-race result retrieval)."""
         if self._engine is None:
             raise RuntimeError("Configure a venue before registering athletes")
-        self._roster.add_member(subject_id, division, member_tag, member_name)
+        entry = self._roster.add_member(subject_id, division, member_tag, member_name)
         if self._engine.state_of(subject_id) is None:
             # The clock starts on the athlete's first activity, not at
             # registration -- see HyroxCourseEngine._ensure_started.
             self._engine.register_subject(subject_id)
+        # Doubles dual-run tracking (Phase 11) needs to know both member
+        # tags; re-sync on every call since a doubles team registers its two
+        # members across two separate register() calls.
+        self._engine.set_member_tags(subject_id, entry.member_tags)
         token = self._result_tokens.setdefault(subject_id, secrets.token_urlsafe(12))
         self._persist()
         return token
@@ -368,23 +372,36 @@ class HyroxService:
             return  # unregistered tag
         if self._store.active_on(event.resource_id) is not None:
             return  # occupied; claim() would reject/idempotent-noop anyway
-        if self._engine.allows(subject_id, event.resource_group_id):
-            assignment = self._store.claim(
-                event.resource_id, subject_id, tag_id,
-                self._engine.current_stage_of(subject_id),
-                ClaimSource.DYNAMIC_CLAIM, ts,
+        if not self._engine.allows(subject_id, event.resource_group_id):
+            return
+        stage = self._engine.current_stage_of(subject_id)
+        allow_concurrent = self._is_doubles_run(subject_id, stage)
+        if allow_concurrent and self._store.active_for_subject_tag(subject_id, tag_id) is not None:
+            return  # this partner already holds a treadmill
+        assignment = self._store.claim(
+            event.resource_id, subject_id, tag_id, stage,
+            ClaimSource.DYNAMIC_CLAIM, ts, allow_concurrent=allow_concurrent,
+        )
+        if assignment is not None:
+            member_tag = tag_id if allow_concurrent else None
+            self._seed_ftms_baseline(
+                assignment.subject_id, assignment.stage, assignment.resource_id, member_tag
             )
-            if assignment is not None:
-                self._seed_ftms_baseline(
-                    assignment.subject_id, assignment.stage, assignment.resource_id
-                )
+
+    def _is_doubles_run(self, subject_id: str, stage: HyroxStage) -> bool:
+        """Whether a subject is a doubles team on a run stage -- the one case
+        where two concurrent per-tag assignments/distance tracks apply
+        (Phase 11, spec section 5)."""
+        entry = self._roster.get(subject_id)
+        return entry is not None and entry.division == "doubles" and is_run_stage(stage)
 
     def _seed_ftms_baseline(
-        self, subject_id: str, stage: HyroxStage, resource_id: str
+        self, subject_id: str, stage: HyroxStage, resource_id: str,
+        member_tag: Optional[str] = None,
     ) -> None:
         raw_distance_m = self._latest_ftms_distance.get(resource_id)
         if raw_distance_m is not None:
-            self._tracker.seed_distance_baseline(subject_id, stage, raw_distance_m)
+            self._tracker.seed_distance_baseline(subject_id, stage, raw_distance_m, member_tag)
 
     # --- Operator actions ---
 
@@ -482,15 +499,18 @@ class HyroxService:
                     "occupied", f"Resource {resource_id} is occupied"
                 )
 
+        allow_concurrent = self._is_doubles_run(subject_id, stage)
         assignment = self._store.claim(
-            resource_id, subject_id, selected_tag, stage, ClaimSource.OPERATOR, ts
+            resource_id, subject_id, selected_tag, stage, ClaimSource.OPERATOR, ts,
+            allow_concurrent=allow_concurrent,
         )
         if assignment is None:
             raise HyroxAssignmentError(
                 "occupied", f"Resource {resource_id} is occupied"
             )
         self._seed_ftms_baseline(
-            assignment.subject_id, assignment.stage, assignment.resource_id
+            assignment.subject_id, assignment.stage, assignment.resource_id,
+            selected_tag if allow_concurrent else None,
         )
         self._persist()
         return True
@@ -614,11 +634,21 @@ class HyroxService:
                 race_id=self._race_id, result_token=token, subject_id=sid,
                 display_name=name, division=entry.division, members=entry.member_names,
                 state=state, stage_order=self._stage_order, targets=self._targets,
-                progress_of=lambda stg: self._tracker.value_of(
-                    sid, stg, self._stage_def[stg].target_type),
+                progress_of=lambda stg, sid=sid, division=entry.division: self._split_progress(
+                    sid, stg, division),
             )
             self._results.finalize_athlete(result)
             self._finalized.add(sid)
+
+    def _split_progress(self, subject_id: str, stage: HyroxStage, division: str) -> float:
+        """Progress value for a finalized split. A doubles run stage tracks
+        distance per member (see HyroxProgressTracker), so there is no single
+        subject-level value to report; the stage only ever finalizes once
+        both partners reached the target, so report the target itself rather
+        than picking one partner's raw distance."""
+        if division == "doubles" and is_run_stage(stage):
+            return self._targets[stage][1]
+        return self._tracker.value_of(subject_id, stage, self._stage_def[stage].target_type)
 
     def result_by_token(self, token: str) -> Optional[HyroxAthleteResult]:
         return self._results.get_by_token(token) if self._results else None
@@ -656,20 +686,31 @@ class HyroxService:
             stage_def = self._stage_def.get(stage)
             value = 0.0
             target = 0.0
+            member_progress = None
+            doubles_run = entry.division == "doubles" and is_run_stage(stage)
             if stage_def is not None:
-                value = self._tracker.value_of(entry.subject_id, stage, stage_def.target_type)
+                if doubles_run:
+                    # Two treadmills, two distances: surface both, and use
+                    # the trailing partner's distance as the headline value
+                    # (the stage only completes once they catch up).
+                    member_progress = self._tracker.distance_values_for(entry.subject_id, stage)
+                    value = min(member_progress.values()) if member_progress else 0.0
+                else:
+                    value = self._tracker.value_of(entry.subject_id, stage, stage_def.target_type)
                 target = stage_def.target_value
-            assignment = self._store.active_for_subject(entry.subject_id)
+            assignments = self._store.all_active_for_subject(entry.subject_id)
             subjects.append({
                 "subject_id": entry.subject_id,
                 "division": entry.division,
                 "members": entry.member_names,
                 "current_stage": stage.value,
                 "status": state.status if state else "racing",
-                "assigned_resource": assignment.resource_id if assignment else None,
+                "assigned_resource": assignments[0].resource_id if assignments else None,
+                "assigned_resources": [a.resource_id for a in assignments],
                 "progress_value": value,
                 "progress_target": target,
                 "progress_type": stage_def.target_type.value if stage_def else None,
+                "member_progress": member_progress,
                 "elapsed_ms": self._elapsed_ms(state),
                 "dq_reason": state.dq_reason if state else None,
                 "penalty_total_ms": sum(p.penalty_ms for p in state.penalties) if state else 0,
@@ -733,7 +774,19 @@ class HyroxService:
                         current_stage = state.current_stage.value
                         stage_def = self._stage_def.get(state.current_stage)
                         if stage_def:
-                            progress_value = self._tracker.value_of(subject_id, state.current_stage, stage_def.target_type)
+                            # A doubles run stage is tracked per member: show
+                            # this specific treadmill's runner, not a merged
+                            # subject-level value (spec section 5).
+                            member_tag = (
+                                assignment.active_tag_id
+                                if entry is not None and entry.division == "doubles"
+                                and is_run_stage(state.current_stage)
+                                else None
+                            )
+                            progress_value = self._tracker.value_of(
+                                subject_id, state.current_stage, stage_def.target_type,
+                                member_tag=member_tag,
+                            )
                             progress_target = stage_def.target_value
                             progress_type = stage_def.target_type.value
 
@@ -854,6 +907,12 @@ class HyroxService:
             engine_data = snapshot.get("engine")
             if engine_data:
                 self._engine.restore(engine_data)
+            # member_tags is not part of the engine snapshot (see
+            # HyroxCourseEngine.to_dict) -- re-derive it from the roster,
+            # which was just restored above, so doubles dual-run tracking
+            # survives a restart.
+            for entry in self._roster.all():
+                self._engine.set_member_tags(entry.subject_id, entry.member_tags)
         else:
             self._engine = None
         self._queues = {

@@ -23,7 +23,7 @@ from hub_server.usecases.hyrox_assignment_store import (
 from hub_server.usecases.hyrox_progress import HyroxProgressTracker
 
 
-def _is_run_stage(stage: HyroxStage) -> bool:
+def is_run_stage(stage: HyroxStage) -> bool:
     return stage.value.startswith("run_")
 
 
@@ -54,6 +54,16 @@ class SubjectState:
     active_member_tag: Optional[str] = None
     # Which member tag was active when each stage got its first activity.
     stage_member: dict[HyroxStage, str] = field(default_factory=dict)
+    # Doubles dual-run tracking (Phase 11, spec section 5). The subject's
+    # roster member tags -- set via HyroxCourseEngine.set_member_tags(), kept
+    # in sync with HyroxRoster by the caller. A doubles subject has 2; an
+    # individual has 1; a relay subject has 4 but this field is unused there
+    # (relay runs one member at a time via active_member_tag).
+    member_tags: list[str] = field(default_factory=list)
+    # Which member tags have reached the target on the CURRENT run stage, for
+    # a doubles subject. Reset implicitly by moving on -- stages are never
+    # revisited, so stale entries from earlier stages are harmless.
+    stage_member_finish: dict[HyroxStage, set] = field(default_factory=dict)
 
 
 @dataclass
@@ -93,6 +103,15 @@ class HyroxCourseEngine:
         state = SubjectState(subject_id=subject_id, current_stage=self._order[0])
         self._subjects[subject_id] = state
         return state
+
+    def set_member_tags(self, subject_id: str, member_tags: list[str]) -> None:
+        """Sync the subject's roster member tags (Phase 11). The engine is
+        otherwise roster-agnostic; the caller (HyroxService) re-syncs this on
+        every registration and after a snapshot restore, so it need not be
+        persisted separately -- see HyroxCourseEngine.to_dict()."""
+        state = self._subjects.get(subject_id)
+        if state is not None:
+            state.member_tags = list(member_tags)
 
     def start(self, now_ms: int):
         # No global gun: each athlete's clock starts on their own first activity
@@ -174,11 +193,50 @@ class HyroxCourseEngine:
                     state.active_member_tag = member_tag
         state.stage_resource[stage] = event.resource_id
 
+        # Doubles run stages (Phase 11, spec section 5): each partner runs on
+        # their own treadmill, so distance is tracked per member tag rather
+        # than per subject. Stations stay merged (member_tag=None) -- either
+        # partner may work the equipment and reps/lengths credit the team.
+        doubles_run = len(state.member_tags) == 2 and is_run_stage(stage)
+        event_tag = self._event_member_tag(event) if doubles_run else None
+
         update = self._tracker.apply(
             event, state.subject_id, state.current_stage,
             stage_def.target_type, stage_def.target_value,
+            member_tag=event_tag,
         )
-        if update.complete:
+        if not update.complete:
+            return
+        if not doubles_run:
+            self._advance(state, now_ms)
+            return
+        self._advance_doubles_run_finisher(state, stage, event, event_tag, now_ms)
+
+    def _event_member_tag(self, event: HyroxTelemetryEvent) -> Optional[str]:
+        """Resolve the member tag that produced an event: the RFID tag when
+        present, otherwise the tag currently bound to the resource (FTMS
+        distance telemetry is anonymous)."""
+        if event.tag_id is not None:
+            return event.tag_id
+        assignment = self._store.active_on(event.resource_id)
+        return assignment.active_tag_id if assignment else None
+
+    def _advance_doubles_run_finisher(
+        self, state: SubjectState, stage: HyroxStage,
+        event: HyroxTelemetryEvent, event_tag: Optional[str], now_ms: int,
+    ) -> None:
+        """One doubles partner reached the run target: release THEIR
+        treadmill immediately; advance the stage (and start the Roxzone
+        clock) only once both partners have finished."""
+        finishers = state.stage_member_finish.setdefault(stage, set())
+        if event_tag is not None:
+            finishers.add(event_tag)
+            assignment = self._store.active_for_subject_tag(state.subject_id, event_tag)
+        else:
+            assignment = self._store.active_on(event.resource_id)
+        if assignment is not None:
+            self._store.close(assignment.resource_id, AssignmentCloseReason.COMPLETED, now_ms)
+        if set(state.member_tags) <= finishers:
             self._advance(state, now_ms)
 
     # --- Terminal / override transitions ---
@@ -274,7 +332,7 @@ class HyroxCourseEngine:
         # real telemetry event, which is exactly "has the leg actually begun".
         stage = state.current_stage
         at_leg_boundary = (
-            _is_run_stage(stage)
+            is_run_stage(stage)
             and stage not in state.stage_arrived_ms
             and self._store.active_for_subject(subject_id) is None
         )
@@ -311,8 +369,12 @@ class HyroxCourseEngine:
         return self._order[idx + 1] if idx + 1 < len(self._order) else None
 
     def _release(self, subject_id: str, reason: AssignmentCloseReason, now_ms: int):
-        assignment = self._store.active_for_subject(subject_id)
-        if assignment is not None:
+        # Closes every open assignment of the subject, not just one: a
+        # terminal transition (abandon/DQ) or a stage advance must release
+        # both of a doubles team's treadmills, not just whichever tag is
+        # picked by active_for_subject (spec section 5). For the common
+        # single-assignment case this is exactly one resource, same as before.
+        for assignment in self._store.all_active_for_subject(subject_id):
             self._store.close(assignment.resource_id, reason, now_ms)
 
     def _diag(self, kind, subject_id, resource_id, detail, ts):
@@ -348,6 +410,12 @@ class HyroxCourseEngine:
                     "terminal_at_ms": s.terminal_at_ms,
                     "active_member_tag": s.active_member_tag,
                     "stage_member": {k.value: v for k, v in s.stage_member.items()},
+                    # member_tags is NOT persisted here: HyroxService re-syncs
+                    # it from the roster (the source of truth) right after
+                    # restore(), so it never goes stale on disk.
+                    "stage_member_finish": {
+                        k.value: sorted(v) for k, v in s.stage_member_finish.items()
+                    },
                 }
                 for sid, s in self._subjects.items()
             },
@@ -395,6 +463,10 @@ class HyroxCourseEngine:
                 active_member_tag=s.get("active_member_tag"),
                 stage_member={
                     HyroxStage(k): v for k, v in s.get("stage_member", {}).items()
+                },
+                stage_member_finish={
+                    HyroxStage(k): set(v)
+                    for k, v in s.get("stage_member_finish", {}).items()
                 },
             )
         self._subjects = subjects

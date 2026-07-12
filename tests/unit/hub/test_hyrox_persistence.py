@@ -57,6 +57,19 @@ def _venue():
     )
 
 
+def _venue_with_second_treadmill():
+    # Doubles (Phase 11): each partner runs on their own treadmill.
+    venue = _venue()
+    venue.resource_groups[0].units.append(
+        HyroxResourceUnit(
+            resource_id="treadmill-02", display_name="TM2",
+            sensor_class=HyroxSensorClass.FTMS_MACHINE, node_id="edge-tm-02",
+            entry_gate=HyroxEndpointSensor(node_id="rfid-tm-02", antenna_id="T2_GATE"),
+        )
+    )
+    return venue
+
+
 def _ftms_event(resource_id, distance, ts=0):
     return HyroxTelemetryEvent(
         sensor_class=HyroxSensorClass.FTMS_MACHINE,
@@ -124,7 +137,9 @@ def test_progress_tracker_to_dict_restore_round_trip():
     restored.restore(tracker.to_dict())
 
     assert restored.value_of("alex", HyroxStage.RUN_1, HyroxTargetType.DISTANCE_M) == 300.0
-    assert restored._distance[("alex", HyroxStage.RUN_1)].last_raw == 400.0
+    # Distance keys carry a (subject, stage, member_tag) shape since Phase 11
+    # (doubles per-member tracking); member_tag is None outside doubles runs.
+    assert restored._distance[("alex", HyroxStage.RUN_1, None)].last_raw == 400.0
     assert restored._is_forced("bella", HyroxStage.SLED_PUSH)
 
 
@@ -298,6 +313,46 @@ def test_snapshot_round_trips_active_member_tag_and_stage_member(tmp_path):
     restored = fresh._engine.state_of("team")
     assert restored.active_member_tag == "TAG_1"
     assert restored.stage_member[HyroxStage.RUN_1] == "TAG_1"
+    store.close()
+
+
+# --- Phase 11: doubles dual-run snapshot round trip ---
+
+
+def test_snapshot_round_trips_doubles_mid_run_per_member_distance(tmp_path):
+    store = HyroxResultsStore(str(tmp_path / "r.db"))
+    svc = HyroxService(results_store=store)
+    svc.configure_venue(_venue_with_second_treadmill(), mode="training", race_id="race-doubles-snap")
+    svc.register("duo", "doubles", "TAG_A", "Anna")
+    svc.register("duo", "doubles", "TAG_B", "Bo")
+    svc.start()
+
+    # Both partners gate-tap their own treadmill and make partial, uneven
+    # progress -- neither has reached the 1 km target yet.
+    svc.ingest_rfid("rfid-tm-01", "T1_GATE", "TAG_A", timestamp_ms=1)
+    svc.ingest_rfid("rfid-tm-02", "T2_GATE", "TAG_B", timestamp_ms=2)
+    svc.ingest_node("edge-tm-01", metrics={"distance_m": 0}, timestamp_ms=3)    # A baseline
+    svc.ingest_node("edge-tm-02", metrics={"distance_m": 0}, timestamp_ms=4)    # B baseline
+    svc.ingest_node("edge-tm-01", metrics={"distance_m": 400}, timestamp_ms=5)  # A: 400m
+    svc.ingest_node("edge-tm-02", metrics={"distance_m": 150}, timestamp_ms=6)  # B: 150m
+
+    snap = svc.snapshot()
+    fresh = HyroxService()
+    fresh.restore(snap)
+
+    state = fresh.get_state()
+    subject = state["subjects"][0]
+    assert subject["current_stage"] == "run_1"
+    assert subject["member_progress"] == {"TAG_A": 400, "TAG_B": 150}
+    assert fresh._store.active_for_subject_tag("duo", "TAG_A").resource_id == "treadmill-01"
+    assert fresh._store.active_for_subject_tag("duo", "TAG_B").resource_id == "treadmill-02"
+
+    # Distance continues from the restored per-member baseline: no double
+    # count, no reset-to-zero, and no cross-contamination between partners.
+    fresh.ingest_node("edge-tm-01", metrics={"distance_m": 500}, timestamp_ms=7)
+    fresh.ingest_node("edge-tm-02", metrics={"distance_m": 200}, timestamp_ms=8)
+    state = fresh.get_state()
+    assert state["subjects"][0]["member_progress"] == {"TAG_A": 500, "TAG_B": 200}
     store.close()
 
 

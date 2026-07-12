@@ -147,3 +147,72 @@ def test_public_diagnostic_records_rejected_abandon_event():
     assert diagnostic in store.diagnostics
     assert diagnostic.kind == "abandon_unassigned"
     assert diagnostic.timestamp_epoch_ms == 0
+
+
+# --- Phase 11: doubles concurrent per-member assignments ---
+
+
+def test_allow_concurrent_claims_two_resources_for_one_subject():
+    store = HyroxAssignmentStore()
+    a1 = store.claim("treadmill-01", "duo", "TAG_A", HyroxStage.RUN_1,
+                      ClaimSource.OPERATOR, 0, allow_concurrent=True)
+    a2 = store.claim("treadmill-02", "duo", "TAG_B", HyroxStage.RUN_1,
+                      ClaimSource.OPERATOR, 0, allow_concurrent=True)
+
+    assert a1 is not None and a2 is not None
+    assert store.active_on("treadmill-01").subject_id == "duo"
+    assert store.active_on("treadmill-02").subject_id == "duo"
+    assert store.active_for_subject_tag("duo", "TAG_A").resource_id == "treadmill-01"
+    assert store.active_for_subject_tag("duo", "TAG_B").resource_id == "treadmill-02"
+    assert {a.resource_id for a in store.all_active_for_subject("duo")} == {
+        "treadmill-01", "treadmill-02",
+    }
+
+
+def test_non_concurrent_claim_supersedes_all_of_the_subjects_open_resources():
+    store = HyroxAssignmentStore()
+    store.claim("treadmill-01", "duo", "TAG_A", HyroxStage.RUN_1,
+                ClaimSource.OPERATOR, 0, allow_concurrent=True)
+    store.claim("treadmill-02", "duo", "TAG_B", HyroxStage.RUN_1,
+                ClaimSource.OPERATOR, 0, allow_concurrent=True)
+
+    # A station claim (not concurrent) supersedes BOTH open treadmills, same
+    # as the ordinary single-assignment invariant.
+    store.claim("wallball-1", "duo", "TAG_A", HyroxStage.WALL_BALLS,
+                ClaimSource.OPERATOR, 10)
+
+    assert store.active_on("treadmill-01") is None
+    assert store.active_on("treadmill-02") is None
+    assert store.active_on("wallball-1").subject_id == "duo"
+    reasons = [a.close_reason for a in store._closed]
+    assert reasons.count(AssignmentCloseReason.SUPERSEDED) == 2
+
+
+def test_all_active_for_subject_supports_closing_every_open_assignment():
+    store = HyroxAssignmentStore()
+    store.claim("treadmill-01", "duo", "TAG_A", HyroxStage.RUN_1,
+                ClaimSource.OPERATOR, 0, allow_concurrent=True)
+    store.claim("treadmill-02", "duo", "TAG_B", HyroxStage.RUN_1,
+                ClaimSource.OPERATOR, 0, allow_concurrent=True)
+
+    for a in store.all_active_for_subject("duo"):
+        store.close(a.resource_id, AssignmentCloseReason.ABANDONED, 50)
+
+    assert store.all_active_for_subject("duo") == []
+    assert store.active_on("treadmill-01") is None
+    assert store.active_on("treadmill-02") is None
+
+
+def test_snapshot_round_trip_preserves_two_concurrent_assignments():
+    store = HyroxAssignmentStore()
+    store.claim("treadmill-01", "duo", "TAG_A", HyroxStage.RUN_1,
+                ClaimSource.OPERATOR, 0, allow_concurrent=True)
+    store.claim("treadmill-02", "duo", "TAG_B", HyroxStage.RUN_1,
+                ClaimSource.OPERATOR, 0, allow_concurrent=True)
+
+    restored = HyroxAssignmentStore.from_dict(store.to_dict())
+
+    assert restored.active_on("treadmill-01").subject_id == "duo"
+    assert restored.active_on("treadmill-02").subject_id == "duo"
+    assert restored.active_for_subject_tag("duo", "TAG_A").resource_id == "treadmill-01"
+    assert restored.active_for_subject_tag("duo", "TAG_B").resource_id == "treadmill-02"

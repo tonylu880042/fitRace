@@ -10,6 +10,12 @@ Reducers:
 - lengths:    alternating RFID endpoint crossings; duplicate endpoints ignored.
 - reps:       one increment per rep-counter event.
 - manual:     operator override only (force_complete).
+
+Phase 11 (doubles, spec section 5): a doubles team runs every 1 km segment on
+two treadmills at once, so distance progress for a run stage is tracked per
+member. The distance reducer's key gains an optional `member_tag` component
+for this; every other reducer (and every non-doubles-run distance key) keeps
+using `member_tag=None`, so individuals/relay callers are unaffected.
 """
 
 from dataclasses import dataclass
@@ -51,16 +57,20 @@ class _RepState:
 
 class HyroxProgressTracker:
     def __init__(self):
-        self._distance: dict[tuple[str, HyroxStage], _DistanceState] = {}
+        # Distance keys carry an optional member_tag (Phase 11 doubles-run
+        # per-member tracking); None for individuals, relay, and every other
+        # reducer.
+        self._distance: dict[tuple[str, HyroxStage, Optional[str]], _DistanceState] = {}
         self._length: dict[tuple[str, HyroxStage], _LengthState] = {}
         self._rep: dict[tuple[str, HyroxStage], _RepState] = {}
         self._forced: set[tuple[str, HyroxStage]] = set()
 
     def seed_distance_baseline(
-        self, subject_id: str, stage: HyroxStage, raw_distance_m: float
+        self, subject_id: str, stage: HyroxStage, raw_distance_m: float,
+        member_tag: Optional[str] = None,
     ) -> None:
         """Set the bind-time FTMS baseline without resetting existing progress."""
-        state = self._distance.setdefault((subject_id, stage), _DistanceState())
+        state = self._distance.setdefault((subject_id, stage, member_tag), _DistanceState())
         if state.last_raw is None:
             state.last_raw = raw_distance_m
 
@@ -71,9 +81,10 @@ class HyroxProgressTracker:
         stage: HyroxStage,
         target_type: HyroxTargetType,
         target_value: float,
+        member_tag: Optional[str] = None,
     ) -> ProgressUpdate:
         if target_type == HyroxTargetType.DISTANCE_M:
-            return self._distance_reduce(subject_id, stage, event, target_value)
+            return self._distance_reduce(subject_id, stage, event, target_value, member_tag)
         if target_type == HyroxTargetType.LENGTHS:
             return self._length_reduce(subject_id, stage, event, target_value)
         if target_type == HyroxTargetType.REPS:
@@ -92,8 +103,8 @@ class HyroxProgressTracker:
     def _is_forced(self, subject_id: str, stage: HyroxStage) -> bool:
         return (subject_id, stage) in self._forced
 
-    def _distance_reduce(self, subject_id, stage, event, target) -> ProgressUpdate:
-        key = (subject_id, stage)
+    def _distance_reduce(self, subject_id, stage, event, target, member_tag=None) -> ProgressUpdate:
+        key = (subject_id, stage, member_tag)
         st = self._distance.setdefault(key, _DistanceState())
         raw = (event.metrics or {}).get("distance_m")
         if raw is not None and event.sensor_class != HyroxSensorClass.FTMS_MACHINE:
@@ -150,12 +161,14 @@ class HyroxProgressTracker:
         return ProgressUpdate(st.count, target, st.count >= target, True)
 
     def value_of(self, subject_id: str, stage: HyroxStage,
-                 target_type: HyroxTargetType) -> float:
-        """Current accumulated progress for a (subject, stage), 0 if none."""
-        key = (subject_id, stage)
+                 target_type: HyroxTargetType, member_tag: Optional[str] = None) -> float:
+        """Current accumulated progress for a (subject, stage), 0 if none.
+        `member_tag` only applies to distance (doubles run stages); other
+        target types are always tracked per-subject regardless of partner."""
         if target_type == HyroxTargetType.DISTANCE_M:
-            st = self._distance.get(key)
+            st = self._distance.get((subject_id, stage, member_tag))
             return st.accumulated if st else 0.0
+        key = (subject_id, stage)
         if target_type == HyroxTargetType.LENGTHS:
             st = self._length.get(key)
             return float(st.count) if st else 0.0
@@ -164,16 +177,30 @@ class HyroxProgressTracker:
             return float(st.count) if st else 0.0
         return 0.0
 
+    def distance_values_for(self, subject_id: str, stage: HyroxStage) -> dict[str, float]:
+        """Per-member accumulated distance for a doubles run stage: {tag:
+        accumulated_m}. Empty for individuals/relay, where distance is not
+        tracked per member tag."""
+        return {
+            tag: st.accumulated
+            for (sid, stg, tag), st in self._distance.items()
+            if sid == subject_id and stg == stage and tag is not None
+        }
+
     # --- Persistence (Phase 7) ---
 
     def to_dict(self) -> dict:
         """Serialize all per-(subject, stage) accumulators. Dict keys are tuples
-        and are not JSON-safe, so each map is flattened to a record list."""
+        and are not JSON-safe, so each map is flattened to a record list.
+
+        `member_tag` is added additively to distance records (Phase 11,
+        doubles per-member tracking); it is None for every non-doubles-run
+        entry, so a version-1 restore (see restore()) round-trips unchanged."""
         return {
             "distance": [
-                {"subject_id": sid, "stage": stage.value,
+                {"subject_id": sid, "stage": stage.value, "member_tag": member_tag,
                  "accumulated": st.accumulated, "last_raw": st.last_raw}
-                for (sid, stage), st in self._distance.items()
+                for (sid, stage, member_tag), st in self._distance.items()
             ],
             "length": [
                 {"subject_id": sid, "stage": stage.value,
@@ -191,8 +218,11 @@ class HyroxProgressTracker:
         }
 
     def restore(self, data: dict) -> None:
+        # Version 1 records predate member_tag and omit the key entirely;
+        # .get(...) defaults those to None, the same value non-doubles-run
+        # entries always use.
         self._distance = {
-            (r["subject_id"], HyroxStage(r["stage"])):
+            (r["subject_id"], HyroxStage(r["stage"]), r.get("member_tag")):
                 _DistanceState(accumulated=r["accumulated"], last_raw=r["last_raw"])
             for r in data.get("distance", [])
         }
