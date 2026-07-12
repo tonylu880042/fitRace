@@ -234,7 +234,11 @@ def test_reinstate_works_from_disqualified_too():
     engine.disqualify("alex", "equipment misuse", 500)
 
     assert engine.reinstate("alex", 600) is True
-    assert engine.state_of("alex").status == "racing"
+    state = engine.state_of("alex")
+    assert state.status == "racing"
+    # The overturned DQ must not leak its reason into a later finish.
+    assert state.dq_reason is None
+    assert state.terminal_at_ms is None
 
 
 def test_reinstate_guard_rejects_racing_or_finished_or_unknown_subject():

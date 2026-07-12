@@ -210,6 +210,10 @@ class HyroxCourseEngine:
         prior_status = state.status
         prior_terminal_ms = state.terminal_at_ms
         state.status = "racing"
+        # A reinstated athlete is no longer DQ'd; a later finish must not
+        # carry the overturned reason into the result.
+        state.dq_reason = None
+        state.terminal_at_ms = None
         detail = f"{subject_id} reinstated from {prior_status}"
         if prior_terminal_ms is not None:
             detail += f" (terminal at {prior_terminal_ms}ms)"
