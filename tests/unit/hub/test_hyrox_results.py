@@ -146,6 +146,143 @@ def test_record_diagnostic_and_get_diagnostics(tmp_path):
     store.close()
 
 
+def test_penalty_sums_into_total_ms_for_finished_athlete():
+    from hub_server.usecases.hyrox_course_engine import Penalty
+
+    state = _finished_state()
+    state.penalties = [
+        Penalty(penalty_ms=10_000, reason="warning ignored", issued_at_epoch_ms=150),
+        Penalty(penalty_ms=5_000, reason="second breach", issued_at_epoch_ms=180),
+    ]
+    r = _result(state)
+    assert r.status == "finished"
+    assert r.total_time_ms == 260 + 15_000
+    assert [p.penalty_ms for p in r.penalties] == [10_000, 5_000]
+
+
+def test_disqualified_state_finalizes_as_dq_with_reason():
+    s = _finished_state()
+    s.status = "disqualified"
+    s.dq_reason = "left station before work complete"
+    s.current_stage = HyroxStage.SKI_ERG
+    del s.stage_end_ms[HyroxStage.SKI_ERG]
+    del s.stage_end_ms[HyroxStage.RUN_2]
+
+    r = _result(s)
+
+    assert r.status == "dq"
+    assert r.dq_reason == "left station before work complete"
+    assert r.total_time_ms is None
+    assert r.dnf_stage == HyroxStage.SKI_ERG
+
+
+def test_penalty_does_not_affect_dnf_or_dq_total(tmp_path):
+    from hub_server.usecases.hyrox_course_engine import Penalty
+
+    s = _finished_state()
+    s.status = "abandoned"
+    s.current_stage = HyroxStage.RUN_2
+    del s.stage_end_ms[HyroxStage.RUN_2]
+    s.penalties = [Penalty(penalty_ms=1_000, reason="x", issued_at_epoch_ms=5)]
+
+    r = _result(s)
+    assert r.status == "dnf"
+    assert r.total_time_ms is None
+    assert [p.penalty_ms for p in r.penalties] == [1_000]  # still itemized
+
+
+def test_store_persists_penalties_and_dq_reason_and_ranks_by_penalized_total(tmp_path):
+    from hub_server.usecases.hyrox_course_engine import Penalty
+
+    store = HyroxResultsStore(db_path=str(tmp_path / "t.db"))
+    store.create_race("race-1", "hq", "competition", "hyrox_standard_2026", 0)
+
+    fast_state = _finished_state()  # total 260
+    fast_state.penalties = [Penalty(penalty_ms=200, reason="late gate", issued_at_epoch_ms=10)]
+    fast = _result(fast_state, token="FAST", subject_id="alex", name="Alex")  # 260 + 200 = 460
+
+    slow_state = _finished_state()
+    slow_state.stage_end_ms[HyroxStage.RUN_2] = 400  # total 400, no penalty
+    slow = _result(slow_state, token="SLOW", subject_id="bella", name="Bella")
+
+    store.finalize_athlete(fast)
+    store.finalize_athlete(slow)
+
+    got_fast = store.get_by_token("FAST")
+    assert got_fast.total_time_ms == 460
+    assert len(got_fast.penalties) == 1
+    assert got_fast.penalties[0].penalty_ms == 200
+    assert got_fast.penalties[0].reason == "late gate"
+
+    # Slow athlete (400, unpenalized) now ranks ahead of the penalized fast one (460).
+    assert store.get_by_token("SLOW").rank == 1
+    assert store.get_by_token("FAST").rank == 2
+    store.close()
+
+
+def test_store_delete_athlete_removes_row_splits_penalties_and_recomputes_ranks(tmp_path):
+    from hub_server.usecases.hyrox_course_engine import Penalty
+
+    store = HyroxResultsStore(db_path=str(tmp_path / "t.db"))
+    store.create_race("race-1", "hq", "competition", "hyrox_standard_2026", 0)
+
+    fast_state = _finished_state()
+    fast_state.penalties = [Penalty(penalty_ms=100, reason="x", issued_at_epoch_ms=1)]
+    fast = _result(fast_state, token="FAST", subject_id="alex", name="Alex")
+
+    slow_state = _finished_state()
+    slow_state.stage_end_ms[HyroxStage.RUN_2] = 400
+    slow = _result(slow_state, token="SLOW", subject_id="bella", name="Bella")
+
+    store.finalize_athlete(fast)
+    store.finalize_athlete(slow)
+    assert store.get_by_token("FAST").rank == 1
+
+    assert store.delete_athlete("FAST") is True
+    assert store.get_by_token("FAST") is None
+    race = store.get_race("race-1")
+    assert [a.result_token for a in race.athletes] == ["SLOW"]
+    assert store.get_by_token("SLOW").rank == 1  # recomputed after the deletion
+
+    assert store.delete_athlete("NOPE") is False
+    store.close()
+
+
+def test_migration_adds_dq_reason_column_to_pre_phase8_db(tmp_path):
+    # Simulate a production DB created before Phase 8: build the schema by
+    # hand without the dq_reason column, then open it through the store.
+    import sqlite3
+
+    db_path = str(tmp_path / "legacy.db")
+    conn = sqlite3.connect(db_path)
+    conn.executescript("""
+        CREATE TABLE athlete_results (
+            result_token TEXT PRIMARY KEY, race_id TEXT NOT NULL, subject_id TEXT NOT NULL,
+            display_name TEXT NOT NULL, division TEXT NOT NULL, members TEXT NOT NULL,
+            status TEXT NOT NULL, started_at_ms INTEGER NOT NULL, finished_at_ms INTEGER,
+            total_time_ms INTEGER, run_total_ms INTEGER NOT NULL, workout_total_ms INTEGER NOT NULL,
+            roxzone_total_ms INTEGER NOT NULL, dnf_stage TEXT, rank INTEGER,
+            UNIQUE (race_id, subject_id)
+        );
+    """)
+    conn.commit()
+    conn.close()
+
+    store = HyroxResultsStore(db_path=db_path)  # opening must migrate in place
+    cols = {row[1] for row in store._conn.execute("PRAGMA table_info(athlete_results)")}
+    assert "dq_reason" in cols
+    tables = {row[0] for row in store._conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'")}
+    assert "penalties" in tables
+
+    # And the store is now fully usable, including the new columns.
+    store.create_race("race-1", "hq", "competition", "hyrox_standard_2026", 0)
+    r = _result(_finished_state(), token="A", subject_id="alex")
+    store.finalize_athlete(r)
+    assert store.get_by_token("A").dq_reason is None
+    store.close()
+
+
 def test_list_races_newest_first_with_finalized_count(tmp_path):
     store = HyroxResultsStore(db_path=str(tmp_path / "t.db"))
     store.create_race("race-early", "hq", "training", "hyrox_standard_2026", 100)

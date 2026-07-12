@@ -24,14 +24,27 @@ from hub_server.usecases.hyrox_progress import HyroxProgressTracker
 
 
 @dataclass
+class Penalty:
+    """A time sanction added to an athlete's final result (Phase 8). Not
+    terminal -- the athlete keeps racing; the penalty is summed into
+    total_ms when the result is finalized."""
+    penalty_ms: int
+    reason: str
+    issued_at_epoch_ms: int
+
+
+@dataclass
 class SubjectState:
     subject_id: str
     current_stage: HyroxStage
-    status: str = "racing"  # racing | finished | abandoned
+    status: str = "racing"  # racing | finished | abandoned | disqualified
     stage_start_ms: dict[HyroxStage, int] = field(default_factory=dict)  # became current
     stage_arrived_ms: dict[HyroxStage, int] = field(default_factory=dict)  # first activity
     stage_end_ms: dict[HyroxStage, int] = field(default_factory=dict)  # completed
     stage_resource: dict[HyroxStage, str] = field(default_factory=dict)  # resource used
+    dq_reason: Optional[str] = None  # required once status == disqualified
+    penalties: list[Penalty] = field(default_factory=list)
+    terminal_at_ms: Optional[int] = None  # timestamp of abandon/disqualify, for reinstate audit
 
 
 @dataclass
@@ -157,7 +170,51 @@ class HyroxCourseEngine:
         # abandons before their first activity, the DNF time is their start.
         self._ensure_started(state, now_ms)
         state.status = "abandoned"
+        state.terminal_at_ms = now_ms
         self._release(subject_id, AssignmentCloseReason.ABANDONED, now_ms)
+
+    def disqualify(self, subject_id: str, reason: str, now_ms: int):
+        """One-way DQ: a judge-called rules violation. Freezes the current
+        stage and releases the resource exactly like abandon, but requires a
+        reason and is not the athlete's own decision (see spec section 2)."""
+        state = self._subjects.get(subject_id)
+        if state is None or state.status != "racing":
+            return
+        self._ensure_started(state, now_ms)
+        state.status = "disqualified"
+        state.dq_reason = reason
+        state.terminal_at_ms = now_ms
+        self._release(subject_id, AssignmentCloseReason.DISQUALIFIED, now_ms)
+
+    def add_penalty(self, subject_id: str, penalty_ms: int, reason: str, now_ms: int) -> bool:
+        """Non-terminal time sanction. Returns False if the subject is
+        unknown; otherwise the penalty is appended regardless of status so an
+        operator can record a breach spotted right at the finish line."""
+        state = self._subjects.get(subject_id)
+        if state is None:
+            return False
+        state.penalties.append(
+            Penalty(penalty_ms=penalty_ms, reason=reason, issued_at_epoch_ms=now_ms)
+        )
+        return True
+
+    def reinstate(self, subject_id: str, now_ms: int) -> bool:
+        """Operator correction for a mistaken DNF/DQ (button misfire,
+        overturned call). Status returns to racing; current_stage, progress,
+        and stage timestamps stay exactly as frozen -- they are not cleared.
+        Resources are NOT auto-restored (see spec section 2). Returns False
+        if the subject is unknown or not in a reinstatable state."""
+        state = self._subjects.get(subject_id)
+        if state is None or state.status not in ("abandoned", "disqualified"):
+            return False
+        prior_status = state.status
+        prior_terminal_ms = state.terminal_at_ms
+        state.status = "racing"
+        detail = f"{subject_id} reinstated from {prior_status}"
+        if prior_terminal_ms is not None:
+            detail += f" (terminal at {prior_terminal_ms}ms)"
+        self._diag("reinstate", subject_id, "", detail, now_ms)
+        return True
 
     def force_complete_stage(self, subject_id: str, now_ms: int):
         """Operator override: complete the current stage regardless of sensors."""
@@ -214,6 +271,16 @@ class HyroxCourseEngine:
                     "stage_arrived_ms": {k.value: v for k, v in s.stage_arrived_ms.items()},
                     "stage_end_ms": {k.value: v for k, v in s.stage_end_ms.items()},
                     "stage_resource": {k.value: v for k, v in s.stage_resource.items()},
+                    "dq_reason": s.dq_reason,
+                    "penalties": [
+                        {
+                            "penalty_ms": p.penalty_ms,
+                            "reason": p.reason,
+                            "issued_at_epoch_ms": p.issued_at_epoch_ms,
+                        }
+                        for p in s.penalties
+                    ],
+                    "terminal_at_ms": s.terminal_at_ms,
                 }
                 for sid, s in self._subjects.items()
             },
@@ -248,6 +315,16 @@ class HyroxCourseEngine:
                 stage_resource={
                     HyroxStage(k): v for k, v in s.get("stage_resource", {}).items()
                 },
+                dq_reason=s.get("dq_reason"),
+                penalties=[
+                    Penalty(
+                        penalty_ms=p["penalty_ms"],
+                        reason=p["reason"],
+                        issued_at_epoch_ms=p["issued_at_epoch_ms"],
+                    )
+                    for p in s.get("penalties", [])
+                ],
+                terminal_at_ms=s.get("terminal_at_ms"),
             )
         self._subjects = subjects
         self.diagnostics = [

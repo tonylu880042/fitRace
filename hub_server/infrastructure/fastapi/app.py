@@ -192,6 +192,17 @@ class HyroxSubjectPayload(BaseModel):
     subject_id: str
 
 
+class HyroxDqPayload(BaseModel):
+    subject_id: str
+    reason: HyroxName
+
+
+class HyroxPenaltyPayload(BaseModel):
+    subject_id: str
+    penalty_ms: int = Field(..., gt=0)
+    reason: HyroxName
+
+
 class HyroxAssignPayload(BaseModel):
     subject_id: str
     resource_id: str
@@ -405,6 +416,40 @@ def abandon_hyrox_subject(payload: HyroxSubjectPayload, request: Request):
 def complete_hyrox_stage(payload: HyroxSubjectPayload, request: Request):
     require_admin(request)
     hyrox_service.complete_stage(payload.subject_id)
+    return {"status": "ok"}
+
+
+def _hyrox_error_status(exc: HyroxAssignmentError) -> int:
+    return {"unknown_subject": 404, "unknown_resource": 404}.get(exc.code, 409)
+
+
+@app.post("/api/hyrox/dq")
+def disqualify_hyrox_subject(payload: HyroxDqPayload, request: Request):
+    require_admin(request)
+    try:
+        hyrox_service.disqualify(payload.subject_id, payload.reason)
+    except HyroxAssignmentError as exc:
+        raise HTTPException(status_code=_hyrox_error_status(exc), detail=exc.detail) from exc
+    return {"status": "ok"}
+
+
+@app.post("/api/hyrox/penalty")
+def penalize_hyrox_subject(payload: HyroxPenaltyPayload, request: Request):
+    require_admin(request)
+    try:
+        hyrox_service.add_penalty(payload.subject_id, payload.penalty_ms, payload.reason)
+    except HyroxAssignmentError as exc:
+        raise HTTPException(status_code=_hyrox_error_status(exc), detail=exc.detail) from exc
+    return {"status": "ok"}
+
+
+@app.post("/api/hyrox/reinstate")
+def reinstate_hyrox_subject(payload: HyroxSubjectPayload, request: Request):
+    require_admin(request)
+    try:
+        hyrox_service.reinstate(payload.subject_id)
+    except HyroxAssignmentError as exc:
+        raise HTTPException(status_code=_hyrox_error_status(exc), detail=exc.detail) from exc
     return {"status": "ok"}
 
 

@@ -21,6 +21,7 @@ from hub_server.usecases.hyrox_sensor_registry import HyroxTelemetryEvent
 class AssignmentCloseReason(str, Enum):
     COMPLETED = "completed"                # stage target reached
     ABANDONED = "abandoned"               # athlete pressed the lane abandon button
+    DISQUALIFIED = "disqualified"         # judge-called DQ (Phase 8)
     OPERATOR_RELEASE = "operator_release"  # manual release by an operator
     SUPERSEDED = "superseded"             # subject re-claimed elsewhere while open
 
