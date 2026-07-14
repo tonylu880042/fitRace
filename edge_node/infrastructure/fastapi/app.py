@@ -730,7 +730,7 @@ EDGE_SETUP_HTML = """
     }
 
     .binding-row.channel-dim {
-      opacity: 0.4;
+      display: none; /* only the selected channel's devices stay visible */
     }
 
     .binding-unbind {
@@ -1105,6 +1105,7 @@ EDGE_SETUP_HTML = """
         <section class="panel" aria-labelledby="bindings-title">
           <h2 id="bindings-title" data-i18n="bindings.title">Equipment Bindings</h2>
           <div class="status-line"><span data-i18n="bindings.node_id">Edge node</span><strong id="config-node-id">--</strong></div>
+          <div class="sub" id="binding-filter-hint"></div>
           <div class="binding-list" id="binding-list" style="margin-top:14px;"></div>
           <div class="button-grid" style="margin-top:14px;">
             <button id="config-save-btn" type="button" data-i18n="bindings.save">Save bindings</button>
@@ -1342,7 +1343,8 @@ EDGE_SETUP_HTML = """
         "bindings.unbind": "Unbind",
         "bindings.unbind_confirm": "Unbind {name}? The device will be disconnected from the antenna board.",
         "bindings.unbinding": "Unbinding — refreshing antenna target lists...",
-        "bindings.unbound": "{name} unbound. Edge runtime restarted."
+        "bindings.unbound": "{name} unbound. Edge runtime restarted.",
+        "bindings.filtered": "Showing {channel} devices ({count}). Pick another channel or Manual serial port to see the rest."
       }
     };
     dictionaries["zh-TW"] = {
@@ -1455,7 +1457,8 @@ EDGE_SETUP_HTML = """
       "bindings.unbind": "解綁",
       "bindings.unbind_confirm": "確定解綁 {name}？將從天線板斷開此設備連線。",
       "bindings.unbinding": "解綁中——更新天線板目標清單...",
-      "bindings.unbound": "{name} 已解綁，Edge runtime 已重啟。"
+      "bindings.unbound": "{name} 已解綁，Edge runtime 已重啟。",
+      "bindings.filtered": "目前只顯示 {channel} 的設備（{count} 台），切換通道或選 Manual serial port 可檢視全部。"
     };
     ["it", "fr", "de-CH", "sv"].forEach((locale) => {
       dictionaries[locale] = { ...dictionaries["en-US"] };
@@ -1764,11 +1767,18 @@ EDGE_SETUP_HTML = """
     }
 
     function renderSelectedChannel(channelId, counts) {
+      let visible = 0;
       document.querySelectorAll(".binding-row").forEach((row) => {
         row.classList.remove("channel-active", "channel-dim");
         if (!channelId) return;
-        row.classList.add(row.dataset.channel === channelId ? "channel-active" : "channel-dim");
+        const match = row.dataset.channel === channelId;
+        row.classList.add(match ? "channel-active" : "channel-dim");
+        if (match) visible += 1;
       });
+      const hint = document.getElementById("binding-filter-hint");
+      if (hint) {
+        hint.textContent = channelId ? t("bindings.filtered", { channel: channelId, count: visible }) : "";
+      }
       if (!channelId) {
         antennaChannelSlots.textContent = "";
         antennaChannelSlots.className = "channel-slots";
