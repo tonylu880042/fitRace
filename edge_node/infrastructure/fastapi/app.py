@@ -149,7 +149,9 @@ def local_ip_address() -> str:
 def edge_setup_page():
     ip = local_ip_address()
     badge = f"{ip}:8001" if ip else "Local web setup :8001"
-    return HTMLResponse(EDGE_SETUP_HTML.replace("__EDGE_HOST_BADGE__", badge))
+    html = EDGE_SETUP_HTML.replace("__EDGE_HOST_BADGE__", badge)
+    html = html.replace("__EDGE_HOST_IP__", ip or "--")
+    return HTMLResponse(html)
 
 
 @app.get("/api/config")
@@ -773,6 +775,13 @@ EDGE_SETUP_HTML = """
       position: relative;
     }
 
+    .wifi-ip {
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      color: var(--accent);
+    }
+
     .tab-bar {
       display: flex;
       gap: 8px;
@@ -1044,6 +1053,7 @@ EDGE_SETUP_HTML = """
               <div class="badge"><span class="dot" id="wifi-dot"></span><span id="wifi-interface">wlan0</span></div>
             </div>
             <div class="status-line"><span>SSID</span><strong id="wifi-ssid">--</strong></div>
+            <div class="status-line"><span>IP</span><strong id="wifi-ip" class="wifi-ip">__EDGE_HOST_IP__</strong></div>
             <div class="message" id="wifi-message">Reading current Wi-Fi status...</div>
             <button id="wifi-choose-btn" type="button" class="button-secondary" data-i18n="wifi.choose" style="margin-top:10px;">Choose Wi-Fi network</button>
           </div>
@@ -2304,6 +2314,8 @@ EDGE_SETUP_HTML = """
           const result = await response.json();
           if (!response.ok) throw new Error(result.detail || "Connect failed");
           resultBox.textContent = t("wifi.connect_ok", { ssid: net.ssid, ip: result.ip || "?" });
+          const ipLabel = document.getElementById("wifi-ip");
+          if (ipLabel && result.ip) ipLabel.textContent = result.ip;
           refreshWifiStatus();
         } catch (error) {
           resultBox.textContent = error.message;
