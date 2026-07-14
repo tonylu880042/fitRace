@@ -755,14 +755,8 @@ EDGE_SETUP_HTML = """
     }
 
     .modal-overlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.65);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 50;
-      padding: 20px;
+      margin: 14px auto 0;
+      max-width: 540px;
     }
 
     .modal-overlay[hidden] {
@@ -771,11 +765,9 @@ EDGE_SETUP_HTML = """
 
     .modal-panel {
       background: var(--panel-2, #111);
-      border: 1px solid var(--border);
+      border: 1px solid var(--accent);
       border-radius: 12px;
-      max-width: 540px;
-      width: 100%;
-      max-height: 85vh;
+      max-height: 70vh;
       overflow: auto;
       padding: 20px;
       position: relative;
@@ -1988,9 +1980,16 @@ EDGE_SETUP_HTML = """
       scanWizard.hidden = true;
     }
     wizardCloseBtn.addEventListener("click", closeScanWizard);
-    scanWizard.addEventListener("click", (event) => {
-      if (event.target === scanWizard) closeScanWizard();
-    });
+
+    function showWizardAt(anchor) {
+      // dialog sits in normal flow right below its trigger button, so it is
+      // always visible where the user clicked — no fixed-position quirks
+      if (anchor && anchor.nextElementSibling !== scanWizard) {
+        anchor.insertAdjacentElement("afterend", scanWizard);
+      }
+      scanWizard.hidden = false;
+      scanWizard.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
 
     function boundTargetSet() {
       return new Set((edgeConfig?.equipment_bindings || [])
@@ -2013,7 +2012,7 @@ EDGE_SETUP_HTML = """
       const channelByPort = new Map(antennaChannels.map((channel) => [channel.port, channel.id]));
       wizardScanChannelId = channelByPort.get(result.port) || "";
       renderWizardStep1();
-      scanWizard.hidden = false;
+      showWizardAt(document.querySelector('button[data-command="scan"]').closest(".button-grid"));
     }
 
     function renderWizardStep1() {
@@ -2156,7 +2155,7 @@ EDGE_SETUP_HTML = """
     async function openWifiPicker() {
       wizardTitle.textContent = t("wifi.picker_title");
       wizardBody.innerHTML = `<div class="wizard-step-hint">${escapeHtml(t("wifi.scanning"))}</div>`;
-      scanWizard.hidden = false;
+      showWizardAt(wifiChooseBtn);
       let payload;
       try {
         const response = await fetch("/api/wifi/networks", { headers: adminHeaders() });

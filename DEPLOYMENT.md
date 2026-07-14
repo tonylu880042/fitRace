@@ -119,6 +119,16 @@ Password: configured per shipped system
 
 The AP credential should be provisioned during manufacturing or pre-delivery setup. Normal field setup should not require entering AP credentials.
 
+Enable the web UI Wi-Fi picker (edge and hub). The service user needs serial
+and NetworkManager access, and polkit must allow scan/connect from a systemd
+service (otherwise `nmcli --rescan yes` silently returns only the cached AP):
+
+```bash
+sudo usermod -aG dialout,netdev <service-user>
+sudo cp deploy_update/polkit/50-fitrace-netdev-nm.rules /etc/polkit-1/rules.d/
+sudo systemctl restart polkit
+```
+
 ## 5. mDNS Discovery
 
 Each Edge Node should be reachable by hostname on the local LAN:

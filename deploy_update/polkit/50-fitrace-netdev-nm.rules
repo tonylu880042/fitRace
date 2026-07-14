@@ -1,0 +1,11 @@
+// Allow the netdev group (fitrace service user) to control NetworkManager:
+// Wi-Fi scan + connect from the edge/hub web UI runs as a systemd service,
+// which polkit otherwise treats as an inactive session and denies.
+// Install: copy to /etc/polkit-1/rules.d/ and restart polkit.
+// Also required: usermod -aG netdev <service-user>
+polkit.addRule(function(action, subject) {
+    if (action.id.indexOf("org.freedesktop.NetworkManager.") === 0 &&
+        subject.isInGroup("netdev")) {
+        return polkit.Result.YES;
+    }
+});
