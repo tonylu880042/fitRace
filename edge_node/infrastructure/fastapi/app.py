@@ -1023,10 +1023,6 @@ EDGE_SETUP_HTML = """
         <select id="language-select" class="language-select" aria-label="System language">
           <option value="en-US">English</option>
           <option value="zh-TW">繁體中文</option>
-          <option value="it">Italiano</option>
-          <option value="fr">Français</option>
-          <option value="de-CH">Deutsch (Schweiz)</option>
-          <option value="sv">Svenska</option>
         </select>
         <div class="badge"><span class="dot"></span><span>__EDGE_HOST_BADGE__</span></div>
       </div>
@@ -1257,7 +1253,7 @@ EDGE_SETUP_HTML = """
     ];
     function getBrowserLocale() {
       const saved = localStorage.getItem("fitrace.edge.locale");
-      if (saved) return saved;
+      if (saved === "en-US" || saved === "zh-TW") return saved;
       const browserLang = navigator.language || navigator.userLanguage;
       if (browserLang && browserLang.toLowerCase().startsWith("zh")) {
         return "zh-TW";
@@ -1297,6 +1293,8 @@ EDGE_SETUP_HTML = """
         "antenna.port": "Serial port",
         "antenna.channel": "UART channel",
         "antenna.advanced": "Advanced maintenance",
+        "antenna.manual": "Manual serial port",
+        "antenna.waiting": "Waiting for UART response...",
         "antenna.channel_load": "Bound devices per channel (max {max}/board)",
         "antenna.slots_free": "{channel}: {free} slot(s) free for a new device",
         "antenna.slots_full": "{channel} is full — pick another channel for new devices",
@@ -1411,6 +1409,8 @@ EDGE_SETUP_HTML = """
       "antenna.port": "Serial port",
       "antenna.channel": "UART 通道",
       "antenna.advanced": "進階維護",
+      "antenna.manual": "手動指定串口",
+      "antenna.waiting": "等待 UART 回應中...",
       "antenna.channel_load": "各通道已綁定設備（每板上限 {max}）",
       "antenna.slots_free": "{channel} 還有 {free} 個空位可綁定新設備",
       "antenna.slots_full": "{channel} 已滿，新設備請改用其他通道",
@@ -1490,11 +1490,8 @@ EDGE_SETUP_HTML = """
       "bindings.unbind_confirm": "確定解綁 {name}？將從天線板斷開此設備連線。",
       "bindings.unbinding": "解綁中——更新天線板目標清單...",
       "bindings.unbound": "{name} 已解綁，Edge runtime 已重啟。",
-      "bindings.filtered": "目前只顯示 {channel} 的設備（{count} 台），切換通道或選 Manual serial port 可檢視全部。"
+      "bindings.filtered": "目前只顯示 {channel} 的設備（{count} 台），切換通道或選「手動指定串口」可檢視全部。"
     };
-    ["it", "fr", "de-CH", "sv"].forEach((locale) => {
-      dictionaries[locale] = { ...dictionaries["en-US"] };
-    });
 
     function t(key, params = {}) {
       let value = (dictionaries[currentLocale] || dictionaries["en-US"])[key] || dictionaries["en-US"][key] || key;
@@ -1513,6 +1510,12 @@ EDGE_SETUP_HTML = """
       antennaState.textContent = t("antenna.idle");
       if (!antennaMessage.classList.contains("error") && !antennaMessage.classList.contains("ok")) {
         antennaMessage.textContent = t("antenna.ready");
+      }
+      if (antennaChannelSelect.options.length) {
+        antennaChannelSelect.options[0].textContent = t("antenna.manual");
+      }
+      if (edgeConfig) {
+        renderBindings(edgeConfig); // re-render dynamic rows in the new language
       }
       updateChannelOccupancy();
     }
@@ -1830,7 +1833,7 @@ EDGE_SETUP_HTML = """
     function renderAntennaConfig(config) {
       const channels = Array.isArray(config.channels) ? config.channels : [];
       antennaChannels = channels;
-      antennaChannelSelect.innerHTML = `<option value="">Manual serial port</option>`;
+      antennaChannelSelect.innerHTML = `<option value="">${escapeHtml(t("antenna.manual"))}</option>`;
       channels.forEach((channel) => {
         const option = document.createElement("option");
         option.value = channel.port;
@@ -1860,7 +1863,7 @@ EDGE_SETUP_HTML = """
       configNodeId.textContent = config.node_id || "--";
       const bindings = Array.isArray(config.equipment_bindings) ? config.equipment_bindings : [];
       if (!bindings.length) {
-        bindingList.innerHTML = `<div class="empty">No equipment bindings configured.</div>`;
+        bindingList.innerHTML = `<div class="empty">${escapeHtml(t("monitor.empty"))}</div>`;
         renderMonitorEquipment();
         updateChannelOccupancy();
         return;
@@ -2353,7 +2356,7 @@ EDGE_SETUP_HTML = """
       setAntennaButtonsDisabled(true);
       antennaState.textContent = command.toUpperCase();
       setAntennaMessage(t("antenna.running", { command: command.toUpperCase(), port: payload.port }));
-      antennaOutput.textContent = "Waiting for UART response...";
+      antennaOutput.textContent = t("antenna.waiting");
 
       try {
         const response = await fetch("/api/antenna/command", {
@@ -2386,7 +2389,7 @@ EDGE_SETUP_HTML = """
       setAntennaButtonsDisabled(true);
       antennaState.textContent = "CONNECT";
       setAntennaMessage(t("antenna.running", { command: "CONNECT", port: "configured channels" }));
-      antennaOutput.textContent = "Waiting for UART response...";
+      antennaOutput.textContent = t("antenna.waiting");
 
       try {
         const response = await fetch("/api/antenna/reconnect-configured", {

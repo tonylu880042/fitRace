@@ -41,7 +41,8 @@ def test_edge_setup_page_includes_uart_antenna_controls_without_ble_scan_panel()
     assert response.status_code == 200
     assert "FitRace Edge Node" in response.text
     assert "language-select" in response.text
-    assert "Deutsch (Schweiz)" in response.text
+    assert "Deutsch (Schweiz)" not in response.text
+    assert "繁體中文" in response.text
     assert "Wi-Fi Signal" in response.text
     assert "wifi-icon" in response.text
     assert "極佳 Wi-Fi" in response.text
