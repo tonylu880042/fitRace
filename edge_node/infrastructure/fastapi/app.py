@@ -1109,7 +1109,6 @@ EDGE_SETUP_HTML = """
           <div class="binding-list" id="binding-list" style="margin-top:14px;"></div>
           <div class="button-grid" style="margin-top:14px;">
             <button id="config-save-btn" type="button" data-i18n="bindings.save">Save bindings</button>
-            <button id="config-restart-btn" type="button" class="button-secondary" data-i18n="bindings.restart">Restart Edge runtime</button>
           </div>
           <div class="message" id="config-message" data-i18n="bindings.ready">Edit names here, then save and restart Edge runtime.</div>
         </section>
@@ -1176,7 +1175,6 @@ EDGE_SETUP_HTML = """
     const configNodeId = document.getElementById("config-node-id");
     const configMessage = document.getElementById("config-message");
     const configSaveBtn = document.getElementById("config-save-btn");
-    const configRestartBtn = document.getElementById("config-restart-btn");
     const allAntennaButtons = [
       ...antennaCommandButtons,
       antennaConnectBtn,
@@ -1277,7 +1275,7 @@ EDGE_SETUP_HTML = """
         "wizard.back": "Back",
         "wizard.confirm": "Save device",
         "wizard.title3": "Done",
-        "wizard.saved_hint": "{name} saved. Restart Edge runtime to apply and auto-connect the device.",
+        "wizard.saved_hint": "{name} saved. Edge runtime restarted — the device will connect automatically.",
         "wizard.close": "Close",
         "type.treadmill": "Treadmill",
         "type.curved_treadmill": "Curved treadmill (non-motorized)",
@@ -1334,11 +1332,11 @@ EDGE_SETUP_HTML = """
         "bindings.type": "Equipment type",
         "bindings.channel": "UART channel",
         "bindings.target": "BLE target / MAC",
-        "bindings.save": "Save bindings",
+        "bindings.save": "Save and apply",
         "bindings.restart": "Restart Edge runtime",
-        "bindings.ready": "Edit names here, then save and restart Edge runtime.",
-        "bindings.saved": "Bindings saved. Restart Edge runtime to apply.",
-        "bindings.restarted": "Edge runtime restart requested.",
+        "bindings.ready": "Edit here; saving applies changes and restarts the Edge runtime automatically.",
+        "bindings.saved": "Bindings saved. Restarting Edge runtime...",
+        "bindings.restarted": "Edge runtime restarted. Changes applied.",
         "bindings.failed": "Config update failed",
         "bindings.unbind": "Unbind",
         "bindings.unbind_confirm": "Unbind {name}? The device will be disconnected from the antenna board.",
@@ -1391,7 +1389,7 @@ EDGE_SETUP_HTML = """
       "wizard.back": "上一步",
       "wizard.confirm": "儲存設備",
       "wizard.title3": "完成",
-      "wizard.saved_hint": "{name} 已儲存。重啟 Edge runtime 後套用並自動連線。",
+      "wizard.saved_hint": "{name} 已儲存，Edge runtime 已重啟，設備將自動連線。",
       "wizard.close": "關閉",
       "type.treadmill": "跑步機",
       "type.curved_treadmill": "無動力跑步機",
@@ -1448,11 +1446,11 @@ EDGE_SETUP_HTML = """
       "bindings.type": "設備類型",
       "bindings.channel": "UART 通道",
       "bindings.target": "BLE 目標 / MAC",
-      "bindings.save": "儲存設備綁定",
+      "bindings.save": "儲存並套用",
       "bindings.restart": "重啟 Edge runtime",
-      "bindings.ready": "在這裡修改名稱，儲存後重啟 Edge runtime 套用。",
-      "bindings.saved": "設備綁定已儲存，請重啟 Edge runtime 套用。",
-      "bindings.restarted": "已送出 Edge runtime 重啟。",
+      "bindings.ready": "在這裡修改設定，儲存後會自動重啟 Edge runtime 套用。",
+      "bindings.saved": "設備綁定已儲存，正在重啟 Edge runtime...",
+      "bindings.restarted": "Edge runtime 已重啟，設定已套用。",
       "bindings.failed": "設定更新失敗",
       "bindings.unbind": "解綁",
       "bindings.unbind_confirm": "確定解綁 {name}？將從天線板斷開此設備連線。",
@@ -1930,7 +1928,7 @@ EDGE_SETUP_HTML = """
     }
 
     async function restartEdgeRuntime() {
-      configRestartBtn.disabled = true;
+      configSaveBtn.disabled = true;
       try {
         const response = await fetch("/api/system/power/restart-service", {
           method: "POST",
@@ -1946,8 +1944,14 @@ EDGE_SETUP_HTML = """
         setConfigMessage(error.message, "error");
       } finally {
         window.setTimeout(() => {
-          configRestartBtn.disabled = false;
+          configSaveBtn.disabled = false;
         }, 2000);
+      }
+    }
+
+    async function saveAndApplyBindings() {
+      if (await saveEdgeConfig()) {
+        await restartEdgeRuntime();
       }
     }
 
@@ -2176,6 +2180,7 @@ EDGE_SETUP_HTML = """
       renderBindings(edgeConfig);
       const saved = await saveEdgeConfig();
       if (saved) {
+        await restartEdgeRuntime();
         renderWizardStep3(name);
       } else {
         closeScanWizard();
@@ -2187,14 +2192,9 @@ EDGE_SETUP_HTML = """
       wizardBody.innerHTML = `
         <div class="wizard-step-hint">${escapeHtml(t("wizard.saved_hint", { name }))}</div>
         <div class="wizard-actions">
-          <button type="button" id="wizard-restart">${escapeHtml(t("bindings.restart"))}</button>
-          <button type="button" class="button-secondary" id="wizard-done">${escapeHtml(t("wizard.close"))}</button>
+          <button type="button" id="wizard-done">${escapeHtml(t("wizard.close"))}</button>
         </div>
       `;
-      document.getElementById("wizard-restart").addEventListener("click", async () => {
-        await restartEdgeRuntime();
-        closeScanWizard();
-      });
       document.getElementById("wizard-done").addEventListener("click", closeScanWizard);
     }
 
@@ -2443,8 +2443,7 @@ EDGE_SETUP_HTML = """
     antennaReconnectConfiguredBtn.addEventListener("click", reconnectConfiguredDevices);
     antennaReportBtn.addEventListener("click", () => runAntennaCommand("report"));
     antennaRawBtn.addEventListener("click", () => runAntennaCommand("raw"));
-    configSaveBtn.addEventListener("click", saveEdgeConfig);
-    configRestartBtn.addEventListener("click", restartEdgeRuntime);
+    configSaveBtn.addEventListener("click", saveAndApplyBindings);
     monitorRefreshBtn.addEventListener("click", refreshMonitorEvents);
 
     applyTranslations();
