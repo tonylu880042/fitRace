@@ -21,11 +21,16 @@ CHAR_ROWER = "00002ad1-0000-1000-8000-00805f9b34fb"
 
 EQUIPMENT_TO_UUID = {
     "treadmill": CHAR_TREADMILL,
+    "curved_treadmill": CHAR_TREADMILL,
     "fan_bike": CHAR_INDOOR_BIKE,
+    "spin_bike": CHAR_INDOOR_BIKE,
+    "upright_bike": CHAR_INDOOR_BIKE,
+    "recumbent_bike": CHAR_INDOOR_BIKE,
     "indoor_bike": CHAR_INDOOR_BIKE,
     "rowing_machine": CHAR_ROWER,
     "rower": CHAR_ROWER,
     "ski_erg": CHAR_ROWER,  # Fallback to rower
+    # elliptical / stair_climber fall through to the default (indoor bike char)
 }
 
 class BleakTelemetryClient:

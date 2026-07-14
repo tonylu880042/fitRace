@@ -1113,6 +1113,25 @@ EDGE_SETUP_HTML = """
     let edgeConfig = null;
     let antennaChannels = [];
     const ANTENNA_MAX_CONNECTIONS = 3; // nRF52832 board hard limit: 3 BLE links per board
+    const EQUIPMENT_TYPES = [
+      "treadmill", "curved_treadmill", "spin_bike", "fan_bike", "upright_bike",
+      "recumbent_bike", "elliptical", "stair_climber", "rowing_machine", "ski_erg", "unknown",
+    ];
+
+    function typeLabel(value) {
+      const key = `type.${value}`;
+      const label = t(key);
+      return label === key ? value : label;
+    }
+
+    function equipmentTypeOptions(selectedValue) {
+      const values = EQUIPMENT_TYPES.includes(selectedValue) || !selectedValue
+        ? EQUIPMENT_TYPES
+        : [...EQUIPMENT_TYPES, selectedValue];
+      return values.map((type) => (
+        `<option value="${escapeHtml(type)}" ${type === selectedValue ? "selected" : ""}>${escapeHtml(typeLabel(type))}</option>`
+      )).join("");
+    }
     let monitorLatestByNode = new Map();
     let monitorDisplayedByNode = new Map();
     let monitorServerNowEpochMs = null;
@@ -1171,6 +1190,17 @@ EDGE_SETUP_HTML = """
         "wizard.title3": "Done",
         "wizard.saved_hint": "{name} saved. Restart Edge runtime to apply and auto-connect the device.",
         "wizard.close": "Close",
+        "type.treadmill": "Treadmill",
+        "type.curved_treadmill": "Curved treadmill (non-motorized)",
+        "type.spin_bike": "Spin bike",
+        "type.fan_bike": "Fan bike (air bike)",
+        "type.upright_bike": "Upright bike",
+        "type.recumbent_bike": "Recumbent bike",
+        "type.elliptical": "Elliptical",
+        "type.stair_climber": "Stair climber",
+        "type.rowing_machine": "Rowing machine",
+        "type.ski_erg": "Ski erg",
+        "type.unknown": "Unknown",
         "antenna.baudrate": "Baudrate",
         "antenna.rtscts": "RTS/CTS hardware flow control",
         "antenna.timeout": "Read timeout seconds",
@@ -1254,6 +1284,17 @@ EDGE_SETUP_HTML = """
       "wizard.title3": "完成",
       "wizard.saved_hint": "{name} 已儲存。重啟 Edge runtime 後套用並自動連線。",
       "wizard.close": "關閉",
+      "type.treadmill": "跑步機",
+      "type.curved_treadmill": "無動力跑步機",
+      "type.spin_bike": "飛輪車",
+      "type.fan_bike": "風扇車",
+      "type.upright_bike": "立式健身車",
+      "type.recumbent_bike": "臥式健身車",
+      "type.elliptical": "橢圓機",
+      "type.stair_climber": "樓梯機",
+      "type.rowing_machine": "划船機",
+      "type.ski_erg": "滑雪機",
+      "type.unknown": "未知",
       "antenna.baudrate": "Baudrate",
       "antenna.rtscts": "RTS/CTS 硬體流控",
       "antenna.timeout": "讀取逾時秒數",
@@ -1505,7 +1546,7 @@ EDGE_SETUP_HTML = """
             </div>
             <div class="monitor-fields">
               ${renderMonitorField("monitor.name", binding.equipment_id || "--")}
-              ${renderMonitorField("monitor.type", binding.equipment_type || "--")}
+              ${renderMonitorField("monitor.type", binding.equipment_type ? typeLabel(binding.equipment_type) : "--")}
               ${renderMonitorField("monitor.mac", payload.mac_address || binding.ble_target || "--", "wide")}
               ${renderMonitorField("monitor.channel", binding.antenna_channel || "--")}
               ${renderMonitorField("monitor.updated", updated)}
@@ -1680,9 +1721,7 @@ EDGE_SETUP_HTML = """
           <div class="field">
             <label>${escapeHtml(t("bindings.type"))}</label>
             <select class="binding-equipment-type">
-              ${["treadmill", "fan_bike", "rowing_machine", "elliptical", "ski_erg", "unknown"].map((type) => (
-                `<option value="${type}" ${type === binding.equipment_type ? "selected" : ""}>${type}</option>`
-              )).join("")}
+              ${equipmentTypeOptions(binding.equipment_type)}
             </select>
           </div>
           <div class="field">
@@ -1937,9 +1976,7 @@ EDGE_SETUP_HTML = """
         <div class="field">
           <label>${escapeHtml(t("bindings.type"))}</label>
           <select id="wizard-type">
-            ${["treadmill", "fan_bike", "rowing_machine", "elliptical", "ski_erg", "unknown"].map((type) => (
-              `<option value="${type}" ${type === defaultType ? "selected" : ""}>${type}</option>`
-            )).join("")}
+            ${equipmentTypeOptions(defaultType)}
           </select>
         </div>
         <div class="field">
