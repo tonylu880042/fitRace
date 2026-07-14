@@ -540,6 +540,18 @@
           </div>
           <div class="status-text" id="power-message"></div>
         </section>
+
+        <section class="panel" aria-labelledby="wifi-title">
+          <div class="panel-header">
+            <h2 class="panel-title" id="wifi-title">Wi-Fi Network</h2>
+            <span class="pill" id="wifi-current">--</span>
+          </div>
+          <div class="button-row">
+            <button type="button" id="btn-wifi-scan" onclick="scanWifi()">Scan networks</button>
+          </div>
+          <div id="wifi-list"></div>
+          <div class="status-text" id="wifi-message"></div>
+        </section>
       </div>
     </main>
   </div>
@@ -976,6 +988,62 @@
         setMessage("power-message", `${result.action || action} accepted${suffix}.`, "ok");
       } catch (error) {
         setMessage("power-message", error.message, "error");
+      }
+    }
+
+    async function scanWifi() {
+      const button = $("btn-wifi-scan");
+      button.disabled = true;
+      setMessage("wifi-message", "Scanning (about 10 seconds)...", "");
+      try {
+        const payload = await fetchJson(`/api/wifi/networks?t=${Date.now()}`, {
+          headers: adminHeaders(),
+        });
+        renderWifiList(payload.networks || []);
+        setMessage("wifi-message", "", "");
+      } catch (error) {
+        setMessage("wifi-message", error.message, "error");
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    function renderWifiList(networks) {
+      const active = networks.find((net) => net.active);
+      $("wifi-current").textContent = active ? active.ssid : "not connected";
+      if (!networks.length) {
+        $("wifi-list").innerHTML = '<div class="status-text">No networks found.</div>';
+        return;
+      }
+      $("wifi-list").innerHTML = networks.map((net, index) => `
+        <div class="button-row" style="justify-content: space-between; align-items: center; margin-top: 8px;">
+          <span>${escapeHtml(net.ssid)}${net.active ? " ✓" : ""} <small>${net.signal}%${net.secured ? " 🔒" : ""}${net.saved ? " · saved" : ""}</small></span>
+          <button type="button" data-wifi-index="${index}" ${net.active ? "disabled" : ""}>${net.active ? "Connected" : "Connect"}</button>
+        </div>
+      `).join("");
+      document.querySelectorAll("[data-wifi-index]").forEach((button) => {
+        button.addEventListener("click", () => connectWifi(networks[Number(button.dataset.wifiIndex)]));
+      });
+    }
+
+    async function connectWifi(net) {
+      let password = null;
+      if (net.secured && !net.saved) {
+        password = window.prompt(`Password for ${net.ssid}:`);
+        if (!password) return;
+      }
+      if (!window.confirm(`Connect to ${net.ssid}? The hub's IP may change and remote browsers will disconnect.`)) return;
+      setMessage("wifi-message", `Connecting to ${net.ssid}...`, "");
+      try {
+        const result = await fetchJson("/api/wifi/connect", {
+          method: "POST",
+          headers: adminHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({ ssid: net.ssid, password }),
+        });
+        setMessage("wifi-message", `Connected to ${net.ssid}. IP: ${result.ip}`, "ok");
+        $("wifi-current").textContent = net.ssid;
+      } catch (error) {
+        setMessage("wifi-message", error.message, "error");
       }
     }
 

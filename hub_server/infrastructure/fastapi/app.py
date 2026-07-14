@@ -20,6 +20,7 @@ from hub_server.usecases.race_result_store import RaceResultStore
 from hub_server.adapters.websocket_manager import WebSocketManager
 from hub_server.infrastructure.locales import DEFAULT_LOCALE, list_locales, load_locale
 from hub_server.usecases.update_checker import UpdateChecker
+from fitrace_common import wifi_manager
 from fitrace_common.power_manager import PowerActionError, PowerManager
 from fitrace_common.version import APP_VERSION
 
@@ -145,6 +146,12 @@ class PowerActionPayload(BaseModel):
     confirmation: Optional[str] = None
 
 
+class WifiConnectPayload(BaseModel):
+    ssid: str = Field(..., min_length=1, max_length=32)
+    password: Optional[str] = Field(None, max_length=64)
+    interface: str = "wlan0"
+
+
 class DiagnosticTelemetryPayload(BaseModel):
     node_id: str = "diagnostic-bike-01"
     equipment_type: str = "fan_bike"
@@ -195,6 +202,25 @@ def get_real_ip() -> Optional[str]:
 def get_system_ip():
     ip = get_real_ip()
     return {"ip": ip or "127.0.0.1"}
+
+
+@app.get("/api/wifi/networks")
+def list_wifi_networks(request: Request, interface: str = "wlan0"):
+    require_admin(request)
+    try:
+        return {"interface": interface, "networks": wifi_manager.list_networks(interface)}
+    except wifi_manager.WifiError as e:
+        raise HTTPException(status_code=e.status_code, detail=str(e))
+
+
+@app.post("/api/wifi/connect")
+def connect_wifi(payload: WifiConnectPayload, request: Request):
+    require_admin(request)
+    try:
+        detail = wifi_manager.connect(payload.ssid, payload.password, payload.interface)
+    except wifi_manager.WifiError as e:
+        raise HTTPException(status_code=e.status_code, detail=str(e))
+    return {"status": "connected", "detail": detail, "ip": get_real_ip() or "127.0.0.1"}
 
 
 @app.get("/health")

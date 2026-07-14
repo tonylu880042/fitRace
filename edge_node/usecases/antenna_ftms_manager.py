@@ -89,7 +89,12 @@ class AntennaFtmsManager:
         }
         try:
             boot_has_list = self._ping_channels()
-            if boot_has_list and all(boot_has_list.values()):
+            no_list_channels = {
+                channel_id
+                for channel_id, has_list in boot_has_list.items()
+                if not has_list
+            }
+            if boot_has_list and not no_list_channels:
                 # spec: HAS_LIST boards auto-reconnect their saved targets;
                 # don't tear them down, let the retry loop patch any gaps
                 logger.info(
@@ -97,7 +102,10 @@ class AntennaFtmsManager:
                 )
                 self._set_report_interval_all()
             else:
-                scan_results = self._scan_channels()
+                # only scan the boards that lost their list; HAS_LIST boards
+                # keep their links undisturbed and the retry loop patches gaps
+                scan_targets = no_list_channels or set(self._serials)
+                scan_results = self._scan_channels(scan_targets)
                 assignments = assign_devices_by_rssi(
                     scan_results,
                     self._edge_config.antenna_channels,
@@ -115,7 +123,9 @@ class AntennaFtmsManager:
                 assignments = {
                     channel_id: macs
                     for channel_id, macs in assignments.items()
-                    if macs
+                    # HAS_LIST channels stay untouched even if a device they
+                    # own was heard here; their board reconnects it via NVS
+                    if macs and channel_id in scan_targets
                 }
                 if assignments:
                     self._bindings_by_mac = bind_assignments_to_streams(
@@ -127,6 +137,11 @@ class AntennaFtmsManager:
                     self._connect_assignments(assignments)
                 else:
                     logger.warning("Antenna scan found no configured targets")
+                has_list_channels = set(self._serials) - scan_targets
+                if has_list_channels:
+                    # HAS_LIST boards skipped CONNECT, but still need the
+                    # report interval re-applied after their reboot
+                    self._set_report_interval_all(has_list_channels)
             self._read_telemetry_loop()
         finally:
             for serial_port in self._serials.values():
@@ -248,8 +263,10 @@ class AntennaFtmsManager:
             self._read_lines(serial_port, self._command_timeout_sec, channel_id=channel_id)
         return scan_results
 
-    def _set_report_interval_all(self):
+    def _set_report_interval_all(self, channel_ids: set[str] | None = None):
         for channel_id, serial_port in self._serials.items():
+            if channel_ids is not None and channel_id not in channel_ids:
+                continue
             self._write(serial_port, protocol.build_report_interval(self._report_interval_ms), channel_id)
             parsed = self._await_response(
                 serial_port, self._command_timeout_sec, channel_id, ok_command="REPORT"

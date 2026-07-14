@@ -18,6 +18,7 @@ from edge_node.infrastructure.ble.ftms_scanner import BleakFtmsScanner
 from edge_node.infrastructure.network.wifi_status import LinuxWifiStatusReader, WifiStatus
 from edge_node.usecases.event_log import EdgeEventLog
 from edge_node.usecases.ftms_scanner import scan_ftms_devices
+from fitrace_common import wifi_manager
 from fitrace_common.power_manager import PowerActionError, PowerManager
 
 
@@ -53,6 +54,13 @@ class AntennaCommandPayload(BaseModel):
 class AntennaReconnectPayload(BaseModel):
     timeout_sec: float = 5.0
     report_interval_ms: int = 250
+    disconnect_first: bool = False
+
+
+class WifiConnectPayload(BaseModel):
+    ssid: str = Field(..., min_length=1, max_length=32)
+    password: str | None = Field(None, max_length=64)
+    interface: str = "wlan0"
 
 
 class EdgeConfigPayload(EdgeNodeConfig):
@@ -202,6 +210,25 @@ def get_wifi_status(
     return wifi_status_reader.read(interface=interface).model_dump()
 
 
+@app.get("/api/wifi/networks")
+def list_wifi_networks(request: Request, interface: str = Query("wlan0")):
+    require_admin(request)
+    try:
+        return {"interface": interface, "networks": wifi_manager.list_networks(interface)}
+    except wifi_manager.WifiError as e:
+        raise HTTPException(status_code=e.status_code, detail=str(e))
+
+
+@app.post("/api/wifi/connect")
+def connect_wifi(payload: WifiConnectPayload, request: Request):
+    require_admin(request)
+    try:
+        detail = wifi_manager.connect(payload.ssid, payload.password, payload.interface)
+    except wifi_manager.WifiError as e:
+        raise HTTPException(status_code=e.status_code, detail=str(e))
+    return {"status": "connected", "detail": detail, "ip": local_ip_address()}
+
+
 @app.get("/api/antenna/config")
 def get_antenna_config(request: Request):
     require_admin(request)
@@ -263,11 +290,24 @@ def reconnect_configured_antenna_devices(payload: AntennaReconnectPayload, reque
             continue
         targets_by_channel.setdefault(binding.antenna_channel, []).append(binding.ble_target)
 
-    if not targets_by_channel:
+    if not targets_by_channel and not payload.disconnect_first:
         raise HTTPException(status_code=400, detail="No configured antenna targets found")
 
     results = []
     try:
+        if payload.disconnect_first:
+            # clear every board's link/target list so removed bindings
+            # actually free their connection slot (firmware only has ALL)
+            for channel in config.antenna_channels:
+                antenna_command_runner.run(
+                    AntennaCommandRequest(
+                        port=channel.port,
+                        baudrate=channel.baudrate,
+                        rtscts=channel.rtscts,
+                        command="disconnect_all",
+                        timeout_sec=payload.timeout_sec,
+                    )
+                )
         for channel_id, macs in targets_by_channel.items():
             channel = channels_by_id[channel_id]
             connect_result = antenna_command_runner.run(
@@ -693,6 +733,14 @@ EDGE_SETUP_HTML = """
       opacity: 0.4;
     }
 
+    .binding-unbind {
+      grid-column: 1 / -1;
+      justify-self: end;
+      width: auto;
+      padding: 6px 14px;
+      font-size: 12px;
+    }
+
     .channel-slots {
       margin-top: 6px;
       font-weight: 600;
@@ -958,6 +1006,7 @@ EDGE_SETUP_HTML = """
             </div>
             <div class="status-line"><span>SSID</span><strong id="wifi-ssid">--</strong></div>
             <div class="message" id="wifi-message">Reading current Wi-Fi status...</div>
+            <button id="wifi-choose-btn" type="button" class="button-secondary" data-i18n="wifi.choose" style="margin-top:10px;">Choose Wi-Fi network</button>
           </div>
         </section>
 
@@ -1173,6 +1222,19 @@ EDGE_SETUP_HTML = """
         "wifi.disconnected": "Disconnected",
         "wifi.position_hint": "Signal state helps adjust on-site placement",
         "wifi.connect_hint": "Confirm the Edge Node is connected to the AP",
+        "wifi.choose": "Choose Wi-Fi network",
+        "wifi.picker_title": "Wi-Fi networks",
+        "wifi.picker_hint": "Select the AP this Edge Node should connect to.",
+        "wifi.scanning": "Scanning for networks (about 10 seconds)...",
+        "wifi.none_found": "No networks found. Move closer to the AP and retry.",
+        "wifi.saved": "saved",
+        "wifi.connected": "Connected",
+        "wifi.connect": "Connect",
+        "wifi.switch_warning": "Switching networks changes this device's IP. A remote browser will lose this page — reconnect via the new IP or fitrace-pi.local. The on-device screen is unaffected.",
+        "wifi.password": "Wi-Fi password",
+        "wifi.password_required": "Password is required for this network.",
+        "wifi.connecting": "Connecting...",
+        "wifi.connect_ok": "Connected to {ssid}. IP: {ip}",
         "antenna.title": "UART Antenna Control",
         "antenna.port": "Serial port",
         "antenna.channel": "UART channel",
@@ -1227,7 +1289,7 @@ EDGE_SETUP_HTML = """
         "monitor.failed": "Monitor read failed",
         "monitor.waiting": "Waiting",
         "monitor.live": "Live",
-        "monitor.stale": "Stale",
+        "monitor.stale": "Idle (no data)",
         "monitor.name": "Name",
         "monitor.type": "Type",
         "monitor.mac": "MAC",
@@ -1250,7 +1312,11 @@ EDGE_SETUP_HTML = """
         "bindings.ready": "Edit names here, then save and restart Edge runtime.",
         "bindings.saved": "Bindings saved. Restart Edge runtime to apply.",
         "bindings.restarted": "Edge runtime restart requested.",
-        "bindings.failed": "Config update failed"
+        "bindings.failed": "Config update failed",
+        "bindings.unbind": "Unbind",
+        "bindings.unbind_confirm": "Unbind {name}? The device will be disconnected from the antenna board.",
+        "bindings.unbinding": "Unbinding — refreshing antenna target lists...",
+        "bindings.unbound": "{name} unbound. Edge runtime restarted."
       }
     };
     dictionaries["zh-TW"] = {
@@ -1267,6 +1333,19 @@ EDGE_SETUP_HTML = """
       "wifi.disconnected": "未連線",
       "wifi.position_hint": "訊號狀態可用於現場位置調整",
       "wifi.connect_hint": "請確認 Edge Node 已連上 AP",
+      "wifi.choose": "選擇 Wi-Fi 網路",
+      "wifi.picker_title": "Wi-Fi 網路清單",
+      "wifi.picker_hint": "選擇這台 Edge Node 要連線的 AP。",
+      "wifi.scanning": "掃描網路中（約 10 秒）...",
+      "wifi.none_found": "找不到網路，請靠近 AP 後重試。",
+      "wifi.saved": "已儲存",
+      "wifi.connected": "使用中",
+      "wifi.connect": "連線",
+      "wifi.switch_warning": "切換網路後裝置 IP 會改變，遠端瀏覽器會斷開此頁面——請改用新 IP 或 fitrace-pi.local 重連。機上螢幕不受影響。",
+      "wifi.password": "Wi-Fi 密碼",
+      "wifi.password_required": "此網路需要密碼。",
+      "wifi.connecting": "連線中...",
+      "wifi.connect_ok": "已連上 {ssid}，IP：{ip}",
       "antenna.title": "UART 天線板控制",
       "antenna.port": "Serial port",
       "antenna.channel": "UART 通道",
@@ -1321,7 +1400,7 @@ EDGE_SETUP_HTML = """
       "monitor.failed": "監測資料讀取失敗",
       "monitor.waiting": "等待中",
       "monitor.live": "即時",
-      "monitor.stale": "逾時",
+      "monitor.stale": "閒置（無數據）",
       "monitor.name": "名稱",
       "monitor.type": "類型",
       "monitor.mac": "MAC",
@@ -1344,7 +1423,11 @@ EDGE_SETUP_HTML = """
       "bindings.ready": "在這裡修改名稱，儲存後重啟 Edge runtime 套用。",
       "bindings.saved": "設備綁定已儲存，請重啟 Edge runtime 套用。",
       "bindings.restarted": "已送出 Edge runtime 重啟。",
-      "bindings.failed": "設定更新失敗"
+      "bindings.failed": "設定更新失敗",
+      "bindings.unbind": "解綁",
+      "bindings.unbind_confirm": "確定解綁 {name}？將從天線板斷開此設備連線。",
+      "bindings.unbinding": "解綁中——更新天線板目標清單...",
+      "bindings.unbound": "{name} 已解綁，Edge runtime 已重啟。"
     };
     ["it", "fr", "de-CH", "sv"].forEach((locale) => {
       dictionaries[locale] = { ...dictionaries["en-US"] };
@@ -1734,6 +1817,7 @@ EDGE_SETUP_HTML = """
             <label>${escapeHtml(t("bindings.target"))} · ${escapeHtml(binding.node_id || "")}</label>
             <input class="binding-target-input readonly-input" type="text" value="${escapeHtml(binding.ble_target || "")}" readonly tabindex="-1">
           </div>
+          <button type="button" class="binding-unbind button-secondary" data-index="${index}">${escapeHtml(t("bindings.unbind"))}</button>
         </div>
       `).join("");
       renderMonitorEquipment();
@@ -1771,7 +1855,7 @@ EDGE_SETUP_HTML = """
       });
       return {
         ...edgeConfig,
-        max_ftms_connections: bindings.length,
+        max_ftms_connections: Math.max(1, bindings.length),
         equipment_bindings: bindings,
       };
     }
@@ -2067,6 +2151,92 @@ EDGE_SETUP_HTML = """
       document.getElementById("wizard-done").addEventListener("click", closeScanWizard);
     }
 
+    const wifiChooseBtn = document.getElementById("wifi-choose-btn");
+
+    async function openWifiPicker() {
+      wizardTitle.textContent = t("wifi.picker_title");
+      wizardBody.innerHTML = `<div class="wizard-step-hint">${escapeHtml(t("wifi.scanning"))}</div>`;
+      scanWizard.hidden = false;
+      let payload;
+      try {
+        const response = await fetch("/api/wifi/networks", { headers: adminHeaders() });
+        payload = await response.json();
+        if (!response.ok) throw new Error(payload.detail || "Wi-Fi scan failed");
+      } catch (error) {
+        wizardBody.innerHTML = `<div class="wizard-step-hint">${escapeHtml(error.message)}</div>`;
+        return;
+      }
+      const networks = payload.networks || [];
+      if (!networks.length) {
+        wizardBody.innerHTML = `<div class="wizard-step-hint">${escapeHtml(t("wifi.none_found"))}</div>`;
+        return;
+      }
+      wizardBody.innerHTML = `
+        <div class="wizard-step-hint">${escapeHtml(t("wifi.picker_hint"))}</div>
+        ${networks.map((net, index) => `
+          <div class="wizard-device">
+            <div>
+              <div>${escapeHtml(net.ssid)}${net.active ? " ✓" : ""}</div>
+              <div class="meta">${net.signal}%${net.secured ? " · 🔒" : ""}${net.saved ? ` · ${escapeHtml(t("wifi.saved"))}` : ""}</div>
+            </div>
+            <button type="button" data-net-index="${index}" ${net.active ? "disabled" : ""}>
+              ${escapeHtml(net.active ? t("wifi.connected") : t("wifi.connect"))}
+            </button>
+          </div>
+        `).join("")}
+      `;
+      wizardBody.querySelectorAll("[data-net-index]").forEach((button) => {
+        button.addEventListener("click", () => renderWifiConnect(networks[Number(button.dataset.netIndex)]));
+      });
+    }
+
+    function renderWifiConnect(net) {
+      wizardTitle.textContent = net.ssid;
+      const needsPassword = net.secured && !net.saved;
+      wizardBody.innerHTML = `
+        <div class="wizard-step-hint">${escapeHtml(t("wifi.switch_warning"))}</div>
+        ${needsPassword ? `
+          <div class="field">
+            <label>${escapeHtml(t("wifi.password"))}</label>
+            <input id="wifi-password" type="password" autocomplete="off">
+          </div>
+        ` : ""}
+        <div class="wizard-actions">
+          <button type="button" class="button-secondary" id="wifi-back">${escapeHtml(t("wizard.back"))}</button>
+          <button type="button" id="wifi-connect-confirm">${escapeHtml(t("wifi.connect"))}</button>
+        </div>
+        <div class="wizard-step-hint" id="wifi-connect-result"></div>
+      `;
+      document.getElementById("wifi-back").addEventListener("click", openWifiPicker);
+      document.getElementById("wifi-connect-confirm").addEventListener("click", async () => {
+        const resultBox = document.getElementById("wifi-connect-result");
+        const confirmBtn = document.getElementById("wifi-connect-confirm");
+        const password = document.getElementById("wifi-password")?.value || null;
+        if (needsPassword && !password) {
+          resultBox.textContent = t("wifi.password_required");
+          return;
+        }
+        confirmBtn.disabled = true;
+        resultBox.textContent = t("wifi.connecting");
+        try {
+          const response = await fetch("/api/wifi/connect", {
+            method: "POST",
+            headers: adminHeaders({ "Content-Type": "application/json" }),
+            body: JSON.stringify({ ssid: net.ssid, password }),
+          });
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.detail || "Connect failed");
+          resultBox.textContent = t("wifi.connect_ok", { ssid: net.ssid, ip: result.ip || "?" });
+          refreshWifiStatus();
+        } catch (error) {
+          resultBox.textContent = error.message;
+          confirmBtn.disabled = false;
+        }
+      });
+    }
+
+    wifiChooseBtn.addEventListener("click", openWifiPicker);
+
     async function runAntennaCommand(command) {
       let payload;
       try {
@@ -2183,6 +2353,38 @@ EDGE_SETUP_HTML = """
       if (!select) return;
       select.closest(".binding-row").dataset.channel = select.value;
       updateChannelOccupancy();
+    });
+    bindingList.addEventListener("click", async (event) => {
+      const button = event.target.closest(".binding-unbind");
+      if (!button) return;
+      const index = Number(button.dataset.index);
+      const binding = edgeConfig?.equipment_bindings?.[index];
+      if (!binding) return;
+      if (!window.confirm(t("bindings.unbind_confirm", { name: binding.equipment_id }))) return;
+      const bindings = edgeConfig.equipment_bindings.filter((_, i) => i !== index);
+      edgeConfig = { ...edgeConfig, equipment_bindings: bindings, max_ftms_connections: Math.max(1, bindings.length) };
+      renderBindings(edgeConfig);
+      const saved = await saveEdgeConfig();
+      if (!saved) {
+        await loadEdgeConfig();
+        return;
+      }
+      setConfigMessage(t("bindings.unbinding"), "ok");
+      try {
+        await fetch("/api/antenna/reconnect-configured", {
+          method: "POST",
+          headers: adminHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({
+            disconnect_first: true,
+            timeout_sec: Math.max(1, Math.min(30, Number(antennaTimeoutInput.value) || 5)),
+            report_interval_ms: Math.max(100, Math.min(10000, Number(antennaReportIntervalInput.value) || ANTENNA_DEFAULT_REPORT_INTERVAL_MS)),
+          }),
+        });
+      } catch (_error) {
+        // board list refresh is best-effort; runtime restart below reloads config
+      }
+      await restartEdgeRuntime();
+      setConfigMessage(t("bindings.unbound", { name: binding.equipment_id }), "ok");
     });
     antennaConnectBtn.addEventListener("click", () => runAntennaCommand("connect"));
     antennaReconnectConfiguredBtn.addEventListener("click", reconnectConfiguredDevices);

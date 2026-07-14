@@ -490,3 +490,77 @@ async def test_antenna_manager_assigns_saved_targets_to_channel_bindings():
     assert not any(write.startswith("DISCONNECT:") for write in serials["uart-1"].writes)
     assert received[0].node_id == "fitrace-edge-01-bike-01"
     assert received[0].equipment_id == "BIKE_01"
+
+
+@pytest.mark.asyncio
+async def test_antenna_manager_scans_only_no_list_channels():
+    channels = make_channels()
+    serials = {
+        "uart-1": FakeSerial(
+            {
+                "PING;\r\n": ["BOOT:HAS_LIST,count=2;\r\n"],
+                "REPORT:250;\r\n": ["REPORT:OK;\r\n"],
+            }
+        ),
+        "uart-2": FakeSerial(
+            {
+                "PING;\r\n": ["BOOT:NO_LIST;\r\n"],
+                "SCAN:START;\r\n": [
+                    "SCAN:OK;\r\n",
+                    # uart-2 also hears uart-1's configured (but idle) device
+                    "DEVICE:AA:BB:CC:DD:EE:01,-50,Tread 1,TREADMILL;\r\n",
+                    "DEVICE:AA:BB:CC:DD:EE:02,-60,Tread 2,TREADMILL;\r\n",
+                ],
+                "SCAN:STOP;\r\n": ["SCAN:OK;\r\n"],
+                "DISCONNECT:ALL;\r\n": ["DISCONNECT:OK;\r\n"],
+                "CONNECT:AA:BB:CC:DD:EE:02;\r\n": ["CONNECT:OK;\r\n"],
+                "REPORT:250;\r\n": ["REPORT:OK;\r\n"],
+            }
+        ),
+    }
+    config = EdgeNodeConfig(
+        node_id="fitrace-edge-01",
+        antenna_channels=channels,
+        equipment_bindings=[
+            EquipmentBinding(
+                node_id="fitrace-edge-01-01",
+                equipment_id="TREAD_01",
+                equipment_type="treadmill",
+                ble_target="AA:BB:CC:DD:EE:01",
+                antenna_channel="uart-1",
+            ),
+            EquipmentBinding(
+                node_id="fitrace-edge-01-02",
+                equipment_id="TREAD_02",
+                equipment_type="treadmill",
+                ble_target="AA:BB:CC:DD:EE:02",
+                antenna_channel="uart-2",
+            ),
+        ],
+    )
+
+    async def on_telemetry(_telemetry):
+        pass
+
+    manager = AntennaFtmsManager(
+        edge_config=config,
+        on_telemetry=on_telemetry,
+        serial_factory=lambda channel: serials[channel.id],
+        scan_duration_sec=0.1,
+        command_timeout_sec=0.1,
+    )
+
+    await manager.start()
+    await asyncio.sleep(0.3)
+    await manager.stop()
+
+    # HAS_LIST board is left alone: no scan, no disconnect, no connect
+    assert not any(write.startswith("SCAN:") for write in serials["uart-1"].writes)
+    assert not any(write.startswith("DISCONNECT:") for write in serials["uart-1"].writes)
+    assert not any(write.startswith("CONNECT:") for write in serials["uart-1"].writes)
+    # but it still gets the report interval applied
+    assert any(write == "REPORT:250;\r\n" for write in serials["uart-1"].writes)
+    # NO_LIST board scans and connects only its own configured device
+    assert any(write == "SCAN:START;\r\n" for write in serials["uart-2"].writes)
+    assert any(write == "CONNECT:AA:BB:CC:DD:EE:02;\r\n" for write in serials["uart-2"].writes)
+    assert not any("AA:BB:CC:DD:EE:01" in write for write in serials["uart-2"].writes if write.startswith("CONNECT:"))

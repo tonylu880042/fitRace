@@ -72,8 +72,8 @@ def test_edge_setup_page_includes_uart_antenna_controls_without_ble_scan_panel()
     assert "MONITOR_LIVE_WINDOW_MS = 3000" in response.text
     assert "MONITOR_SMOOTHING_MS = 180" in response.text
     assert "requestAnimationFrame(animateMonitorEquipment)" in response.text
-    assert '"monitor.stale": "Stale"' in response.text
-    assert '"monitor.stale": "逾時"' in response.text
+    assert '"monitor.stale": "Idle (no data)"' in response.text
+    assert '"monitor.stale": "閒置（無數據）"' in response.text
     assert "function monitorNowEpochMs()" in response.text
     assert "monitorServerNowEpochMs" in response.text
     assert "monitorNowEpochMs() - timestamp" in response.text
