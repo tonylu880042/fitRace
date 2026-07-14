@@ -773,16 +773,26 @@ EDGE_SETUP_HTML = """
       position: relative;
     }
 
+    .modal-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .modal-head h2 {
+      margin: 0;
+    }
+
     .modal-close {
-      position: absolute;
-      top: 10px;
-      right: 12px;
+      flex-shrink: 0;
+      width: auto;
       background: none;
       border: none;
       color: inherit;
       font-size: 20px;
       cursor: pointer;
-      padding: 4px;
+      padding: 4px 8px;
     }
 
     .wizard-step-hint {
@@ -1108,8 +1118,10 @@ EDGE_SETUP_HTML = """
 
   <div class="modal-overlay" id="scan-wizard" hidden>
     <div class="modal-panel">
-      <button type="button" class="modal-close" id="wizard-close" aria-label="Close">✕</button>
-      <h2 id="wizard-title"></h2>
+      <div class="modal-head">
+        <h2 id="wizard-title"></h2>
+        <button type="button" class="modal-close" id="wizard-close" aria-label="Close">✕</button>
+      </div>
       <div id="wizard-body"></div>
     </div>
   </div>
