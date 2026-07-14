@@ -791,6 +791,12 @@ EDGE_SETUP_HTML = """
       opacity: 0.75;
     }
 
+    .wizard-list {
+      max-height: 560px; /* roughly 10 rows, rest scrolls */
+      overflow-y: auto;
+      margin-top: 4px;
+    }
+
     .wizard-device {
       display: flex;
       justify-content: space-between;
@@ -1227,6 +1233,7 @@ EDGE_SETUP_HTML = """
         "wifi.password_required": "Password is required for this network.",
         "wifi.connecting": "Connecting...",
         "wifi.connect_ok": "Connected to {ssid}. IP: {ip}",
+        "wifi.rescan": "Rescan",
         "antenna.title": "UART Antenna Control",
         "antenna.port": "Serial port",
         "antenna.channel": "UART channel",
@@ -1338,6 +1345,7 @@ EDGE_SETUP_HTML = """
       "wifi.password_required": "此網路需要密碼。",
       "wifi.connecting": "連線中...",
       "wifi.connect_ok": "已連上 {ssid}，IP：{ip}",
+      "wifi.rescan": "重新掃描",
       "antenna.title": "UART 天線板控制",
       "antenna.port": "Serial port",
       "antenna.channel": "UART 通道",
@@ -2020,20 +2028,22 @@ EDGE_SETUP_HTML = """
       const bound = boundTargetSet();
       wizardBody.innerHTML = `
         <div class="wizard-step-hint">${escapeHtml(t("wizard.hint1"))}</div>
-        ${wizardDevices.map((device, index) => {
-          const isBound = bound.has(device.address.toUpperCase());
-          return `
-            <div class="wizard-device">
-              <div>
-                <div>${escapeHtml(device.name || device.address)}</div>
-                <div class="meta">${escapeHtml(device.address)} · RSSI ${escapeHtml(String(device.rssi ?? "--"))} dBm · ${escapeHtml(device.device_type || "UNKNOWN")}</div>
+        <div class="wizard-list">
+          ${wizardDevices.map((device, index) => {
+            const isBound = bound.has(device.address.toUpperCase());
+            return `
+              <div class="wizard-device">
+                <div>
+                  <div>${escapeHtml(device.name || device.address)}</div>
+                  <div class="meta">${escapeHtml(device.address)} · RSSI ${escapeHtml(String(device.rssi ?? "--"))} dBm · ${escapeHtml(device.device_type || "UNKNOWN")}</div>
+                </div>
+                <button type="button" data-device-index="${index}" ${isBound ? "disabled" : ""}>
+                  ${escapeHtml(isBound ? t("wizard.bound") : t("wizard.add"))}
+                </button>
               </div>
-              <button type="button" data-device-index="${index}" ${isBound ? "disabled" : ""}>
-                ${escapeHtml(isBound ? t("wizard.bound") : t("wizard.add"))}
-              </button>
-            </div>
-          `;
-        }).join("")}
+            `;
+          }).join("")}
+        </div>
       `;
       wizardBody.querySelectorAll("[data-device-index]").forEach((button) => {
         button.addEventListener("click", () => renderWizardStep2(wizardDevices[Number(button.dataset.deviceIndex)]));
@@ -2172,21 +2182,27 @@ EDGE_SETUP_HTML = """
       }
       wizardBody.innerHTML = `
         <div class="wizard-step-hint">${escapeHtml(t("wifi.picker_hint"))}</div>
-        ${networks.map((net, index) => `
-          <div class="wizard-device">
-            <div>
-              <div>${escapeHtml(net.ssid)}${net.active ? " ✓" : ""}</div>
-              <div class="meta">${net.signal}%${net.secured ? " · 🔒" : ""}${net.saved ? ` · ${escapeHtml(t("wifi.saved"))}` : ""}</div>
+        <div class="wizard-list">
+          ${networks.map((net, index) => `
+            <div class="wizard-device">
+              <div>
+                <div>${escapeHtml(net.ssid)}${net.active ? " ✓" : ""}</div>
+                <div class="meta">${net.signal}%${net.secured ? " · 🔒" : ""}${net.saved ? ` · ${escapeHtml(t("wifi.saved"))}` : ""}</div>
+              </div>
+              <button type="button" data-net-index="${index}" ${net.active ? "disabled" : ""}>
+                ${escapeHtml(net.active ? t("wifi.connected") : t("wifi.connect"))}
+              </button>
             </div>
-            <button type="button" data-net-index="${index}" ${net.active ? "disabled" : ""}>
-              ${escapeHtml(net.active ? t("wifi.connected") : t("wifi.connect"))}
-            </button>
-          </div>
-        `).join("")}
+          `).join("")}
+        </div>
+        <div class="wizard-actions">
+          <button type="button" class="button-secondary" id="wifi-rescan">${escapeHtml(t("wifi.rescan"))}</button>
+        </div>
       `;
       wizardBody.querySelectorAll("[data-net-index]").forEach((button) => {
         button.addEventListener("click", () => renderWifiConnect(networks[Number(button.dataset.netIndex)]));
       });
+      document.getElementById("wifi-rescan").addEventListener("click", openWifiPicker);
     }
 
     function renderWifiConnect(net) {
