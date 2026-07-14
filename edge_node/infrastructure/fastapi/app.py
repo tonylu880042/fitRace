@@ -685,6 +685,106 @@ EDGE_SETUP_HTML = """
       margin-bottom: 0;
     }
 
+    .binding-row.channel-active {
+      border-color: var(--accent);
+    }
+
+    .binding-row.channel-dim {
+      opacity: 0.4;
+    }
+
+    .channel-slots {
+      margin-top: 6px;
+      font-weight: 600;
+    }
+
+    .channel-slots.full {
+      color: #ff7b6b;
+    }
+
+    .channel-slots.free {
+      color: var(--accent);
+    }
+
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.65);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 50;
+      padding: 20px;
+    }
+
+    .modal-overlay[hidden] {
+      display: none;
+    }
+
+    .modal-panel {
+      background: var(--panel-2, #111);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      max-width: 540px;
+      width: 100%;
+      max-height: 85vh;
+      overflow: auto;
+      padding: 20px;
+      position: relative;
+    }
+
+    .modal-close {
+      position: absolute;
+      top: 10px;
+      right: 12px;
+      background: none;
+      border: none;
+      color: inherit;
+      font-size: 20px;
+      cursor: pointer;
+      padding: 4px;
+    }
+
+    .wizard-step-hint {
+      margin: 6px 0 12px;
+      font-size: 13px;
+      opacity: 0.75;
+    }
+
+    .wizard-device {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-top: 10px;
+    }
+
+    .wizard-device .meta {
+      font-size: 12px;
+      opacity: 0.7;
+      overflow-wrap: anywhere;
+    }
+
+    .wizard-device button {
+      flex-shrink: 0;
+      width: auto;
+      padding: 8px 14px;
+    }
+
+    .wizard-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    .wizard-actions button {
+      width: auto;
+      flex: 1;
+    }
+
     .binding-row .binding-target {
       grid-column: 1 / -1;
     }
@@ -873,6 +973,7 @@ EDGE_SETUP_HTML = """
               <option value="">Manual serial port</option>
             </select>
             <div class="sub" id="antenna-channel-load"></div>
+            <div class="channel-slots" id="antenna-channel-slots" aria-live="polite"></div>
           </div>
           <div class="field">
             <label for="antenna-baudrate" data-i18n="antenna.baudrate">Baudrate</label>
@@ -958,6 +1059,14 @@ EDGE_SETUP_HTML = """
     </main>
   </div>
 
+  <div class="modal-overlay" id="scan-wizard" hidden>
+    <div class="modal-panel">
+      <button type="button" class="modal-close" id="wizard-close" aria-label="Close">✕</button>
+      <h2 id="wizard-title"></h2>
+      <div id="wizard-body"></div>
+    </div>
+  </div>
+
   <script>
     const languageSelect = document.getElementById("language-select");
     const wifiIcon = document.getElementById("wifi-icon");
@@ -970,6 +1079,7 @@ EDGE_SETUP_HTML = """
     const antennaPortInput = document.getElementById("antenna-port");
     const antennaChannelSelect = document.getElementById("antenna-channel");
     const antennaChannelLoad = document.getElementById("antenna-channel-load");
+    const antennaChannelSlots = document.getElementById("antenna-channel-slots");
     const antennaBaudrateInput = document.getElementById("antenna-baudrate");
     const antennaRtsctsInput = document.getElementById("antenna-rtscts");
     const antennaTimeoutInput = document.getElementById("antenna-timeout");
@@ -1048,6 +1158,19 @@ EDGE_SETUP_HTML = """
         "antenna.port": "Serial port",
         "antenna.channel": "UART channel",
         "antenna.channel_load": "Bound devices per channel (max {max}/board)",
+        "antenna.slots_free": "{channel}: {free} slot(s) free for a new device",
+        "antenna.slots_full": "{channel} is full — pick another channel for new devices",
+        "wizard.title1": "Add scanned devices",
+        "wizard.hint1": "Select a device found by the scan to add it to the system.",
+        "wizard.bound": "Already bound",
+        "wizard.add": "Add",
+        "wizard.title2": "Device settings",
+        "wizard.replace": "Replace existing device (all channels full)",
+        "wizard.back": "Back",
+        "wizard.confirm": "Save device",
+        "wizard.title3": "Done",
+        "wizard.saved_hint": "{name} saved. Restart Edge runtime to apply and auto-connect the device.",
+        "wizard.close": "Close",
         "antenna.baudrate": "Baudrate",
         "antenna.rtscts": "RTS/CTS hardware flow control",
         "antenna.timeout": "Read timeout seconds",
@@ -1118,6 +1241,19 @@ EDGE_SETUP_HTML = """
       "antenna.port": "Serial port",
       "antenna.channel": "UART 通道",
       "antenna.channel_load": "各通道已綁定設備（每板上限 {max}）",
+      "antenna.slots_free": "{channel} 還有 {free} 個空位可綁定新設備",
+      "antenna.slots_full": "{channel} 已滿，新設備請改用其他通道",
+      "wizard.title1": "加入掃描到的設備",
+      "wizard.hint1": "選擇掃描找到的裝置，將它加入系統。",
+      "wizard.bound": "已綁定",
+      "wizard.add": "加入",
+      "wizard.title2": "設備設定",
+      "wizard.replace": "取代現有設備（所有通道已滿）",
+      "wizard.back": "上一步",
+      "wizard.confirm": "儲存設備",
+      "wizard.title3": "完成",
+      "wizard.saved_hint": "{name} 已儲存。重啟 Edge runtime 後套用並自動連線。",
+      "wizard.close": "關閉",
       "antenna.baudrate": "Baudrate",
       "antenna.rtscts": "RTS/CTS 硬體流控",
       "antenna.timeout": "讀取逾時秒數",
@@ -1346,7 +1482,7 @@ EDGE_SETUP_HTML = """
     }
 
     function renderMonitorEquipment() {
-      const bindings = Array.isArray(edgeConfig?.equipment_bindings) ? edgeConfig.equipment_bindings.slice(0, 5) : [];
+      const bindings = Array.isArray(edgeConfig?.equipment_bindings) ? edgeConfig.equipment_bindings : [];
       const liveCount = bindings.filter((binding) => {
         const payload = monitorLatestByNode.get(binding.node_id);
         return payload?.node_id && monitorTelemetryAgeMs(payload) <= MONITOR_LIVE_WINDOW_MS;
@@ -1398,7 +1534,7 @@ EDGE_SETUP_HTML = """
       events.forEach((event) => {
         const payload = event.payload || {};
         const topic = event.topic || "";
-        if (event.source !== "mqtt" || event.direction !== "publish" || !topic.startsWith("gym/telemetry/")) {
+        if ((event.source !== "mqtt" && event.source !== "local") || event.direction !== "publish" || !topic.startsWith("gym/telemetry/")) {
           return;
         }
         if (!payload.node_id) {
@@ -1434,6 +1570,16 @@ EDGE_SETUP_HTML = """
 
     function channelBindingCounts() {
       const counts = new Map();
+      const rows = Array.from(bindingList?.querySelectorAll(".binding-row") || []);
+      if (rows.length) {
+        rows.forEach((row) => {
+          const channel = row.dataset.channel;
+          const target = row.querySelector(".binding-target-input")?.value;
+          if (!channel || !target) return;
+          counts.set(channel, (counts.get(channel) || 0) + 1);
+        });
+        return counts;
+      }
       const bindings = Array.isArray(edgeConfig?.equipment_bindings) ? edgeConfig.equipment_bindings : [];
       bindings.forEach((binding) => {
         if (!binding.ble_target || !binding.antenna_channel) return;
@@ -1461,6 +1607,30 @@ EDGE_SETUP_HTML = """
         return `${channel.id}: ${used}/${ANTENNA_MAX_CONNECTIONS}${mark}`;
       }).join(" · ");
       antennaChannelLoad.textContent = `${t("antenna.channel_load", { max: ANTENNA_MAX_CONNECTIONS })} — ${summary}`;
+      const selectedId = channelById.get(antennaChannelSelect.value) || "";
+      renderSelectedChannel(selectedId, counts);
+    }
+
+    function renderSelectedChannel(channelId, counts) {
+      document.querySelectorAll(".binding-row").forEach((row) => {
+        row.classList.remove("channel-active", "channel-dim");
+        if (!channelId) return;
+        row.classList.add(row.dataset.channel === channelId ? "channel-active" : "channel-dim");
+      });
+      if (!channelId) {
+        antennaChannelSlots.textContent = "";
+        antennaChannelSlots.className = "channel-slots";
+        return;
+      }
+      const used = counts.get(channelId) || 0;
+      const free = Math.max(0, ANTENNA_MAX_CONNECTIONS - used);
+      if (free > 0) {
+        antennaChannelSlots.textContent = t("antenna.slots_free", { channel: channelId, free });
+        antennaChannelSlots.className = "channel-slots free";
+      } else {
+        antennaChannelSlots.textContent = t("antenna.slots_full", { channel: channelId });
+        antennaChannelSlots.className = "channel-slots full";
+      }
     }
 
     function renderAntennaConfig(config) {
@@ -1502,7 +1672,7 @@ EDGE_SETUP_HTML = """
         return;
       }
       bindingList.innerHTML = bindings.map((binding, index) => `
-        <div class="binding-row" data-index="${index}">
+        <div class="binding-row" data-index="${index}" data-channel="${escapeHtml(binding.antenna_channel || "")}">
           <div class="field">
             <label>${escapeHtml(t("bindings.name"))}</label>
             <input class="binding-equipment-id" type="text" value="${escapeHtml(binding.equipment_id || "")}" autocomplete="off">
@@ -1573,7 +1743,7 @@ EDGE_SETUP_HTML = """
         payload = collectEdgeConfig();
       } catch (error) {
         setConfigMessage(error.message, "error");
-        return;
+        return false;
       }
       configSaveBtn.disabled = true;
       try {
@@ -1589,8 +1759,10 @@ EDGE_SETUP_HTML = """
         edgeConfig = result.config;
         renderBindings(edgeConfig);
         setConfigMessage(t("bindings.saved"), "ok");
+        return true;
       } catch (error) {
         setConfigMessage(error.message, "error");
+        return false;
       } finally {
         configSaveBtn.disabled = false;
       }
@@ -1675,6 +1847,189 @@ EDGE_SETUP_HTML = """
       });
     }
 
+    const scanWizard = document.getElementById("scan-wizard");
+    const wizardTitle = document.getElementById("wizard-title");
+    const wizardBody = document.getElementById("wizard-body");
+    const wizardCloseBtn = document.getElementById("wizard-close");
+    let wizardDevices = [];
+    let wizardScanChannelId = "";
+    const WIZARD_TYPE_MAP = {
+      TREADMILL: "treadmill", TREAD: "treadmill",
+      ROWER: "rowing_machine", ROWING: "rowing_machine",
+      BIKE: "fan_bike", FAN_BIKE: "fan_bike",
+      ELLIPTICAL: "elliptical",
+      SKI: "ski_erg", SKI_ERG: "ski_erg",
+    };
+
+    function closeScanWizard() {
+      scanWizard.hidden = true;
+    }
+    wizardCloseBtn.addEventListener("click", closeScanWizard);
+    scanWizard.addEventListener("click", (event) => {
+      if (event.target === scanWizard) closeScanWizard();
+    });
+
+    function boundTargetSet() {
+      return new Set((edgeConfig?.equipment_bindings || [])
+        .filter((binding) => binding.ble_target)
+        .map((binding) => binding.ble_target.toUpperCase()));
+    }
+
+    function openScanWizard(result) {
+      const byAddress = new Map();
+      (result.parsed || []).forEach((entry) => {
+        if (entry.type !== "device" || !entry.address) return;
+        const key = entry.address.toUpperCase();
+        const previous = byAddress.get(key);
+        if (!previous || (entry.rssi ?? -999) > (previous.rssi ?? -999)) {
+          byAddress.set(key, entry);
+        }
+      });
+      wizardDevices = Array.from(byAddress.values());
+      if (!wizardDevices.length) return;
+      const channelByPort = new Map(antennaChannels.map((channel) => [channel.port, channel.id]));
+      wizardScanChannelId = channelByPort.get(result.port) || "";
+      renderWizardStep1();
+      scanWizard.hidden = false;
+    }
+
+    function renderWizardStep1() {
+      wizardTitle.textContent = t("wizard.title1");
+      const bound = boundTargetSet();
+      wizardBody.innerHTML = `
+        <div class="wizard-step-hint">${escapeHtml(t("wizard.hint1"))}</div>
+        ${wizardDevices.map((device, index) => {
+          const isBound = bound.has(device.address.toUpperCase());
+          return `
+            <div class="wizard-device">
+              <div>
+                <div>${escapeHtml(device.name || device.address)}</div>
+                <div class="meta">${escapeHtml(device.address)} · RSSI ${escapeHtml(String(device.rssi ?? "--"))} dBm · ${escapeHtml(device.device_type || "UNKNOWN")}</div>
+              </div>
+              <button type="button" data-device-index="${index}" ${isBound ? "disabled" : ""}>
+                ${escapeHtml(isBound ? t("wizard.bound") : t("wizard.add"))}
+              </button>
+            </div>
+          `;
+        }).join("")}
+      `;
+      wizardBody.querySelectorAll("[data-device-index]").forEach((button) => {
+        button.addEventListener("click", () => renderWizardStep2(wizardDevices[Number(button.dataset.deviceIndex)]));
+      });
+    }
+
+    function renderWizardStep2(device) {
+      wizardTitle.textContent = t("wizard.title2");
+      const counts = channelBindingCounts();
+      const freeChannels = antennaChannels.filter((channel) => (counts.get(channel.id) || 0) < ANTENNA_MAX_CONNECTIONS);
+      const allFull = antennaChannels.length > 0 && !freeChannels.length;
+      const preferredChannel = freeChannels.some((channel) => channel.id === wizardScanChannelId)
+        ? wizardScanChannelId
+        : (freeChannels[0]?.id || "");
+      const defaultName = (device.name && device.name !== "UNKNOWN") ? device.name : device.address;
+      const defaultType = WIZARD_TYPE_MAP[(device.device_type || "").toUpperCase()] || "treadmill";
+      wizardBody.innerHTML = `
+        <div class="wizard-step-hint">${escapeHtml(device.address)} · RSSI ${escapeHtml(String(device.rssi ?? "--"))} dBm</div>
+        <div class="field">
+          <label>${escapeHtml(t("bindings.name"))}</label>
+          <input id="wizard-name" type="text" value="${escapeHtml(defaultName)}" autocomplete="off">
+        </div>
+        <div class="field">
+          <label>${escapeHtml(t("bindings.type"))}</label>
+          <select id="wizard-type">
+            ${["treadmill", "fan_bike", "rowing_machine", "elliptical", "ski_erg", "unknown"].map((type) => (
+              `<option value="${type}" ${type === defaultType ? "selected" : ""}>${type}</option>`
+            )).join("")}
+          </select>
+        </div>
+        <div class="field">
+          <label>${escapeHtml(t("bindings.channel"))}</label>
+          <select id="wizard-channel">
+            ${antennaChannels.map((channel) => {
+              const used = counts.get(channel.id) || 0;
+              const full = used >= ANTENNA_MAX_CONNECTIONS;
+              return `<option value="${escapeHtml(channel.id)}" ${channel.id === preferredChannel ? "selected" : ""} ${full && !allFull ? "disabled" : ""}>${escapeHtml(channel.id)} (${escapeHtml(channel.port)}) · ${used}/${ANTENNA_MAX_CONNECTIONS}${full ? " ⚠" : ""}</option>`;
+            }).join("")}
+          </select>
+        </div>
+        ${allFull ? `
+          <div class="field">
+            <label>${escapeHtml(t("wizard.replace"))}</label>
+            <select id="wizard-replace">
+              ${(edgeConfig?.equipment_bindings || []).map((binding, index) => (
+                `<option value="${index}">${escapeHtml(binding.equipment_id)} (${escapeHtml(binding.antenna_channel)} · ${escapeHtml(binding.ble_target)})</option>`
+              )).join("")}
+            </select>
+          </div>
+        ` : ""}
+        <div class="wizard-actions">
+          <button type="button" class="button-secondary" id="wizard-back">${escapeHtml(t("wizard.back"))}</button>
+          <button type="button" id="wizard-confirm">${escapeHtml(t("wizard.confirm"))}</button>
+        </div>
+      `;
+      document.getElementById("wizard-back").addEventListener("click", renderWizardStep1);
+      document.getElementById("wizard-confirm").addEventListener("click", () => applyWizardBinding(device, allFull));
+    }
+
+    function nextWizardNodeId() {
+      const matches = (edgeConfig?.equipment_bindings || [])
+        .map((binding) => String(binding.node_id || "").match(/^(.*?)([0-9]+)$/))
+        .filter(Boolean);
+      if (matches.length) {
+        const prefix = matches[matches.length - 1][1];
+        const samePrefix = matches.filter((match) => match[1] === prefix);
+        const next = Math.max(...samePrefix.map((match) => Number(match[2]))) + 1;
+        return prefix + String(next).padStart(matches[matches.length - 1][2].length, "0");
+      }
+      return `${edgeConfig?.node_id || "edge"}-${String((edgeConfig?.equipment_bindings || []).length + 1).padStart(2, "0")}`;
+    }
+
+    async function applyWizardBinding(device, allFull) {
+      const name = document.getElementById("wizard-name").value.trim();
+      const type = document.getElementById("wizard-type").value;
+      const channelId = document.getElementById("wizard-channel").value;
+      if (!name || !channelId) return;
+      const binding = {
+        node_id: nextWizardNodeId(),
+        equipment_id: name,
+        equipment_type: type,
+        ble_target: device.address,
+        antenna_channel: channelId,
+      };
+      const bindings = [...(edgeConfig?.equipment_bindings || [])];
+      if (allFull) {
+        const replaceIndex = Number(document.getElementById("wizard-replace").value);
+        binding.node_id = bindings[replaceIndex].node_id;
+        bindings[replaceIndex] = binding;
+      } else {
+        bindings.push(binding);
+      }
+      edgeConfig = { ...edgeConfig, equipment_bindings: bindings, max_ftms_connections: bindings.length };
+      renderBindings(edgeConfig);
+      const saved = await saveEdgeConfig();
+      if (saved) {
+        renderWizardStep3(name);
+      } else {
+        closeScanWizard();
+      }
+    }
+
+    function renderWizardStep3(name) {
+      wizardTitle.textContent = t("wizard.title3");
+      wizardBody.innerHTML = `
+        <div class="wizard-step-hint">${escapeHtml(t("wizard.saved_hint", { name }))}</div>
+        <div class="wizard-actions">
+          <button type="button" id="wizard-restart">${escapeHtml(t("bindings.restart"))}</button>
+          <button type="button" class="button-secondary" id="wizard-done">${escapeHtml(t("wizard.close"))}</button>
+        </div>
+      `;
+      document.getElementById("wizard-restart").addEventListener("click", async () => {
+        await restartEdgeRuntime();
+        closeScanWizard();
+      });
+      document.getElementById("wizard-done").addEventListener("click", closeScanWizard);
+    }
+
     async function runAntennaCommand(command) {
       let payload;
       try {
@@ -1703,6 +2058,9 @@ EDGE_SETUP_HTML = """
         antennaState.textContent = t("antenna.complete_state");
         setAntennaMessage(t("antenna.complete", { command: command.toUpperCase(), count: result.rx.length }), "ok");
         renderAntennaOutput(result);
+        if (command === "scan") {
+          openScanWizard(result);
+        }
       } catch (error) {
         antennaState.textContent = t("antenna.failed");
         setAntennaMessage(error.message, "error");
@@ -1774,12 +2132,20 @@ EDGE_SETUP_HTML = """
     });
     antennaChannelSelect.addEventListener("change", () => {
       const selected = antennaChannelSelect.selectedOptions[0];
-      if (!selected || !selected.value) return;
-      antennaPortInput.value = selected.value;
-      if (selected.dataset.baudrate) {
-        antennaBaudrateInput.value = selected.dataset.baudrate;
+      if (selected && selected.value) {
+        antennaPortInput.value = selected.value;
+        if (selected.dataset.baudrate) {
+          antennaBaudrateInput.value = selected.dataset.baudrate;
+        }
+        antennaRtsctsInput.checked = selected.dataset.rtscts === "1";
       }
-      antennaRtsctsInput.checked = selected.dataset.rtscts === "1";
+      updateChannelOccupancy();
+    });
+    bindingList.addEventListener("change", (event) => {
+      const select = event.target.closest(".binding-channel");
+      if (!select) return;
+      select.closest(".binding-row").dataset.channel = select.value;
+      updateChannelOccupancy();
     });
     antennaConnectBtn.addEventListener("click", () => runAntennaCommand("connect"));
     antennaReconnectConfiguredBtn.addEventListener("click", reconnectConfiguredDevices);

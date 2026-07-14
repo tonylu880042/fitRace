@@ -164,6 +164,15 @@ def main():
                         await publisher.publish_telemetry(topic, telemetry)
                     except Exception as e:
                         logger.error(f"Failed to publish telemetry: {e}")
+                elif event_log:
+                    # standalone mode: no MQTT, but the web monitor reads the
+                    # event log, so record telemetry there under source "local"
+                    event_log.record(
+                        "local",
+                        "publish",
+                        topic=f"gym/telemetry/{telemetry.node_id}",
+                        payload=telemetry.model_dump(),
+                    )
 
             if edge_config.antenna_channels and edge_config.antenna_auto_connect:
                 logger.info(
