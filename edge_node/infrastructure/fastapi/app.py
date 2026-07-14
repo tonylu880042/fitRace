@@ -1017,7 +1017,9 @@ EDGE_SETUP_HTML = """
             <button id="wifi-choose-btn" type="button" class="button-secondary" data-i18n="wifi.choose" style="margin-top:10px;">Choose Wi-Fi network</button>
           </div>
         </section>
+      </div>
 
+      <div class="stack">
         <section class="panel" aria-labelledby="antenna-title">
           <h2 id="antenna-title" data-i18n="antenna.title">UART Antenna Control</h2>
           <div class="field">
@@ -1080,9 +1082,7 @@ EDGE_SETUP_HTML = """
             <div class="message" id="antenna-message">Ready to send UART commands.</div>
           </div>
         </section>
-      </div>
 
-      <div class="stack">
         <section class="panel" aria-labelledby="bindings-title">
           <h2 id="bindings-title" data-i18n="bindings.title">Equipment Bindings</h2>
           <div class="status-line"><span data-i18n="bindings.node_id">Edge node</span><strong id="config-node-id">--</strong></div>
