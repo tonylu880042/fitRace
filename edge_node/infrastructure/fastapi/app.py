@@ -773,6 +773,25 @@ EDGE_SETUP_HTML = """
       position: relative;
     }
 
+    .tab-bar {
+      display: flex;
+      gap: 8px;
+    }
+
+    .tab-bar .tab-button {
+      width: auto;
+      flex: 1;
+      background: var(--panel);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .tab-bar .tab-button.active {
+      background: var(--accent);
+      color: #111;
+      border-color: var(--accent);
+    }
+
     .antenna-advanced {
       margin-top: 16px;
       border-top: 1px solid var(--border);
@@ -1102,7 +1121,12 @@ EDGE_SETUP_HTML = """
           </details>
         </section>
 
-        <section class="panel" aria-labelledby="bindings-title">
+        <div class="tab-bar" role="tablist">
+          <button type="button" id="tab-bindings" class="tab-button active" data-i18n="bindings.title">Equipment Bindings</button>
+          <button type="button" id="tab-monitor" class="tab-button" data-i18n="monitor.title">Runtime Monitor</button>
+        </div>
+
+        <section class="panel" aria-labelledby="bindings-title" id="bindings-section">
           <h2 id="bindings-title" data-i18n="bindings.title">Equipment Bindings</h2>
           <div class="status-line"><span data-i18n="bindings.node_id">Edge node</span><strong id="config-node-id">--</strong></div>
           <div class="sub" id="binding-filter-hint"></div>
@@ -1113,7 +1137,7 @@ EDGE_SETUP_HTML = """
           <div class="message" id="config-message" data-i18n="bindings.ready">Edit names here, then save and restart Edge runtime.</div>
         </section>
 
-        <section class="panel" aria-labelledby="monitor-title">
+        <section class="panel" aria-labelledby="monitor-title" id="monitor-section" hidden>
           <div class="monitor-toolbar">
             <h2 id="monitor-title" data-i18n="monitor.title" style="margin:0;">Runtime Monitor</h2>
             <button id="monitor-refresh-btn" type="button" class="button-secondary monitor-refresh" data-i18n="monitor.refresh">Refresh</button>
@@ -2289,6 +2313,20 @@ EDGE_SETUP_HTML = """
     }
 
     wifiChooseBtn.addEventListener("click", openWifiPicker);
+
+    const tabBindingsBtn = document.getElementById("tab-bindings");
+    const tabMonitorBtn = document.getElementById("tab-monitor");
+    const bindingsSection = document.getElementById("bindings-section");
+    const monitorSection = document.getElementById("monitor-section");
+
+    function selectTab(showMonitor) {
+      bindingsSection.hidden = showMonitor;
+      monitorSection.hidden = !showMonitor;
+      tabBindingsBtn.classList.toggle("active", !showMonitor);
+      tabMonitorBtn.classList.toggle("active", showMonitor);
+    }
+    tabBindingsBtn.addEventListener("click", () => selectTab(false));
+    tabMonitorBtn.addEventListener("click", () => selectTab(true));
 
     async function runAntennaCommand(command) {
       let payload;
