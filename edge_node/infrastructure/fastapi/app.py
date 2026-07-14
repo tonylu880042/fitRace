@@ -1,5 +1,6 @@
 import json
 import os
+import socket
 import time
 from dataclasses import asdict
 from pathlib import Path
@@ -127,9 +128,20 @@ def shutdown_edge(payload: PowerActionPayload, request: Request):
     return run_power_action(lambda: power_manager.shutdown(payload.confirmation))
 
 
+def local_ip_address() -> str:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))  # no packet sent; just selects the outbound interface
+            return s.getsockname()[0]
+    except OSError:
+        return ""
+
+
 @app.get("/", response_class=HTMLResponse)
 def edge_setup_page():
-    return HTMLResponse(EDGE_SETUP_HTML)
+    ip = local_ip_address()
+    badge = f"{ip}:8001" if ip else "Local web setup :8001"
+    return HTMLResponse(EDGE_SETUP_HTML.replace("__EDGE_HOST_BADGE__", badge))
 
 
 @app.get("/api/config")
@@ -820,7 +832,7 @@ EDGE_SETUP_HTML = """
           <option value="de-CH">Deutsch (Schweiz)</option>
           <option value="sv">Svenska</option>
         </select>
-        <div class="badge"><span class="dot"></span><span>Local web setup :8001</span></div>
+        <div class="badge"><span class="dot"></span><span>__EDGE_HOST_BADGE__</span></div>
       </div>
     </header>
 
@@ -860,6 +872,7 @@ EDGE_SETUP_HTML = """
             <select id="antenna-channel">
               <option value="">Manual serial port</option>
             </select>
+            <div class="sub" id="antenna-channel-load"></div>
           </div>
           <div class="field">
             <label for="antenna-baudrate" data-i18n="antenna.baudrate">Baudrate</label>
@@ -956,6 +969,7 @@ EDGE_SETUP_HTML = """
     const wifiMessage = document.getElementById("wifi-message");
     const antennaPortInput = document.getElementById("antenna-port");
     const antennaChannelSelect = document.getElementById("antenna-channel");
+    const antennaChannelLoad = document.getElementById("antenna-channel-load");
     const antennaBaudrateInput = document.getElementById("antenna-baudrate");
     const antennaRtsctsInput = document.getElementById("antenna-rtscts");
     const antennaTimeoutInput = document.getElementById("antenna-timeout");
@@ -988,6 +1002,7 @@ EDGE_SETUP_HTML = """
     ];
     let edgeConfig = null;
     let antennaChannels = [];
+    const ANTENNA_MAX_CONNECTIONS = 3; // nRF52832 board hard limit: 3 BLE links per board
     let monitorLatestByNode = new Map();
     let monitorDisplayedByNode = new Map();
     let monitorServerNowEpochMs = null;
@@ -1032,6 +1047,7 @@ EDGE_SETUP_HTML = """
         "antenna.title": "UART Antenna Control",
         "antenna.port": "Serial port",
         "antenna.channel": "UART channel",
+        "antenna.channel_load": "Bound devices per channel (max {max}/board)",
         "antenna.baudrate": "Baudrate",
         "antenna.rtscts": "RTS/CTS hardware flow control",
         "antenna.timeout": "Read timeout seconds",
@@ -1101,6 +1117,7 @@ EDGE_SETUP_HTML = """
       "antenna.title": "UART 天線板控制",
       "antenna.port": "Serial port",
       "antenna.channel": "UART 通道",
+      "antenna.channel_load": "各通道已綁定設備（每板上限 {max}）",
       "antenna.baudrate": "Baudrate",
       "antenna.rtscts": "RTS/CTS 硬體流控",
       "antenna.timeout": "讀取逾時秒數",
@@ -1174,6 +1191,7 @@ EDGE_SETUP_HTML = """
       if (!antennaMessage.classList.contains("error") && !antennaMessage.classList.contains("ok")) {
         antennaMessage.textContent = t("antenna.ready");
       }
+      updateChannelOccupancy();
     }
 
     languageSelect.addEventListener("change", () => {
@@ -1414,6 +1432,37 @@ EDGE_SETUP_HTML = """
       }
     }
 
+    function channelBindingCounts() {
+      const counts = new Map();
+      const bindings = Array.isArray(edgeConfig?.equipment_bindings) ? edgeConfig.equipment_bindings : [];
+      bindings.forEach((binding) => {
+        if (!binding.ble_target || !binding.antenna_channel) return;
+        counts.set(binding.antenna_channel, (counts.get(binding.antenna_channel) || 0) + 1);
+      });
+      return counts;
+    }
+
+    function updateChannelOccupancy() {
+      const counts = channelBindingCounts();
+      const channelById = new Map(antennaChannels.map((channel) => [channel.port, channel.id]));
+      Array.from(antennaChannelSelect.options).forEach((option) => {
+        const id = channelById.get(option.value);
+        if (!id) return;
+        const used = counts.get(id) || 0;
+        option.textContent = `${id} (${option.value}) · ${used}/${ANTENNA_MAX_CONNECTIONS}`;
+      });
+      if (!antennaChannels.length) {
+        antennaChannelLoad.textContent = "";
+        return;
+      }
+      const summary = antennaChannels.map((channel) => {
+        const used = counts.get(channel.id) || 0;
+        const mark = used >= ANTENNA_MAX_CONNECTIONS ? " ⚠" : "";
+        return `${channel.id}: ${used}/${ANTENNA_MAX_CONNECTIONS}${mark}`;
+      }).join(" · ");
+      antennaChannelLoad.textContent = `${t("antenna.channel_load", { max: ANTENNA_MAX_CONNECTIONS })} — ${summary}`;
+    }
+
     function renderAntennaConfig(config) {
       const channels = Array.isArray(config.channels) ? config.channels : [];
       antennaChannels = channels;
@@ -1433,6 +1482,7 @@ EDGE_SETUP_HTML = """
       if (edgeConfig) {
         renderBindings(edgeConfig);
       }
+      updateChannelOccupancy();
     }
 
     function channelOptions(selectedValue) {
@@ -1448,6 +1498,7 @@ EDGE_SETUP_HTML = """
       if (!bindings.length) {
         bindingList.innerHTML = `<div class="empty">No equipment bindings configured.</div>`;
         renderMonitorEquipment();
+        updateChannelOccupancy();
         return;
       }
       bindingList.innerHTML = bindings.map((binding, index) => `
@@ -1477,6 +1528,7 @@ EDGE_SETUP_HTML = """
         </div>
       `).join("");
       renderMonitorEquipment();
+      updateChannelOccupancy();
     }
 
     async function loadEdgeConfig() {
