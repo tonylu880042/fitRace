@@ -773,6 +773,18 @@ EDGE_SETUP_HTML = """
       position: relative;
     }
 
+    .antenna-advanced {
+      margin-top: 16px;
+      border-top: 1px solid var(--border);
+      padding-top: 12px;
+    }
+
+    .antenna-advanced summary {
+      cursor: pointer;
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+
     .modal-head {
       display: flex;
       align-items: center;
@@ -1023,10 +1035,6 @@ EDGE_SETUP_HTML = """
         <section class="panel" aria-labelledby="antenna-title">
           <h2 id="antenna-title" data-i18n="antenna.title">UART Antenna Control</h2>
           <div class="field">
-            <label for="antenna-port" data-i18n="antenna.port">Serial port</label>
-            <input id="antenna-port" type="text" value="/dev/serial0" autocomplete="off">
-          </div>
-          <div class="field">
             <label for="antenna-channel" data-i18n="antenna.channel">UART channel</label>
             <select id="antenna-channel">
               <option value="">Manual serial port</option>
@@ -1034,53 +1042,64 @@ EDGE_SETUP_HTML = """
             <div class="sub" id="antenna-channel-load"></div>
             <div class="channel-slots" id="antenna-channel-slots" aria-live="polite"></div>
           </div>
-          <div class="field">
-            <label for="antenna-baudrate" data-i18n="antenna.baudrate">Baudrate</label>
-            <input id="antenna-baudrate" type="number" min="9600" max="1000000" value="115200">
-          </div>
-          <div class="field">
-            <label class="toggle" for="antenna-rtscts">
-              <span data-i18n="antenna.rtscts">RTS/CTS hardware flow control</span>
-              <input id="antenna-rtscts" type="checkbox">
-            </label>
-          </div>
-          <div class="field">
-            <label for="antenna-timeout" data-i18n="antenna.timeout">Read timeout seconds</label>
-            <input id="antenna-timeout" type="number" min="1" max="30" value="5">
-          </div>
-          <div class="field">
-            <label for="antenna-scan-duration" data-i18n="antenna.scan_duration">Scan duration seconds</label>
-            <input id="antenna-scan-duration" type="number" min="1" max="30" value="5">
-          </div>
-          <div class="button-grid" aria-label="UART antenna commands">
-            <button class="antenna-command" type="button" data-command="ping">PING</button>
-            <button class="antenna-command" type="button" data-command="status">STATUS</button>
-            <button class="antenna-command" type="button" data-command="version">VERSION</button>
-            <button class="antenna-command" type="button" data-command="scan">SCAN</button>
-            <button class="antenna-command" type="button" data-command="connect">CONNECT</button>
-            <button class="antenna-command button-secondary" type="button" data-command="disconnect_all">DISCONNECT</button>
-            <button class="antenna-command button-secondary" type="button" data-command="reboot">REBOOT</button>
-          </div>
-          <div class="field" style="margin-top:14px;">
-            <label for="antenna-macs" data-i18n="antenna.macs">Device MACs / IDs for CONNECT</label>
-            <input id="antenna-macs" type="text" placeholder="AA:BB:CC:DD:EE:01,AA:BB:CC:DD:EE:02" autocomplete="off">
-          </div>
-          <button id="antenna-connect-btn" type="button" class="button-secondary" data-i18n="antenna.connect">CONNECT selected devices</button>
-          <button id="antenna-reconnect-configured-btn" type="button" class="button-secondary" data-i18n="antenna.reconnect_configured" style="margin-top:10px;">CONNECT configured devices</button>
-          <div class="field" style="margin-top:14px;">
-            <label for="antenna-report-interval" data-i18n="antenna.report_interval">Report interval ms</label>
-            <input id="antenna-report-interval" type="number" min="100" max="10000" value="250">
-          </div>
-          <button id="antenna-report-btn" type="button" class="button-secondary" data-i18n="antenna.report">Set report interval</button>
-          <div class="field" style="margin-top:14px;">
-            <label for="antenna-raw" data-i18n="antenna.raw">Raw command</label>
-            <input id="antenna-raw" type="text" placeholder="STATUS;" autocomplete="off">
-          </div>
-          <button id="antenna-raw-btn" type="button" class="button-secondary" data-i18n="antenna.send_raw">Send raw command</button>
+          <button class="antenna-command" type="button" data-command="scan">SCAN</button>
           <div class="status" aria-live="polite">
             <div class="status-line"><span data-i18n="antenna.command_status">Command status</span><strong id="antenna-state">Idle</strong></div>
             <div class="message" id="antenna-message">Ready to send UART commands.</div>
           </div>
+          <details class="antenna-advanced">
+            <summary data-i18n="antenna.advanced">Advanced maintenance</summary>
+            <div class="field">
+              <label for="antenna-port" data-i18n="antenna.port">Serial port</label>
+              <input id="antenna-port" type="text" value="/dev/serial0" autocomplete="off">
+            </div>
+            <div class="field">
+              <label for="antenna-baudrate" data-i18n="antenna.baudrate">Baudrate</label>
+              <input id="antenna-baudrate" type="number" min="9600" max="1000000" value="115200">
+            </div>
+            <div class="field">
+              <label class="toggle" for="antenna-rtscts">
+                <span data-i18n="antenna.rtscts">RTS/CTS hardware flow control</span>
+                <input id="antenna-rtscts" type="checkbox">
+              </label>
+            </div>
+            <div class="field">
+              <label for="antenna-timeout" data-i18n="antenna.timeout">Read timeout seconds</label>
+              <input id="antenna-timeout" type="number" min="1" max="30" value="5">
+            </div>
+            <div class="field">
+              <label for="antenna-scan-duration" data-i18n="antenna.scan_duration">Scan duration seconds</label>
+              <input id="antenna-scan-duration" type="number" min="1" max="30" value="5">
+            </div>
+            <div class="button-grid" aria-label="UART antenna commands">
+              <button class="antenna-command" type="button" data-command="ping">PING</button>
+              <button class="antenna-command" type="button" data-command="status">STATUS</button>
+              <button class="antenna-command" type="button" data-command="version">VERSION</button>
+              <button class="antenna-command" type="button" data-command="connect">CONNECT</button>
+              <button class="antenna-command button-secondary" type="button" data-command="disconnect_all">DISCONNECT</button>
+              <button class="antenna-command button-secondary" type="button" data-command="reboot">REBOOT</button>
+            </div>
+            <div class="field" style="margin-top:14px;">
+              <label for="antenna-macs" data-i18n="antenna.macs">Device MACs / IDs for CONNECT</label>
+              <input id="antenna-macs" type="text" placeholder="AA:BB:CC:DD:EE:01,AA:BB:CC:DD:EE:02" autocomplete="off">
+            </div>
+            <button id="antenna-connect-btn" type="button" class="button-secondary" data-i18n="antenna.connect">CONNECT selected devices</button>
+            <button id="antenna-reconnect-configured-btn" type="button" class="button-secondary" data-i18n="antenna.reconnect_configured" style="margin-top:10px;">CONNECT configured devices</button>
+            <div class="field" style="margin-top:14px;">
+              <label for="antenna-report-interval" data-i18n="antenna.report_interval">Report interval ms</label>
+              <input id="antenna-report-interval" type="number" min="100" max="10000" value="250">
+            </div>
+            <button id="antenna-report-btn" type="button" class="button-secondary" data-i18n="antenna.report">Set report interval</button>
+            <div class="field" style="margin-top:14px;">
+              <label for="antenna-raw" data-i18n="antenna.raw">Raw command</label>
+              <input id="antenna-raw" type="text" placeholder="STATUS;" autocomplete="off">
+            </div>
+            <button id="antenna-raw-btn" type="button" class="button-secondary" data-i18n="antenna.send_raw">Send raw command</button>
+            <div class="field" style="margin-top:14px;">
+              <label data-i18n="antenna.output">UART Response</label>
+              <pre id="antenna-output" class="raw-output">No UART command has been sent yet.</pre>
+            </div>
+          </details>
         </section>
 
         <section class="panel" aria-labelledby="bindings-title">
@@ -1092,11 +1111,6 @@ EDGE_SETUP_HTML = """
             <button id="config-restart-btn" type="button" class="button-secondary" data-i18n="bindings.restart">Restart Edge runtime</button>
           </div>
           <div class="message" id="config-message" data-i18n="bindings.ready">Edit names here, then save and restart Edge runtime.</div>
-        </section>
-
-        <section class="panel" aria-labelledby="antenna-output-title">
-          <h2 id="antenna-output-title" data-i18n="antenna.output">UART Response</h2>
-          <pre id="antenna-output" class="raw-output">No UART command has been sent yet.</pre>
         </section>
 
         <section class="panel" aria-labelledby="monitor-title">
@@ -1249,6 +1263,7 @@ EDGE_SETUP_HTML = """
         "antenna.title": "UART Antenna Control",
         "antenna.port": "Serial port",
         "antenna.channel": "UART channel",
+        "antenna.advanced": "Advanced maintenance",
         "antenna.channel_load": "Bound devices per channel (max {max}/board)",
         "antenna.slots_free": "{channel}: {free} slot(s) free for a new device",
         "antenna.slots_full": "{channel} is full — pick another channel for new devices",
@@ -1361,6 +1376,7 @@ EDGE_SETUP_HTML = """
       "antenna.title": "UART 天線板控制",
       "antenna.port": "Serial port",
       "antenna.channel": "UART 通道",
+      "antenna.advanced": "進階維護",
       "antenna.channel_load": "各通道已綁定設備（每板上限 {max}）",
       "antenna.slots_free": "{channel} 還有 {free} 個空位可綁定新設備",
       "antenna.slots_full": "{channel} 已滿，新設備請改用其他通道",
@@ -2032,7 +2048,7 @@ EDGE_SETUP_HTML = """
       const channelByPort = new Map(antennaChannels.map((channel) => [channel.port, channel.id]));
       wizardScanChannelId = channelByPort.get(result.port) || "";
       renderWizardStep1();
-      showWizardAt(document.querySelector('button[data-command="scan"]').closest(".button-grid"));
+      showWizardAt(document.querySelector('button[data-command="scan"]'));
     }
 
     function renderWizardStep1() {
