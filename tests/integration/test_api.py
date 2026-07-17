@@ -272,10 +272,10 @@ def test_management_controls_are_split_by_admin_role():
     assert response_system_admin.status_code == 200
     assert "Edge Nodes" in response_system_admin.text
     assert "Station Assignment" in response_system_admin.text
-    assert "Assign Stream" in response_system_admin.text
-    assert "Unassign Station" in response_system_admin.text
-    assert "Updates" in response_system_admin.text
-    assert "System Power" in response_system_admin.text
+    assert ">Assign</button>" in response_system_admin.text
+    assert "Unassign station" in response_system_admin.text
+    assert "Software" in response_system_admin.text
+    assert "Power Controls" in response_system_admin.text
     assert "Maintenance Unlock" in response_system_admin.text
     assert "Access Code" in response_system_admin.text
     assert "Admin Token" not in response_system_admin.text

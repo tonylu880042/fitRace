@@ -5,20 +5,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>FitRaceStudio System Admin</title>
   <meta name="description" content="FitRaceStudio Hub administration console">
-  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;700&family=Outfit:wght@400;600;800&family=Noto+Sans+TC:wght@500;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;700&family=Outfit:wght@400;600;800&family=Noto+Sans+TC:wght@500;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg: #09090b;
-      --surface: #18181b;
-      --surface-2: #111113;
-      --border: #27272a;
-      --border-strong: #3f3f46;
-      --text: #fafafa;
-      --muted: #a1a1aa;
+      --bg: #0a0a0a;
+      --surface: #141414;
+      --surface-2: #0d0e0f;
+      --border: #262626;
+      --border-strong: #3a3a3a;
+      --text: #e3e2e2;
+      --muted: #a3a3a3;
       --accent: #e2ff3b;
       --warn: #f59e0b;
-      --danger: #f43f5e;
+      --danger: #ff4b4b;
       --ok: #34d399;
+      --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
     }
 
     * { box-sizing: border-box; }
@@ -51,7 +52,7 @@
     button {
       min-height: 42px;
       border: 1px solid var(--border-strong);
-      border-radius: 4px;
+      border-radius: 0;
       background: var(--surface-2);
       color: var(--text);
       cursor: pointer;
@@ -98,7 +99,7 @@
       width: 100%;
       height: 42px;
       border: 1px solid var(--border);
-      border-radius: 4px;
+      border-radius: 0;
       background: rgba(0,0,0,0.32);
       color: var(--text);
       padding: 0 12px;
@@ -126,40 +127,389 @@
       grid-template-columns: minmax(0, 1fr) auto;
       gap: 16px;
       align-items: center;
-      padding: 22px 24px;
-      border: 2px solid var(--border);
-      border-radius: 4px;
-      background: linear-gradient(180deg, rgba(24,24,27,0.92), rgba(17,17,19,0.94));
-      position: relative;
-      overflow: hidden;
-    }
-
-    .topbar::before {
-      content: "";
-      position: absolute;
-      inset: 0 0 auto 0;
-      height: 4px;
-      background: repeating-linear-gradient(-45deg, var(--accent), var(--accent) 8px, #000 8px, #000 16px);
+      padding: 14px 20px;
+      border: 1px solid var(--border);
+      background: var(--surface);
     }
 
     .brand h1 {
       margin: 0;
       font-family: "Oswald", sans-serif;
-      font-size: clamp(28px, 3.2vw, 44px);
+      font-size: clamp(20px, 2.2vw, 28px);
       line-height: 1;
-      letter-spacing: 0.04em;
+      letter-spacing: 0.05em;
       text-transform: uppercase;
     }
 
     .brand h1 span { color: var(--accent); }
 
     .brand p {
-      margin: 8px 0 0;
+      margin: 5px 0 0;
       color: var(--muted);
-      font-size: 13px;
-      font-weight: 700;
+      font-family: var(--mono);
+      font-size: 11px;
       letter-spacing: 0.08em;
       text-transform: uppercase;
+    }
+
+    .status-strip {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px 0;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      padding: 12px 6px;
+    }
+
+    .strip-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 18px;
+      font-family: var(--mono);
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .strip-item + .strip-item {
+      border-left: 1px solid var(--border);
+    }
+
+    .strip-item strong {
+      color: var(--accent);
+      font-weight: 500;
+    }
+
+    #update-actions[hidden] { display: none; }
+
+    .frame {
+      display: grid;
+      grid-template-columns: 240px minmax(0, 1fr);
+      gap: 18px;
+      align-items: start;
+    }
+
+    .content {
+      display: grid;
+      gap: 18px;
+      min-width: 0;
+    }
+
+    .sidebar {
+      border: 1px solid var(--border);
+      background: var(--surface);
+      display: flex;
+      flex-direction: column;
+      padding: 18px 0;
+      min-height: 640px;
+      position: sticky;
+      top: 24px;
+    }
+
+    .sidebar-head {
+      padding: 0 18px 16px;
+    }
+
+    .sidebar-head h2 {
+      margin: 0;
+      font-family: "Oswald", sans-serif;
+      font-size: 20px;
+      letter-spacing: 0.03em;
+    }
+
+    .sidebar-head p {
+      margin: 5px 0 0;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .side-nav {
+      display: grid;
+      gap: 2px;
+    }
+
+    .side-link {
+      min-height: 40px;
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      text-align: left;
+      background: none;
+      border: none;
+      border-left: 3px solid transparent;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 13px;
+      font-weight: 400;
+      letter-spacing: 0.02em;
+      text-transform: none;
+      padding: 0 18px;
+      cursor: pointer;
+    }
+
+    .side-link svg {
+      width: 17px;
+      height: 17px;
+      flex: none;
+    }
+
+    .side-link.active svg {
+      color: var(--accent);
+    }
+
+    .unlock svg {
+      width: 14px;
+      height: 14px;
+      margin-right: 7px;
+      vertical-align: -2px;
+    }
+
+    .side-link:hover:not(:disabled) {
+      color: var(--text);
+      border-color: transparent;
+      background: rgba(255,255,255,0.04);
+    }
+
+    .side-link.active {
+      color: var(--text);
+      background: rgba(255,255,255,0.07);
+      border-left-color: var(--accent);
+    }
+
+    .sidebar-foot {
+      margin-top: auto;
+      padding: 18px 18px 0;
+    }
+
+    .side-foot-links {
+      margin-top: 14px;
+      border-top: 1px solid var(--border);
+      padding-top: 10px;
+      display: grid;
+      gap: 2px;
+    }
+
+    .support-report {
+      margin: 12px 0 0;
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+      padding: 14px;
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.6;
+      color: var(--muted);
+      white-space: pre-wrap;
+      overflow-x: auto;
+    }
+
+    .override-btn {
+      width: 100%;
+      background: transparent;
+      border: 1px solid rgba(255, 75, 75, 0.7);
+      color: var(--danger);
+      font-size: 12px;
+    }
+
+    .override-btn:hover:not(:disabled) {
+      background: rgba(255, 75, 75, 0.12);
+      border-color: var(--danger);
+      color: #ff8080;
+    }
+
+    .nav-link {
+      border: none;
+      background: none;
+    }
+
+    .unlock {
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      background: transparent;
+    }
+
+    .assign-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      gap: 12px;
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+      padding: 14px;
+    }
+
+    .stepper {
+      display: flex;
+    }
+
+    .stepper input {
+      width: 64px;
+      text-align: center;
+      border-left: none;
+      border-right: none;
+      -moz-appearance: textfield;
+      appearance: textfield;
+    }
+
+    .stepper input::-webkit-outer-spin-button,
+    .stepper input::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+
+    .step-btn {
+      min-height: 42px;
+      width: 42px;
+      padding: 0;
+      font-size: 18px;
+    }
+
+    .station-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    .station-table th {
+      padding: 10px 8px 8px;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      text-align: left;
+    }
+
+    .station-table td {
+      padding: 12px 8px;
+      border-top: 1px solid var(--border);
+      vertical-align: middle;
+    }
+
+    .station-table .mono {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .station-table .dot {
+      display: inline-block;
+      margin-right: 7px;
+    }
+
+    .equip-table {
+      margin-top: 12px;
+    }
+
+    .link-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      border: 1px solid var(--border-strong);
+      padding: 4px 10px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .link-badge .dot {
+      width: 6px;
+      height: 6px;
+      background: var(--border-strong);
+      box-shadow: none;
+    }
+
+    .link-badge.ok {
+      border-color: rgba(226,255,59,0.55);
+      color: var(--accent);
+    }
+
+    .link-badge.idle {
+      border-color: rgba(245,158,11,0.6);
+      color: var(--warn);
+    }
+
+    .link-badge.idle .dot {
+      background: var(--warn);
+    }
+
+    .icon-btn {
+      min-height: 30px;
+      padding: 0 10px;
+      border: none;
+      background: none;
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .icon-btn:hover:not(:disabled) {
+      color: var(--danger);
+      border: none;
+    }
+
+    .wifi-head-right {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .wifi-icon-sm {
+      width: 30px;
+      height: 23px;
+    }
+
+    .wifi-hero {
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+      padding: 22px 18px;
+      text-align: center;
+    }
+
+    .wifi-hero .wifi-level {
+      font-family: "Oswald", sans-serif;
+      font-size: 34px;
+      font-weight: 700;
+    }
+
+    .wifi-hero-grid {
+      display: flex;
+      justify-content: center;
+      gap: 40px;
+      margin-top: 14px;
+      font-family: var(--mono);
+      font-size: 12px;
+      text-align: left;
+    }
+
+    .wifi-hero-grid span {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-bottom: 3px;
+    }
+
+    #btn-wifi-choose {
+      width: 100%;
+      border-color: var(--accent);
+      color: var(--accent);
+      background: transparent;
+    }
+
+    .software-box {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+      padding: 14px;
     }
 
     .top-actions {
@@ -176,12 +526,11 @@
       min-height: 34px;
       padding: 0 11px;
       border: 1px solid var(--border);
-      border-radius: 4px;
       background: rgba(0,0,0,0.24);
       color: var(--muted);
+      font-family: var(--mono);
       font-size: 12px;
-      font-weight: 800;
-      letter-spacing: 0.06em;
+      letter-spacing: 0.05em;
       text-transform: uppercase;
     }
 
@@ -198,6 +547,184 @@
       box-shadow: 0 0 10px rgba(226,255,59,0.48);
     }
 
+    .wifi-meter {
+      display: grid;
+      gap: 10px;
+    }
+
+    .wifi-score {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: 0;
+      background: var(--surface-2);
+    }
+
+    .wifi-icon-wrap {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      min-width: 0;
+    }
+
+    .wifi-icon {
+      width: 86px;
+      height: 64px;
+      flex: 0 0 auto;
+    }
+
+    .wifi-arc,
+    .wifi-dot-mark {
+      stroke: #5a6470;
+      transition: stroke 0.25s ease, fill 0.25s ease;
+    }
+
+    .wifi-dot-mark {
+      fill: #5a6470;
+      stroke: none;
+    }
+
+    .wifi-icon.excellent .wifi-arc,
+    .wifi-icon.excellent .wifi-arc.active,
+    .wifi-icon.excellent .wifi-dot-mark { stroke: #22c55e; fill: #22c55e; }
+
+    .wifi-icon.good .wifi-arc.active,
+    .wifi-icon.good .wifi-dot-mark { stroke: #f97316; fill: #f97316; }
+
+    .wifi-icon.fair .wifi-arc.active,
+    .wifi-icon.fair .wifi-dot-mark { stroke: var(--warn); fill: var(--warn); }
+
+    .wifi-icon.weak .wifi-arc.active,
+    .wifi-icon.weak .wifi-dot-mark,
+    .wifi-icon.poor .wifi-arc.active,
+    .wifi-icon.poor .wifi-dot-mark { stroke: var(--danger); fill: var(--danger); }
+
+    .wifi-status-text {
+      min-width: 0;
+    }
+
+    .wifi-level {
+      color: var(--text);
+      font-size: 24px;
+      font-weight: 800;
+      line-height: 1.05;
+      overflow-wrap: anywhere;
+    }
+
+    .wifi-sub {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 13px;
+      overflow-wrap: anywhere;
+    }
+
+    .status-line {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      font-family: var(--mono);
+      font-size: 13px;
+    }
+
+    .status-line span {
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .modal-overlay {
+      margin: 14px auto 0;
+      max-width: 540px;
+    }
+
+    .modal-overlay[hidden] {
+      display: none;
+    }
+
+    .modal-panel {
+      background: var(--surface-2);
+      border: 1px solid var(--accent);
+      border-radius: 0;
+      max-height: 70vh;
+      overflow: auto;
+      padding: 20px;
+      position: relative;
+    }
+
+    .modal-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .modal-head h2 {
+      margin: 0;
+      font-size: 16px;
+    }
+
+    .modal-close {
+      flex-shrink: 0;
+      width: auto;
+      background: none;
+      border: none;
+      color: inherit;
+      font-size: 20px;
+      cursor: pointer;
+      padding: 4px 8px;
+    }
+
+    .wizard-step-hint {
+      margin: 6px 0 12px;
+      font-size: 13px;
+      opacity: 0.75;
+    }
+
+    .wizard-list {
+      max-height: 560px; /* roughly 10 rows, rest scrolls */
+      overflow-y: auto;
+      margin-top: 4px;
+    }
+
+    .wizard-device {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 0;
+      margin-top: 10px;
+    }
+
+    .wizard-device .meta {
+      font-size: 12px;
+      opacity: 0.7;
+      overflow-wrap: anywhere;
+    }
+
+    .wizard-device button {
+      flex-shrink: 0;
+      width: auto;
+      padding: 8px 14px;
+    }
+
+    .wizard-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    .wizard-actions button {
+      width: auto;
+      flex: 1;
+    }
+
     .layout {
       display: grid;
       grid-template-columns: 1.12fr 0.88fr;
@@ -209,16 +736,50 @@
       grid-template-columns: 1fr;
     }
 
+    .system-layout .column {
+      display: contents;
+    }
+
     .column {
       display: grid;
       gap: 18px;
     }
 
     .panel {
-      border: 2px solid var(--border);
-      border-radius: 4px;
+      border: 1px solid var(--border);
       background: var(--surface);
-      padding: 18px;
+      padding: 20px;
+    }
+
+    .panel-accent {
+      border-top: 2px solid var(--accent);
+    }
+
+    .panel-danger {
+      border-color: rgba(255, 75, 75, 0.55);
+    }
+
+    .panel-danger .panel-title {
+      color: var(--danger);
+    }
+
+    .panel-danger button {
+      border-color: rgba(255, 75, 75, 0.7);
+      color: var(--danger);
+      background: transparent;
+    }
+
+    .panel-danger button:hover:not(:disabled) {
+      background: rgba(255, 75, 75, 0.12);
+      border-color: var(--danger);
+      color: #ff8080;
+    }
+
+    .danger-note {
+      margin: 0 0 4px;
+      color: var(--muted);
+      font-size: 13px;
+      font-style: italic;
     }
 
     .panel-header {
@@ -228,7 +789,7 @@
       gap: 12px;
       padding-bottom: 12px;
       margin-bottom: 14px;
-      border-bottom: 2px solid var(--border);
+      border-bottom: 1px solid var(--border);
     }
 
     .panel-title {
@@ -289,35 +850,6 @@
       border-color: rgba(245,158,11,0.7);
     }
 
-    .summary-grid {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 12px;
-    }
-
-    .metric {
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      background: rgba(0,0,0,0.22);
-      padding: 13px;
-    }
-
-    .metric-value {
-      font-family: "Oswald", sans-serif;
-      font-size: 28px;
-      line-height: 1;
-      color: var(--accent);
-    }
-
-    .metric-label {
-      margin-top: 6px;
-      color: var(--muted);
-      font-size: 12px;
-      font-weight: 800;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-    }
-
     .list {
       display: grid;
       gap: 10px;
@@ -325,7 +857,7 @@
 
     .row-card {
       border: 1px solid var(--border);
-      border-radius: 4px;
+      border-radius: 0;
       background: rgba(0,0,0,0.22);
       padding: 12px;
     }
@@ -345,8 +877,9 @@
     .row-meta {
       margin-top: 4px;
       color: var(--muted);
-      font-size: 13px;
-      line-height: 1.35;
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.5;
     }
 
     .stream-list {
@@ -358,10 +891,10 @@
 
     .stream {
       border: 1px solid var(--border);
-      border-radius: 4px;
-      padding: 6px 8px;
+      padding: 6px 10px;
       color: var(--muted);
-      font-size: 12px;
+      font-family: var(--mono);
+      font-size: 11px;
       background: rgba(255,255,255,0.03);
     }
 
@@ -373,7 +906,7 @@
 
     .empty {
       border: 1px dashed var(--border-strong);
-      border-radius: 4px;
+      border-radius: 0;
       padding: 20px;
       color: var(--muted);
       text-align: center;
@@ -396,7 +929,7 @@
     .login-box {
       width: min(390px, 100%);
       border: 2px solid var(--border);
-      border-radius: 4px;
+      border-radius: 0;
       background: var(--surface);
       padding: 22px;
     }
@@ -418,13 +951,34 @@
     @media (max-width: 1100px) {
       body { padding: 14px; }
       .layout,
-      .topbar {
+      .topbar,
+      .frame {
         grid-template-columns: 1fr;
+      }
+      .sidebar {
+        position: static;
+        min-height: 0;
+        padding: 14px 0;
+      }
+      .side-nav {
+        display: flex;
+        flex-wrap: wrap;
+      }
+      .side-link {
+        width: auto;
+        border-left: none;
+        border-bottom: 3px solid transparent;
+      }
+      .side-link.active {
+        border-left: none;
+        border-bottom-color: var(--accent);
+      }
+      .sidebar-foot {
+        margin-top: 12px;
       }
       .top-actions {
         justify-content: flex-start;
       }
-      .summary-grid,
       .grid-3 {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
@@ -432,8 +986,7 @@
 
     @media (max-width: 640px) {
       .grid-2,
-      .grid-3,
-      .summary-grid {
+      .grid-3 {
         grid-template-columns: 1fr;
       }
       .button-row button {
@@ -446,37 +999,72 @@
   <div class="shell">
     <header class="topbar">
       <div class="brand">
-        <h1>FitRace<span>Studio</span> System Admin</h1>
-        <p>Edge node status, software updates, and system maintenance</p>
+        <h1>FitRace<span>Studio</span> · System Admin</h1>
+        <p>Edge node status · software updates · system maintenance</p>
       </div>
       <div class="top-actions">
         <div class="pill"><span class="dot" id="ws-dot"></span><span id="ws-label">Offline</span></div>
         <div class="pill" id="version-pill">Hub v--</div>
-        <button type="button" onclick="window.location.href='/'">Dashboard</button>
-        <button type="button" onclick="window.location.href='/gameAdmin'">Game Admin</button>
-        <button type="button" onclick="window.location.href='/static/signup.html'">Signup</button>
-        <button type="button" onclick="openLogin()">Maintenance Unlock</button>
+        <button type="button" class="nav-link" onclick="window.location.href='/'">Dashboard</button>
+        <button type="button" class="nav-link" onclick="window.location.href='/gameAdmin'">Game Admin</button>
+        <button type="button" class="nav-link" onclick="window.location.href='/static/signup.html'">Signup</button>
+        <button type="button" class="unlock" onclick="openLogin()"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="4" y="9" width="12" height="8.5"/><path d="M6.8 9V6.2a3.2 3.2 0 0 1 6.4 0V9"/></svg>Maintenance Unlock</button>
       </div>
     </header>
 
-    <section class="summary-grid" aria-label="System summary">
-      <div class="metric">
-        <div class="metric-value" id="summary-edges">0/0</div>
-        <div class="metric-label">Edge Nodes</div>
-      </div>
-      <div class="metric">
-        <div class="metric-value" id="summary-streams">0</div>
-        <div class="metric-label">Streams</div>
-      </div>
-      <div class="metric">
-        <div class="metric-value" id="summary-stations">0</div>
-        <div class="metric-label">Stations</div>
-      </div>
-    </section>
+    <div class="frame">
+      <aside class="sidebar" aria-label="Console navigation">
+        <div class="sidebar-head">
+          <h2>Admin Console</h2>
+          <p id="sidebar-version">V--</p>
+        </div>
+        <nav class="side-nav">
+          <button type="button" class="side-link" data-view="overview">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="2.5" y="2.5" width="15" height="15"/><path d="M6 13.5v-3.5M10 13.5v-6M14 13.5v-2"/></svg>
+            Overview
+          </button>
+          <button type="button" class="side-link" data-view="edge">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="2.5" y="3" width="15" height="5.5"/><rect x="2.5" y="11.5" width="15" height="5.5"/><circle cx="5.8" cy="5.75" r="0.4" fill="currentColor"/><circle cx="5.8" cy="14.25" r="0.4" fill="currentColor"/></svg>
+            Edge Nodes
+          </button>
+          <button type="button" class="side-link" data-view="stations">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="2.5" y="2.5" width="6.2" height="6.2"/><rect x="11.3" y="2.5" width="6.2" height="6.2"/><rect x="2.5" y="11.3" width="6.2" height="6.2"/><rect x="11.3" y="11.3" width="6.2" height="6.2"/></svg>
+            Stations
+          </button>
+          <button type="button" class="side-link" data-view="network">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="10" cy="11" r="1.6"/><path d="M10 12.6V17.5M5.8 6.8a6 6 0 0 1 8.4 0M3.5 4.5a9.2 9.2 0 0 1 13 0"/></svg>
+            Network
+          </button>
+          <button type="button" class="side-link" data-view="software">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M10 2.5v9M6.5 8L10 11.5 13.5 8M3 14v3.5h14V14"/></svg>
+            Software
+          </button>
+        </nav>
+        <div class="sidebar-foot">
+          <button type="button" class="override-btn" data-view="power">System Override</button>
+        </div>
+        <div class="side-foot-links">
+          <button type="button" class="side-link" onclick="window.open('/static/docs.html','_blank','noopener')">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="10" cy="10" r="7.5"/><path d="M7.9 7.8a2.1 2.1 0 1 1 2.9 2c-.6.3-.8.7-.8 1.4"/><circle cx="10" cy="13.9" r="0.5" fill="currentColor" stroke="none"/></svg>
+            Documentation
+          </button>
+          <button type="button" class="side-link" data-view="support">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="10" cy="10" r="7.5"/><path d="M4.9 4.9l3 3M12.1 12.1l3 3M15.1 4.9l-3 3M7.9 12.1l-3 3"/><circle cx="10" cy="10" r="3.2"/></svg>
+            Support
+          </button>
+        </div>
+      </aside>
 
-    <main class="layout system-layout">
+      <div class="content">
+        <section class="status-strip" aria-label="System health summary">
+          <span class="strip-item">Edge Nodes <strong id="strip-edges">--</strong></span>
+          <span class="strip-item">Wi-Fi: <strong id="strip-wifi">--</strong></span>
+          <span class="strip-item">Updates: <strong id="strip-updates">--</strong></span>
+        </section>
+
+        <main class="layout system-layout">
       <div class="column">
-        <section class="panel" aria-labelledby="edge-title">
+        <section class="panel panel-accent" id="panel-edge" aria-labelledby="edge-title">
           <div class="panel-header">
             <h2 class="panel-title" id="edge-title">Edge Nodes</h2>
             <span class="pill" id="edge-summary">0 online</span>
@@ -484,42 +1072,80 @@
           <div class="list" id="edge-list"></div>
         </section>
 
-        <section class="panel" aria-labelledby="station-title">
+        <section class="panel" id="panel-stations" aria-labelledby="station-title">
           <div class="panel-header">
             <h2 class="panel-title" id="station-title">Station Assignment</h2>
-            <button type="button" onclick="refreshAll()">Refresh</button>
+            <button type="button" onclick="copySignupLink()">Copy Signup Link</button>
           </div>
-          <div class="grid-3">
+          <div class="assign-bar">
             <div class="field">
               <label for="station-number">Station</label>
-              <input type="number" id="station-number" min="1" max="99" value="1">
+              <div class="stepper">
+                <button type="button" class="step-btn" onclick="stepStation(-1)">−</button>
+                <input type="number" id="station-number" min="1" max="99" value="1">
+                <button type="button" class="step-btn" onclick="stepStation(1)">+</button>
+              </div>
             </div>
-            <div class="field">
+            <div class="field" style="flex:1;">
               <label for="node-select">Telemetry Stream</label>
               <select id="node-select"></select>
             </div>
-            <div class="field">
-              <label for="signup-link">Signup Link</label>
-              <input type="text" id="signup-link" readonly value="">
+            <button type="button" class="primary" onclick="assignSelectedStation()">Assign</button>
+          </div>
+          <input type="hidden" id="signup-link" value="">
+          <div class="status-text" id="station-message"></div>
+          <div id="station-list" style="margin-top: 8px;"></div>
+        </section>
+      </div>
+
+      <div class="column">
+        <section class="panel panel-accent" id="panel-wifi" aria-labelledby="wifi-title">
+          <div class="panel-header">
+            <h2 class="panel-title" id="wifi-title">Wi-Fi Network</h2>
+            <span class="wifi-head-right">
+              <span class="pill"><span class="dot" id="wifi-dot"></span><span id="wifi-interface">wlan0</span></span>
+              <svg id="wifi-icon" class="wifi-icon wifi-icon-sm" viewBox="0 0 96 72" role="img" aria-label="Wi-Fi signal level">
+                <path class="wifi-arc" data-arc="4" d="M10 24 C31 4 65 4 86 24" fill="none" stroke-width="9" stroke-linecap="round"/>
+                <path class="wifi-arc" data-arc="3" d="M23 37 C37 24 59 24 73 37" fill="none" stroke-width="9" stroke-linecap="round"/>
+                <path class="wifi-arc" data-arc="2" d="M35 50 C42 44 54 44 61 50" fill="none" stroke-width="9" stroke-linecap="round"/>
+                <circle class="wifi-dot-mark" cx="48" cy="62" r="6"/>
+              </svg>
+            </span>
+          </div>
+          <div class="wifi-meter">
+            <div class="wifi-hero">
+              <div class="wifi-level" id="wifi-level">Checking</div>
+              <div class="wifi-sub" id="wifi-sub">Reading Wi-Fi status</div>
+              <div class="wifi-hero-grid">
+                <div><span>SSID:</span><strong id="wifi-ssid">--</strong></div>
+                <div><span>IP:</span><strong id="wifi-ip">--</strong></div>
+              </div>
+            </div>
+            <div class="button-row">
+              <button type="button" id="btn-wifi-choose" onclick="openWifiPicker()">Choose Wi-Fi network</button>
+            </div>
+            <div class="modal-overlay" id="wifi-picker" hidden>
+              <div class="modal-panel">
+                <div class="modal-head">
+                  <h2 id="wifi-picker-title">Wi-Fi networks</h2>
+                  <button type="button" class="modal-close" onclick="closeWifiPicker()" aria-label="Close">✕</button>
+                </div>
+                <div id="wifi-picker-body"></div>
+              </div>
             </div>
           </div>
-          <div class="button-row">
-            <button type="button" class="primary" onclick="assignSelectedStation()">Assign Stream</button>
-            <button type="button" class="danger" onclick="unassignSelectedStation()">Unassign Station</button>
-            <button type="button" onclick="copySignupLink()">Copy Signup Link</button>
-          </div>
-          <div class="status-text" id="station-message"></div>
-          <div class="list" id="station-list" style="margin-top: 14px;"></div>
         </section>
 
-        <section class="panel" aria-labelledby="update-title">
+        <section class="panel" id="panel-software" aria-labelledby="update-title">
           <div class="panel-header">
-            <h2 class="panel-title" id="update-title">Updates</h2>
+            <h2 class="panel-title" id="update-title">Software</h2>
             <span class="pill" id="update-state">never_checked</span>
           </div>
-          <div class="row-meta" id="update-detail">No update check has completed in this browser session.</div>
-          <div class="button-row">
-            <button type="button" onclick="checkUpdates()">Check</button>
+          <div class="software-box">
+            <div class="row-meta" id="update-detail" style="margin-top:0;">No update check has completed in this browser session.</div>
+            <button type="button" onclick="checkUpdates()">Check Now</button>
+          </div>
+          <div class="button-row" id="update-actions" hidden>
             <button type="button" onclick="downloadUpdates()">Download</button>
             <button type="button" onclick="installHubUpdate()">Install Hub</button>
             <button type="button" class="danger" onclick="applyHubUpdate()">Apply Hub</button>
@@ -527,33 +1153,38 @@
           <div class="status-text" id="update-message"></div>
         </section>
 
-        <section class="panel" aria-labelledby="power-title">
+        <section class="panel panel-danger" id="panel-power" aria-labelledby="power-title">
           <div class="panel-header">
-            <h2 class="panel-title" id="power-title">System Power</h2>
+            <h2 class="panel-title" id="power-title">Power Controls</h2>
             <span class="pill" id="power-lock">IDLE only</span>
           </div>
+          <p class="danger-note">Allowed only while race is IDLE.</p>
           <div class="button-row">
             <button type="button" id="btn-power-restart" onclick="powerAction('restart-service')">Restart Hub Service</button>
             <button type="button" id="btn-power-reboot" onclick="powerAction('reboot')">Reboot Hub</button>
-            <button type="button" class="danger" id="btn-power-shutdown" onclick="powerAction('shutdown')">Shutdown Hub</button>
-            <button type="button" class="danger" id="btn-power-shutdown-system" onclick="powerAction('shutdown-system')">Shutdown System</button>
+            <button type="button" id="btn-power-shutdown" onclick="powerAction('shutdown')">Shutdown Hub</button>
+            <button type="button" id="btn-power-shutdown-system" onclick="powerAction('shutdown-system')">Shutdown System</button>
           </div>
           <div class="status-text" id="power-message"></div>
         </section>
 
-        <section class="panel" aria-labelledby="wifi-title">
+        <section class="panel" id="panel-support" aria-labelledby="support-title">
           <div class="panel-header">
-            <h2 class="panel-title" id="wifi-title">Wi-Fi Network</h2>
-            <span class="pill" id="wifi-current">--</span>
+            <h2 class="panel-title" id="support-title">Support</h2>
+            <span class="pill">system report</span>
           </div>
+          <div class="row-meta">When reporting a problem, copy the snapshot below and send it to the FitRace team together with what you were doing.</div>
+          <pre class="support-report" id="support-report">Collecting system snapshot...</pre>
           <div class="button-row">
-            <button type="button" id="btn-wifi-scan" onclick="scanWifi()">Scan networks</button>
+            <button type="button" class="primary" onclick="copySupportReport()">Copy System Report</button>
+            <button type="button" onclick="renderSupportReport()">Refresh</button>
           </div>
-          <div id="wifi-list"></div>
-          <div class="status-text" id="wifi-message"></div>
+          <div class="status-text" id="support-message"></div>
         </section>
       </div>
-    </main>
+        </main>
+      </div>
+    </div>
   </div>
 
   <div class="login" id="login-modal" role="dialog" aria-modal="true" aria-labelledby="login-title">
@@ -689,8 +1320,10 @@
       try {
         const health = await fetchJson(`/health?t=${Date.now()}`);
         $("version-pill").textContent = `Hub v${health.version || "--"}`;
+        $("sidebar-version").textContent = `v${health.version || "--"}`;
       } catch (_) {
         $("version-pill").textContent = "Hub v--";
+        $("sidebar-version").textContent = "v--";
       }
     }
 
@@ -700,6 +1333,7 @@
         refreshNodes(),
         refreshStations(),
         refreshUpdateStatus(),
+        refreshWifiStatus(),
       ]);
       scheduleRefresh();
     }
@@ -726,10 +1360,8 @@
     function renderEdges() {
       const nodes = state.nodes || [];
       const online = nodes.filter((node) => node.status === "online").length;
-      const streams = nodes.reduce((total, node) => total + (node.equipment_streams || []).length, 0);
-      $("summary-edges").textContent = `${online}/${nodes.length}`;
-      $("summary-streams").textContent = streams;
       $("edge-summary").textContent = `${online} online`;
+      $("strip-edges").textContent = `${online}/${nodes.length} online`;
 
       const list = $("edge-list");
       if (!nodes.length) {
@@ -740,14 +1372,31 @@
       list.innerHTML = [...nodes].sort((a, b) => String(a.edge_node_id || "").localeCompare(String(b.edge_node_id || ""))).map((node) => {
         const endpoint = node.ip || node.hostname || "";
         const localLink = node.ip ? `http://${node.ip}:8001/` : "";
-        const streamHtml = (node.equipment_streams || []).length
-          ? node.equipment_streams.map((stream) => `
-              <span class="stream">
-                <strong>${escapeHtml(stream.equipment_id || stream.node_id || "stream")}</strong>
-                ${escapeHtml(stream.node_id || "")}${stream.antenna_channel ? ` · ${escapeHtml(stream.antenna_channel)}` : ""}${stream.mac_address || stream.ble_target ? ` · ${escapeHtml(stream.mac_address || stream.ble_target)}` : ""}
-              </span>
-            `).join("")
-          : `<span class="stream"><strong>0 streams</strong>unbound</span>`;
+        const streams = node.equipment_streams || [];
+        const streamRows = streams.map((stream) => {
+          const last = stream.last_telemetry_epoch_ms;
+          const fresh = last && (Date.now() - last) < 15000;
+          const link = fresh
+            ? '<span class="link-badge ok"><span class="dot online"></span>connected</span>'
+            : last
+              ? '<span class="link-badge idle"><span class="dot"></span>idle</span>'
+              : '<span class="link-badge none"><span class="dot"></span>no data</span>';
+          return `
+            <tr>
+              <td><strong>${escapeHtml(stream.equipment_id || stream.node_id || "stream")}</strong></td>
+              <td class="mono">${escapeHtml(stream.antenna_channel || "--")}</td>
+              <td class="mono">${escapeHtml(stream.mac_address || stream.ble_target || "--")}</td>
+              <td>${link}</td>
+              <td class="mono">${last ? formatAge(last) : "--"}</td>
+            </tr>
+          `;
+        }).join("");
+        const streamTable = streams.length
+          ? `<table class="station-table equip-table">
+              <thead><tr><th>Equipment</th><th>Channel</th><th>BLE Target</th><th>Link</th><th>Last Data</th></tr></thead>
+              <tbody>${streamRows}</tbody>
+            </table>`
+          : `<div class="empty" style="margin-top:10px;">No equipment bound on this node.</div>`;
         return `
           <div class="row-card">
             <div class="row-main">
@@ -755,9 +1404,9 @@
                 <div class="row-name"><span class="dot ${node.status === "online" ? "online" : ""}" style="display:inline-block;margin-right:8px;"></span>${escapeHtml(node.edge_node_id || "unknown-edge")}</div>
                 <div class="row-meta">${escapeHtml(endpoint || "--")} · ${escapeHtml(node.software_version || "version --")} · last ${formatAge(node.last_seen_epoch_ms)}</div>
               </div>
-              ${localLink ? `<button type="button" onclick="window.open('${escapeHtml(localLink)}','_blank','noopener')">Open Local</button>` : ""}
+              ${localLink ? `<button type="button" onclick="window.open('${escapeHtml(localLink)}','_blank','noopener')">Open Device Page</button>` : ""}
             </div>
-            <div class="stream-list">${streamHtml}</div>
+            ${streamTable}
           </div>
         `;
       }).join("");
@@ -807,7 +1456,6 @@
     function renderStations() {
       const stations = state.stations.stations || {};
       const keys = Object.keys(stations).sort((a, b) => Number(a) - Number(b));
-      $("summary-stations").textContent = keys.length;
       updateSignupLink();
 
       const list = $("station-list");
@@ -816,39 +1464,49 @@
         return;
       }
 
-      const unassigned = (state.stations.unassigned_nodes || []).map((nodeId) => `
-        <div class="row-card">
-          <div class="row-main">
-            <div>
-              <div class="row-name">${escapeHtml(nodeId)}</div>
-              <div class="row-meta">Unassigned telemetry stream</div>
-            </div>
-            <button type="button" onclick="selectNode('${escapeHtml(nodeId)}')">Select</button>
-          </div>
-        </div>
-      `).join("");
-
-      const assigned = keys.map((key) => {
+      const assignedRows = keys.map((key) => {
         const station = stations[key] || {};
-        const signupUrl = `${window.location.origin}/static/signup.html?station=${encodeURIComponent(key)}`;
+        const bound = Boolean(station.node_id);
+        const who = station.athlete_name
+          ? ` · ${escapeHtml(station.athlete_name)}${station.team_name ? ` (${escapeHtml(station.team_name)})` : ""}`
+          : "";
         return `
-          <div class="row-card">
-            <div class="row-main">
-              <div>
-                <div class="row-name">Station ${escapeHtml(key)} · ${escapeHtml(station.equipment_type || "unbound")}</div>
-                <div class="row-meta">${escapeHtml(station.node_id || "No telemetry stream")} · ${escapeHtml(station.athlete_name || "No athlete")}${station.team_name ? ` (${escapeHtml(station.team_name)})` : ""}</div>
-                <div class="row-meta">${escapeHtml(signupUrl)}</div>
-              </div>
-              <div class="button-row" style="margin-top:0;">
-                <button type="button" onclick="selectStation(${Number(key)}, '${escapeHtml(station.node_id || "")}')">Edit</button>
-                <button type="button" class="danger" onclick="unassignStation(${Number(key)})">Unassign</button>
-              </div>
-            </div>
-          </div>
+          <tr>
+            <td class="mono">${escapeHtml(String(key).padStart(2, "0"))}</td>
+            <td><span class="dot ${bound ? "online" : ""}"></span>${bound ? "Assigned" : "Empty"}${who}</td>
+            <td class="mono">${escapeHtml(station.node_id || "--")}${station.equipment_type ? ` (${escapeHtml(station.equipment_type)})` : ""}</td>
+            <td>
+              <button type="button" class="icon-btn" title="Edit in form above" onclick="selectStation(${Number(key)}, '${escapeHtml(station.node_id || "")}')">✎</button>
+              <button type="button" class="icon-btn" title="Unassign station" onclick="unassignStation(${Number(key)})">✕</button>
+            </td>
+          </tr>
         `;
       }).join("");
 
-      list.innerHTML = `${unassigned}${assigned}`;
+      const unassignedRows = (state.stations.unassigned_nodes || []).map((nodeId) => `
+        <tr>
+          <td class="mono">--</td>
+          <td><span class="dot"></span>Stream available</td>
+          <td class="mono">${escapeHtml(nodeId)}</td>
+          <td><button type="button" class="icon-btn" title="Use in form above" onclick="selectNode('${escapeHtml(nodeId)}')">➜</button></td>
+        </tr>
+      `).join("");
+
+      list.innerHTML = `
+        <table class="station-table">
+          <thead>
+            <tr><th>Station</th><th>Status</th><th>Stream</th><th>Action</th></tr>
+          </thead>
+          <tbody>${assignedRows}${unassignedRows}</tbody>
+        </table>
+      `;
+    }
+
+    function stepStation(delta) {
+      const input = $("station-number");
+      const next = (parseInt(input.value, 10) || 1) + delta;
+      input.value = Math.min(99, Math.max(1, next));
+      updateSignupLink();
     }
 
     function selectNode(nodeId) {
@@ -922,13 +1580,23 @@
 
     function renderUpdate() {
       const update = state.update || {};
-      $("update-state").textContent = update.state || "never_checked";
+      const updateState = update.state || "never_checked";
+      $("update-state").textContent = updateState.replace(/_/g, " ");
+      const checked = update.checked_at_epoch_ms
+        ? new Date(update.checked_at_epoch_ms).toLocaleString()
+        : "never (auto-checks weekly)";
       $("update-detail").textContent = [
         `Current: ${update.current_version || "--"}`,
         `Latest Hub: ${update.latest_hub_version || "--"}`,
         `Latest Edge: ${update.latest_edge_version || "--"}`,
+        `Checked: ${checked}`,
         `Signature: ${update.signature_verified ? "verified" : "not verified"}`,
       ].join(" · ");
+      $("update-actions").hidden = !["available", "downloaded", "hub_installed"].includes(updateState);
+      $("strip-updates").textContent =
+        updateState === "current" ? "up to date"
+        : updateState === "available" ? "update available"
+        : updateState.replace(/_/g, " ");
     }
 
 
@@ -991,59 +1659,130 @@
       }
     }
 
-    async function scanWifi() {
-      const button = $("btn-wifi-scan");
-      button.disabled = true;
-      setMessage("wifi-message", "Scanning (about 10 seconds)...", "");
+    function closeWifiPicker() {
+      $("wifi-picker").hidden = true;
+    }
+
+    async function openWifiPicker() {
+      const picker = $("wifi-picker");
+      $("wifi-picker-title").textContent = "Wi-Fi networks";
+      $("wifi-picker-body").innerHTML = '<div class="wizard-step-hint">Scanning (about 10 seconds)...</div>';
+      picker.hidden = false;
+      picker.scrollIntoView({ behavior: "smooth", block: "nearest" });
       try {
         const payload = await fetchJson(`/api/wifi/networks?t=${Date.now()}`, {
           headers: adminHeaders(),
         });
         renderWifiList(payload.networks || []);
-        setMessage("wifi-message", "", "");
       } catch (error) {
-        setMessage("wifi-message", error.message, "error");
-      } finally {
-        button.disabled = false;
+        $("wifi-picker-body").innerHTML = `<div class="wizard-step-hint">${escapeHtml(error.message)}</div>`;
       }
     }
 
-    function renderWifiList(networks) {
-      const active = networks.find((net) => net.active);
-      $("wifi-current").textContent = active ? active.ssid : "not connected";
-      if (!networks.length) {
-        $("wifi-list").innerHTML = '<div class="status-text">No networks found.</div>';
-        return;
+    async function refreshWifiStatus() {
+      try {
+        state.wifi = await fetchJson(`/api/wifi/status?t=${Date.now()}`);
+      } catch (_) {
+        state.wifi = { connected: false };
       }
-      $("wifi-list").innerHTML = networks.map((net, index) => `
-        <div class="button-row" style="justify-content: space-between; align-items: center; margin-top: 8px;">
-          <span>${escapeHtml(net.ssid)}${net.active ? " ✓" : ""} <small>${net.signal}%${net.secured ? " 🔒" : ""}${net.saved ? " · saved" : ""}</small></span>
-          <button type="button" data-wifi-index="${index}" ${net.active ? "disabled" : ""}>${net.active ? "Connected" : "Connect"}</button>
-        </div>
-      `).join("");
-      document.querySelectorAll("[data-wifi-index]").forEach((button) => {
-        button.addEventListener("click", () => connectWifi(networks[Number(button.dataset.wifiIndex)]));
+      renderWifiStatus(state.wifi);
+    }
+
+    function renderWifiStatus(status) {
+      const connected = Boolean(status.connected);
+      const level = status.quality_level || "unknown";
+      const labels = { excellent: "Excellent", good: "Good", fair: "Fair", weak: "Weak", poor: "Poor", unknown: "Disconnected" };
+      const arcCounts = { excellent: 4, good: 3, fair: 2, weak: 1, poor: 1, unknown: 0 };
+      const activeCount = connected ? (arcCounts[level] ?? 0) : 0;
+      $("wifi-level").textContent = connected ? (labels[level] || "Checking") : "Disconnected";
+      $("wifi-sub").textContent = connected
+        ? `${status.rssi_dbm} dBm`
+        : "Choose a Wi-Fi network to connect.";
+      $("wifi-interface").textContent = status.interface || "wlan0";
+      $("wifi-ssid").textContent = status.ssid || (connected ? "Unknown" : "Not connected");
+      $("wifi-ip").textContent = status.ip || "--";
+      $("wifi-dot").className = `dot ${connected ? "online" : ""}`.trim();
+      $("strip-wifi").textContent = connected ? `${status.ssid || "?"} ${status.rssi_dbm} dBm` : "not connected";
+      const icon = $("wifi-icon");
+      icon.setAttribute("class", `wifi-icon ${connected ? level : "unknown"}`);
+      icon.querySelectorAll(".wifi-arc").forEach((arc) => {
+        arc.classList.toggle("active", Number(arc.dataset.arc) <= activeCount);
       });
     }
 
-    async function connectWifi(net) {
-      let password = null;
-      if (net.secured && !net.saved) {
-        password = window.prompt(`Password for ${net.ssid}:`);
-        if (!password) return;
+    function renderWifiList(networks) {
+      state.wifiNetworks = networks;
+      if (!networks.length) {
+        $("wifi-picker-body").innerHTML = '<div class="wizard-step-hint">No networks found.</div>';
+        return;
       }
-      if (!window.confirm(`Connect to ${net.ssid}? The hub's IP may change and remote browsers will disconnect.`)) return;
-      setMessage("wifi-message", `Connecting to ${net.ssid}...`, "");
+      $("wifi-picker-body").innerHTML = `
+        <div class="wizard-step-hint">Select the AP this hub should connect to.</div>
+        <div class="wizard-list">
+          ${networks.map((net, index) => `
+            <div class="wizard-device">
+              <div>
+                <div>${escapeHtml(net.ssid)}${net.active ? " ✓" : ""}</div>
+                <div class="meta">${net.signal}%${net.secured ? " · 🔒" : ""}${net.saved ? " · saved" : ""}</div>
+              </div>
+              <button type="button" data-wifi-index="${index}" ${net.active ? "disabled" : ""}>
+                ${net.active ? "Connected" : "Connect"}
+              </button>
+            </div>
+          `).join("")}
+        </div>
+        <div class="wizard-actions">
+          <button type="button" onclick="openWifiPicker()">Rescan</button>
+        </div>
+      `;
+      $("wifi-picker-body").querySelectorAll("[data-wifi-index]").forEach((button) => {
+        button.addEventListener("click", () => renderWifiConnect(networks[Number(button.dataset.wifiIndex)]));
+      });
+    }
+
+    function renderWifiConnect(net) {
+      $("wifi-picker-title").textContent = net.ssid;
+      const needsPassword = net.secured && !net.saved;
+      $("wifi-picker-body").innerHTML = `
+        <div class="wizard-step-hint">The hub's IP may change and remote browsers will disconnect.</div>
+        ${needsPassword ? `
+          <div class="field">
+            <label for="wifi-password">Password</label>
+            <input type="password" id="wifi-password" autocomplete="off">
+          </div>
+        ` : ""}
+        <div class="wizard-actions">
+          <button type="button" id="wifi-back">Back</button>
+          <button type="button" class="primary" id="wifi-connect-confirm">Connect</button>
+        </div>
+        <div class="wizard-step-hint" id="wifi-connect-result"></div>
+      `;
+      $("wifi-back").addEventListener("click", openWifiPicker);
+      $("wifi-connect-confirm").addEventListener("click", () => connectWifi(net));
+      if (needsPassword) $("wifi-password").focus();
+    }
+
+    async function connectWifi(net) {
+      const resultBox = $("wifi-connect-result");
+      const confirmBtn = $("wifi-connect-confirm");
+      const password = document.getElementById("wifi-password")?.value || null;
+      if (net.secured && !net.saved && !password) {
+        resultBox.textContent = "Password is required.";
+        return;
+      }
+      confirmBtn.disabled = true;
+      resultBox.textContent = `Connecting to ${net.ssid}...`;
       try {
         const result = await fetchJson("/api/wifi/connect", {
           method: "POST",
           headers: adminHeaders({ "Content-Type": "application/json" }),
           body: JSON.stringify({ ssid: net.ssid, password }),
         });
-        setMessage("wifi-message", `Connected to ${net.ssid}. IP: ${result.ip}`, "ok");
-        $("wifi-current").textContent = net.ssid;
+        resultBox.textContent = `Connected to ${net.ssid}. IP: ${result.ip}`;
+        refreshWifiStatus();
       } catch (error) {
-        setMessage("wifi-message", error.message, "error");
+        resultBox.textContent = error.message;
+        confirmBtn.disabled = false;
       }
     }
 
@@ -1074,6 +1813,73 @@
         }
       };
     }
+
+    const VIEWS = {
+      overview: ["panel-edge", "panel-stations"],
+      edge: ["panel-edge"],
+      stations: ["panel-stations"],
+      network: ["panel-wifi"],
+      software: ["panel-software"],
+      power: ["panel-power"],
+      support: ["panel-support"],
+    };
+
+    function setView(name) {
+      const view = VIEWS[name] ? name : "overview";
+      const visible = VIEWS[view];
+      document.querySelectorAll("main .panel").forEach((panel) => {
+        panel.hidden = !visible.includes(panel.id);
+      });
+      document.querySelectorAll(".side-link").forEach((b) => {
+        b.classList.toggle("active", b.dataset.view === view);
+      });
+      if (window.location.hash !== `#${view}`) {
+        history.replaceState(null, "", `#${view}`);
+      }
+      if (view === "support") renderSupportReport();
+      window.scrollTo({ top: 0 });
+    }
+
+    function buildSupportReport() {
+      const wifi = state.wifi || {};
+      const update = state.update || {};
+      const nodes = (state.nodes || []).map((node) => {
+        const streams = (node.equipment_streams || [])
+          .map((s) => `${s.equipment_id || s.node_id}${s.antenna_channel ? `@${s.antenna_channel}` : ""}`)
+          .join(", ") || "no streams";
+        return `  ${node.edge_node_id} · ${node.status} · v${node.software_version || "?"} · ${node.ip || "?"} · ${streams}`;
+      }).join("\n") || "  none seen";
+      return [
+        "FitRaceStudio system report",
+        `time: ${new Date().toISOString()}`,
+        `page: ${window.location.href}`,
+        `hub: v${(state.update || {}).current_version || $("version-pill").textContent.replace("Hub v", "")} · ws ${$("ws-label").textContent}`,
+        `wifi: ${wifi.connected ? `${wifi.ssid} ${wifi.rssi_dbm} dBm (${wifi.quality_level}) ip ${wifi.ip}` : "not connected"}`,
+        `updates: ${update.state || "never_checked"}${update.latest_hub_version ? ` · latest hub ${update.latest_hub_version}` : ""}`,
+        "edge nodes:",
+        nodes,
+      ].join("\n");
+    }
+
+    function renderSupportReport() {
+      $("support-report").textContent = buildSupportReport();
+    }
+
+    async function copySupportReport() {
+      renderSupportReport();
+      try {
+        await navigator.clipboard.writeText($("support-report").textContent);
+        setMessage("support-message", "Report copied to clipboard.", "ok");
+      } catch (_) {
+        setMessage("support-message", "Copy failed — select the text above and copy manually.", "error");
+      }
+    }
+
+    document.querySelectorAll(".side-link, .override-btn").forEach((link) => {
+      link.addEventListener("click", () => setView(link.dataset.view));
+    });
+    window.addEventListener("hashchange", () => setView(window.location.hash.slice(1)));
+    setView(window.location.hash.slice(1) || "overview");
 
     $("station-number").addEventListener("input", updateSignupLink);
     $("login-modal").addEventListener("click", (event) => {
