@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "hub-local",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "hub_server.main"],
+      "port": 8000
+    }
+  ]
+}
