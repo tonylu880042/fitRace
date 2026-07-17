@@ -15,7 +15,7 @@ from edge_node.infrastructure.antenna.command_runner import (
     AntennaCommandRunner,
 )
 from edge_node.infrastructure.ble.ftms_scanner import BleakFtmsScanner
-from edge_node.infrastructure.network.wifi_status import LinuxWifiStatusReader, WifiStatus
+from fitrace_common.wifi_status import LinuxWifiStatusReader, WifiStatus
 from edge_node.usecases.event_log import EdgeEventLog
 from edge_node.usecases.ftms_scanner import scan_ftms_devices
 from fitrace_common import wifi_manager
@@ -1139,6 +1139,7 @@ EDGE_SETUP_HTML = """
           <div class="binding-list" id="binding-list" style="margin-top:14px;"></div>
           <div class="button-grid" style="margin-top:14px;">
             <button id="config-save-btn" type="button" data-i18n="bindings.save">Save bindings</button>
+            <button id="config-clear-btn" type="button" class="button-secondary" data-i18n="bindings.clear_all">Clear all bindings</button>
           </div>
           <div class="message" id="config-message" data-i18n="bindings.ready">Edit names here, then save and restart Edge runtime.</div>
         </section>
@@ -1205,6 +1206,7 @@ EDGE_SETUP_HTML = """
     const configNodeId = document.getElementById("config-node-id");
     const configMessage = document.getElementById("config-message");
     const configSaveBtn = document.getElementById("config-save-btn");
+    const configClearBtn = document.getElementById("config-clear-btn");
     const allAntennaButtons = [
       ...antennaCommandButtons,
       antennaConnectBtn,
@@ -1374,6 +1376,9 @@ EDGE_SETUP_HTML = """
         "bindings.unbind_confirm": "Unbind {name}? The device will be disconnected from the antenna board.",
         "bindings.unbinding": "Unbinding — refreshing antenna target lists...",
         "bindings.unbound": "{name} unbound. Edge runtime restarted.",
+        "bindings.clear_all": "Clear all bindings",
+        "bindings.clear_all_confirm": "Unbind all {count} devices? Every device will be disconnected from the antenna boards.",
+        "bindings.cleared": "All bindings cleared. Edge runtime restarted.",
         "bindings.filtered": "Showing {channel} devices ({count}). Pick another channel or Manual serial port to see the rest."
       }
     };
@@ -1490,6 +1495,9 @@ EDGE_SETUP_HTML = """
       "bindings.unbind_confirm": "確定解綁 {name}？將從天線板斷開此設備連線。",
       "bindings.unbinding": "解綁中——更新天線板目標清單...",
       "bindings.unbound": "{name} 已解綁，Edge runtime 已重啟。",
+      "bindings.clear_all": "清空全部綁定",
+      "bindings.clear_all_confirm": "確定清空全部 {count} 個綁定？所有設備都會從天線板斷開連線。",
+      "bindings.cleared": "已清空全部綁定，Edge runtime 已重啟。",
       "bindings.filtered": "目前只顯示 {channel} 的設備（{count} 台），切換通道或選「手動指定串口」可檢視全部。"
     };
 
@@ -1990,6 +1998,35 @@ EDGE_SETUP_HTML = """
       if (await saveEdgeConfig()) {
         await restartEdgeRuntime();
       }
+    }
+
+    async function clearAllBindings() {
+      const count = (edgeConfig?.equipment_bindings || []).length;
+      if (!count) return;
+      if (!window.confirm(t("bindings.clear_all_confirm", { count }))) return;
+      edgeConfig = { ...edgeConfig, equipment_bindings: [], max_ftms_connections: 1 };
+      renderBindings(edgeConfig);
+      const saved = await saveEdgeConfig();
+      if (!saved) {
+        await loadEdgeConfig();
+        return;
+      }
+      setConfigMessage(t("bindings.unbinding"), "ok");
+      try {
+        await fetch("/api/antenna/reconnect-configured", {
+          method: "POST",
+          headers: adminHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({
+            disconnect_first: true,
+            timeout_sec: Math.max(1, Math.min(30, Number(antennaTimeoutInput.value) || 5)),
+            report_interval_ms: Math.max(100, Math.min(10000, Number(antennaReportIntervalInput.value) || ANTENNA_DEFAULT_REPORT_INTERVAL_MS)),
+          }),
+        });
+      } catch (_error) {
+        // board list refresh is best-effort; runtime restart below reloads config
+      }
+      await restartEdgeRuntime();
+      setConfigMessage(t("bindings.cleared"), "ok");
     }
 
     async function loadAntennaConfig() {
@@ -2497,6 +2534,7 @@ EDGE_SETUP_HTML = """
     antennaReportBtn.addEventListener("click", () => runAntennaCommand("report"));
     antennaRawBtn.addEventListener("click", () => runAntennaCommand("raw"));
     configSaveBtn.addEventListener("click", saveAndApplyBindings);
+    configClearBtn.addEventListener("click", clearAllBindings);
     monitorRefreshBtn.addEventListener("click", refreshMonitorEvents);
 
     applyTranslations();

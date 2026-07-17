@@ -21,6 +21,7 @@ from hub_server.adapters.websocket_manager import WebSocketManager
 from hub_server.infrastructure.locales import DEFAULT_LOCALE, list_locales, load_locale
 from hub_server.usecases.update_checker import UpdateChecker
 from fitrace_common import wifi_manager
+from fitrace_common.wifi_status import LinuxWifiStatusReader
 from fitrace_common.power_manager import PowerActionError, PowerManager
 from fitrace_common.version import APP_VERSION
 
@@ -52,13 +53,22 @@ def build_node_command(action: str) -> dict:
     return command
 
 
+UPDATE_AUTO_CHECK_INTERVAL_SEC = 7 * 24 * 3600  # weekly; manual "Check" forces one
+
+
+async def periodic_update_check():
+    while True:
+        await asyncio.to_thread(update_checker.check)
+        await asyncio.sleep(UPDATE_AUTO_CHECK_INTERVAL_SEC)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if (
         os.getenv("FITRACE_UPDATE_AUTO_CHECK", "1") != "0"
         and update_checker.manifest_url
     ):
-        asyncio.create_task(asyncio.to_thread(update_checker.check))
+        asyncio.create_task(periodic_update_check())
     yield
 
 
@@ -102,6 +112,7 @@ update_checker = UpdateChecker(
     ),
     cache_dir=os.getenv("FITRACE_UPDATE_CACHE_DIR", "/tmp/fitrace-update-cache"),
 )
+wifi_status_reader = LinuxWifiStatusReader()
 power_manager = PowerManager(
     target="hub",
     service_name="fitracestudio-hub.service",
@@ -202,6 +213,13 @@ def get_real_ip() -> Optional[str]:
 def get_system_ip():
     ip = get_real_ip()
     return {"ip": ip or "127.0.0.1"}
+
+
+@app.get("/api/wifi/status")
+def get_wifi_status(interface: str = "wlan0"):
+    status = wifi_status_reader.read(interface=interface).model_dump()
+    status["ip"] = get_real_ip()
+    return status
 
 
 @app.get("/api/wifi/networks")

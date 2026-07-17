@@ -1,6 +1,6 @@
 import subprocess
 
-from edge_node.infrastructure.network.wifi_status import (
+from fitrace_common.wifi_status import (
     LinuxWifiStatusReader,
     build_wifi_status,
 )
