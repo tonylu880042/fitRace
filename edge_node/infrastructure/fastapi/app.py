@@ -356,18 +356,21 @@ EDGE_SETUP_HTML = """
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>FitRace Edge Node Setup</title>
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;700&family=Outfit:wght@400;600;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg: #0b0d10;
-      --panel: #15191f;
-      --panel-2: #101419;
-      --border: #2a313b;
-      --text: #f4f7fb;
-      --muted: #9aa6b2;
-      --accent: #d7ff3f;
-      --warning: #f6a524;
-      --danger: #ef476f;
+      --bg: #0a0a0a;
+      --surface: #141414;
+      --surface-2: #0d0e0f;
+      --border: #262626;
+      --border-strong: #3a3a3a;
+      --text: #e3e2e2;
+      --muted: #a3a3a3;
+      --accent: #e2ff3b;
+      --warn: #f59e0b;
+      --danger: #ff4b4b;
       --ok: #34d399;
+      --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
     }
 
     * { box-sizing: border-box; }
@@ -377,7 +380,7 @@ EDGE_SETUP_HTML = """
       min-height: 100vh;
       background: var(--bg);
       color: var(--text);
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-family: "Outfit", "Noto Sans TC", sans-serif;
       line-height: 1.45;
     }
 
@@ -398,8 +401,10 @@ EDGE_SETUP_HTML = """
 
     h1 {
       margin: 0;
+      font-family: "Oswald", sans-serif;
       font-size: 28px;
-      letter-spacing: 0;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
     }
 
     .sub {
@@ -414,10 +419,12 @@ EDGE_SETUP_HTML = """
       gap: 8px;
       padding: 8px 12px;
       border: 1px solid var(--border);
-      border-radius: 6px;
-      background: var(--panel-2);
+      border-radius: 0;
+      background: var(--surface-2);
       color: var(--muted);
-      font-size: 13px;
+      font-family: var(--mono);
+      font-size: 11px;
+      text-transform: uppercase;
       white-space: nowrap;
     }
 
@@ -432,15 +439,18 @@ EDGE_SETUP_HTML = """
       width: auto;
       min-width: 150px;
       height: 38px;
-      border-radius: 6px;
+      border-radius: 0;
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+      color: var(--text);
     }
 
     .dot {
       width: 8px;
       height: 8px;
-      border-radius: 999px;
+      border-radius: 50%;
       background: var(--ok);
-      box-shadow: 0 0 12px rgba(52, 211, 153, 0.45);
+      box-shadow: 0 0 10px rgba(52, 211, 153, 0.48);
     }
 
     main {
@@ -451,16 +461,18 @@ EDGE_SETUP_HTML = """
     }
 
     .panel {
-      background: var(--panel);
+      background: var(--surface);
       border: 1px solid var(--border);
-      border-radius: 8px;
+      border-radius: 0;
       padding: 18px;
     }
 
     .panel h2 {
       margin: 0 0 14px;
+      font-family: "Oswald", sans-serif;
       font-size: 16px;
-      letter-spacing: 0;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
     }
 
     .stack {
@@ -472,8 +484,10 @@ EDGE_SETUP_HTML = """
       display: block;
       margin-bottom: 6px;
       color: var(--muted);
-      font-size: 12px;
-      font-weight: 700;
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.06em;
       text-transform: uppercase;
     }
 
@@ -483,8 +497,8 @@ EDGE_SETUP_HTML = """
       height: 42px;
       padding: 0 12px;
       border: 1px solid var(--border);
-      border-radius: 6px;
-      background: #090b0e;
+      border-radius: 0;
+      background: rgba(0, 0, 0, 0.32);
       color: var(--text);
       font: inherit;
     }
@@ -498,8 +512,8 @@ EDGE_SETUP_HTML = """
       gap: 12px;
       padding: 10px 12px;
       border: 1px solid var(--border);
-      border-radius: 6px;
-      background: var(--panel-2);
+      border-radius: 0;
+      background: var(--surface-2);
       color: var(--muted);
       font-size: 14px;
     }
@@ -513,17 +527,36 @@ EDGE_SETUP_HTML = """
     button {
       width: 100%;
       min-height: 44px;
-      border: 0;
-      border-radius: 6px;
-      background: var(--accent);
-      color: #070807;
+      border: 1px solid var(--border-strong);
+      border-radius: 0;
+      background: var(--surface-2);
+      color: var(--text);
+      font-family: "Oswald", sans-serif;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
       cursor: pointer;
-      font-weight: 800;
+    }
+
+    button:hover:not(:disabled) {
+      border-color: var(--accent);
+      color: var(--accent);
     }
 
     button:disabled {
       cursor: not-allowed;
       opacity: 0.45;
+    }
+
+    button.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #09090b;
+    }
+
+    button.primary:hover:not(:disabled) {
+      color: #09090b;
+      filter: brightness(1.08);
     }
 
     .status {
@@ -537,6 +570,7 @@ EDGE_SETUP_HTML = """
       justify-content: space-between;
       gap: 12px;
       color: var(--muted);
+      font-family: var(--mono);
       font-size: 13px;
     }
 
@@ -557,8 +591,8 @@ EDGE_SETUP_HTML = """
       gap: 12px;
       padding: 14px;
       border: 1px solid var(--border);
-      border-radius: 8px;
-      background: var(--panel-2);
+      border-radius: 0;
+      background: var(--surface-2);
     }
 
     .wifi-icon-wrap {
@@ -593,7 +627,7 @@ EDGE_SETUP_HTML = """
     .wifi-icon.good .wifi-dot-mark { stroke: #f97316; fill: #f97316; }
 
     .wifi-icon.fair .wifi-arc.active,
-    .wifi-icon.fair .wifi-dot-mark { stroke: var(--warning); fill: var(--warning); }
+    .wifi-icon.fair .wifi-dot-mark { stroke: var(--warn); fill: var(--warn); }
 
     .wifi-icon.weak .wifi-arc.active,
     .wifi-icon.weak .wifi-dot-mark,
@@ -606,8 +640,9 @@ EDGE_SETUP_HTML = """
 
     .wifi-level {
       color: var(--text);
+      font-family: "Oswald", sans-serif;
       font-size: 24px;
-      font-weight: 800;
+      font-weight: 700;
       line-height: 1.05;
       overflow-wrap: anywhere;
     }
@@ -623,8 +658,8 @@ EDGE_SETUP_HTML = """
       height: 10px;
       overflow: hidden;
       border: 1px solid var(--border);
-      border-radius: 999px;
-      background: #090b0e;
+      border-radius: 0;
+      background: rgba(0, 0, 0, 0.32);
     }
 
     .progress-fill {
@@ -654,8 +689,8 @@ EDGE_SETUP_HTML = """
       gap: 12px;
       padding: 14px;
       border: 1px solid var(--border);
-      border-radius: 8px;
-      background: var(--panel-2);
+      border-radius: 0;
+      background: var(--surface-2);
     }
 
     .device-name {
@@ -666,7 +701,7 @@ EDGE_SETUP_HTML = """
     .device-meta {
       margin-top: 4px;
       color: var(--muted);
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-family: var(--mono);
       font-size: 12px;
       overflow-wrap: anywhere;
     }
@@ -676,7 +711,7 @@ EDGE_SETUP_HTML = """
       min-width: 62px;
       padding: 6px 8px;
       border: 1px solid var(--border);
-      border-radius: 6px;
+      border-radius: 0;
       color: var(--accent);
       text-align: center;
       font-weight: 800;
@@ -685,7 +720,7 @@ EDGE_SETUP_HTML = """
     .empty {
       padding: 42px 16px;
       border: 1px dashed var(--border);
-      border-radius: 8px;
+      border-radius: 0;
       color: var(--muted);
       text-align: center;
     }
@@ -704,7 +739,7 @@ EDGE_SETUP_HTML = """
 
     .button-secondary {
       border: 1px solid var(--border);
-      background: var(--panel-2);
+      background: var(--surface-2);
       color: var(--text);
     }
 
@@ -719,8 +754,8 @@ EDGE_SETUP_HTML = """
       gap: 10px;
       padding: 12px;
       border: 1px solid var(--border);
-      border-radius: 8px;
-      background: var(--panel-2);
+      border-radius: 0;
+      background: var(--surface-2);
     }
 
     .binding-row .field {
@@ -766,9 +801,9 @@ EDGE_SETUP_HTML = """
     }
 
     .modal-panel {
-      background: var(--panel-2, #111);
+      background: var(--surface-2);
       border: 1px solid var(--accent);
-      border-radius: 12px;
+      border-radius: 0;
       max-height: 70vh;
       overflow: auto;
       padding: 20px;
@@ -776,6 +811,7 @@ EDGE_SETUP_HTML = """
     }
 
     .wifi-ip {
+      font-family: var(--mono);
       font-size: 24px;
       font-weight: 700;
       letter-spacing: 0.5px;
@@ -790,14 +826,15 @@ EDGE_SETUP_HTML = """
     .tab-bar .tab-button {
       width: auto;
       flex: 1;
-      background: var(--panel);
+      background: var(--surface);
       color: var(--text);
       border: 1px solid var(--border);
+      border-radius: 0;
     }
 
     .tab-bar .tab-button.active {
       background: var(--accent);
-      color: #111;
+      color: #09090b;
       border-color: var(--accent);
     }
 
@@ -822,6 +859,9 @@ EDGE_SETUP_HTML = """
 
     .modal-head h2 {
       margin: 0;
+      font-family: "Oswald", sans-serif;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
     }
 
     .modal-close {
@@ -854,7 +894,7 @@ EDGE_SETUP_HTML = """
       gap: 10px;
       padding: 10px 12px;
       border: 1px solid var(--border);
-      border-radius: 8px;
+      border-radius: 0;
       margin-top: 10px;
     }
 
@@ -887,7 +927,7 @@ EDGE_SETUP_HTML = """
 
     .readonly-input {
       color: var(--muted);
-      background: #0d1116;
+      background: rgba(0, 0, 0, 0.32);
       cursor: default;
     }
 
@@ -897,10 +937,10 @@ EDGE_SETUP_HTML = """
       margin: 0;
       padding: 12px;
       border: 1px solid var(--border);
-      border-radius: 8px;
-      background: #090b0e;
+      border-radius: 0;
+      background: rgba(0, 0, 0, 0.32);
       color: var(--text);
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-family: var(--mono);
       font-size: 12px;
       line-height: 1.5;
       white-space: pre-wrap;
@@ -937,8 +977,8 @@ EDGE_SETUP_HTML = """
       min-height: 184px;
       padding: 12px;
       border: 1px solid var(--border);
-      border-radius: 8px;
-      background: var(--panel-2);
+      border-radius: 0;
+      background: var(--surface-2);
     }
 
     .monitor-card-header {
@@ -960,10 +1000,12 @@ EDGE_SETUP_HTML = """
       flex: 0 0 auto;
       padding: 4px 8px;
       border: 1px solid var(--border);
-      border-radius: 999px;
+      border-radius: 50%;
       color: var(--muted);
+      font-family: var(--mono);
       font-size: 11px;
-      font-weight: 800;
+      font-weight: 500;
+      letter-spacing: 0.06em;
       text-transform: uppercase;
     }
 
@@ -973,8 +1015,8 @@ EDGE_SETUP_HTML = """
     }
 
     .monitor-status-pill.stale {
-      color: var(--warning);
-      border-color: rgba(246, 165, 36, 0.45);
+      color: var(--warn);
+      border-color: rgba(245, 158, 11, 0.45);
     }
 
     .monitor-fields {
@@ -986,6 +1028,7 @@ EDGE_SETUP_HTML = """
     .monitor-field {
       min-width: 0;
       color: var(--muted);
+      font-family: var(--mono);
       font-size: 11px;
     }
 
@@ -993,7 +1036,7 @@ EDGE_SETUP_HTML = """
       display: block;
       margin-top: 2px;
       color: var(--text);
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-family: var(--mono);
       font-size: 13px;
       overflow-wrap: anywhere;
     }
