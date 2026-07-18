@@ -2,6 +2,43 @@
 
 This document defines the deployment network, device naming, discovery, and setup rules for FitRaceStudio hardware shipped with the dedicated AP.
 
+## One-click Deploy
+
+Use `scripts/deploy.sh` for automated Hub and Edge deployments.
+
+```bash
+# Deploy to hub only
+deploy.sh hub [user@host]
+
+# Deploy to edge only (default path /home/tony/fitRace)
+deploy.sh edge [user@host] [deploy-path]
+
+# Deploy hub and edge to same host
+deploy.sh all [user@host]
+
+# Rollback hub to previous release
+deploy.sh rollback-hub <release-name> [user@host]
+
+# List releases and mark current
+deploy.sh list [user@host]
+```
+
+Flags (position-independent):
+- `--dry-run` – Print ssh/rsync commands without executing
+- `--skip-tests` – Skip pytest before deploy
+- `--allow-dirty` – Allow uncommitted changes
+
+Default targets: `tony@192.168.0.130` (hub); `tony@192.168.0.130 /home/tony/fitRace` (edge). For edge-02, use `ucare@192.168.0.135 /home/ucare/fitRace`.
+
+The target user needs passwordless sudo for the restart/symlink steps. On edge-02 the
+`ucare` account requires a sudo password, so add a sudoers drop-in once per device:
+
+```bash
+echo 'ucare ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart fitracestudio-edge.service, /usr/bin/systemctl restart fitracestudio-edge-web-config.service' | sudo tee /etc/sudoers.d/fitrace-deploy
+```
+
+After hub deploy, the script prints the release name and rollback command. To rollback: `deploy.sh rollback-hub <release-name> [user@host]`.
+
 ## 1. Deployment Decision
 
 FitRaceStudio ships with a professional AP. Network provisioning is completed before delivery, and Edge Nodes are configured through their local web services on the shipped LAN.
