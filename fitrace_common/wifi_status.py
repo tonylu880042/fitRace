@@ -40,7 +40,7 @@ class LinuxWifiStatusReader:
         return WifiStatus(
             interface=interface,
             connected=False,
-            recommendation="No Wi-Fi RSSI available. Confirm the Edge Node is connected to fitRace26.",
+            recommendation="No Wi-Fi RSSI available. Confirm the device is connected to fitRace26.",
         )
 
     def _read_iw_status(self, interface: str) -> WifiStatus | None:
@@ -62,7 +62,7 @@ class LinuxWifiStatusReader:
             return WifiStatus(
                 interface=interface,
                 connected=False,
-                recommendation="Wi-Fi is not connected. Move the Edge Node closer to the AP or check AP provisioning.",
+                recommendation="Wi-Fi is not connected. Move the device closer to the AP or check AP provisioning.",
             )
 
         signal_match = re.search(r"signal:\s*(-?\d+)\s*dBm", output)
@@ -133,7 +133,7 @@ def recommend_for_rssi(rssi_dbm: int) -> str:
     if level in {"excellent", "good"}:
         return "Signal is suitable for live race operation."
     if level == "fair":
-        return "Signal is usable, but avoid placing the Edge Node behind metal equipment."
+        return "Signal is usable, but avoid placing the device behind metal equipment."
     if level == "weak":
-        return "Move the Edge Node closer to the AP or raise it above equipment frames."
-    return "Signal is poor. Reposition the AP or Edge Node before running a race."
+        return "Move the device closer to the AP or raise it above equipment frames."
+    return "Signal is poor. Reposition the AP or device before running a race."

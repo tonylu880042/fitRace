@@ -68,7 +68,7 @@ async def lifespan(app: FastAPI):
         os.getenv("FITRACE_UPDATE_AUTO_CHECK", "1") != "0"
         and update_checker.manifest_url
     ):
-        asyncio.create_task(periodic_update_check())
+        app.state.update_check_task = asyncio.create_task(periodic_update_check())
     yield
 
 
