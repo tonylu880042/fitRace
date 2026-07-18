@@ -517,6 +517,24 @@
       flex-wrap: wrap;
       justify-content: flex-end;
       gap: 10px;
+      align-items: center;
+    }
+
+    .lang-toggle {
+      display: flex;
+      gap: 4px;
+    }
+
+    .lang-toggle button {
+      min-width: 50px;
+      padding: 0 10px;
+      font-size: 12px;
+    }
+
+    .lang-toggle button.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #09090b;
     }
 
     .pill {
@@ -963,54 +981,58 @@
         <p>Edge node status · software updates · system maintenance</p>
       </div>
       <div class="top-actions">
-        <div class="pill"><span class="dot" id="ws-dot"></span><span id="ws-label">Offline</span></div>
+        <span class="lang-toggle">
+          <button type="button" id="lang-en" onclick="setLanguage('en-US')">EN</button>
+          <button type="button" id="lang-zh" onclick="setLanguage('zh-TW')">中文</button>
+        </span>
+        <div class="pill"><span class="dot" id="ws-dot"></span><span id="ws-label" data-i18n="status.offline">Offline</span></div>
         <div class="pill" id="version-pill">Hub v--</div>
-        <button type="button" class="nav-link" onclick="window.location.href='/'">Dashboard</button>
-        <button type="button" class="nav-link" onclick="window.location.href='/gameAdmin'">Game Admin</button>
-        <button type="button" class="nav-link" onclick="window.location.href='/static/signup.html'">Signup</button>
-        <button type="button" class="unlock" onclick="openLogin()"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="4" y="9" width="12" height="8.5"/><path d="M6.8 9V6.2a3.2 3.2 0 0 1 6.4 0V9"/></svg>Maintenance Unlock</button>
+        <button type="button" class="nav-link" onclick="window.location.href='/'"><span data-i18n="nav.dashboard">Dashboard</span></button>
+        <button type="button" class="nav-link" onclick="window.location.href='/gameAdmin'"><span data-i18n="nav.game_admin">Game Admin</span></button>
+        <button type="button" class="nav-link" onclick="window.location.href='/static/signup.html'"><span data-i18n="nav.signup">Signup</span></button>
+        <button type="button" class="unlock" onclick="openLogin()"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="4" y="9" width="12" height="8.5"/><path d="M6.8 9V6.2a3.2 3.2 0 0 1 6.4 0V9"/></svg><span data-i18n="nav.maintenance_unlock">Maintenance Unlock</span></button>
       </div>
     </header>
 
     <div class="frame">
       <aside class="sidebar" aria-label="Console navigation">
         <div class="sidebar-head">
-          <h2>Admin Console</h2>
+          <h2 data-i18n="sidebar.admin_console">Admin Console</h2>
           <p id="sidebar-version">V--</p>
         </div>
         <nav class="side-nav">
           <button type="button" class="side-link" data-view="overview">
             <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="2.5" y="2.5" width="15" height="15"/><path d="M6 13.5v-3.5M10 13.5v-6M14 13.5v-2"/></svg>
-            Overview
+            <span data-i18n="sidebar.overview">Overview</span>
           </button>
           <button type="button" class="side-link" data-view="edge">
             <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="2.5" y="3" width="15" height="5.5"/><rect x="2.5" y="11.5" width="15" height="5.5"/><circle cx="5.8" cy="5.75" r="0.4" fill="currentColor"/><circle cx="5.8" cy="14.25" r="0.4" fill="currentColor"/></svg>
-            Edge Nodes
+            <span data-i18n="sidebar.edge_nodes">Edge Nodes</span>
           </button>
           <button type="button" class="side-link" data-view="stations">
             <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="2.5" y="2.5" width="6.2" height="6.2"/><rect x="11.3" y="2.5" width="6.2" height="6.2"/><rect x="2.5" y="11.3" width="6.2" height="6.2"/><rect x="11.3" y="11.3" width="6.2" height="6.2"/></svg>
-            Stations
+            <span data-i18n="sidebar.stations">Stations</span>
           </button>
           <button type="button" class="side-link" data-view="network">
             <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="10" cy="11" r="1.6"/><path d="M10 12.6V17.5M5.8 6.8a6 6 0 0 1 8.4 0M3.5 4.5a9.2 9.2 0 0 1 13 0"/></svg>
-            Network
+            <span data-i18n="sidebar.network">Network</span>
           </button>
           <button type="button" class="side-link" data-view="software">
             <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M10 2.5v9M6.5 8L10 11.5 13.5 8M3 14v3.5h14V14"/></svg>
-            Software
+            <span data-i18n="sidebar.software">Software</span>
           </button>
         </nav>
         <div class="sidebar-foot">
-          <button type="button" class="override-btn" data-view="power">System Override</button>
+          <button type="button" class="override-btn" data-view="power" data-i18n="sidebar.system_override">System Override</button>
         </div>
         <div class="side-foot-links">
           <button type="button" class="side-link" onclick="window.open('/static/docs.html','_blank','noopener')">
             <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="10" cy="10" r="7.5"/><path d="M7.9 7.8a2.1 2.1 0 1 1 2.9 2c-.6.3-.8.7-.8 1.4"/><circle cx="10" cy="13.9" r="0.5" fill="currentColor" stroke="none"/></svg>
-            Documentation
+            <span data-i18n="sidebar.documentation">Documentation</span>
           </button>
           <button type="button" class="side-link" data-view="support">
             <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="10" cy="10" r="7.5"/><path d="M4.9 4.9l3 3M12.1 12.1l3 3M15.1 4.9l-3 3M7.9 12.1l-3 3"/><circle cx="10" cy="10" r="3.2"/></svg>
-            Support
+            <span data-i18n="sidebar.support">Support</span>
           </button>
         </div>
       </aside>
@@ -1026,7 +1048,7 @@
       <div class="column">
         <section class="panel panel-accent" id="panel-edge" aria-labelledby="edge-title">
           <div class="panel-header">
-            <h2 class="panel-title" id="edge-title">Edge Nodes</h2>
+            <h2 class="panel-title" id="edge-title" data-i18n="panel.edge_nodes">Edge Nodes</h2>
             <span class="pill" id="edge-summary">0 online</span>
           </div>
           <div class="list" id="edge-list"></div>
@@ -1034,12 +1056,12 @@
 
         <section class="panel" id="panel-stations" aria-labelledby="station-title">
           <div class="panel-header">
-            <h2 class="panel-title" id="station-title">Station Assignment</h2>
-            <button type="button" onclick="copySignupLink()">Copy Signup Link</button>
+            <h2 class="panel-title" id="station-title" data-i18n="panel.station_assignment">Station Assignment</h2>
+            <button type="button" onclick="copySignupLink()" data-i18n="button.copy_signup_link">Copy Signup Link</button>
           </div>
           <div class="assign-bar">
             <div class="field">
-              <label for="station-number">Station</label>
+              <label for="station-number" data-i18n="label.station">Station</label>
               <div class="stepper">
                 <button type="button" class="step-btn" onclick="stepStation(-1)">−</button>
                 <input type="number" id="station-number" min="1" max="99" value="1">
@@ -1047,10 +1069,10 @@
               </div>
             </div>
             <div class="field" style="flex:1;">
-              <label for="node-select">Telemetry Stream</label>
+              <label for="node-select" data-i18n="label.telemetry_stream">Telemetry Stream</label>
               <select id="node-select"></select>
             </div>
-            <button type="button" class="primary" onclick="assignSelectedStation()">Assign</button>
+            <button type="button" class="primary" onclick="assignSelectedStation()" data-i18n="button.assign">Assign</button>
           </div>
           <input type="hidden" id="signup-link" value="">
           <div class="status-text" id="station-message"></div>
@@ -1061,7 +1083,7 @@
       <div class="column">
         <section class="panel panel-accent" id="panel-wifi" aria-labelledby="wifi-title">
           <div class="panel-header">
-            <h2 class="panel-title" id="wifi-title">Wi-Fi Network</h2>
+            <h2 class="panel-title" id="wifi-title" data-i18n="panel.wifi_network">Wi-Fi Network</h2>
             <span class="wifi-head-right">
               <span class="pill"><span class="dot" id="wifi-dot"></span><span id="wifi-interface">wlan0</span></span>
               <svg id="wifi-icon" class="wifi-icon wifi-icon-sm" viewBox="0 0 96 72" role="img" aria-label="Wi-Fi signal level">
@@ -1082,12 +1104,12 @@
               </div>
             </div>
             <div class="button-row">
-              <button type="button" id="btn-wifi-choose" onclick="openWifiPicker()">Choose Wi-Fi network</button>
+              <button type="button" id="btn-wifi-choose" onclick="openWifiPicker()" data-i18n="button.choose_wifi_network">Choose Wi-Fi network</button>
             </div>
             <div class="modal-overlay" id="wifi-picker" hidden>
               <div class="modal-panel">
                 <div class="modal-head">
-                  <h2 id="wifi-picker-title">Wi-Fi networks</h2>
+                  <h2 id="wifi-picker-title" data-i18n="wifi.networks_title">Wi-Fi networks</h2>
                   <button type="button" class="modal-close" onclick="closeWifiPicker()" aria-label="Close">✕</button>
                 </div>
                 <div id="wifi-picker-body"></div>
@@ -1098,46 +1120,46 @@
 
         <section class="panel" id="panel-software" aria-labelledby="update-title">
           <div class="panel-header">
-            <h2 class="panel-title" id="update-title">Software</h2>
+            <h2 class="panel-title" id="update-title" data-i18n="panel.software">Software</h2>
             <span class="pill" id="update-state">never_checked</span>
           </div>
           <div class="software-box">
             <div class="row-meta" id="update-detail" style="margin-top:0;">No update check has completed in this browser session.</div>
-            <button type="button" onclick="checkUpdates()">Check Now</button>
+            <button type="button" onclick="checkUpdates()" data-i18n="button.check_now">Check Now</button>
           </div>
           <div class="button-row" id="update-actions" hidden>
-            <button type="button" onclick="downloadUpdates()">Download</button>
-            <button type="button" onclick="installHubUpdate()">Install Hub</button>
-            <button type="button" class="danger" onclick="applyHubUpdate()">Apply Hub</button>
+            <button type="button" onclick="downloadUpdates()" data-i18n="button.download">Download</button>
+            <button type="button" onclick="installHubUpdate()" data-i18n="button.install_hub">Install Hub</button>
+            <button type="button" class="danger" onclick="applyHubUpdate()" data-i18n="button.apply_hub">Apply Hub</button>
           </div>
           <div class="status-text" id="update-message"></div>
         </section>
 
         <section class="panel panel-danger" id="panel-power" aria-labelledby="power-title">
           <div class="panel-header">
-            <h2 class="panel-title" id="power-title">Power Controls</h2>
+            <h2 class="panel-title" id="power-title" data-i18n="panel.power_controls">Power Controls</h2>
             <span class="pill" id="power-lock">IDLE only</span>
           </div>
-          <p class="danger-note">Allowed only while race is IDLE.</p>
+          <p class="danger-note" data-i18n="text.idle_only">Allowed only while race is IDLE.</p>
           <div class="button-row">
-            <button type="button" id="btn-power-restart" onclick="powerAction('restart-service')">Restart Hub Service</button>
-            <button type="button" id="btn-power-reboot" onclick="powerAction('reboot')">Reboot Hub</button>
-            <button type="button" id="btn-power-shutdown" onclick="powerAction('shutdown')">Shutdown Hub</button>
-            <button type="button" id="btn-power-shutdown-system" onclick="powerAction('shutdown-system')">Shutdown System</button>
+            <button type="button" id="btn-power-restart" onclick="powerAction('restart-service')" data-i18n="button.restart_hub_service">Restart Hub Service</button>
+            <button type="button" id="btn-power-reboot" onclick="powerAction('reboot')" data-i18n="button.reboot_hub">Reboot Hub</button>
+            <button type="button" id="btn-power-shutdown" onclick="powerAction('shutdown')" data-i18n="button.shutdown_hub">Shutdown Hub</button>
+            <button type="button" id="btn-power-shutdown-system" onclick="powerAction('shutdown-system')" data-i18n="button.shutdown_system">Shutdown System</button>
           </div>
           <div class="status-text" id="power-message"></div>
         </section>
 
         <section class="panel" id="panel-support" aria-labelledby="support-title">
           <div class="panel-header">
-            <h2 class="panel-title" id="support-title">Support</h2>
-            <span class="pill">system report</span>
+            <h2 class="panel-title" id="support-title" data-i18n="panel.support">Support</h2>
+            <span class="pill" data-i18n="support.system_report">system report</span>
           </div>
-          <div class="row-meta">When reporting a problem, copy the snapshot below and send it to the FitRace team together with what you were doing.</div>
+          <div class="row-meta" data-i18n="support.intro">When reporting a problem, copy the snapshot below and send it to the FitRace team together with what you were doing.</div>
           <pre class="support-report" id="support-report">Collecting system snapshot...</pre>
           <div class="button-row">
-            <button type="button" class="primary" onclick="copySupportReport()">Copy System Report</button>
-            <button type="button" onclick="renderSupportReport()">Refresh</button>
+            <button type="button" class="primary" onclick="copySupportReport()" data-i18n="button.copy_system_report">Copy System Report</button>
+            <button type="button" onclick="renderSupportReport()" data-i18n="button.refresh">Refresh</button>
           </div>
           <div class="status-text" id="support-message"></div>
         </section>
@@ -1149,15 +1171,15 @@
 
   <div class="login" id="login-modal" role="dialog" aria-modal="true" aria-labelledby="login-title">
     <div class="login-box">
-      <h2 id="login-title">Maintenance Unlock</h2>
-      <p>Enter the maintenance access code for protected system actions. Local test systems can leave this blank until protection is enabled.</p>
+      <h2 id="login-title" data-i18n="login.title">Maintenance Unlock</h2>
+      <p data-i18n="login.description">Enter the maintenance access code for protected system actions. Local test systems can leave this blank until protection is enabled.</p>
       <div class="field">
-        <label for="admin-token">Access Code</label>
+        <label for="admin-token" data-i18n="label.access_code">Access Code</label>
         <input type="password" id="admin-token" autocomplete="off">
       </div>
       <div class="button-row">
-        <button type="button" class="primary" onclick="saveAdminToken()">Save</button>
-        <button type="button" onclick="closeLogin()">Cancel</button>
+        <button type="button" class="primary" onclick="saveAdminToken()" data-i18n="button.save">Save</button>
+        <button type="button" onclick="closeLogin()" data-i18n="button.cancel">Cancel</button>
       </div>
       <div class="status-text" id="login-message"></div>
     </div>
@@ -1175,6 +1197,205 @@
 
     function $(id) {
       return document.getElementById(id);
+    }
+
+    function getBrowserLocale() {
+      const saved = localStorage.getItem("fitrace.locale");
+      if (saved === "en-US" || saved === "zh-TW") return saved;
+      const browserLang = navigator.language || navigator.userLanguage;
+      if (browserLang && browserLang.toLowerCase().startsWith("zh")) {
+        return "zh-TW";
+      }
+      return "en-US";
+    }
+
+    let currentLocale = getBrowserLocale();
+
+    const dictionaries = {
+      "en-US": {
+        "status.offline": "Offline",
+        "status.online": "Online",
+        "nav.dashboard": "Dashboard",
+        "nav.game_admin": "Game Admin",
+        "nav.signup": "Signup",
+        "nav.maintenance_unlock": "Maintenance Unlock",
+        "sidebar.admin_console": "Admin Console",
+        "sidebar.overview": "Overview",
+        "sidebar.edge_nodes": "Edge Nodes",
+        "sidebar.stations": "Stations",
+        "sidebar.network": "Network",
+        "sidebar.software": "Software",
+        "sidebar.system_override": "System Override",
+        "sidebar.documentation": "Documentation",
+        "sidebar.support": "Support",
+        "panel.edge_nodes": "Edge Nodes",
+        "panel.station_assignment": "Station Assignment",
+        "panel.wifi_network": "Wi-Fi Network",
+        "panel.software": "Software",
+        "panel.power_controls": "Power Controls",
+        "panel.support": "Support",
+        "button.copy_signup_link": "Copy Signup Link",
+        "button.assign": "Assign",
+        "button.check_now": "Check Now",
+        "button.download": "Download",
+        "button.install_hub": "Install Hub",
+        "button.apply_hub": "Apply Hub",
+        "button.restart_hub_service": "Restart Hub Service",
+        "button.reboot_hub": "Reboot Hub",
+        "button.shutdown_hub": "Shutdown Hub",
+        "button.shutdown_system": "Shutdown System",
+        "button.choose_wifi_network": "Choose Wi-Fi network",
+        "button.copy_system_report": "Copy System Report",
+        "button.refresh": "Refresh",
+        "button.save": "Save",
+        "button.cancel": "Cancel",
+        "label.station": "Station",
+        "label.telemetry_stream": "Telemetry Stream",
+        "label.access_code": "Access Code",
+        "text.idle_only": "Allowed only while race is IDLE.",
+        "wifi.networks_title": "Wi-Fi networks",
+        "wifi.scanning": "Scanning (about 10 seconds)...",
+        "wifi.no_networks": "No networks found.",
+        "wifi.password": "Password",
+        "wifi.back": "Back",
+        "wifi.connect": "Connect",
+        "wifi.rescan": "Rescan",
+        "wifi.connected": "Connected",
+        "support.system_report": "system report",
+        "support.intro": "When reporting a problem, copy the snapshot below and send it to the FitRace team together with what you were doing.",
+        "login.title": "Maintenance Unlock",
+        "login.description": "Enter the maintenance access code for protected system actions. Local test systems can leave this blank until protection is enabled.",
+        "table.equipment": "Equipment",
+        "table.channel": "Channel",
+        "table.ble_target": "BLE Target",
+        "table.link": "Link",
+        "table.last_data": "Last Data",
+        "table.station": "Station",
+        "table.status": "Status",
+        "table.stream": "Stream",
+        "table.action": "Action",
+        "text.online": "online",
+        "text.assigned": "Assigned",
+        "text.empty": "Empty",
+        "text.stream_available": "Stream available",
+        "text.connected": "connected",
+        "text.idle": "idle",
+        "text.no_data": "no data",
+        "text.no_edge_heartbeat": "No Edge Node heartbeat received.",
+        "text.no_station_or_stream": "No station or active telemetry stream is available.",
+        "text.unassign_title": "Unassign station",
+        "text.open_device_page": "Open Device Page"
+      }
+    };
+
+    dictionaries["zh-TW"] = {
+      ...dictionaries["en-US"],
+      "status.offline": "離線",
+      "status.online": "上線",
+      "nav.dashboard": "儀表板",
+      "nav.game_admin": "比賽管理",
+      "nav.signup": "報名",
+      "nav.maintenance_unlock": "維護解鎖",
+      "sidebar.admin_console": "管理控制台",
+      "sidebar.overview": "概觀",
+      "sidebar.edge_nodes": "Edge 節點",
+      "sidebar.stations": "站位",
+      "sidebar.network": "網路",
+      "sidebar.software": "軟體",
+      "sidebar.system_override": "系統覆蓋",
+      "sidebar.documentation": "文件",
+      "sidebar.support": "支援",
+      "panel.edge_nodes": "Edge 節點",
+      "panel.station_assignment": "站位指派",
+      "panel.wifi_network": "Wi-Fi 網路",
+      "panel.software": "軟體",
+      "panel.power_controls": "電源控制",
+      "panel.support": "支援",
+      "button.copy_signup_link": "複製報名連結",
+      "button.assign": "指派",
+      "button.check_now": "立即檢查",
+      "button.download": "下載",
+      "button.install_hub": "安裝 Hub",
+      "button.apply_hub": "套用 Hub",
+      "button.restart_hub_service": "重啟 Hub 服務",
+      "button.reboot_hub": "重開機 Hub",
+      "button.shutdown_hub": "關閉 Hub",
+      "button.shutdown_system": "關閉系統",
+      "button.choose_wifi_network": "選擇 Wi-Fi 網路",
+      "button.copy_system_report": "複製系統報告",
+      "button.refresh": "重新整理",
+      "button.save": "儲存",
+      "button.cancel": "取消",
+      "label.station": "站位",
+      "label.telemetry_stream": "遙測資料流",
+      "label.access_code": "存取碼",
+      "text.idle_only": "只允許在比賽 IDLE 時執行。",
+      "wifi.networks_title": "Wi-Fi 網路",
+      "wifi.scanning": "掃描中(約 10 秒)...",
+      "wifi.no_networks": "找不到網路。",
+      "wifi.password": "密碼",
+      "wifi.back": "上一步",
+      "wifi.connect": "連線",
+      "wifi.rescan": "重新掃描",
+      "wifi.connected": "已連線",
+      "support.system_report": "系統報告",
+      "support.intro": "回報問題時,請複製下方快照並連同操作情境一起寄給 FitRace 團隊。",
+      "login.title": "維護解鎖",
+      "login.description": "輸入受保護系統操作的維護存取碼。本機測試系統可以先留空,待啟用保護後再更新。",
+      "table.equipment": "設備",
+      "table.channel": "通道",
+      "table.ble_target": "BLE 目標",
+      "table.link": "連結",
+      "table.last_data": "最後資料",
+      "table.station": "站位",
+      "table.status": "狀態",
+      "table.stream": "資料流",
+      "table.action": "操作",
+      "text.online": "上線",
+      "text.assigned": "已指派",
+      "text.empty": "空位",
+      "text.stream_available": "可用資料流",
+      "text.connected": "已連線",
+      "text.idle": "閒置",
+      "text.no_data": "無資料",
+      "text.no_edge_heartbeat": "未收到 Edge Node 心跳。",
+      "text.no_station_or_stream": "沒有站位或活躍的遙測資料流。",
+      "text.unassign_title": "解除站位指派",
+      "text.open_device_page": "開啟裝置頁面"
+    };
+
+    function t(key, params = {}) {
+      let value = (dictionaries[currentLocale] || dictionaries["en-US"])[key] || dictionaries["en-US"][key] || key;
+      Object.entries(params).forEach(([name, replacement]) => {
+        value = value.replaceAll(`{${name}}`, String(replacement));
+      });
+      return value;
+    }
+
+    function applyTranslations() {
+      document.documentElement.lang = currentLocale;
+      $("lang-en").classList.toggle("active", currentLocale === "en-US");
+      $("lang-zh").classList.toggle("active", currentLocale === "zh-TW");
+      document.querySelectorAll("[data-i18n]").forEach((element) => {
+        const key = element.dataset.i18n;
+        if (element.tagName === "BUTTON" && element.querySelector("span")) {
+          const span = element.querySelector("span");
+          span.textContent = t(key);
+        } else {
+          element.textContent = t(key);
+        }
+      });
+      $("ws-label").textContent = $("ws-dot").classList.contains("online") ? t("status.online") : t("status.offline");
+      renderEdges();
+      renderStations();
+      renderUpdate();
+      renderWifiStatus(state.wifi || {connected:false});
+    }
+
+    function setLanguage(lang) {
+      currentLocale = lang;
+      localStorage.setItem("fitrace.locale", lang);
+      applyTranslations();
     }
 
     function adminHeaders(extra = {}) {
@@ -1320,12 +1541,12 @@
     function renderEdges() {
       const nodes = state.nodes || [];
       const online = nodes.filter((node) => node.status === "online").length;
-      $("edge-summary").textContent = `${online} online`;
-      $("strip-edges").textContent = `${online}/${nodes.length} online`;
+      $("edge-summary").textContent = `${online} ${t("text.online")}`;
+      $("strip-edges").textContent = `${online}/${nodes.length} ${t("text.online")}`;
 
       const list = $("edge-list");
       if (!nodes.length) {
-        list.innerHTML = `<div class="empty">No Edge Node heartbeat received.</div>`;
+        list.innerHTML = `<div class="empty">${escapeHtml(t("text.no_edge_heartbeat"))}</div>`;
         return;
       }
 
@@ -1337,10 +1558,10 @@
           const last = stream.last_telemetry_epoch_ms;
           const fresh = last && (Date.now() - last) < 15000;
           const link = fresh
-            ? '<span class="link-badge ok"><span class="dot online"></span>connected</span>'
+            ? `<span class="link-badge ok"><span class="dot online"></span>${escapeHtml(t("text.connected"))}</span>`
             : last
-              ? '<span class="link-badge idle"><span class="dot"></span>idle</span>'
-              : '<span class="link-badge none"><span class="dot"></span>no data</span>';
+              ? `<span class="link-badge idle"><span class="dot"></span>${escapeHtml(t("text.idle"))}</span>`
+              : `<span class="link-badge none"><span class="dot"></span>${escapeHtml(t("text.no_data"))}</span>`;
           return `
             <tr>
               <td><strong>${escapeHtml(stream.equipment_id || stream.node_id || "stream")}</strong></td>
@@ -1353,7 +1574,7 @@
         }).join("");
         const streamTable = streams.length
           ? `<table class="station-table equip-table">
-              <thead><tr><th>Equipment</th><th>Channel</th><th>BLE Target</th><th>Link</th><th>Last Data</th></tr></thead>
+              <thead><tr><th>${t("table.equipment")}</th><th>${t("table.channel")}</th><th>${t("table.ble_target")}</th><th>${t("table.link")}</th><th>${t("table.last_data")}</th></tr></thead>
               <tbody>${streamRows}</tbody>
             </table>`
           : `<div class="empty" style="margin-top:10px;">No equipment bound on this node.</div>`;
@@ -1364,7 +1585,7 @@
                 <div class="row-name"><span class="dot ${node.status === "online" ? "online" : ""}" style="display:inline-block;margin-right:8px;"></span>${escapeHtml(node.edge_node_id || "unknown-edge")}</div>
                 <div class="row-meta">${escapeHtml(endpoint || "--")} · ${escapeHtml(node.software_version || "version --")} · last ${formatAge(node.last_seen_epoch_ms)}</div>
               </div>
-              ${localLink ? `<button type="button" onclick="window.open('${escapeHtml(localLink)}','_blank','noopener')">Open Device Page</button>` : ""}
+              ${localLink ? `<button type="button" onclick="window.open('${escapeHtml(localLink)}','_blank','noopener')" title="${escapeHtml(t("text.open_device_page"))}">${escapeHtml(t("text.open_device_page"))}</button>` : ""}
             </div>
             ${streamTable}
           </div>
@@ -1428,7 +1649,7 @@
 
       const list = $("station-list");
       if (!keys.length && !(state.stations.unassigned_nodes || []).length) {
-        list.innerHTML = `<div class="empty">No station or active telemetry stream is available.</div>`;
+        list.innerHTML = `<div class="empty">${escapeHtml(t("text.no_station_or_stream"))}</div>`;
         return;
       }
 
@@ -1441,11 +1662,11 @@
         return `
           <tr>
             <td class="mono">${escapeHtml(String(key).padStart(2, "0"))}</td>
-            <td><span class="dot ${bound ? "online" : ""}"></span>${bound ? "Assigned" : "Empty"}${who}</td>
+            <td><span class="dot ${bound ? "online" : ""}"></span>${bound ? escapeHtml(t("text.assigned")) : escapeHtml(t("text.empty"))}${who}</td>
             <td class="mono">${escapeHtml(station.node_id || "--")}${station.equipment_type ? ` (${escapeHtml(station.equipment_type)})` : ""}</td>
             <td>
               <button type="button" class="icon-btn" title="Edit in form above" onclick="selectStation(${Number(key)}, '${escapeHtml(station.node_id || "")}')">✎</button>
-              <button type="button" class="icon-btn" title="Unassign station" onclick="unassignStation(${Number(key)})">✕</button>
+              <button type="button" class="icon-btn" title="${escapeHtml(t("text.unassign_title"))}" onclick="unassignStation(${Number(key)})">✕</button>
             </td>
           </tr>
         `;
@@ -1454,7 +1675,7 @@
       const unassignedRows = (state.stations.unassigned_nodes || []).map((nodeId) => `
         <tr>
           <td class="mono">--</td>
-          <td><span class="dot"></span>Stream available</td>
+          <td><span class="dot"></span>${escapeHtml(t("text.stream_available"))}</td>
           <td class="mono">${escapeHtml(nodeId)}</td>
           <td><button type="button" class="icon-btn" title="Use in form above" onclick="selectNode('${escapeHtml(nodeId)}')">➜</button></td>
         </tr>
@@ -1463,7 +1684,7 @@
       list.innerHTML = `
         <table class="station-table">
           <thead>
-            <tr><th>Station</th><th>Status</th><th>Stream</th><th>Action</th></tr>
+            <tr><th>${t("table.station")}</th><th>${t("table.status")}</th><th>${t("table.stream")}</th><th>${t("table.action")}</th></tr>
           </thead>
           <tbody>${assignedRows}${unassignedRows}</tbody>
         </table>
@@ -1624,8 +1845,8 @@
 
     async function openWifiPicker() {
       const picker = $("wifi-picker");
-      $("wifi-picker-title").textContent = "Wi-Fi networks";
-      $("wifi-picker-body").innerHTML = '<div class="wizard-step-hint">Scanning (about 10 seconds)...</div>';
+      $("wifi-picker-title").textContent = t("wifi.networks_title");
+      $("wifi-picker-body").innerHTML = `<div class="wizard-step-hint">${escapeHtml(t("wifi.scanning"))}</div>`;
       picker.hidden = false;
       picker.scrollIntoView({ behavior: "smooth", block: "nearest" });
       try {
@@ -1672,7 +1893,7 @@
     function renderWifiList(networks) {
       state.wifiNetworks = networks;
       if (!networks.length) {
-        $("wifi-picker-body").innerHTML = '<div class="wizard-step-hint">No networks found.</div>';
+        $("wifi-picker-body").innerHTML = `<div class="wizard-step-hint">${escapeHtml(t("wifi.no_networks"))}</div>`;
         return;
       }
       $("wifi-picker-body").innerHTML = `
@@ -1685,13 +1906,13 @@
                 <div class="meta">${net.signal}%${net.secured ? " · 🔒" : ""}${net.saved ? " · saved" : ""}</div>
               </div>
               <button type="button" data-wifi-index="${index}" ${net.active ? "disabled" : ""}>
-                ${net.active ? "Connected" : "Connect"}
+                ${net.active ? escapeHtml(t("wifi.connected")) : escapeHtml(t("wifi.connect"))}
               </button>
             </div>
           `).join("")}
         </div>
         <div class="wizard-actions">
-          <button type="button" onclick="openWifiPicker()">Rescan</button>
+          <button type="button" onclick="openWifiPicker()" data-i18n="wifi.rescan">${escapeHtml(t("wifi.rescan"))}</button>
         </div>
       `;
       $("wifi-picker-body").querySelectorAll("[data-wifi-index]").forEach((button) => {
@@ -1706,13 +1927,13 @@
         <div class="wizard-step-hint">The hub's IP may change and remote browsers will disconnect.</div>
         ${needsPassword ? `
           <div class="field">
-            <label for="wifi-password">Password</label>
+            <label for="wifi-password" data-i18n="wifi.password">${escapeHtml(t("wifi.password"))}</label>
             <input type="password" id="wifi-password" autocomplete="off">
           </div>
         ` : ""}
         <div class="wizard-actions">
-          <button type="button" id="wifi-back">Back</button>
-          <button type="button" class="primary" id="wifi-connect-confirm">Connect</button>
+          <button type="button" id="wifi-back" data-i18n="wifi.back">${escapeHtml(t("wifi.back"))}</button>
+          <button type="button" class="primary" id="wifi-connect-confirm" data-i18n="wifi.connect">${escapeHtml(t("wifi.connect"))}</button>
         </div>
         <div class="wizard-step-hint" id="wifi-connect-result"></div>
       `;
@@ -1851,6 +2072,7 @@
 
     connectWebSocket();
     updateSignupLink();
+    applyTranslations();
     refreshAll();
     if (!state.adminToken && !localStorage.getItem("fitrace.unlockPromptShown")) {
       window.setTimeout(() => {
