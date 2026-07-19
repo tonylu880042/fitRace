@@ -1156,3 +1156,31 @@ def test_results_token_endpoint_404_for_unknown_token(monkeypatch, tmp_path):
     response = client.get("/api/results/token/" + "0" * 12)
 
     assert response.status_code == 404
+
+
+def test_result_page_returns_200_with_result_card():
+    response = client.get("/static/result.html")
+    assert response.status_code == 200
+    assert "id=\"result-card\"" in response.text
+    assert 'data-lang="en"' in response.text
+    assert "setLang" in response.text
+    assert "/api/results/token/" in response.text
+    assert "escapeHtml" in response.text
+
+
+def test_results_wall_page_returns_200_with_qrcode_reference():
+    response = client.get("/static/results.html")
+    assert response.status_code == 200
+    assert "/static/vendor/qrcode.min.js" in response.text
+    assert "new QRCode" in response.text
+    assert "/api/results/races" in response.text
+    assert "id=\"results-container\"" in response.text
+    assert 'data-lang="en"' in response.text
+    assert "setLang" in response.text
+
+
+def test_qrcode_library_returns_200():
+    response = client.get("/static/vendor/qrcode.min.js")
+    assert response.status_code == 200
+    assert "QRCode" in response.text
+    assert len(response.content) > 10000

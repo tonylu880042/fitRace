@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en-US" data-lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FitRace Result</title>
+  <meta name="description" content="FitRace Athlete Result">
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;700&family=Outfit:wght@400;600;800&family=Noto+Sans+TC:wght@500;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0a0a0a;
+      --surface: #141414;
+      --surface-2: #0d0e0f;
+      --border: #262626;
+      --border-strong: #3a3a3a;
+      --text: #e3e2e2;
+      --muted: #a3a3a3;
+      --accent: #e2ff3b;
+      --ok: #34d399;
+      --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Outfit", "Noto Sans TC", sans-serif;
+      padding: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    html[data-lang="en"] .lang-zh { display: none; }
+    html[data-lang="zh"] .lang-en { display: none; }
+
+    .container {
+      width: 100%;
+      max-width: 420px;
+    }
+
+    .card {
+      border: 1px solid var(--border);
+      background: var(--surface);
+      padding: 32px 24px;
+      text-align: center;
+    }
+
+    .lang-toggle {
+      display: flex;
+      gap: 6px;
+      justify-content: center;
+      margin-bottom: 24px;
+    }
+
+    .lang-toggle button {
+      min-height: 34px;
+      min-width: 50px;
+      border: 1px solid var(--border-strong);
+      background: var(--surface-2);
+      color: var(--text);
+      cursor: pointer;
+      font-family: "Oswald", sans-serif;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 0 12px;
+      font-size: 12px;
+    }
+
+    .lang-toggle button:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .lang-toggle button.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #0a0a0a;
+    }
+
+    .avatar {
+      width: 96px;
+      height: 96px;
+      border-radius: 50%;
+      margin: 0 auto 20px;
+      border: 2px solid var(--accent);
+      object-fit: cover;
+      background: var(--surface-2);
+    }
+
+    .avatar.empty {
+      display: none;
+    }
+
+    .rank {
+      font-family: "Oswald", sans-serif;
+      font-size: 48px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      color: var(--accent);
+      margin: 0 0 12px;
+      line-height: 1;
+    }
+
+    .athlete-name {
+      font-family: "Oswald", sans-serif;
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      margin: 0 0 8px;
+      line-height: 1.2;
+    }
+
+    .athlete-info {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 24px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .race-info {
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 0;
+      margin-bottom: 24px;
+    }
+
+    .race-type {
+      font-family: "Oswald", sans-serif;
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 8px;
+    }
+
+    .race-date {
+      font-size: 13px;
+      color: var(--muted);
+      font-family: var(--mono);
+    }
+
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .metric {
+      text-align: center;
+    }
+
+    .metric-label {
+      font-size: 11px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 8px;
+      font-weight: 600;
+    }
+
+    .metric-value {
+      font-family: var(--mono);
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.2;
+    }
+
+    .metric-unit {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    .error-state,
+    .loading-state {
+      text-align: center;
+      padding: 40px 20px;
+    }
+
+    .error-message {
+      font-size: 16px;
+      color: var(--text);
+      margin-bottom: 12px;
+    }
+
+    .error-hint {
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .back-button {
+      margin-top: 20px;
+      display: inline-block;
+      padding: 10px 20px;
+      border: 1px solid var(--border-strong);
+      background: var(--surface-2);
+      color: var(--text);
+      text-decoration: none;
+      font-family: "Oswald", sans-serif;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      cursor: pointer;
+    }
+
+    .back-button:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    @media (max-width: 480px) {
+      .container {
+        max-width: 100%;
+      }
+
+      .card {
+        padding: 24px 16px;
+      }
+
+      .metrics-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .rank {
+        font-size: 36px;
+      }
+
+      .athlete-name {
+        font-size: 22px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="lang-toggle">
+      <button type="button" id="lang-en" onclick="setLang('en')">EN</button>
+      <button type="button" id="lang-zh" onclick="setLang('zh')">中文</button>
+    </div>
+
+    <div class="card" id="result-card" style="display: none;">
+      <img id="athlete-avatar" class="avatar" alt="">
+
+      <div id="rank" class="rank"></div>
+      <h1 class="athlete-name" id="athlete-name"></h1>
+
+      <div class="athlete-info">
+        <div id="athlete-team"></div>
+        <div id="athlete-station"></div>
+      </div>
+
+      <div class="race-info">
+        <div class="race-type" id="race-type"></div>
+        <div class="race-date" id="race-date"></div>
+      </div>
+
+      <div class="metrics-grid" id="metrics-grid"></div>
+    </div>
+
+    <div class="error-state" id="error-state" style="display: none;">
+      <div class="error-message">
+        <span class="lang-en">Result not found</span>
+        <span class="lang-zh">找不到成績</span>
+      </div>
+      <div class="error-hint">
+        <span class="lang-en">The token may have expired or is invalid.</span>
+        <span class="lang-zh">該成績碼可能已過期或無效。</span>
+      </div>
+      <button class="back-button" onclick="window.location.href='/'">
+        <span class="lang-en">Back to Dashboard</span>
+        <span class="lang-zh">回儀表板</span>
+      </button>
+    </div>
+
+    <div class="loading-state" id="loading-state">
+      <div class="error-hint">
+        <span class="lang-en">Loading...</span>
+        <span class="lang-zh">載入中...</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const raceTypeLabels = {
+      en: {
+        distance: "Distance Race",
+        time: "Time Race",
+        calories: "Calorie Race",
+        max_power: "Max Power",
+        watts: "Power Race"
+      },
+      zh: {
+        distance: "距離賽",
+        time: "限時賽",
+        calories: "卡路里賽",
+        max_power: "最大功率賽",
+        watts: "功率賽"
+      }
+    };
+
+    function setLang(lang) {
+      document.documentElement.dataset.lang = lang;
+      document.documentElement.lang = lang === "zh" ? "zh-TW" : "en-US";
+      localStorage.setItem("fitrace.locale", lang === "zh" ? "zh-TW" : "en-US");
+      document.getElementById("lang-en").classList.toggle("active", lang === "en");
+      document.getElementById("lang-zh").classList.toggle("active", lang === "zh");
+      renderResult();
+    }
+
+    function escapeHtml(str) {
+      const map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+      };
+      return String(str || '').replace(/[&<>"']/g, m => map[m]);
+    }
+
+    function formatTime(ms) {
+      if (!Number.isFinite(ms) || ms < 0) return "--";
+      const totalSeconds = Math.floor(ms / 1000);
+      const minutes = Math.floor(totalSeconds / 60);
+      const seconds = totalSeconds % 60;
+      return `${minutes}:${String(seconds).padStart(2, '0')}`;
+    }
+
+    function formatNumber(value) {
+      if (!Number.isFinite(value)) return "--";
+      return Math.round(value).toLocaleString();
+    }
+
+    function getQueryParam(name) {
+      const params = new URLSearchParams(window.location.search);
+      return params.get(name);
+    }
+
+    function getCurrentLang() {
+      const saved = localStorage.getItem("fitrace.locale");
+      if (saved === "en-US" || saved === "zh-TW") {
+        return saved;
+      }
+      const browserLang = navigator.language || navigator.userLanguage;
+      if (browserLang && browserLang.toLowerCase().startsWith("zh")) {
+        return "zh-TW";
+      }
+      return "en-US";
+    }
+
+    function getRaceTypeLabel(raceType) {
+      const lang = document.documentElement.dataset.lang || "en";
+      const type = String(raceType || "").toLowerCase();
+      return (raceTypeLabels[lang] && raceTypeLabels[lang][type]) || raceType || "--";
+    }
+
+    function formatDate(epochMs) {
+      if (!Number.isFinite(epochMs) || epochMs <= 0) return "--";
+      try {
+        return new Date(epochMs).toLocaleString(
+          document.documentElement.lang || "en-US"
+        );
+      } catch {
+        return "--";
+      }
+    }
+
+    function createMetric(label, value, unit = "") {
+      const html = document.createElement("div");
+      html.className = "metric";
+      html.innerHTML = `
+        <div class="metric-label">${escapeHtml(label)}</div>
+        <div class="metric-value">${escapeHtml(value)}</div>
+        ${unit ? `<div class="metric-unit">${escapeHtml(unit)}</div>` : ""}
+      `;
+      return html;
+    }
+
+    async function loadResult() {
+      const token = getQueryParam("token");
+      if (!token) {
+        showError();
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/results/token/${encodeURIComponent(token)}`);
+        if (!response.ok) {
+          showError();
+          return;
+        }
+        const data = await response.json();
+        renderResult(data);
+      } catch (error) {
+        console.error("Failed to load result:", error);
+        showError();
+      }
+    }
+
+    function showError() {
+      document.getElementById("loading-state").style.display = "none";
+      document.getElementById("result-card").style.display = "none";
+      document.getElementById("error-state").style.display = "block";
+    }
+
+    function renderResult(data = null) {
+      if (!data) {
+        if (window._resultData) {
+          data = window._resultData;
+        } else {
+          return;
+        }
+      }
+      window._resultData = data;
+
+      const loading = document.getElementById("loading-state");
+      const card = document.getElementById("result-card");
+      const errorState = document.getElementById("error-state");
+
+      if (!data.athlete || !data.race) {
+        showError();
+        return;
+      }
+
+      loading.style.display = "none";
+      errorState.style.display = "none";
+      card.style.display = "block";
+
+      const athlete = data.athlete;
+      const race = data.race;
+      const lang = document.documentElement.dataset.lang || "en";
+
+      if (athlete.avatar_url) {
+        const avatar = document.getElementById("athlete-avatar");
+        avatar.classList.remove("empty");
+        avatar.src = escapeHtml(athlete.avatar_url);
+        avatar.style.display = "block";
+      } else {
+        document.getElementById("athlete-avatar").style.display = "none";
+      }
+
+      const rank = athlete.rank || 0;
+      const totalAthletes = data.total_athletes || 0;
+      document.getElementById("rank").textContent = `${rank}${totalAthletes ? ` / ${totalAthletes}` : ""}`;
+
+      document.getElementById("athlete-name").textContent = escapeHtml(athlete.athlete_name || "");
+
+      const teamName = athlete.team_name ? `<span class="lang-en">Team: ${escapeHtml(athlete.team_name)}</span><span class="lang-zh">隊伍: ${escapeHtml(athlete.team_name)}</span>` : "";
+      const stationNum = athlete.station_number ? `<span class="lang-en">Station ${athlete.station_number}</span><span class="lang-zh">站位 ${athlete.station_number}</span>` : "";
+
+      if (teamName) {
+        document.getElementById("athlete-team").innerHTML = teamName;
+      } else {
+        document.getElementById("athlete-team").textContent = "";
+      }
+
+      document.getElementById("athlete-station").innerHTML = stationNum;
+
+      document.getElementById("race-type").textContent = getRaceTypeLabel(race.race_type);
+      document.getElementById("race-date").textContent = formatDate(race.end_time_epoch_ms);
+
+      const metricsGrid = document.getElementById("metrics-grid");
+      metricsGrid.innerHTML = "";
+
+      const metrics = [];
+      if (lang === "en") {
+        metrics.push(["Distance", formatNumber(athlete.distance_m), "m"]);
+        metrics.push(["Time", formatTime(athlete.finished_time_ms || athlete.elapsed_time_ms), ""]);
+        metrics.push(["Calories", formatNumber(athlete.calories), ""]);
+        metrics.push(["Max Power", formatNumber(athlete.max_power_watts), "W"]);
+      } else {
+        metrics.push(["距離", formatNumber(athlete.distance_m), "m"]);
+        metrics.push(["時間", formatTime(athlete.finished_time_ms || athlete.elapsed_time_ms), ""]);
+        metrics.push(["卡路里", formatNumber(athlete.calories), ""]);
+        metrics.push(["最大功率", formatNumber(athlete.max_power_watts), "W"]);
+      }
+
+      metrics.forEach(([label, value, unit]) => {
+        metricsGrid.appendChild(createMetric(label, value, unit));
+      });
+    }
+
+    // Initialize
+    (function() {
+      const saved = getCurrentLang();
+      setLang(saved.toLowerCase().startsWith("zh") ? "zh" : "en");
+      loadResult();
+    })();
+  </script>
+</body>
+</html>
