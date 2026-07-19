@@ -17,6 +17,7 @@ from hub_server.usecases.race_manager import RaceManager
 from hub_server.usecases.node_registry import NodeRegistry
 from hub_server.usecases.race_event_engine import RaceEventEngine
 from hub_server.usecases.race_result_store import RaceResultStore
+from hub_server.usecases.race_results_query import RaceResultsQuery
 from hub_server.adapters.websocket_manager import WebSocketManager
 from hub_server.infrastructure.locales import DEFAULT_LOCALE, list_locales, load_locale
 from hub_server.usecases.update_checker import UpdateChecker
@@ -96,6 +97,7 @@ race_event_engine = RaceEventEngine()
 race_result_store = RaceResultStore(
     os.getenv("FITRACE_RACE_RESULTS_PATH", "data/race_results.jsonl")
 )
+race_results_query = RaceResultsQuery(race_result_store)
 race_start_countdown_lock = asyncio.Lock()
 update_checker = UpdateChecker(
     manifest_url=os.getenv(
@@ -499,6 +501,27 @@ def get_race_results(limit: int = 50):
         "path": str(race_result_store.path),
         "results": race_result_store.list_results(limit=limit),
     }
+
+
+@app.get("/api/results/races")
+def list_race_results(limit: int = 20):
+    return {"races": race_results_query.list_races(limit=limit)}
+
+
+@app.get("/api/results/races/{result_id}")
+def get_race_result_detail(result_id: str):
+    race = race_results_query.get_race(result_id)
+    if race is None:
+        raise HTTPException(status_code=404, detail="race not found")
+    return race
+
+
+@app.get("/api/results/token/{token}")
+def get_athlete_result_by_token(token: str):
+    result = race_results_query.get_athlete_result(token)
+    if result is None:
+        raise HTTPException(status_code=404, detail="result not found")
+    return result
 
 
 @app.post("/api/leaderboard/display")

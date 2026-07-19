@@ -1041,3 +1041,118 @@ def test_power_shutdown_system_notifies_nodes_and_shuts_down(monkeypatch):
     topic, msg = mock_mqtt.published[0]
     assert topic == "fitrace/nodes/command"
     assert "shutdown" in msg
+
+
+def _seed_results_store(monkeypatch, tmp_path):
+    import hub_server.infrastructure.fastapi.app as hub_app
+    from hub_server.usecases.race_result_store import RaceResultStore
+    from hub_server.usecases.race_results_query import RaceResultsQuery
+
+    store = RaceResultStore(tmp_path / "race_results.jsonl")
+    monkeypatch.setattr(hub_app, "race_result_store", store)
+    monkeypatch.setattr(hub_app, "race_results_query", RaceResultsQuery(store))
+
+    store.save_finished_snapshot(
+        {
+            "state": "STOPPED",
+            "config": {
+                "race_type": "distance",
+                "competition_mode": "individual",
+                "team_scoring_policy": None,
+                "target_value": 100,
+                "duration_sec": 0,
+            },
+            "start_time_epoch_ms": 1000,
+            "end_time_epoch_ms": 2000,
+            "leaderboard": {
+                "node-01": {
+                    "node_id": "node-01",
+                    "athlete_name": "Alice",
+                    "station_number": 1,
+                    "team_name": None,
+                    "avatar_url": None,
+                    "distance_m": 100,
+                    "elapsed_time_ms": 60000,
+                    "instantaneous_speed_kph": 0.0,
+                    "progress_percent": 100.0,
+                    "calories": 50.0,
+                    "power_watts": 0,
+                    "max_power_watts": 0,
+                    "finished_time_ms": 5000,
+                },
+                "node-02": {
+                    "node_id": "node-02",
+                    "athlete_name": "Bob",
+                    "station_number": 2,
+                    "team_name": None,
+                    "avatar_url": None,
+                    "distance_m": 80,
+                    "elapsed_time_ms": 60000,
+                    "instantaneous_speed_kph": 0.0,
+                    "progress_percent": 80.0,
+                    "calories": 40.0,
+                    "power_watts": 0,
+                    "max_power_watts": 0,
+                    "finished_time_ms": None,
+                },
+            },
+            "team_leaderboard": None,
+        }
+    )
+    return store
+
+
+def test_results_races_endpoint_lists_newest_first(monkeypatch, tmp_path):
+    _seed_results_store(monkeypatch, tmp_path)
+
+    response = client.get("/api/results/races")
+
+    assert response.status_code == 200
+    races = response.json()["races"]
+    assert len(races) == 1
+    assert races[0]["result_id"] == "1000-2000-distance"
+    assert races[0]["race_type"] == "distance"
+    assert races[0]["athlete_count"] == 2
+
+
+def test_results_race_detail_endpoint_returns_ranked_results(monkeypatch, tmp_path):
+    _seed_results_store(monkeypatch, tmp_path)
+
+    response = client.get("/api/results/races/1000-2000-distance")
+
+    assert response.status_code == 200
+    race = response.json()
+    assert race["result_id"] == "1000-2000-distance"
+    assert [r["athlete_name"] for r in race["results"]] == ["Alice", "Bob"]
+    assert race["results"][0]["rank"] == 1
+    assert "token" in race["results"][0]
+
+
+def test_results_race_detail_endpoint_404_for_unknown_id(monkeypatch, tmp_path):
+    _seed_results_store(monkeypatch, tmp_path)
+
+    response = client.get("/api/results/races/does-not-exist")
+
+    assert response.status_code == 404
+
+
+def test_results_token_endpoint_returns_athlete_result(monkeypatch, tmp_path):
+    _seed_results_store(monkeypatch, tmp_path)
+    race = client.get("/api/results/races/1000-2000-distance").json()
+    token = race["results"][0]["token"]
+
+    response = client.get(f"/api/results/token/{token}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["athlete"]["athlete_name"] == "Alice"
+    assert payload["race"]["result_id"] == "1000-2000-distance"
+    assert payload["total_athletes"] == 2
+
+
+def test_results_token_endpoint_404_for_unknown_token(monkeypatch, tmp_path):
+    _seed_results_store(monkeypatch, tmp_path)
+
+    response = client.get("/api/results/token/" + "0" * 12)
+
+    assert response.status_code == 404
