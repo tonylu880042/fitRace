@@ -1793,6 +1793,331 @@
       font-weight: 800;
       text-transform: uppercase;
     }
+
+    /* Finish-line flash banner (A2) */
+    .finish-banner {
+      position: fixed;
+      top: 8%;
+      left: 50%;
+      transform: translate(-50%, -60px) scale(0.8);
+      opacity: 0;
+      z-index: 9999;
+      pointer-events: none;
+      padding: 1.1rem 2.2rem;
+      border-radius: 6px;
+      border: 2px solid var(--volt-yellow);
+      background: linear-gradient(160deg, rgba(24, 24, 27, 0.96), rgba(9, 9, 11, 0.98));
+      text-align: center;
+      min-width: min(420px, calc(100vw - 48px));
+    }
+
+    .finish-banner.show {
+      animation: finishBannerPlay 4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }
+
+    .finish-banner-word {
+      font-family: 'Oswald', sans-serif;
+      font-size: 1rem;
+      font-weight: 800;
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      color: var(--volt-yellow);
+    }
+
+    .finish-banner-name {
+      margin-top: 0.3rem;
+      font-family: 'Oswald', sans-serif;
+      font-size: clamp(1.6rem, 3.4vw, 2.4rem);
+      font-weight: 800;
+      text-transform: uppercase;
+      color: var(--text-main);
+      overflow-wrap: anywhere;
+    }
+
+    .finish-banner-rank {
+      margin-top: 0.3rem;
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    @keyframes finishBannerPlay {
+      0% { opacity: 0; transform: translate(-50%, -60px) scale(0.8); box-shadow: 0 0 0 rgba(226, 255, 59, 0); }
+      12% { opacity: 1; transform: translate(-50%, 0) scale(1.04); box-shadow: 0 0 40px rgba(226, 255, 59, 0.35); }
+      20% { transform: translate(-50%, 0) scale(1); }
+      82% { opacity: 1; transform: translate(-50%, 0) scale(1); box-shadow: 0 0 26px rgba(226, 255, 59, 0.22); }
+      100% { opacity: 0; transform: translate(-50%, -24px) scale(0.92); box-shadow: 0 0 0 rgba(226, 255, 59, 0); }
+    }
+
+    /* Podium reveal overlay (A2) */
+    .podium-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 9996;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: clamp(1.5rem, 3vw, 2.5rem);
+      background: radial-gradient(circle at 50% 20%, rgba(226, 255, 59, 0.08), rgba(9, 9, 11, 0.94) 60%), rgba(9, 9, 11, 0.94);
+      cursor: pointer;
+      padding: 2rem;
+    }
+
+    .podium-overlay.show {
+      display: flex;
+    }
+
+    .podium-overlay-title {
+      font-family: 'Oswald', sans-serif;
+      font-size: clamp(1.6rem, 3vw, 2.4rem);
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--volt-yellow);
+      text-shadow: 0 0 30px rgba(226, 255, 59, 0.35);
+    }
+
+    .podium-overlay-stage {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: clamp(1rem, 2.5vw, 2rem);
+      align-items: end;
+      width: min(1100px, 100%);
+    }
+
+    .podium-overlay-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 0.6rem;
+      padding: 1.5rem 1rem;
+      border-radius: 8px;
+      border: 2px solid var(--steel-border);
+      background: rgba(24, 24, 27, 0.85);
+      opacity: 0;
+      transform: translateY(40px) scale(0.9);
+    }
+
+    .podium-overlay-card.place-3 { order: 3; animation: podiumCardIn 0.6s ease-out 0.1s forwards; }
+    .podium-overlay-card.place-2 { order: 1; animation: podiumCardIn 0.6s ease-out 0.9s forwards; }
+    .podium-overlay-card.place-1 { order: 2; animation: podiumCardIn 0.7s cubic-bezier(0.2, 1.4, 0.4, 1) 1.7s forwards; }
+
+    .podium-overlay-card.place-1 {
+      border-color: var(--volt-yellow);
+      box-shadow: 0 0 46px rgba(226, 255, 59, 0.28);
+      padding-top: 2.2rem;
+      transform-origin: bottom center;
+    }
+    .podium-overlay-card.place-2 { border-color: rgba(212, 212, 216, 0.65); }
+    .podium-overlay-card.place-3 { border-color: rgba(245, 158, 11, 0.6); }
+
+    @keyframes podiumCardIn {
+      0% { opacity: 0; transform: translateY(50px) scale(0.85); }
+      70% { opacity: 1; transform: translateY(-6px) scale(1.03); }
+      100% { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    .podium-overlay-avatar {
+      width: clamp(64px, 8vw, 96px);
+      height: clamp(64px, 8vw, 96px);
+      border-radius: 50%;
+      object-fit: cover;
+      border: 3px solid var(--steel-border);
+      font-family: 'Oswald', sans-serif;
+      font-weight: 800;
+      font-size: 1.4rem;
+    }
+    .podium-overlay-card.place-1 .podium-overlay-avatar {
+      border-color: var(--volt-yellow);
+      width: clamp(84px, 10vw, 120px);
+      height: clamp(84px, 10vw, 120px);
+    }
+
+    .podium-overlay-rank {
+      font-family: 'Oswald', sans-serif;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+    .podium-overlay-card.place-1 .podium-overlay-rank { color: var(--volt-yellow); font-size: 1rem; }
+
+    .podium-overlay-name {
+      font-family: 'Oswald', sans-serif;
+      font-weight: 800;
+      text-transform: uppercase;
+      font-size: clamp(1.1rem, 2vw, 1.5rem);
+      overflow-wrap: anywhere;
+    }
+    .podium-overlay-card.place-1 .podium-overlay-name { font-size: clamp(1.5rem, 3vw, 2.1rem); }
+
+    .podium-overlay-team {
+      margin-top: -0.3rem;
+      color: var(--text-muted);
+      font-size: 0.8rem;
+    }
+
+    .podium-overlay-score {
+      font-family: 'Oswald', sans-serif;
+      font-weight: 800;
+      color: var(--volt-yellow);
+      font-size: clamp(1rem, 1.8vw, 1.4rem);
+    }
+
+    .podium-overlay-hint {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    /* Idle record wall (B2) */
+    .record-wall {
+      display: none;
+      min-height: clamp(230px, 34vh, 390px);
+      border-radius: 4px;
+      padding: clamp(1.25rem, 3vw, 2.5rem);
+      background:
+        linear-gradient(90deg, rgba(226, 255, 59, 0.08), rgba(0, 0, 0, 0.06) 44%, rgba(0, 0, 0, 0.38)),
+        rgba(0, 0, 0, 0.18);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .record-wall.active { display: block; }
+
+    .record-wall-slide {
+      animation: recordWallFadeIn 0.5s ease;
+      padding-bottom: 1.5rem;
+    }
+
+    @keyframes recordWallFadeIn {
+      0% { opacity: 0; transform: translateX(16px); }
+      100% { opacity: 1; transform: translateX(0); }
+    }
+
+    .record-wall-kicker {
+      color: var(--volt-yellow);
+      font-family: 'Oswald', sans-serif;
+      font-size: clamp(1rem, 1.6vw, 1.3rem);
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin-bottom: 0.25rem;
+    }
+
+    .record-wall-title {
+      font-family: 'Oswald', sans-serif;
+      font-size: clamp(1.6rem, 3.2vw, 2.6rem);
+      font-weight: 800;
+      text-transform: uppercase;
+      margin-bottom: 1.1rem;
+    }
+
+    .record-wall-list {
+      display: grid;
+      gap: 0.75rem;
+    }
+
+    .record-wall-row {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      align-items: center;
+      gap: 1rem;
+      padding: 0.7rem 1rem;
+      border: 1px solid var(--steel-border);
+      border-radius: 4px;
+      background: rgba(0, 0, 0, 0.3);
+    }
+
+    .record-wall-row.rank-1 { border-color: var(--volt-yellow); box-shadow: 0 0 20px rgba(226, 255, 59, 0.12); }
+
+    .record-wall-rank {
+      font-family: 'Oswald', sans-serif;
+      font-size: clamp(1.6rem, 3vw, 2.4rem);
+      font-weight: 800;
+      color: var(--text-muted);
+      min-width: 2.4ch;
+    }
+    .record-wall-row.rank-1 .record-wall-rank { color: var(--volt-yellow); }
+
+    .record-wall-name {
+      font-weight: 800;
+      font-size: 1.1rem;
+      text-transform: uppercase;
+    }
+
+    .record-wall-team {
+      color: var(--text-muted);
+      font-size: 0.8rem;
+    }
+
+    .record-wall-value {
+      font-family: 'Oswald', sans-serif;
+      font-size: clamp(1.2rem, 2.2vw, 1.7rem);
+      font-weight: 800;
+      color: var(--volt-yellow);
+      font-variant-numeric: tabular-nums;
+      text-align: right;
+    }
+
+    .record-wall-dots {
+      position: absolute;
+      bottom: 0.9rem;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 0.4rem;
+    }
+
+    .record-wall-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--steel-border);
+    }
+    .record-wall-dot.active { background: var(--volt-yellow); }
+
+    .record-wall-brand {
+      height: 100%;
+      min-height: clamp(200px, 30vh, 340px);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      gap: 0.75rem;
+    }
+
+    .record-wall-brand-title {
+      font-family: 'Oswald', sans-serif;
+      font-size: clamp(2.2rem, 5vw, 4rem);
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+    .record-wall-brand-title span { color: var(--volt-yellow); }
+
+    .record-wall-brand-tagline {
+      color: var(--text-muted);
+      font-size: clamp(1rem, 1.6vw, 1.3rem);
+      font-weight: 700;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .finish-banner.show,
+      .podium-overlay-card,
+      .record-wall-slide {
+        animation: none !important;
+        transition: none !important;
+        opacity: 1 !important;
+        transform: none !important;
+      }
+    }
   </style>
 </head>
 <body>
@@ -1858,6 +2183,7 @@
             </div>
           </div>
         </div>
+        <div id="record-wall" class="record-wall" aria-live="polite"></div>
       </div>
     </main>
 
@@ -1941,6 +2267,17 @@
     let wsConnected = false;
     let fallbackRefreshTimer = null;
     let currentSignupQrUrl = "";
+    let hasReceivedFirstState = false;
+    let previousFinishedByNode = new Map();
+    let finishBannerQueue = [];
+    let finishBannerActive = false;
+    let finishBannerTimer = null;
+    let podiumOverlayTimer = null;
+    let recordWallActive = false;
+    let recordWallSlides = [];
+    let recordWallIndex = 0;
+    let recordWallRotateTimer = null;
+    let recordWallRefreshTimer = null;
     function getBrowserLocale() {
       const saved = localStorage.getItem("fitrace.locale");
       if (saved) return saved;
@@ -2712,6 +3049,306 @@
       window.setTimeout(() => overlay.remove(), 3800);
     }
 
+    // -- Finish-line flash banner (A2) --------------------------------
+
+    function queueFinishBanner(athleteName, rank) {
+      finishBannerQueue.push({ athleteName, rank });
+      playNextFinishBanner();
+    }
+
+    function playNextFinishBanner() {
+      if (finishBannerActive) return;
+      const next = finishBannerQueue.shift();
+      if (!next) return;
+      finishBannerActive = true;
+
+      let banner = document.getElementById("finish-banner");
+      if (!banner) {
+        banner = document.createElement("div");
+        banner.id = "finish-banner";
+        document.body.appendChild(banner);
+      }
+      // Reset the class so the CSS keyframe animation restarts even if the
+      // previous banner is still mid-animation when this one is queued.
+      banner.className = "finish-banner";
+      void banner.offsetWidth;
+
+      const rankText = next.rank ? t("finish.rank_label", { rank: next.rank }) : "";
+      banner.innerHTML = `
+        <div class="finish-banner-word">${escapeHtml(t("finish.exclaim"))}</div>
+        <div class="finish-banner-name">${escapeHtml(next.athleteName)}</div>
+        <div class="finish-banner-rank">${escapeHtml(rankText)}</div>
+      `;
+      requestAnimationFrame(() => banner.classList.add("show"));
+
+      if (finishBannerTimer) window.clearTimeout(finishBannerTimer);
+      finishBannerTimer = window.setTimeout(() => {
+        banner.classList.remove("show");
+        finishBannerActive = false;
+        finishBannerTimer = null;
+        playNextFinishBanner();
+      }, 4000);
+    }
+
+    function detectAthleteFinishes(progressData) {
+      const rows = progressData || {};
+      if (currentState !== "RUNNING") {
+        // Keep the seen-set in sync so nothing spurious fires once RUNNING
+        // resumes, but never queue banners outside of a live race.
+        Object.entries(rows).forEach(([nodeId, row]) => {
+          if (row && row.finished_time_ms != null) previousFinishedByNode.set(nodeId, true);
+        });
+        return;
+      }
+
+      const raceType = (currentConfig && currentConfig.race_type) || "distance";
+      const namedRows = Object.values(rows).filter((row) => row && row.athlete_name);
+      const ranked = sortLeaderboardNodes([...namedRows], raceType);
+      const rankByNodeId = new Map(ranked.map((row, index) => [row.node_id, index + 1]));
+
+      Object.entries(rows).forEach(([nodeId, row]) => {
+        if (!row || !row.athlete_name) return;
+        const finishedNow = row.finished_time_ms != null;
+        const finishedBefore = previousFinishedByNode.get(nodeId) === true;
+        if (finishedNow && !finishedBefore) {
+          queueFinishBanner(row.athlete_name, rankByNodeId.get(nodeId) || null);
+        }
+        previousFinishedByNode.set(nodeId, finishedNow);
+      });
+    }
+
+    // -- Podium reveal overlay (A2) -----------------------------------
+
+    function buildPodiumOverlayCard(rank, name, teamName, scoreValue, avatarUrl) {
+      const medal = getMedalMeta(rank);
+      const avatarHtml = avatarUrl
+        ? `<img class="podium-overlay-avatar" src="${escapeHtml(avatarUrl)}" alt="">`
+        : `<div class="podium-overlay-avatar fallback-avatar" style="display:flex;align-items:center;justify-content:center;background:#3f3f46;color:#fff;">${escapeHtml((name || "?").charAt(0).toUpperCase())}</div>`;
+      const teamHtml = teamName ? `<div class="podium-overlay-team">${escapeHtml(teamName)}</div>` : "";
+      return `
+        <div class="podium-overlay-card place-${rank}">
+          ${avatarHtml}
+          <div class="podium-overlay-rank">${medal.label} ${escapeHtml(medal.title)}</div>
+          <div class="podium-overlay-name">${escapeHtml(name || "Athlete")}</div>
+          ${teamHtml}
+          <div class="podium-overlay-score">${escapeHtml(scoreValue)}</div>
+        </div>
+      `;
+    }
+
+    function hidePodiumOverlay() {
+      const overlay = document.getElementById("podium-overlay");
+      if (overlay) overlay.classList.remove("show");
+      if (podiumOverlayTimer) {
+        window.clearTimeout(podiumOverlayTimer);
+        podiumOverlayTimer = null;
+      }
+    }
+
+    function showPodiumOverlay() {
+      const isTeamMode = Boolean(currentConfig && currentConfig.competition_mode === "team");
+      const raceType = (currentConfig && currentConfig.race_type) || "distance";
+      const source = isTeamMode ? teamLeaderboardRows : leaderboardNodes;
+      const topThree = (source || []).slice(0, 3);
+      if (topThree.length === 0) return;
+
+      const cardsHtml = topThree.map((entry, index) => {
+        const rank = index + 1;
+        if (isTeamMode) {
+          const score = formatTeamScore(entry, raceType);
+          return buildPodiumOverlayCard(rank, entry.team_name, null, score.value, null);
+        }
+        const score = formatResultScore(entry, raceType);
+        return buildPodiumOverlayCard(rank, entry.athlete_name, entry.team_name, score.value, entry.avatar_url);
+      });
+      // Visual order matches the classic podium layout (2nd, 1st, 3rd);
+      // the CSS `order` property re-stacks these regardless of DOM order.
+      const orderedCards = topThree.length >= 3 ? [cardsHtml[1], cardsHtml[0], cardsHtml[2]] : cardsHtml;
+
+      let overlay = document.getElementById("podium-overlay");
+      if (!overlay) {
+        overlay = document.createElement("div");
+        overlay.id = "podium-overlay";
+        overlay.className = "podium-overlay";
+        overlay.addEventListener("click", hidePodiumOverlay);
+        document.body.appendChild(overlay);
+      }
+      overlay.innerHTML = `
+        <div class="podium-overlay-title">${escapeHtml(t("podium.final_results"))}</div>
+        <div class="podium-overlay-stage">${orderedCards.join("")}</div>
+        <div class="podium-overlay-hint">${escapeHtml(t("podium.dismiss_hint"))}</div>
+      `;
+      requestAnimationFrame(() => overlay.classList.add("show"));
+
+      if (podiumOverlayTimer) window.clearTimeout(podiumOverlayTimer);
+      podiumOverlayTimer = window.setTimeout(hidePodiumOverlay, 12000);
+    }
+
+    // -- Idle record wall (B2) ----------------------------------------
+
+    function recordWallTypeLabel(raceType) {
+      const key = {
+        distance: "record_wall.type_distance",
+        calories: "record_wall.type_calories",
+        time: "record_wall.type_time",
+        watts: "record_wall.type_watts",
+        max_power: "record_wall.type_max_power",
+      }[raceType];
+      return key ? t(key) : String(raceType || "");
+    }
+
+    function formatRecordEntryValue(raceType, value) {
+      if (raceType === "distance" || raceType === "calories") {
+        return `${(metricNumber(value) / 1000).toFixed(1)}s`;
+      }
+      if (raceType === "time" || raceType === "watts") {
+        return `${metricNumber(value).toFixed(0)}m`;
+      }
+      if (raceType === "max_power") {
+        return `${metricNumber(value).toFixed(0)}W`;
+      }
+      return `${metricNumber(value)}`;
+    }
+
+    function renderRecordWallRows(entries, raceType) {
+      return entries.map((entry, index) => {
+        const rank = index + 1;
+        const teamHtml = entry.team_name ? `<div class="record-wall-team">${escapeHtml(entry.team_name)}</div>` : "";
+        return `
+          <div class="record-wall-row rank-${rank}">
+            <div class="record-wall-rank">#${rank}</div>
+            <div>
+              <div class="record-wall-name">${escapeHtml(entry.athlete_name || "Athlete")}</div>
+              ${teamHtml}
+            </div>
+            <div class="record-wall-value">${formatRecordEntryValue(raceType, entry.value)}</div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function buildRecordWallSlides(records, latestRace) {
+      const slides = [];
+
+      (records || []).forEach((record) => {
+        slides.push(`
+          <div class="record-wall-slide">
+            <div class="record-wall-kicker">${escapeHtml(t("record_wall.title"))}</div>
+            <div class="record-wall-title">${escapeHtml(recordWallTypeLabel(record.race_type))} &middot; ${escapeHtml(record.label)}</div>
+            <div class="record-wall-list">${renderRecordWallRows(record.entries || [], record.race_type)}</div>
+          </div>
+        `);
+      });
+
+      if (latestRace && Array.isArray(latestRace.results) && latestRace.results.length) {
+        const topThree = latestRace.results.slice(0, 3).map((row) => ({
+          athlete_name: row.athlete_name,
+          team_name: row.team_name,
+          value: row.finished_time_ms != null
+            ? row.finished_time_ms
+            : (row.distance_m != null ? row.distance_m : row.max_power_watts),
+        }));
+        slides.push(`
+          <div class="record-wall-slide">
+            <div class="record-wall-kicker">${escapeHtml(t("record_wall.latest_race"))}</div>
+            <div class="record-wall-title">${escapeHtml(recordWallTypeLabel(latestRace.race_type))}</div>
+            <div class="record-wall-list">${renderRecordWallRows(topThree, latestRace.race_type)}</div>
+          </div>
+        `);
+      }
+
+      if (slides.length === 0) {
+        slides.push(`
+          <div class="record-wall-slide">
+            <div class="record-wall-brand">
+              <div class="record-wall-brand-title">FitRace<span>Studio</span></div>
+              <div class="record-wall-brand-tagline">${escapeHtml(t("record_wall.empty_tagline"))}</div>
+            </div>
+          </div>
+        `);
+      }
+
+      return slides;
+    }
+
+    function renderRecordWallSlide() {
+      const wall = document.getElementById("record-wall");
+      if (!wall) return;
+      const dots = recordWallSlides.length > 1
+        ? `<div class="record-wall-dots">${recordWallSlides.map((_, i) => `<span class="record-wall-dot ${i === recordWallIndex ? "active" : ""}"></span>`).join("")}</div>`
+        : "";
+      wall.innerHTML = (recordWallSlides[recordWallIndex] || "") + dots;
+    }
+
+    function advanceRecordWall() {
+      if (!recordWallActive || recordWallSlides.length === 0) return;
+      recordWallIndex = (recordWallIndex + 1) % recordWallSlides.length;
+      renderRecordWallSlide();
+    }
+
+    async function refreshRecordWallData() {
+      if (!recordWallActive) return;
+      try {
+        const [recordsRes, racesRes] = await Promise.all([
+          fetch(`/api/results/records?t=${Date.now()}`),
+          fetch(`/api/results/races?limit=1&t=${Date.now()}`),
+        ]);
+        const recordsData = recordsRes.ok ? await recordsRes.json() : { records: [] };
+        const racesData = racesRes.ok ? await racesRes.json() : { races: [] };
+
+        let latestRace = null;
+        const latestSummary = (racesData.races || [])[0];
+        if (latestSummary) {
+          const detailRes = await fetch(`/api/results/races/${encodeURIComponent(latestSummary.result_id)}?t=${Date.now()}`);
+          if (detailRes.ok) latestRace = await detailRes.json();
+        }
+
+        if (!recordWallActive) return; // race may have left IDLE while awaiting the fetch
+        recordWallSlides = buildRecordWallSlides(recordsData.records || [], latestRace);
+        recordWallIndex = 0;
+        renderRecordWallSlide();
+      } catch (err) {
+        console.error("Failed to load record wall data:", err);
+      }
+    }
+
+    async function enterIdleRecordWall() {
+      const wall = document.getElementById("record-wall");
+      const container = document.getElementById("leaderboard-container");
+      if (!wall) return;
+      const alreadyActive = recordWallActive;
+      recordWallActive = true;
+      wall.classList.add("active");
+      if (container) container.style.display = "none";
+
+      if (!alreadyActive) {
+        await refreshRecordWallData();
+        if (!recordWallRotateTimer) {
+          recordWallRotateTimer = window.setInterval(advanceRecordWall, 10000);
+        }
+        if (!recordWallRefreshTimer) {
+          recordWallRefreshTimer = window.setInterval(refreshRecordWallData, 300000);
+        }
+      }
+    }
+
+    function exitIdleRecordWall() {
+      if (!recordWallActive) return;
+      recordWallActive = false;
+      if (recordWallRotateTimer) {
+        window.clearInterval(recordWallRotateTimer);
+        recordWallRotateTimer = null;
+      }
+      if (recordWallRefreshTimer) {
+        window.clearInterval(recordWallRefreshTimer);
+        recordWallRefreshTimer = null;
+      }
+      const wall = document.getElementById("record-wall");
+      if (wall) wall.classList.remove("active");
+      const container = document.getElementById("leaderboard-container");
+      if (container) container.style.display = "";
+    }
+
     function sortLeaderboardNodes(nodes, raceType) {
       const compareStation = (a, b) => metricNumber(a.station_number, 999) - metricNumber(b.station_number, 999);
 
@@ -3281,6 +3918,7 @@
     }
 
     function renderLeaderboard(progressData, teamData = null) {
+      detectAthleteFinishes(progressData);
       lastLeaderboardData = progressData || {};
       lastTeamLeaderboardData = teamData || null;
 
@@ -3597,6 +4235,8 @@
         console.warn("Skipping updateUIState: invalid state data received", data);
         return;
       }
+      const isFirstStateUpdate = !hasReceivedFirstState;
+      hasReceivedFirstState = true;
       const previousState = currentState;
       currentState = data.state;
       currentConfig = data.config;
@@ -3613,9 +4253,28 @@
       if (previousState !== data.state && data.state !== "RUNNING") {
         resetSmoothMetrics();
       }
+      if (previousState !== "RUNNING" && currentState === "RUNNING") {
+        // Fresh race: forget which nodes had already finished so the finish
+        // banner can fire again for this run.
+        previousFinishedByNode = new Map();
+      }
 
       if (data.leaderboard) {
         renderLeaderboard(data.leaderboard, data.team_leaderboard || null);
+      }
+
+      // A2: full-screen podium reveal, only on a live RUNNING -> STOPPED
+      // transition -- never when the page merely loads into an already-
+      // finished race.
+      if (!isFirstStateUpdate && previousState !== "STOPPED" && currentState === "STOPPED") {
+        showPodiumOverlay();
+      }
+
+      // B2: idle record wall carousel, shown only while IDLE.
+      if (currentState === "IDLE") {
+        enterIdleRecordWall();
+      } else {
+        exitIdleRecordWall();
       }
 
       document.getElementById("current-state-lbl").innerText = currentState;

@@ -80,5 +80,17 @@
   "power.shutdown": "關閉 Hub",
   "power.shutdown_system": "系統關機 (含周邊)",
   "power.status_tip": "電源操作僅在賽事為空閒 (IDLE) 時可用。",
-  "power.status_locked": "賽事狀態為 {state}，電源操作已鎖定。"
+  "power.status_locked": "賽事狀態為 {state}，電源操作已鎖定。",
+  "finish.exclaim": "完賽！",
+  "finish.rank_label": "第 {rank} 名",
+  "podium.final_results": "最終戰績",
+  "podium.dismiss_hint": "點擊繼續",
+  "record_wall.title": "紀錄牆",
+  "record_wall.latest_race": "最近賽事",
+  "record_wall.empty_tagline": "精彩賽事即將登場",
+  "record_wall.type_distance": "距離",
+  "record_wall.type_calories": "卡路里",
+  "record_wall.type_time": "時間",
+  "record_wall.type_watts": "瓦特",
+  "record_wall.type_max_power": "最大瓦特"
 }

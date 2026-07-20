@@ -214,6 +214,171 @@ def test_get_athlete_result_not_found_returns_none(tmp_path):
     assert query.get_athlete_result("0" * 12) is None
 
 
+def _distance_snapshot_variant(
+    target_value, start_ms, end_ms, race_type="distance", rows=None, duration_sec=0
+):
+    return {
+        "state": "STOPPED",
+        "config": {
+            "race_type": race_type,
+            "competition_mode": "individual",
+            "team_scoring_policy": None,
+            "target_value": target_value,
+            "duration_sec": duration_sec,
+        },
+        "start_time_epoch_ms": start_ms,
+        "end_time_epoch_ms": end_ms,
+        "leaderboard": rows or {},
+        "team_leaderboard": None,
+    }
+
+
+def test_get_records_groups_distance_by_target_and_ranks_top_three(tmp_path):
+    store = RaceResultStore(tmp_path / "race_results.jsonl")
+    store.save_finished_snapshot(
+        _distance_snapshot_variant(
+            1000,
+            1000,
+            2000,
+            rows={
+                "node-01": _row("node-01", "Alice", distance_m=1000, finished_time_ms=60000),
+                "node-02": _row("node-02", "Bob", distance_m=1000, finished_time_ms=50000),
+                "node-03": _row("node-03", "Cara", distance_m=1000, finished_time_ms=70000),
+                "node-04": _row("node-04", "Dan", distance_m=1000, finished_time_ms=40000),
+            },
+        )
+    )
+    # A different target_value must land in its own category.
+    store.save_finished_snapshot(
+        _distance_snapshot_variant(
+            500,
+            3000,
+            4000,
+            rows={"node-01": _row("node-01", "Erin", distance_m=500, finished_time_ms=30000)},
+        )
+    )
+    query = RaceResultsQuery(store)
+
+    records = query.get_records()["records"]
+
+    assert len(records) == 2
+    thousand_m = next(r for r in records if r["label"] == "1000 m")
+    assert thousand_m["race_type"] == "distance"
+    # Ascending by finished_time_ms (fastest first), top 3 only -- Cara (slowest) cut.
+    assert [e["athlete_name"] for e in thousand_m["entries"]] == ["Dan", "Bob", "Alice"]
+    assert len(thousand_m["entries"]) == 3
+    assert thousand_m["entries"][0]["value"] == 40000
+    assert thousand_m["entries"][0]["end_time_epoch_ms"] == 2000
+
+    five_hundred_m = next(r for r in records if r["label"] == "500 m")
+    assert [e["athlete_name"] for e in five_hundred_m["entries"]] == ["Erin"]
+
+
+def test_get_records_excludes_non_finishers_from_distance_records(tmp_path):
+    store = RaceResultStore(tmp_path / "race_results.jsonl")
+    store.save_finished_snapshot(
+        _distance_snapshot_variant(
+            1000,
+            1000,
+            2000,
+            rows={
+                "node-01": _row("node-01", "Alice", distance_m=1000, finished_time_ms=60000),
+                "node-02": _row("node-02", "Bob", distance_m=900),  # never finished
+                "node-03": _row("node-03", "", distance_m=1000, finished_time_ms=1000),  # no name
+            },
+        )
+    )
+    query = RaceResultsQuery(store)
+
+    records = query.get_records()["records"]
+
+    assert len(records) == 1
+    assert [e["athlete_name"] for e in records[0]["entries"]] == ["Alice"]
+
+
+def test_get_records_time_boxed_races_ordered_by_distance_desc(tmp_path):
+    store = RaceResultStore(tmp_path / "race_results.jsonl")
+    store.save_finished_snapshot(
+        _distance_snapshot_variant(
+            0,
+            1000,
+            2000,
+            race_type="time",
+            duration_sec=600,
+            rows={
+                "node-01": _row("node-01", "Alice", distance_m=500),
+                "node-02": _row("node-02", "Bob", distance_m=700),
+            },
+        )
+    )
+    query = RaceResultsQuery(store)
+
+    records = query.get_records()["records"]
+
+    assert len(records) == 1
+    assert records[0]["race_type"] == "time"
+    assert records[0]["label"] == "10 min"
+    assert [e["athlete_name"] for e in records[0]["entries"]] == ["Bob", "Alice"]
+
+
+def test_get_records_max_power_ordered_descending(tmp_path):
+    store = RaceResultStore(tmp_path / "race_results.jsonl")
+    snapshot = _distance_snapshot_variant(
+        0,
+        5000,
+        6000,
+        race_type="max_power",
+        duration_sec=60,
+        rows={
+            "node-01": _row("node-01", "Gina", max_power_watts=300),
+            "node-02": _row("node-02", "Hank", max_power_watts=450),
+        },
+    )
+    store.save_finished_snapshot(snapshot)
+    query = RaceResultsQuery(store)
+
+    records = query.get_records()["records"]
+
+    assert len(records) == 1
+    assert records[0]["label"] == "1 min"
+    assert [e["athlete_name"] for e in records[0]["entries"]] == ["Hank", "Gina"]
+
+
+def test_get_records_orders_categories_most_recently_contested_first(tmp_path):
+    store = RaceResultStore(tmp_path / "race_results.jsonl")
+    store.save_finished_snapshot(
+        _distance_snapshot_variant(
+            1000, 1000, 2000,
+            rows={"node-01": _row("node-01", "Alice", distance_m=1000, finished_time_ms=1000)},
+        )
+    )
+    store.save_finished_snapshot(
+        _distance_snapshot_variant(
+            500, 3000, 4000,
+            rows={"node-01": _row("node-01", "Bob", distance_m=500, finished_time_ms=1000)},
+        )
+    )
+    # Re-contest the 1000m category more recently than the 500m one.
+    store.save_finished_snapshot(
+        _distance_snapshot_variant(
+            1000, 5000, 6000,
+            rows={"node-01": _row("node-01", "Cara", distance_m=1000, finished_time_ms=900)},
+        )
+    )
+    query = RaceResultsQuery(store)
+
+    records = query.get_records()["records"]
+
+    assert [r["label"] for r in records] == ["1000 m", "500 m"]
+
+
+def test_get_records_returns_empty_list_with_no_stored_results(tmp_path):
+    store = RaceResultStore(tmp_path / "race_results.jsonl")
+    query = RaceResultsQuery(store)
+
+    assert query.get_records() == {"records": []}
+
+
 def test_malformed_jsonl_line_is_skipped(tmp_path):
     store = _build_store(tmp_path)
     # Append a structurally-valid-JSON but semantically malformed line directly,

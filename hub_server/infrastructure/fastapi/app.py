@@ -508,6 +508,11 @@ def list_race_results(limit: int = 20):
     return {"races": race_results_query.list_races(limit=limit)}
 
 
+@app.get("/api/results/records")
+def get_race_records():
+    return race_results_query.get_records()
+
+
 @app.get("/api/results/races/{result_id}")
 def get_race_result_detail(result_id: str):
     race = race_results_query.get_race(result_id)

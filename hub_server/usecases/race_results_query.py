@@ -26,6 +26,14 @@ def _as_number(value: Any) -> float:
     return value if isinstance(value, (int, float)) else 0
 
 
+def _format_number(value: float) -> str:
+    """Render a numeric target/duration without a noisy trailing '.0'."""
+    number = float(value)
+    if number.is_integer():
+        return str(int(number))
+    return f"{number:g}"
+
+
 class RaceResultsQuery:
     """Read-only query layer over the append-only race results jsonl store."""
 
@@ -47,6 +55,67 @@ class RaceResultsQuery:
                     "team_leaderboard": team_leaderboard,
                 }
         return None
+
+    def get_records(self) -> dict[str, Any]:
+        """Best-of leaderboard per race category, most-recently-contested first.
+
+        A "category" is (race_type, target label) e.g. ("distance", "1000 m")
+        or ("time", "10 min"). Entries are the top 3 rows across all stored
+        races in that category, ranked by the metric that matters for the
+        race type (see `_record_value`/`_top_three`).
+        """
+        categories: dict[tuple[str, str], dict[str, Any]] = {}
+
+        # Newest-first, so the first race we see for a category is also the
+        # most recently contested one -- dict insertion order then gives us
+        # the required "most-recently-contested category first" ordering for
+        # free, with no separate timestamp sort needed.
+        for record in self._load_records():
+            if not isinstance(record, dict):
+                continue
+            snapshot = record.get("snapshot")
+            if not isinstance(snapshot, dict):
+                continue
+            config = snapshot.get("config")
+            config = config if isinstance(config, dict) else {}
+            race_type = config.get("race_type")
+            label = self._category_label(race_type, config)
+            if label is None:
+                continue
+
+            end_time = snapshot.get("end_time_epoch_ms")
+            leaderboard = snapshot.get("leaderboard")
+            rows = self._named_rows(leaderboard if isinstance(leaderboard, dict) else {})
+
+            bucket = categories.setdefault(
+                (race_type, label), {"race_type": race_type, "label": label, "rows": []}
+            )
+            for row in rows:
+                value = self._record_value(race_type, row)
+                if value is None:
+                    continue
+                bucket["rows"].append(
+                    {
+                        "athlete_name": row.get("athlete_name"),
+                        "team_name": row.get("team_name"),
+                        "value": value,
+                        "end_time_epoch_ms": end_time,
+                    }
+                )
+
+        records = []
+        for bucket in categories.values():
+            entries = self._top_three(bucket["rows"], bucket["race_type"])
+            if not entries:
+                continue
+            records.append(
+                {
+                    "race_type": bucket["race_type"],
+                    "label": bucket["label"],
+                    "entries": entries,
+                }
+            )
+        return {"records": records}
 
     def get_athlete_result(self, token: str) -> Optional[dict[str, Any]]:
         for summary, ranked_rows, _ in self._iter_races():
@@ -128,6 +197,48 @@ class RaceResultsQuery:
             tagged["token"] = _make_token(result_id, row.get("node_id"))
             ranked.append(tagged)
         return ranked
+
+    @staticmethod
+    def _category_label(race_type: Any, config: dict[str, Any]) -> Optional[str]:
+        if race_type in _TARGET_RACE_TYPES:
+            target = config.get("target_value")
+            if not isinstance(target, (int, float)) or target <= 0:
+                return None
+            unit = "m" if race_type == "distance" else "cal"
+            return f"{_format_number(target)} {unit}"
+        if race_type in _TIME_BOXED_RACE_TYPES or race_type == "max_power":
+            duration_sec = config.get("duration_sec")
+            if not isinstance(duration_sec, (int, float)) or duration_sec <= 0:
+                return None
+            return f"{_format_number(duration_sec / 60)} min"
+        return None
+
+    @staticmethod
+    def _record_value(race_type: Any, row: dict[str, Any]) -> Optional[float]:
+        if race_type in _TARGET_RACE_TYPES:
+            finished = row.get("finished_time_ms")
+            return _as_number(finished) if finished is not None else None
+        if race_type in _TIME_BOXED_RACE_TYPES:
+            return _as_number(row.get("distance_m"))
+        if race_type == "max_power":
+            return _as_number(row.get("max_power_watts"))
+        return None
+
+    @staticmethod
+    def _top_three(rows: list[dict[str, Any]], race_type: Any) -> list[dict[str, Any]]:
+        # distance/calories records rank the fastest finish (ascending);
+        # everything else ranks the biggest number (descending).
+        ascending = race_type in _TARGET_RACE_TYPES
+        ordered = sorted(rows, key=lambda r: r["value"], reverse=not ascending)
+        return [
+            {
+                "athlete_name": r["athlete_name"],
+                "team_name": r["team_name"],
+                "value": r["value"],
+                "end_time_epoch_ms": r["end_time_epoch_ms"],
+            }
+            for r in ordered[:3]
+        ]
 
     @staticmethod
     def _order_by_race_type(

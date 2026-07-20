@@ -189,6 +189,33 @@ def test_signup_page_has_language_switcher_defaulting_to_english():
     assert "canvas.toDataURL('image/webp', quality)" in response.text
 
 
+def test_index_has_finish_celebration_and_record_wall_markers():
+    response_index = client.get("/static/index.html")
+    assert response_index.status_code == 200
+    # A2: finish-line flash banner queued per athlete finish.
+    assert "finish-banner" in response_index.text
+    assert "queueFinishBanner" in response_index.text
+    assert "detectAthleteFinishes" in response_index.text
+    # A2: full-screen podium reveal on a live RUNNING -> STOPPED transition.
+    assert "podium-overlay" in response_index.text
+    assert "showPodiumOverlay" in response_index.text
+    assert "hasReceivedFirstState" in response_index.text
+    # B2: idle record wall carousel.
+    assert 'id="record-wall"' in response_index.text
+    assert "/api/results/records" in response_index.text
+    assert "enterIdleRecordWall" in response_index.text
+    assert "exitIdleRecordWall" in response_index.text
+    # New UI strings are translated via the i18n helper, not hardcoded.
+    assert 't("finish.exclaim")' in response_index.text
+    assert 't("podium.final_results")' in response_index.text
+    assert 't("record_wall.title")' in response_index.text
+    # No forbidden strings from the removed management controls should sneak back in.
+    assert "enableDashboardSound" not in response_index.text
+    assert 'id="sound-control"' not in response_index.text
+    assert "id=\"leaderboard-display-mode\"" not in response_index.text
+    assert "System Power" not in response_index.text
+
+
 def test_management_controls_are_split_by_admin_role():
     response_index = client.get("/static/index.html")
     assert response_index.status_code == 200
@@ -1156,6 +1183,37 @@ def test_results_token_endpoint_404_for_unknown_token(monkeypatch, tmp_path):
     response = client.get("/api/results/token/" + "0" * 12)
 
     assert response.status_code == 404
+
+
+def test_results_records_endpoint_returns_top_three_for_distance_category(monkeypatch, tmp_path):
+    _seed_results_store(monkeypatch, tmp_path)
+
+    response = client.get("/api/results/records")
+
+    assert response.status_code == 200
+    payload = response.json()
+    records = payload["records"]
+    assert len(records) == 1
+    assert records[0]["race_type"] == "distance"
+    assert records[0]["label"] == "100 m"
+    # Bob never finished (finished_time_ms is None), so only Alice qualifies.
+    assert [e["athlete_name"] for e in records[0]["entries"]] == ["Alice"]
+    assert records[0]["entries"][0]["value"] == 5000
+    assert records[0]["entries"][0]["end_time_epoch_ms"] == 2000
+
+
+def test_results_records_endpoint_returns_empty_records_with_no_stored_results(monkeypatch, tmp_path):
+    import hub_server.infrastructure.fastapi.app as hub_app
+    from hub_server.usecases.race_result_store import RaceResultStore
+    from hub_server.usecases.race_results_query import RaceResultsQuery
+
+    store = RaceResultStore(tmp_path / "empty_race_results.jsonl")
+    monkeypatch.setattr(hub_app, "race_results_query", RaceResultsQuery(store))
+
+    response = client.get("/api/results/records")
+
+    assert response.status_code == 200
+    assert response.json() == {"records": []}
 
 
 def test_result_page_returns_200_with_result_card():

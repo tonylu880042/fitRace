@@ -80,5 +80,17 @@
   "power.shutdown": "Shutdown Hub",
   "power.shutdown_system": "Shutdown System",
   "power.status_tip": "Power actions are available only while race state is IDLE.",
-  "power.status_locked": "Power controls locked while race state is {state}."
+  "power.status_locked": "Power controls locked while race state is {state}.",
+  "finish.exclaim": "FINISH!",
+  "finish.rank_label": "Rank #{rank}",
+  "podium.final_results": "Final Results",
+  "podium.dismiss_hint": "Tap to continue",
+  "record_wall.title": "Record Wall",
+  "record_wall.latest_race": "Latest Race",
+  "record_wall.empty_tagline": "Real-time racing awaits",
+  "record_wall.type_distance": "Distance",
+  "record_wall.type_calories": "Calories",
+  "record_wall.type_time": "Time",
+  "record_wall.type_watts": "Watts",
+  "record_wall.type_max_power": "Max Power"
 }
