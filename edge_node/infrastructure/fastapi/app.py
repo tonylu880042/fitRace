@@ -910,6 +910,25 @@ EDGE_SETUP_HTML = """
       padding: 8px 14px;
     }
 
+    .wizard-pick {
+      justify-content: flex-start;
+      cursor: pointer;
+    }
+
+    .wizard-pick input[type="checkbox"] {
+      flex-shrink: 0;
+      width: 20px;
+      height: 20px;
+      margin: 0;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+
+    .wizard-pick.is-bound {
+      opacity: 0.5;
+      cursor: default;
+    }
+
     .wizard-actions {
       display: flex;
       gap: 10px;
@@ -1344,15 +1363,16 @@ EDGE_SETUP_HTML = """
         "antenna.slots_free": "{channel}: {free} slot(s) free for a new device",
         "antenna.slots_full": "{channel} is full — pick another channel for new devices",
         "wizard.title1": "Add scanned devices",
-        "wizard.hint1": "Select a device found by the scan to add it to the system.",
+        "wizard.hint1": "Tick the devices to add, then bind them all at once. Names and channels are assigned automatically — edit them later in the bindings list.",
         "wizard.bound": "Already bound",
-        "wizard.add": "Add",
-        "wizard.title2": "Device settings",
-        "wizard.replace": "Replace existing device (all channels full)",
+        "wizard.bind_selected": "Bind selected",
+        "wizard.bind_selected_count": "Bind selected ({count})",
+        "wizard.capacity_free": "{free} free slot(s) across the antenna boards.",
+        "wizard.capacity_full": "All antenna channels are full — unbind some devices first.",
         "wizard.back": "Back",
-        "wizard.confirm": "Save device",
         "wizard.title3": "Done",
-        "wizard.saved_hint": "{name} saved. Edge runtime restarted — the device will connect automatically.",
+        "wizard.saved_multi": "{count} device(s) bound. Edge runtime restarted — they will connect automatically.",
+        "wizard.some_skipped": " {skipped} skipped (channels full).",
         "wizard.close": "Close",
         "type.treadmill": "Treadmill",
         "type.curved_treadmill": "Curved treadmill (non-motorized)",
@@ -1463,15 +1483,16 @@ EDGE_SETUP_HTML = """
       "antenna.slots_free": "{channel} 還有 {free} 個空位可綁定新設備",
       "antenna.slots_full": "{channel} 已滿，新設備請改用其他通道",
       "wizard.title1": "加入掃描到的設備",
-      "wizard.hint1": "選擇掃描找到的裝置，將它加入系統。",
+      "wizard.hint1": "勾選要加入的設備，一次綁定多台。名稱與通道會自動指派，之後可到綁定清單修改。",
       "wizard.bound": "已綁定",
-      "wizard.add": "加入",
-      "wizard.title2": "設備設定",
-      "wizard.replace": "取代現有設備（所有通道已滿）",
+      "wizard.bind_selected": "綁定所選",
+      "wizard.bind_selected_count": "綁定所選（{count}）",
+      "wizard.capacity_free": "天線板還有 {free} 個空位。",
+      "wizard.capacity_full": "所有天線通道都已滿，請先解綁部分設備。",
       "wizard.back": "上一步",
-      "wizard.confirm": "儲存設備",
       "wizard.title3": "完成",
-      "wizard.saved_hint": "{name} 已儲存，Edge runtime 已重啟，設備將自動連線。",
+      "wizard.saved_multi": "已綁定 {count} 台設備，Edge runtime 已重啟，將自動連線。",
+      "wizard.some_skipped": " 有 {skipped} 台因通道已滿未綁定。",
       "wizard.close": "關閉",
       "type.treadmill": "跑步機",
       "type.curved_treadmill": "無動力跑步機",
@@ -2135,6 +2156,7 @@ EDGE_SETUP_HTML = """
     const wizardCloseBtn = document.getElementById("wizard-close");
     let wizardDevices = [];
     let wizardScanChannelId = "";
+    const wizardSelected = new Set();
     const WIZARD_TYPE_MAP = {
       TREADMILL: "treadmill", TREAD: "treadmill",
       ROWER: "rowing_machine", ROWING: "rowing_machine",
@@ -2176,6 +2198,7 @@ EDGE_SETUP_HTML = """
       });
       wizardDevices = Array.from(byAddress.values());
       if (!wizardDevices.length) return;
+      wizardSelected.clear();
       const channelByPort = new Map(antennaChannels.map((channel) => [channel.port, channel.id]));
       wizardScanChannelId = channelByPort.get(result.port) || "";
       renderWizardStep1();
@@ -2185,129 +2208,127 @@ EDGE_SETUP_HTML = """
     function renderWizardStep1() {
       wizardTitle.textContent = t("wizard.title1");
       const bound = boundTargetSet();
+      const counts = channelBindingCounts();
+      const freeSlots = antennaChannels.reduce(
+        (sum, channel) => sum + Math.max(0, ANTENNA_MAX_CONNECTIONS - (counts.get(channel.id) || 0)),
+        0,
+      );
+      // Drop selections for anything now bound or no longer in the scan list.
+      const addresses = new Set(wizardDevices.map((device) => device.address.toUpperCase()));
+      wizardSelected.forEach((addr) => {
+        if (!addresses.has(addr) || bound.has(addr)) wizardSelected.delete(addr);
+      });
+
       wizardBody.innerHTML = `
         <div class="wizard-step-hint">${escapeHtml(t("wizard.hint1"))}</div>
         <div class="wizard-list">
-          ${wizardDevices.map((device, index) => {
-            const isBound = bound.has(device.address.toUpperCase());
+          ${wizardDevices.map((device) => {
+            const addr = device.address.toUpperCase();
+            const isBound = bound.has(addr);
+            const checked = wizardSelected.has(addr) ? "checked" : "";
             return `
-              <div class="wizard-device">
+              <label class="wizard-device wizard-pick ${isBound ? "is-bound" : ""}">
+                <input type="checkbox" data-pick="${escapeHtml(addr)}" ${checked} ${isBound ? "disabled" : ""}>
                 <div>
-                  <div>${escapeHtml(device.name || device.address)}</div>
+                  <div>${escapeHtml(device.name || device.address)}${isBound ? ` · ${escapeHtml(t("wizard.bound"))}` : ""}</div>
                   <div class="meta">${escapeHtml(device.address)} · RSSI ${escapeHtml(String(device.rssi ?? "--"))} dBm · ${escapeHtml(device.device_type || "UNKNOWN")}</div>
                 </div>
-                <button type="button" data-device-index="${index}" ${isBound ? "disabled" : ""}>
-                  ${escapeHtml(isBound ? t("wizard.bound") : t("wizard.add"))}
-                </button>
-              </div>
+              </label>
             `;
           }).join("")}
         </div>
-      `;
-      wizardBody.querySelectorAll("[data-device-index]").forEach((button) => {
-        button.addEventListener("click", () => renderWizardStep2(wizardDevices[Number(button.dataset.deviceIndex)]));
-      });
-    }
-
-    function renderWizardStep2(device) {
-      wizardTitle.textContent = t("wizard.title2");
-      const counts = channelBindingCounts();
-      const freeChannels = antennaChannels.filter((channel) => (counts.get(channel.id) || 0) < ANTENNA_MAX_CONNECTIONS);
-      const allFull = antennaChannels.length > 0 && !freeChannels.length;
-      const preferredChannel = freeChannels.some((channel) => channel.id === wizardScanChannelId)
-        ? wizardScanChannelId
-        : (freeChannels[0]?.id || "");
-      const defaultName = (device.name && device.name !== "UNKNOWN") ? device.name : device.address;
-      const defaultType = WIZARD_TYPE_MAP[(device.device_type || "").toUpperCase()] || "treadmill";
-      wizardBody.innerHTML = `
-        <div class="wizard-step-hint">${escapeHtml(device.address)} · RSSI ${escapeHtml(String(device.rssi ?? "--"))} dBm</div>
-        <div class="field">
-          <label>${escapeHtml(t("bindings.name"))}</label>
-          <input id="wizard-name" type="text" value="${escapeHtml(defaultName)}" autocomplete="off">
-        </div>
-        <div class="field">
-          <label>${escapeHtml(t("bindings.type"))}</label>
-          <select id="wizard-type">
-            ${equipmentTypeOptions(defaultType)}
-          </select>
-        </div>
-        <div class="field">
-          <label>${escapeHtml(t("bindings.channel"))}</label>
-          <select id="wizard-channel">
-            ${antennaChannels.map((channel) => {
-              const used = counts.get(channel.id) || 0;
-              const full = used >= ANTENNA_MAX_CONNECTIONS;
-              return `<option value="${escapeHtml(channel.id)}" ${channel.id === preferredChannel ? "selected" : ""} ${full && !allFull ? "disabled" : ""}>${escapeHtml(channel.id)} (${escapeHtml(channel.port)}) · ${used}/${ANTENNA_MAX_CONNECTIONS}${full ? " ⚠" : ""}</option>`;
-            }).join("")}
-          </select>
-        </div>
-        ${allFull ? `
-          <div class="field">
-            <label>${escapeHtml(t("wizard.replace"))}</label>
-            <select id="wizard-replace">
-              ${(edgeConfig?.equipment_bindings || []).map((binding, index) => (
-                `<option value="${index}">${escapeHtml(binding.equipment_id)} (${escapeHtml(binding.antenna_channel)} · ${escapeHtml(binding.ble_target)})</option>`
-              )).join("")}
-            </select>
-          </div>
-        ` : ""}
+        <div class="wizard-step-hint" id="wizard-capacity"></div>
         <div class="wizard-actions">
-          <button type="button" class="button-secondary" id="wizard-back">${escapeHtml(t("wizard.back"))}</button>
-          <button type="button" id="wizard-confirm">${escapeHtml(t("wizard.confirm"))}</button>
+          <button type="button" id="wizard-bind">${escapeHtml(t("wizard.bind_selected"))}</button>
         </div>
       `;
-      document.getElementById("wizard-back").addEventListener("click", renderWizardStep1);
-      document.getElementById("wizard-confirm").addEventListener("click", () => applyWizardBinding(device, allFull));
+
+      const bindBtn = document.getElementById("wizard-bind");
+      const capacityHint = document.getElementById("wizard-capacity");
+      const refresh = () => {
+        const count = wizardSelected.size;
+        bindBtn.textContent = count
+          ? t("wizard.bind_selected_count", { count })
+          : t("wizard.bind_selected");
+        bindBtn.disabled = count === 0 || freeSlots === 0;
+        capacityHint.textContent = freeSlots === 0
+          ? t("wizard.capacity_full")
+          : t("wizard.capacity_free", { free: freeSlots });
+      };
+      wizardBody.querySelectorAll("[data-pick]").forEach((box) => {
+        box.addEventListener("change", () => {
+          if (box.checked) wizardSelected.add(box.dataset.pick);
+          else wizardSelected.delete(box.dataset.pick);
+          refresh();
+        });
+      });
+      bindBtn.addEventListener("click", () => applyMultiBind(freeSlots));
+      refresh();
     }
 
-    function nextWizardNodeId() {
-      const matches = (edgeConfig?.equipment_bindings || [])
+    function nextNodeId(bindings) {
+      const matches = bindings
         .map((binding) => String(binding.node_id || "").match(/^(.*?)([0-9]+)$/))
         .filter(Boolean);
       if (matches.length) {
-        const prefix = matches[matches.length - 1][1];
+        const last = matches[matches.length - 1];
+        const prefix = last[1];
         const samePrefix = matches.filter((match) => match[1] === prefix);
         const next = Math.max(...samePrefix.map((match) => Number(match[2]))) + 1;
-        return prefix + String(next).padStart(matches[matches.length - 1][2].length, "0");
+        return prefix + String(next).padStart(last[2].length, "0");
       }
-      return `${edgeConfig?.node_id || "edge"}-${String((edgeConfig?.equipment_bindings || []).length + 1).padStart(2, "0")}`;
+      return `${edgeConfig?.node_id || "edge"}-${String(bindings.length + 1).padStart(2, "0")}`;
     }
 
-    async function applyWizardBinding(device, allFull) {
-      const name = document.getElementById("wizard-name").value.trim();
-      const type = document.getElementById("wizard-type").value;
-      const channelId = document.getElementById("wizard-channel").value;
-      if (!name || !channelId) return;
-      const binding = {
-        node_id: nextWizardNodeId(),
-        equipment_id: name,
-        equipment_type: type,
-        ble_target: device.address,
-        antenna_channel: channelId,
-      };
+    async function applyMultiBind(freeSlots) {
+      // Fill the scanned channel first, then the rest, respecting the
+      // per-board 3-connection limit. Selected devices beyond capacity are
+      // skipped and reported.
+      const counts = channelBindingCounts();
+      const orderedChannels = [
+        ...antennaChannels.filter((channel) => channel.id === wizardScanChannelId),
+        ...antennaChannels.filter((channel) => channel.id !== wizardScanChannelId),
+      ];
+      const remaining = new Map(
+        orderedChannels.map((channel) => [channel.id, ANTENNA_MAX_CONNECTIONS - (counts.get(channel.id) || 0)]),
+      );
+      const picks = wizardDevices.filter((device) => wizardSelected.has(device.address.toUpperCase()));
       const bindings = [...(edgeConfig?.equipment_bindings || [])];
-      if (allFull) {
-        const replaceIndex = Number(document.getElementById("wizard-replace").value);
-        binding.node_id = bindings[replaceIndex].node_id;
-        bindings[replaceIndex] = binding;
-      } else {
-        bindings.push(binding);
+      let added = 0;
+      for (const device of picks) {
+        const channel = orderedChannels.find((ch) => (remaining.get(ch.id) || 0) > 0);
+        if (!channel) break; // out of slots
+        remaining.set(channel.id, remaining.get(channel.id) - 1);
+        bindings.push({
+          node_id: nextNodeId(bindings),
+          equipment_id: (device.name && device.name !== "UNKNOWN") ? device.name : device.address,
+          equipment_type: WIZARD_TYPE_MAP[(device.device_type || "").toUpperCase()] || "treadmill",
+          ble_target: device.address,
+          antenna_channel: channel.id,
+        });
+        added += 1;
       }
+      if (!added) return;
+      const skipped = picks.length - added;
+      wizardSelected.clear();
       edgeConfig = { ...edgeConfig, equipment_bindings: bindings, max_ftms_connections: bindings.length };
       renderBindings(edgeConfig);
       const saved = await saveEdgeConfig();
       if (saved) {
         await restartEdgeRuntime();
-        renderWizardStep3(name);
+        renderWizardStep3(added, skipped);
       } else {
         closeScanWizard();
       }
     }
 
-    function renderWizardStep3(name) {
+    function renderWizardStep3(added, skipped) {
       wizardTitle.textContent = t("wizard.title3");
+      const hint = skipped
+        ? t("wizard.saved_multi", { count: added }) + t("wizard.some_skipped", { skipped })
+        : t("wizard.saved_multi", { count: added });
       wizardBody.innerHTML = `
-        <div class="wizard-step-hint">${escapeHtml(t("wizard.saved_hint", { name }))}</div>
+        <div class="wizard-step-hint">${escapeHtml(hint)}</div>
         <div class="wizard-actions">
           <button type="button" id="wizard-done">${escapeHtml(t("wizard.close"))}</button>
         </div>
