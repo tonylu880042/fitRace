@@ -49,6 +49,26 @@ preflight_check() {
     error "Cannot connect to $1. On venue LAN?"
 }
 
+# Poll a health URL over ssh until it returns "ok" or we give up. A Pi cold
+# start (systemd restart + Python import + MQTT connect) routinely needs
+# more than a couple of seconds, so a single shot false-fails a good deploy.
+wait_for_health() {
+  local target="$1" url="$2" tries=15
+  if [[ $DRY_RUN -eq 1 ]]; then
+    echo "DRY: ssh -o ConnectTimeout=6 '$target' curl -s -m 8 $url | grep -q ok  (retried until healthy)"
+    return 0
+  fi
+  local i
+  for ((i = 1; i <= tries; i++)); do
+    if ssh -o ConnectTimeout=6 "$target" "curl -s -m 8 $url | grep -q ok"; then
+      info "Health check passed (attempt $i)."
+      return 0
+    fi
+    sleep 2
+  done
+  return 1
+}
+
 deploy_hub() {
   local target="${1:-$HUB_TARGET}"
   info "Deploying hub to $target..."
@@ -71,8 +91,7 @@ deploy_hub() {
 
   ssh_run "$target" "sudo ln -sfn $release_path /opt/fitracestudio/current"
   ssh_run "$target" "sudo systemctl restart fitracestudio-hub.service"
-  sleep 2
-  if ! ssh_run "$target" "curl -s -m 8 http://localhost:8000/health | grep -q ok"; then
+  if ! wait_for_health "$target" "http://localhost:8000/health"; then
     [[ -n "${prev_release:-}" ]] && \
       warn "Roll back with: deploy.sh rollback-hub $(basename "$prev_release") $target"
     error "Hub health check FAILED after deploy — new release may be broken."
@@ -96,8 +115,7 @@ deploy_edge() {
 
   ssh_run "$target" "sudo systemctl restart fitracestudio-edge.service"
   ssh_run "$target" "sudo systemctl restart fitracestudio-edge-web-config.service"
-  sleep 2
-  ssh_run "$target" "curl -s -m 5 http://localhost:8001/health | grep -q ok" || \
+  wait_for_health "$target" "http://localhost:8001/health" || \
     error "Edge health check FAILED after deploy — check journalctl on $target."
 
   echo ""
@@ -114,9 +132,8 @@ rollback_hub() {
   ssh_run "$target" "test -d $release_path" || error "Release not found: $release_name"
   ssh_run "$target" "sudo ln -sfn $release_path /opt/fitracestudio/current"
   ssh_run "$target" "sudo systemctl restart fitracestudio-hub.service"
-  sleep 2
-  ssh_run "$target" "curl -s -m 8 http://localhost:8000/health | grep -q ok" || \
-    warn "Health check incomplete"
+  wait_for_health "$target" "http://localhost:8000/health" || \
+    warn "Health check incomplete — verify $target manually."
 
   echo ""
   echo "Rollback completed: $release_name"
