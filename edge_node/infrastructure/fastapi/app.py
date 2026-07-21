@@ -1371,7 +1371,7 @@ EDGE_SETUP_HTML = """
         "wizard.capacity_full": "All antenna channels are full — unbind some devices first.",
         "wizard.back": "Back",
         "wizard.title3": "Done",
-        "wizard.saved_multi": "{count} device(s) bound. Edge runtime restarted — they will connect automatically.",
+        "wizard.saved_multi": "{count} device(s) bound. Connecting now — watch the Runtime Monitor; it can take up to a minute for data to appear.",
         "wizard.some_skipped": " {skipped} skipped (channels full).",
         "wizard.close": "Close",
         "type.treadmill": "Treadmill",
@@ -1491,7 +1491,7 @@ EDGE_SETUP_HTML = """
       "wizard.capacity_full": "所有天線通道都已滿，請先解綁部分設備。",
       "wizard.back": "上一步",
       "wizard.title3": "完成",
-      "wizard.saved_multi": "已綁定 {count} 台設備，Edge runtime 已重啟，將自動連線。",
+      "wizard.saved_multi": "已綁定 {count} 台設備，正在連線中——請切到「Runtime Monitor」查看,資料最多可能需要一分鐘才會出現。",
       "wizard.some_skipped": " 有 {skipped} 台因通道已滿未綁定。",
       "wizard.close": "關閉",
       "type.treadmill": "跑步機",
@@ -2314,12 +2314,28 @@ EDGE_SETUP_HTML = """
       edgeConfig = { ...edgeConfig, equipment_bindings: bindings, max_ftms_connections: bindings.length };
       renderBindings(edgeConfig);
       const saved = await saveEdgeConfig();
-      if (saved) {
-        await restartEdgeRuntime();
-        renderWizardStep3(added, skipped);
-      } else {
+      if (!saved) {
         closeScanWizard();
+        return;
       }
+      // Push the new targets to the antenna board right away so they connect
+      // in seconds, not after the runtime's slow reconcile loop. disconnect_first
+      // is false: adding devices must not drop the ones already streaming.
+      try {
+        await fetch("/api/antenna/reconnect-configured", {
+          method: "POST",
+          headers: adminHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({
+            disconnect_first: false,
+            timeout_sec: Math.max(1, Math.min(30, Number(antennaTimeoutInput.value) || 5)),
+            report_interval_ms: Math.max(100, Math.min(10000, Number(antennaReportIntervalInput.value) || ANTENNA_DEFAULT_REPORT_INTERVAL_MS)),
+          }),
+        });
+      } catch (_error) {
+        // best-effort; the runtime restart below reloads config and reconnects
+      }
+      await restartEdgeRuntime();
+      renderWizardStep3(added, skipped);
     }
 
     function renderWizardStep3(added, skipped) {
