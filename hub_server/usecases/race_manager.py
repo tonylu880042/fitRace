@@ -10,11 +10,12 @@ class RaceManager:
         "sprint_board",
     }
 
-    def __init__(self):
+    def __init__(self, settings_store=None):
         self._state: RaceState = RaceState.IDLE
         self._config: Optional[RaceConfig] = None
         self._leaderboard_display_mode: str = "classic"
         self._start_countdown_sound_enabled: bool = True
+        self._settings_store = settings_store
         self._registered_nodes: Dict[str, str] = {}  # node_id -> athlete_name (for legacy backward compatibility)
         self._progress: Dict[str, Dict[str, Any]] = {}  # node_id -> metrics dict
         
@@ -26,6 +27,47 @@ class RaceManager:
         self._active_nodes: Dict[str, str] = {}  # node_id (str) -> equipment_type (str)
         self._start_time_epoch_ms: Optional[int] = None
         self._end_time_epoch_ms: Optional[int] = None
+
+        self._load_settings()
+
+    # -- durable settings persistence ---------------------------------
+    # Only operator-configured settings survive a restart. Transient race
+    # state (running/progress/registrations) always comes back IDLE/empty.
+
+    def _load_settings(self) -> None:
+        if not self._settings_store:
+            return
+        data = self._settings_store.load()
+        if not data:
+            return
+        stations = data.get("stations")
+        if isinstance(stations, dict):
+            self._stations = {
+                int(sn): nid for sn, nid in stations.items() if nid
+            }
+        mode = data.get("leaderboard_display_mode")
+        if mode in self.VALID_LEADERBOARD_DISPLAY_MODES:
+            self._leaderboard_display_mode = mode
+        if isinstance(data.get("start_countdown_sound_enabled"), bool):
+            self._start_countdown_sound_enabled = data["start_countdown_sound_enabled"]
+        config = data.get("config")
+        if isinstance(config, dict):
+            try:
+                self._config = RaceConfig.model_validate(config)
+            except Exception:
+                self._config = None
+
+    def _persist_settings(self) -> None:
+        if not self._settings_store:
+            return
+        self._settings_store.save(
+            {
+                "stations": {str(sn): nid for sn, nid in self._stations.items()},
+                "leaderboard_display_mode": self._leaderboard_display_mode,
+                "start_countdown_sound_enabled": self._start_countdown_sound_enabled,
+                "config": self._config.model_dump() if self._config else None,
+            }
+        )
 
     def get_state(self) -> RaceState:
         return self._state
@@ -46,6 +88,7 @@ class RaceManager:
         if mode not in self.VALID_LEADERBOARD_DISPLAY_MODES:
             raise ValueError(f"Unsupported leaderboard display mode: {mode}")
         self._leaderboard_display_mode = mode
+        self._persist_settings()
         return self._leaderboard_display_mode
 
     def get_start_countdown_sound_enabled(self) -> bool:
@@ -53,6 +96,7 @@ class RaceManager:
 
     def set_start_countdown_sound_enabled(self, enabled: bool) -> bool:
         self._start_countdown_sound_enabled = bool(enabled)
+        self._persist_settings()
         return self._start_countdown_sound_enabled
 
     def get_state_snapshot(self) -> Dict[str, Any]:
@@ -340,6 +384,7 @@ class RaceManager:
 
         self._config = config
         self._state = RaceState.READY
+        self._persist_settings()
 
     def register_node(self, node_id: str, athlete_name: str):
         if self._state not in (RaceState.IDLE, RaceState.READY):
@@ -406,6 +451,7 @@ class RaceManager:
                 del self._station_teams[station_number]
             if station_number in self._station_has_avatar:
                 del self._station_has_avatar[station_number]
+            self._persist_settings()
             return
 
         # Ensure node_id is only assigned to one station at a time
@@ -414,6 +460,7 @@ class RaceManager:
             del self._stations[sn]
 
         self._stations[station_number] = node_id
+        self._persist_settings()
 
     def register_athlete(self, station_number: int, athlete_name: str, team_name: Optional[str] = None, has_avatar: bool = False):
         if self._state not in (RaceState.IDLE, RaceState.READY):

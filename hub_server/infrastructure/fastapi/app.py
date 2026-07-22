@@ -18,6 +18,7 @@ from hub_server.usecases.node_registry import NodeRegistry
 from hub_server.usecases.race_event_engine import RaceEventEngine
 from hub_server.usecases.race_result_store import RaceResultStore
 from hub_server.usecases.race_results_query import RaceResultsQuery
+from hub_server.usecases.race_settings_store import RaceSettingsStore
 from hub_server.adapters.websocket_manager import WebSocketManager
 from hub_server.infrastructure.locales import DEFAULT_LOCALE, list_locales, load_locale
 from hub_server.usecases.update_checker import UpdateChecker
@@ -90,7 +91,11 @@ async def add_no_cache_header(request: Request, call_next):
 
 
 # Global instances (Shared Context)
-race_manager = RaceManager()
+race_manager = RaceManager(
+    settings_store=RaceSettingsStore(
+        os.getenv("FITRACE_RACE_SETTINGS_PATH", "data/race_settings.json")
+    )
+)
 ws_manager = WebSocketManager()
 node_registry = NodeRegistry()
 race_event_engine = RaceEventEngine()
