@@ -1,0 +1,12 @@
+[Unit]
+Description=FitRaceStudio Wi-Fi provisioning fallback (raise setup hotspot if no known Wi-Fi)
+After=NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=oneshot
+# Runs as root so nmcli can activate the hotspot without polkit.
+ExecStart=/usr/local/bin/fitracestudio-wifi-fallback
+
+[Install]
+WantedBy=multi-user.target

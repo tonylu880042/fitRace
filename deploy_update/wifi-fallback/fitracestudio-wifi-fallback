@@ -1,0 +1,33 @@
+#!/bin/sh
+# Boot-time Wi-Fi provisioning fallback.
+#
+# In an unfamiliar venue the device may find none of its saved Wi-Fi networks.
+# Because the display runs a locked Chromium kiosk, there is no way to pick a
+# network on-device. This raises the pre-built setup access point so an
+# operator can connect a phone and configure Wi-Fi via the web UI
+# (http://10.42.0.1:8000 hub / :8001 edge).
+#
+# Runs once at boot: waits a grace period for NetworkManager to autoconnect a
+# saved network, and only if wlan0 is still not a Wi-Fi client does it raise
+# the hotspot. It never fires mid-session, so a Wi-Fi blip during a live race
+# does not knock the venue off the air.
+set -eu
+
+HOTSPOT="${FITRACE_SETUP_HOTSPOT:-Hotspot}"
+IFACE="${FITRACE_WIFI_IFACE:-wlan0}"
+GRACE="${FITRACE_WIFI_GRACE_SEC:-60}"
+
+sleep "$GRACE"
+
+line=$(nmcli -t -f DEVICE,STATE,CONNECTION device 2>/dev/null | awk -F: -v i="$IFACE" '$1==i{print; exit}')
+state=$(printf '%s' "$line" | cut -d: -f2)
+conn=$(printf '%s' "$line" | cut -d: -f3)
+
+# Already a client on a real Wi-Fi (anything other than our own hotspot) -> done.
+if [ "$state" = "connected" ] && [ "$conn" != "$HOTSPOT" ]; then
+    logger -t fitrace-wifi-fallback "wlan0 connected to '$conn'; no hotspot needed"
+    exit 0
+fi
+
+logger -t fitrace-wifi-fallback "no Wi-Fi client on $IFACE (state=$state); raising setup hotspot '$HOTSPOT'"
+nmcli connection up "$HOTSPOT" || logger -t fitrace-wifi-fallback "failed to raise hotspot '$HOTSPOT'"
