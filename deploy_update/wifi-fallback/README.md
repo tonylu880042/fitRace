@@ -43,3 +43,27 @@ connected, wlan0 leaves AP mode (single radio) and the hotspot drops.
 Override the grace period, interface, or hotspot profile name with
 `FITRACE_WIFI_GRACE_SEC` / `FITRACE_WIFI_IFACE` / `FITRACE_SETUP_HOTSPOT` in the
 service unit.
+
+## fitrace-set-wifi — change Wi-Fi over SSH
+
+`fitrace-set-wifi` lets an operator switch the device's Wi-Fi from an SSH
+session on-site. Install once:
+
+```bash
+sudo install -m 0755 fitrace-set-wifi /usr/local/bin/fitrace-set-wifi
+```
+
+Usage (self-elevates via sudo):
+
+```bash
+fitrace-set-wifi --status              # current Wi-Fi + IP
+fitrace-set-wifi --list                # scan nearby + saved networks
+fitrace-set-wifi "<SSID>" "<password>" # add/refresh the profile and switch
+```
+
+Switching Wi-Fi changes the device IP and **drops your SSH session** — this is
+expected. The activation runs detached (systemd-run) so it finishes anyway.
+Reconnect at `ssh <user>@raspberrypi.local`, or find the new IP on the AP's
+client list (hostname `raspberrypi`). Connecting to the network you are already
+on is a safe no-op.
+

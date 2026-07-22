@@ -1,0 +1,73 @@
+#!/bin/sh
+# Connect the device to a Wi-Fi network from the command line.
+#
+# Safe to run over SSH: switching Wi-Fi changes the device's IP and drops your
+# SSH session, so the actual activation runs DETACHED (systemd-run) and
+# survives the disconnect. Reconnect afterwards at raspberrypi.local or via the
+# new AP's client list.
+#
+# Usage:
+#   fitrace-set-wifi <SSID> [password]   connect (add/refresh the profile)
+#   fitrace-set-wifi --list              scan and show nearby + saved networks
+#   fitrace-set-wifi --status            show the current Wi-Fi connection
+#
+# Self-elevates with sudo (passwordless for the service user), so nmcli runs as
+# root and needs no polkit.
+set -eu
+
+IFACE="${FITRACE_WIFI_IFACE:-wlan0}"
+
+if [ "$(id -u)" -ne 0 ]; then
+    exec sudo "$0" "$@"
+fi
+
+case "${1:-}" in
+  --status)
+    nmcli -t -f DEVICE,STATE,CONNECTION device | awk -F: -v i="$IFACE" \
+      '$1==i{print "device:", $1, "| state:", $2, "| connection:", $3}'
+    nmcli -t -f IP4.ADDRESS device show "$IFACE" 2>/dev/null | sed 's/^/  /'
+    exit 0
+    ;;
+  --list)
+    echo "Scanning $IFACE (about 10s)..."
+    nmcli -f IN-USE,SSID,SIGNAL,SECURITY device wifi list ifname "$IFACE" --rescan yes
+    exit 0
+    ;;
+  "" | -h | --help)
+    sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'
+    exit 0
+    ;;
+esac
+
+SSID="$1"
+PSK="${2:-}"
+
+active=$(nmcli -t -f DEVICE,CONNECTION device | awk -F: -v i="$IFACE" '$1==i{print $2}')
+if [ "$active" = "$SSID" ]; then
+    echo "Already connected to '$SSID'. Nothing to do."
+    exit 0
+fi
+
+# Create the profile if it does not exist yet, otherwise refresh its secrets.
+if nmcli -t -f NAME connection show | grep -qxF "$SSID"; then
+    [ -n "$PSK" ] && nmcli connection modify "$SSID" \
+        wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$PSK"
+    nmcli connection modify "$SSID" connection.autoconnect yes
+elif [ -n "$PSK" ]; then
+    nmcli connection add type wifi ifname "$IFACE" con-name "$SSID" ssid "$SSID" \
+        wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$PSK" connection.autoconnect yes >/dev/null
+else
+    nmcli connection add type wifi ifname "$IFACE" con-name "$SSID" ssid "$SSID" \
+        connection.autoconnect yes >/dev/null
+fi
+
+echo "Switching to '$SSID' in the background."
+echo "This SSH session will DROP when the IP changes — that is expected."
+echo "Reconnect with:  ssh ${SUDO_USER:-$(id -un)}@raspberrypi.local"
+echo "(or find the new IP on the AP's client list; hostname is 'raspberrypi')"
+
+# Detach the activation so it outlives this SSH session; delay slightly so the
+# lines above flush to the terminal first.
+systemd-run --collect --unit="fitrace-set-wifi-$(date +%s)" \
+    --description="fitRace Wi-Fi switch to $SSID" \
+    /bin/sh -c "sleep 2; nmcli connection up '$SSID'" >/dev/null 2>&1
