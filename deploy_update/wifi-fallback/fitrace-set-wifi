@@ -30,7 +30,9 @@ case "${1:-}" in
     ;;
   --list)
     echo "Scanning $IFACE (about 10s)..."
-    nmcli -f IN-USE,SSID,SIGNAL,SECURITY device wifi list ifname "$IFACE" --rescan yes
+    # `| cat` keeps stdout off a tty so nmcli does not page the output through
+    # less (which otherwise traps you at an "(END)" prompt).
+    nmcli -f IN-USE,SSID,SIGNAL,SECURITY device wifi list ifname "$IFACE" --rescan yes | cat
     exit 0
     ;;
   "" | -h | --help)
