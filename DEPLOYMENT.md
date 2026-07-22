@@ -28,6 +28,24 @@ Flags (position-independent):
 - `--skip-tests` – Skip pytest before deploy
 - `--allow-dirty` – Allow uncommitted changes
 
+### Persistent data must live outside the release dir
+
+The hub writes race settings (station assignments, leaderboard mode, race
+config) and results under paths that default to the current release's
+`data/`. Because every deploy creates a *new* release dir, point these at a
+stable shared location via a systemd drop-in so they survive deploys (they
+already survive plain restarts). Once per hub:
+
+```bash
+sudo mkdir -p /opt/fitracestudio/shared && sudo chown "$USER":"$USER" /opt/fitracestudio/shared
+sudo mkdir -p /etc/systemd/system/fitracestudio-hub.service.d
+printf '[Service]\nEnvironment=FITRACE_RACE_SETTINGS_PATH=/opt/fitracestudio/shared/race_settings.json\nEnvironment=FITRACE_RACE_RESULTS_PATH=/opt/fitracestudio/shared/race_results.jsonl\n' \
+  | sudo tee /etc/systemd/system/fitracestudio-hub.service.d/stable-data.conf
+sudo systemctl daemon-reload && sudo systemctl restart fitracestudio-hub.service
+```
+
+(Already applied on 192.168.0.130.)
+
 Default targets: `tony@192.168.0.130` (hub); `tony@192.168.0.130 /home/tony/fitRace` (edge). For edge-02, use `ucare@192.168.0.135 /home/ucare/fitRace`.
 
 The target user needs passwordless sudo for the restart/symlink steps. On edge-02 the
