@@ -90,3 +90,42 @@ def test_node_registry_updates_stream_health_from_telemetry():
     assert stream["last_telemetry_epoch_ms"] == 3_000_000
     assert stream["mac_address"] == "AA:BB:CC:DD:EE:01"
     assert stream["rssi"] == -71
+
+
+def test_heartbeat_preserves_live_stream_telemetry_fields():
+    # A config-only heartbeat arriving after telemetry must not blank the
+    # stream's last_telemetry_epoch_ms/rssi — otherwise the console flickers
+    # between "connected" and "no data" on every heartbeat.
+    clock = {"now": 3_000_000}
+    registry = NodeRegistry(now_ms=lambda: clock["now"])
+    heartbeat = {
+        "edge_node_id": "fitrace-edge-01",
+        "status": "online",
+        "equipment_streams": [
+            {
+                "node_id": "fitrace-edge-01-01",
+                "equipment_id": "TREAD_01",
+                "equipment_type": "treadmill",
+                "status": "configured",
+            }
+        ],
+    }
+    registry.update_status(heartbeat)
+    registry.update_telemetry(
+        {
+            "edge_node_id": "fitrace-edge-01",
+            "node_id": "fitrace-edge-01-01",
+            "equipment_id": "TREAD_01",
+            "equipment_type": "treadmill",
+            "rssi": -70,
+            "timestamp_epoch_ms": 3_000_000,
+        }
+    )
+
+    # Second heartbeat (same config, no telemetry fields) arrives later.
+    clock["now"] = 3_001_000
+    registry.update_status(heartbeat)
+
+    stream = registry.list_nodes()[0]["equipment_streams"][0]
+    assert stream["last_telemetry_epoch_ms"] == 3_000_000
+    assert stream["rssi"] == -70

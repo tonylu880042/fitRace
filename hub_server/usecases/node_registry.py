@@ -9,6 +9,10 @@ class NodeRegistry:
         self._offline_timeout_ms = offline_timeout_ms
         self._nodes: dict[str, EdgeNodeStatus] = {}
 
+    # Live per-stream fields come from telemetry, not the heartbeat, so a
+    # heartbeat's config-only stream list must not clobber them.
+    _LIVE_STREAM_FIELDS = ("last_telemetry_epoch_ms", "rssi", "ftms_type")
+
     def update_status(
         self, payload: dict, edge_node_id: str | None = None
     ) -> EdgeNodeStatus:
@@ -16,9 +20,39 @@ class NodeRegistry:
         if edge_node_id:
             data["edge_node_id"] = edge_node_id
         data.setdefault("last_seen_epoch_ms", self._now_ms())
+        self._preserve_live_stream_fields(data)
         status = EdgeNodeStatus.model_validate(data)
         self._nodes[status.edge_node_id] = status
         return status
+
+    def _preserve_live_stream_fields(self, data: dict) -> None:
+        """Carry forward telemetry-derived stream fields across a heartbeat.
+
+        A status heartbeat replaces the whole node, and its equipment_streams
+        are the configured bindings only (no last_telemetry_epoch_ms). Without
+        this merge every heartbeat would blank the streams' live fields, making
+        the console flicker between "connected" and "no data".
+        """
+        streams = data.get("equipment_streams")
+        if not isinstance(streams, list):
+            return
+        existing = self._nodes.get(data.get("edge_node_id"))
+        if existing is None:
+            return
+        previous_by_id = {
+            s.get("node_id"): s
+            for s in existing.model_dump().get("equipment_streams", [])
+            if isinstance(s, dict) and s.get("node_id")
+        }
+        for stream in streams:
+            if not isinstance(stream, dict):
+                continue
+            prev = previous_by_id.get(stream.get("node_id"))
+            if not prev:
+                continue
+            for field in self._LIVE_STREAM_FIELDS:
+                if stream.get(field) is None and prev.get(field) is not None:
+                    stream[field] = prev[field]
 
     def update_telemetry(self, payload: dict) -> EdgeNodeStatus | None:
         node_id = payload.get("node_id")
