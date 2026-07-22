@@ -619,6 +619,23 @@
       line-height: 1.4;
     }
 
+    .lang-toggle {
+      display: flex;
+      gap: 4px;
+    }
+
+    .lang-toggle button {
+      min-width: 50px;
+      padding: 0 10px;
+      font-size: 12px;
+    }
+
+    .lang-toggle button.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #09090b;
+    }
+
     @media (max-width: 1100px) {
       body { padding: 14px; }
       .layout,
@@ -658,31 +675,35 @@
         <p>Race setup and coach-operated event control</p>
       </div>
       <div class="top-actions">
-        <div class="pill"><span class="dot" id="ws-dot"></span><span id="ws-label">Offline</span></div>
+        <span class="lang-toggle">
+          <button type="button" id="lang-en" onclick="setLanguage('en-US')">EN</button>
+          <button type="button" id="lang-zh" onclick="setLanguage('zh-TW')">中文</button>
+        </span>
+        <div class="pill"><span class="dot" id="ws-dot"></span><span id="ws-label" data-i18n="status.offline">Offline</span></div>
         <div class="pill" id="version-pill">Hub v--</div>
-        <button type="button" onclick="window.location.href='/'">Dashboard</button>
-        <button type="button" onclick="window.location.href='/systemAdmin'">System Admin</button>
-        <button type="button" onclick="window.location.href='/static/signup.html'">Signup</button>
-        <button type="button" onclick="openLogin()">Operator Unlock</button>
+        <button type="button" onclick="window.location.href='/'" data-i18n="nav.dashboard">Dashboard</button>
+        <button type="button" onclick="window.location.href='/systemAdmin'" data-i18n="nav.system_admin">System Admin</button>
+        <button type="button" onclick="window.location.href='/static/signup.html'" data-i18n="nav.signup">Signup</button>
+        <button type="button" onclick="openLogin()" data-i18n="nav.operator_unlock">Operator Unlock</button>
       </div>
     </header>
 
     <section class="summary-grid" aria-label="System summary">
       <div class="metric">
         <div class="metric-value" id="summary-state">IDLE</div>
-        <div class="metric-label">Race State</div>
+        <div class="metric-label" data-i18n="label.race_state">Race State</div>
       </div>
       <div class="metric">
         <div class="metric-value" id="summary-stations">0</div>
-        <div class="metric-label">Stations</div>
+        <div class="metric-label" data-i18n="label.stations">Stations</div>
       </div>
       <div class="metric">
         <div class="metric-value" id="summary-readiness">WAIT</div>
-        <div class="metric-label">Readiness</div>
+        <div class="metric-label" data-i18n="label.readiness">Readiness</div>
       </div>
       <div class="metric">
         <div class="metric-value" id="summary-sound">ON</div>
-        <div class="metric-label">Start Sound</div>
+        <div class="metric-label" data-i18n="label.start_sound">Start Sound</div>
       </div>
     </section>
 
@@ -690,99 +711,99 @@
       <div class="column">
         <section class="panel" aria-labelledby="race-title">
           <div class="panel-header">
-            <h2 class="panel-title" id="race-title">Race Control</h2>
+            <h2 class="panel-title" id="race-title" data-i18n="panel.race_control">Race Control</h2>
             <span class="pill race-state" id="race-state-pill">IDLE</span>
           </div>
           <div class="grid-3">
             <div class="field">
-              <label for="race-type">Race Type</label>
+              <label for="race-type" data-i18n="label.race_type">Race Type</label>
               <select id="race-type" onchange="syncRaceFields()">
-                <option value="distance">Distance Challenge</option>
-                <option value="calories">Calories Challenge</option>
-                <option value="time">Time Challenge</option>
-                <option value="max_power">Max Power Challenge</option>
+                <option value="distance" data-i18n="option.distance">Distance Challenge</option>
+                <option value="calories" data-i18n="option.calories">Calories Challenge</option>
+                <option value="time" data-i18n="option.time">Time Challenge</option>
+                <option value="max_power" data-i18n="option.max_power">Max Power Challenge</option>
               </select>
             </div>
             <div class="field">
-              <label for="competition-mode">Competition</label>
+              <label for="competition-mode" data-i18n="label.competition">Competition</label>
               <select id="competition-mode" onchange="syncCompetitionFields(); renderStations();">
-                <option value="individual">Individual Race</option>
-                <option value="team">Team Race</option>
+                <option value="individual" data-i18n="option.individual">Individual Race</option>
+                <option value="team" data-i18n="option.team">Team Race</option>
               </select>
             </div>
             <div class="field" id="team-scoring-field">
-              <label for="team-scoring-policy">Team Scoring</label>
+              <label for="team-scoring-policy" data-i18n="label.team_scoring">Team Scoring</label>
               <select id="team-scoring-policy" onchange="updateControlGuidance(); renderStations()">
-                <option value="average">Team Average</option>
-                <option value="total">Team Total</option>
+                <option value="average" data-i18n="option.team_average">Team Average</option>
+                <option value="total" data-i18n="option.team_total">Team Total</option>
               </select>
             </div>
             <div class="field" id="team-completion-field">
-              <label for="team-completion-policy">Completion Rule</label>
+              <label for="team-completion-policy" data-i18n="label.completion_rule">Completion Rule</label>
               <select id="team-completion-policy" onchange="updateControlGuidance(); renderStations()">
-                <option value="aggregate">Team Target</option>
-                <option value="all_members">Everyone Finishes</option>
+                <option value="aggregate" data-i18n="option.team_target">Team Target</option>
+                <option value="all_members" data-i18n="option.everyone_finishes">Everyone Finishes</option>
               </select>
             </div>
             <div class="field" id="target-field">
-              <label for="race-target" id="race-target-label">Target Distance (m)</label>
+              <label for="race-target" id="race-target-label" data-i18n="label.target_distance">Target Distance (m)</label>
               <input type="number" id="race-target" min="1" value="500">
             </div>
             <div class="field">
-              <label for="auto-refresh">Refresh</label>
+              <label for="auto-refresh" data-i18n="label.refresh">Refresh</label>
               <select id="auto-refresh">
-                <option value="0">Live WebSocket only</option>
-                <option value="5000">Fallback: 5 seconds</option>
-                <option value="15000" selected>Fallback: 15 seconds</option>
+                <option value="0" data-i18n="option.live_websocket">Live WebSocket only</option>
+                <option value="5000" data-i18n="option.fallback_5s">Fallback: 5 seconds</option>
+                <option value="15000" selected data-i18n="option.fallback_15s">Fallback: 15 seconds</option>
               </select>
             </div>
             <div class="field">
-              <label for="leaderboard-display-mode">Leaderboard View</label>
+              <label for="leaderboard-display-mode" data-i18n="label.leaderboard_view">Leaderboard View</label>
               <select id="leaderboard-display-mode" onchange="updateControlGuidance(); setLeaderboardDisplayMode(this.value)">
-                <option value="classic">Classic</option>
-                <option value="race_track">Race Track</option>
-                <option value="team_battle">Team Battle</option>
-                <option value="sprint_board">Sprint Board</option>
+                <option value="classic" data-i18n="option.classic">Classic</option>
+                <option value="race_track" data-i18n="option.race_track">Race Track</option>
+                <option value="team_battle" data-i18n="option.team_battle">Team Battle</option>
+                <option value="sprint_board" data-i18n="option.sprint_board">Sprint Board</option>
               </select>
             </div>
             <div class="field">
-              <label for="start-sound-enabled">Start Sound</label>
+              <label for="start-sound-enabled" data-i18n="label.start_sound_select">Start Sound</label>
               <select id="start-sound-enabled" onchange="updateControlGuidance(); setStartCountdownSound(this.value === 'true')">
-                <option value="true" selected>Play 3, 2, 1, Go</option>
-                <option value="false">Silent Start</option>
+                <option value="true" selected data-i18n="option.play_countdown">Play 3, 2, 1, Go</option>
+                <option value="false" data-i18n="option.silent_start">Silent Start</option>
               </select>
             </div>
           </div>
           <div class="guidance-grid" aria-label="Race setup guidance">
             <div class="guidance-card">
-              <div class="guidance-title">Team Rule</div>
+              <div class="guidance-title" data-i18n="guidance.team_rule">Team Rule</div>
               <div class="guidance-body" id="team-rule-summary">Individual race. Team rules are not applied.</div>
             </div>
             <div class="guidance-card">
-              <div class="guidance-title">Leaderboard Preview</div>
+              <div class="guidance-title" data-i18n="guidance.leaderboard_preview">Leaderboard Preview</div>
               <div class="guidance-body" id="leaderboard-mode-summary">Classic ranking list for clear results.</div>
               <div class="mode-preview" id="leaderboard-mode-preview" aria-hidden="true"></div>
             </div>
             <div class="guidance-card">
-              <div class="guidance-title">Start Flow</div>
+              <div class="guidance-title" data-i18n="guidance.start_flow">Start Flow</div>
               <div class="guidance-body" id="start-flow-summary">Start Race sends the countdown to the Dashboard. The race timer begins on Go.</div>
             </div>
           </div>
           <div class="readiness" id="race-readiness-panel" aria-live="polite"></div>
-          <div class="countdown-banner" id="countdown-status" aria-live="polite">Countdown active on Dashboard. Race starts on Go.</div>
+          <div class="countdown-banner" id="countdown-status" aria-live="polite" data-i18n="banner.countdown_active">Countdown active on Dashboard. Race starts on Go.</div>
           <div class="button-row">
-            <button type="button" class="primary" id="btn-configure" onclick="configureRace()">Save Settings</button>
-            <button type="button" id="btn-start" onclick="startRace()">Start Race</button>
-            <button type="button" class="danger" id="btn-stop" onclick="stopRace()">Stop Race</button>
-            <button type="button" class="danger" id="btn-reset" onclick="resetRace()">Reset Race</button>
+            <button type="button" class="primary" id="btn-configure" onclick="configureRace()" data-i18n="button.save_settings">Save Settings</button>
+            <button type="button" id="btn-start" onclick="startRace()" data-i18n="button.start_race">Start Race</button>
+            <button type="button" class="danger" id="btn-stop" onclick="stopRace()" data-i18n="button.stop_race">Stop Race</button>
+            <button type="button" class="danger" id="btn-reset" onclick="resetRace()" data-i18n="button.reset_race">Reset Race</button>
           </div>
           <div class="status-text" id="race-message"></div>
         </section>
 
         <section class="panel" aria-labelledby="station-title">
           <div class="panel-header">
-            <h2 class="panel-title" id="station-title">Station Status</h2>
-            <button type="button" onclick="refreshAll()">Refresh</button>
+            <h2 class="panel-title" id="station-title" data-i18n="panel.station_status">Station Status</h2>
+            <button type="button" onclick="refreshAll()" data-i18n="button.refresh">Refresh</button>
           </div>
           <div class="list" id="station-list" style="margin-top: 14px;"></div>
         </section>
@@ -793,15 +814,15 @@
 
   <div class="login" id="login-modal" role="dialog" aria-modal="true" aria-labelledby="login-title">
     <div class="login-box">
-      <h2 id="login-title">Operator Unlock</h2>
-      <p>Enter the operator access code for protected race actions. Local test systems can leave this blank until protection is enabled.</p>
+      <h2 id="login-title" data-i18n="login.title">Operator Unlock</h2>
+      <p data-i18n="login.description">Enter the operator access code for protected race actions. Local test systems can leave this blank until protection is enabled.</p>
       <div class="field">
-        <label for="admin-token">Access Code</label>
+        <label for="admin-token" data-i18n="label.access_code">Access Code</label>
         <input type="password" id="admin-token" autocomplete="off">
       </div>
       <div class="button-row">
-        <button type="button" class="primary" onclick="saveAdminToken()">Save</button>
-        <button type="button" onclick="closeLogin()">Cancel</button>
+        <button type="button" class="primary" onclick="saveAdminToken()" data-i18n="button.save">Save</button>
+        <button type="button" onclick="closeLogin()" data-i18n="button.cancel">Cancel</button>
       </div>
       <div class="status-text" id="login-message"></div>
     </div>
@@ -822,6 +843,208 @@
 
     function $(id) {
       return document.getElementById(id);
+    }
+
+    function getBrowserLocale() {
+      const saved = localStorage.getItem("fitrace.locale");
+      if (saved === "en-US" || saved === "zh-TW") return saved;
+      const browserLang = navigator.language || navigator.userLanguage;
+      if (browserLang && browserLang.toLowerCase().startsWith("zh")) {
+        return "zh-TW";
+      }
+      return "en-US";
+    }
+
+    let currentLocale = getBrowserLocale();
+
+    const dictionaries = {
+      "en-US": {
+        "status.offline": "Offline",
+        "status.online": "Online",
+        "nav.dashboard": "Dashboard",
+        "nav.system_admin": "System Admin",
+        "nav.signup": "Signup",
+        "nav.operator_unlock": "Operator Unlock",
+        "label.race_state": "Race State",
+        "label.stations": "Stations",
+        "label.readiness": "Readiness",
+        "label.start_sound": "Start Sound",
+        "label.race_type": "Race Type",
+        "label.competition": "Competition",
+        "label.team_scoring": "Team Scoring",
+        "label.completion_rule": "Completion Rule",
+        "label.target_distance": "Target Distance (m)",
+        "label.target_calories": "Target Calories (kcal)",
+        "label.time_limit": "Time Limit (s)",
+        "label.challenge_time": "Challenge Time (s)",
+        "label.refresh": "Refresh",
+        "label.leaderboard_view": "Leaderboard View",
+        "label.start_sound_select": "Start Sound",
+        "label.access_code": "Access Code",
+        "panel.race_control": "Race Control",
+        "panel.station_status": "Station Status",
+        "option.distance": "Distance Challenge",
+        "option.calories": "Calories Challenge",
+        "option.time": "Time Challenge",
+        "option.max_power": "Max Power Challenge",
+        "option.individual": "Individual Race",
+        "option.team": "Team Race",
+        "option.team_average": "Team Average",
+        "option.team_total": "Team Total",
+        "option.team_target": "Team Target",
+        "option.everyone_finishes": "Everyone Finishes",
+        "option.live_websocket": "Live WebSocket only",
+        "option.fallback_5s": "Fallback: 5 seconds",
+        "option.fallback_15s": "Fallback: 15 seconds",
+        "option.classic": "Classic",
+        "option.race_track": "Race Track",
+        "option.team_battle": "Team Battle",
+        "option.sprint_board": "Sprint Board",
+        "option.play_countdown": "Play 3, 2, 1, Go",
+        "option.silent_start": "Silent Start",
+        "guidance.team_rule": "Team Rule",
+        "guidance.leaderboard_preview": "Leaderboard Preview",
+        "guidance.start_flow": "Start Flow",
+        "banner.countdown_active": "Countdown active on Dashboard. Race starts on Go.",
+        "button.save_settings": "Save Settings",
+        "button.start_race": "Start Race",
+        "button.stop_race": "Stop Race",
+        "button.reset_race": "Reset Race",
+        "button.refresh": "Refresh",
+        "button.save": "Save",
+        "button.cancel": "Cancel",
+        "login.title": "Operator Unlock",
+        "login.description": "Enter the operator access code for protected race actions. Local test systems can leave this blank until protection is enabled.",
+        "text.checking": "Checking",
+        "text.online": "Online",
+        "text.wait": "WAIT",
+        "text.race_readiness": "Race Readiness",
+        "text.ready_to_start": "Ready To Start",
+        "text.needs_attention": "Needs Attention Before Start",
+        "text.start_enabled": "Start Enabled",
+        "text.start_locked": "Start Locked",
+        "text.idle": "IDLE",
+        "text.ready": "READY",
+        "text.running": "RUNNING",
+        "text.stopped": "STOPPED",
+        "text.check": "CHECK",
+        "text.countdown_active": "Countdown Active",
+        "text.counting": "Counting",
+        "text.individual_race": "Individual race. Team names can display on the leaderboard, but ranking is per athlete.",
+        "text.everyone_finishes_detail": "Everyone Finishes means every teammate must complete the {targetLabel}; one unfinished member keeps the team unfinished.",
+        "text.team_target_detail": "Team Target lets the team finish when the selected team score reaches the target.",
+        "text.team_average_detail": "Team Average ranks teams by each member's normalized contribution.",
+        "text.team_total_detail": "Team Total ranks teams by the whole team's combined output."
+      }
+    };
+
+    dictionaries["zh-TW"] = {
+      ...dictionaries["en-US"],
+      "status.offline": "離線",
+      "status.online": "上線",
+      "nav.dashboard": "儀表板",
+      "nav.system_admin": "系統管理",
+      "nav.signup": "報名",
+      "nav.operator_unlock": "操作解鎖",
+      "label.race_state": "比賽狀態",
+      "label.stations": "站位",
+      "label.readiness": "整備狀態",
+      "label.start_sound": "啟動聲音",
+      "label.race_type": "比賽類型",
+      "label.competition": "競賽模式",
+      "label.team_scoring": "隊伍計分",
+      "label.completion_rule": "完成規則",
+      "label.target_distance": "目標距離 (m)",
+      "label.target_calories": "目標卡路里 (kcal)",
+      "label.time_limit": "時間限制 (s)",
+      "label.challenge_time": "挑戰時間 (s)",
+      "label.refresh": "重新整理",
+      "label.leaderboard_view": "排行榜顯示",
+      "label.start_sound_select": "啟動聲音",
+      "label.access_code": "存取碼",
+      "panel.race_control": "比賽控制",
+      "panel.station_status": "站位狀態",
+      "option.distance": "距離挑戰",
+      "option.calories": "卡路里挑戰",
+      "option.time": "時間挑戰",
+      "option.max_power": "最大功率挑戰",
+      "option.individual": "個人賽",
+      "option.team": "隊伍賽",
+      "option.team_average": "隊伍平均",
+      "option.team_total": "隊伍總計",
+      "option.team_target": "隊伍目標",
+      "option.everyone_finishes": "全員完成",
+      "option.live_websocket": "WebSocket 即時更新",
+      "option.fallback_5s": "後備: 5 秒",
+      "option.fallback_15s": "後備: 15 秒",
+      "option.classic": "經典",
+      "option.race_track": "賽道",
+      "option.team_battle": "隊伍對戰",
+      "option.sprint_board": "衝刺排行",
+      "option.play_countdown": "播放 3, 2, 1, Go",
+      "option.silent_start": "靜音啟動",
+      "guidance.team_rule": "隊伍規則",
+      "guidance.leaderboard_preview": "排行榜預覽",
+      "guidance.start_flow": "啟動流程",
+      "banner.countdown_active": "儀表板上倒計時進行中。比賽將在 Go 開始。",
+      "button.save_settings": "儲存設定",
+      "button.start_race": "開始比賽",
+      "button.stop_race": "停止比賽",
+      "button.reset_race": "重設比賽",
+      "button.refresh": "重新整理",
+      "button.save": "儲存",
+      "button.cancel": "取消",
+      "login.title": "操作解鎖",
+      "login.description": "輸入受保護比賽操作的操作存取碼。本機測試系統可以先留空,待啟用保護後再更新。",
+      "text.checking": "檢查中",
+      "text.online": "上線",
+      "text.wait": "等待",
+      "text.race_readiness": "比賽整備",
+      "text.ready_to_start": "準備好開始",
+      "text.needs_attention": "開始前需要注意",
+      "text.start_enabled": "啟動已啟用",
+      "text.start_locked": "啟動已鎖定",
+      "text.idle": "待命",
+      "text.ready": "就緒",
+      "text.running": "進行中",
+      "text.stopped": "已停止",
+      "text.check": "檢查",
+      "text.countdown_active": "倒計時進行中",
+      "text.counting": "正在計數",
+      "text.individual_race": "個人賽。隊伍名稱可在排行榜上顯示,但排名為各運動員。",
+      "text.everyone_finishes_detail": "全員完成表示每位隊友都必須完成{targetLabel};一位隊友未完成將導致整個隊伍未完成。",
+      "text.team_target_detail": "隊伍目標允許隊伍在選定的隊伍得分達到目標時完成。",
+      "text.team_average_detail": "隊伍平均根據每位成員的標準化貢獻排名隊伍。",
+      "text.team_total_detail": "隊伍總計根據整個隊伍的合併輸出排名隊伍。"
+    };
+
+    function t(key, params = {}) {
+      let value = (dictionaries[currentLocale] || dictionaries["en-US"])[key] || dictionaries["en-US"][key] || key;
+      Object.entries(params).forEach(([name, replacement]) => {
+        value = value.replaceAll(`{${name}}`, String(replacement));
+      });
+      return value;
+    }
+
+    function applyTranslations() {
+      document.documentElement.lang = currentLocale;
+      $("lang-en").classList.toggle("active", currentLocale === "en-US");
+      $("lang-zh").classList.toggle("active", currentLocale === "zh-TW");
+      document.querySelectorAll("[data-i18n]").forEach((element) => {
+        const key = element.dataset.i18n;
+        element.textContent = t(key);
+      });
+      $("ws-label").textContent = $("ws-dot").classList.contains("online") ? t("status.online") : t("status.offline");
+      renderRace();
+      renderReadinessPanel();
+      renderStations();
+      updateControlGuidance();
+    }
+
+    function setLanguage(lang) {
+      currentLocale = lang;
+      localStorage.setItem("fitrace.locale", lang);
+      applyTranslations();
     }
 
     function adminHeaders(extra = {}) {
@@ -883,10 +1106,10 @@
     function syncRaceFields() {
       const type = $("race-type").value;
       const label = $("race-target-label");
-      if (type === "distance") label.textContent = "Target Distance (m)";
-      if (type === "calories") label.textContent = "Target Calories (kcal)";
-      if (type === "time") label.textContent = "Time Limit (s)";
-      if (type === "max_power") label.textContent = "Challenge Time (s)";
+      if (type === "distance") label.textContent = t("label.target_distance");
+      if (type === "calories") label.textContent = t("label.target_calories");
+      if (type === "time") label.textContent = t("label.time_limit");
+      if (type === "max_power") label.textContent = t("label.challenge_time");
       updateControlGuidance();
     }
 
@@ -924,14 +1147,14 @@
 
       if (isTeamRace) {
         const scoringText = scoring === "total"
-          ? "Team Total ranks teams by the whole team's combined output."
-          : "Team Average ranks teams by each member's normalized contribution.";
+          ? t("text.team_total_detail")
+          : t("text.team_average_detail");
         const completionText = completion === "all_members"
-          ? `Everyone Finishes means every teammate must complete the ${targetLabel}; one unfinished member keeps the team unfinished.`
-          : "Team Target lets the team finish when the selected team score reaches the target.";
+          ? t("text.everyone_finishes_detail", { targetLabel })
+          : t("text.team_target_detail");
         $("team-rule-summary").textContent = `${scoringText} ${completionText}`;
       } else {
-        $("team-rule-summary").textContent = "Individual race. Team names can display on the leaderboard, but ranking is per athlete.";
+        $("team-rule-summary").textContent = t("text.individual_race");
       }
 
       $("leaderboard-mode-summary").textContent = modeText[mode];
@@ -942,7 +1165,8 @@
           <span>${escapeHtml(value)}</span>
         </div>
       `).join("");
-      $("start-flow-summary").textContent = `Start Race sends a 3, 2, 1, Go countdown to the Dashboard. Sound is ${soundEnabled ? "on by default" : "muted for this start"}; the race timer begins on Go.`;
+      const soundStatus = soundEnabled ? "on by default" : "muted for this start";
+      $("start-flow-summary").textContent = `Start Race sends a 3, 2, 1, Go countdown to the Dashboard. Sound is ${soundStatus}; the race timer begins on Go.`;
     }
 
     async function fetchJson(url, options = {}) {
@@ -1018,9 +1242,10 @@
     function renderRace() {
       const race = state.race || {};
       const raceState = race.state || "IDLE";
-      $("summary-state").textContent = raceState;
+      const raceStateDisplay = raceState === "IDLE" ? t("text.idle") : raceState === "READY" ? t("text.ready") : raceState === "RUNNING" ? t("text.running") : raceState === "STOPPED" ? t("text.stopped") : raceState;
+      $("summary-state").textContent = raceStateDisplay;
       $("summary-sound").textContent = race.start_countdown_sound_enabled === false ? "OFF" : "ON";
-      $("race-state-pill").textContent = raceState;
+      $("race-state-pill").textContent = raceStateDisplay;
       $("race-state-pill").className = `pill race-state ${raceState}`;
 
       const config = race.config;
@@ -1040,7 +1265,7 @@
 
       const readinessReady = state.readiness?.ready === true;
       $("btn-start").disabled = raceState !== "READY" || state.countdownActive || !readinessReady;
-      $("btn-start").textContent = state.countdownActive ? "Countdown Active" : "Start Race";
+      $("btn-start").textContent = state.countdownActive ? t("text.countdown_active") : t("button.start_race");
       $("btn-stop").disabled = raceState !== "RUNNING";
       $("btn-reset").disabled = raceState === "RUNNING";
       $("btn-configure").disabled = raceState === "RUNNING";
@@ -1063,12 +1288,12 @@
 
       const readiness = state.readiness;
       if (!readiness) {
-        $("summary-readiness").textContent = "WAIT";
+        $("summary-readiness").textContent = t("text.wait");
         panel.innerHTML = `
           <div class="readiness-card info">
             <div class="readiness-main">
-              <div class="readiness-title">Race Readiness</div>
-              <span class="pill">Checking</span>
+              <div class="readiness-title">${escapeHtml(t("text.race_readiness"))}</div>
+              <span class="pill">${escapeHtml(t("text.checking"))}</span>
             </div>
             <div class="readiness-meta">Checking registrations, teams, station health, start sound, and target settings.</div>
           </div>
@@ -1076,9 +1301,9 @@
         return;
       }
 
-      $("summary-readiness").textContent = readiness.ready ? "READY" : "CHECK";
+      $("summary-readiness").textContent = readiness.ready ? t("text.ready") : t("text.check");
       const statusClass = readiness.ready ? "ok" : "block";
-      const title = readiness.ready ? "Ready To Start" : "Needs Attention Before Start";
+      const title = readiness.ready ? t("text.ready_to_start") : t("text.needs_attention");
       const issues = readiness.blocking_issues || [];
       const warnings = readiness.warnings || [];
       const issueHtml = [...issues, ...warnings].length
@@ -1107,8 +1332,8 @@
       panel.innerHTML = `
         <div class="readiness-card ${statusClass}">
           <div class="readiness-main">
-            <div class="readiness-title">Race Readiness · ${title}</div>
-            <span class="pill">${readiness.ready ? "Start Enabled" : "Start Locked"}</span>
+            <div class="readiness-title">${escapeHtml(t("text.race_readiness"))} · ${title}</div>
+            <span class="pill">${readiness.ready ? escapeHtml(t("text.start_enabled")) : escapeHtml(t("text.start_locked"))}</span>
           </div>
           <div class="readiness-meta">Checks registrations, teams, station health, sound setting, and target value before Start Race.</div>
           ${issueHtml}
@@ -1296,20 +1521,20 @@
           state.refreshTimer = null;
         }
         $("ws-dot").className = "dot online";
-        $("ws-label").textContent = "Online";
+        $("ws-label").textContent = t("status.online");
         refreshAll({ schedule: false });
       };
       socket.onclose = () => {
         state.wsConnected = false;
         $("ws-dot").className = "dot";
-        $("ws-label").textContent = "Offline";
+        $("ws-label").textContent = t("status.offline");
         scheduleRefresh();
         window.setTimeout(connectWebSocket, 3000);
       };
       socket.onerror = () => {
         state.wsConnected = false;
         $("ws-dot").className = "dot";
-        $("ws-label").textContent = "Offline";
+        $("ws-label").textContent = t("status.offline");
         scheduleRefresh();
       };
       socket.onmessage = (event) => {
@@ -1347,6 +1572,7 @@
 
     syncRaceFields();
     syncCompetitionFields();
+    applyTranslations();
     connectWebSocket();
     refreshAll();
   </script>
