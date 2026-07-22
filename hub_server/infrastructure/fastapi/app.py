@@ -315,6 +315,7 @@ def station_stream_health(node_id: str | None) -> dict:
     if not node_id:
         return {
             "health": "missing",
+            "reason": "unassigned",
             "label": "No telemetry stream",
             "edge_node_id": None,
             "last_telemetry_epoch_ms": None,
@@ -328,6 +329,7 @@ def station_stream_health(node_id: str | None) -> dict:
             if edge_node.get("status") != "online":
                 return {
                     "health": "missing",
+                    "reason": "edge_offline",
                     "label": "Edge offline",
                     "edge_node_id": edge_node.get("edge_node_id"),
                     "last_telemetry_epoch_ms": stream.get("last_telemetry_epoch_ms"),
@@ -337,6 +339,7 @@ def station_stream_health(node_id: str | None) -> dict:
             if not last_telemetry_ms:
                 return {
                     "health": "missing",
+                    "reason": "no_data",
                     "label": "No telemetry received",
                     "edge_node_id": edge_node.get("edge_node_id"),
                     "last_telemetry_epoch_ms": None,
@@ -346,6 +349,7 @@ def station_stream_health(node_id: str | None) -> dict:
             if age_ms > STATION_TELEMETRY_STALE_MS:
                 return {
                     "health": "stale",
+                    "reason": "stale",
                     "label": "Telemetry stale",
                     "edge_node_id": edge_node.get("edge_node_id"),
                     "last_telemetry_epoch_ms": last_telemetry_ms,
@@ -353,6 +357,7 @@ def station_stream_health(node_id: str | None) -> dict:
 
             return {
                 "health": "online",
+                "reason": "online",
                 "label": "Online",
                 "edge_node_id": edge_node.get("edge_node_id"),
                 "last_telemetry_epoch_ms": last_telemetry_ms,
@@ -360,10 +365,40 @@ def station_stream_health(node_id: str | None) -> dict:
 
     return {
         "health": "missing",
+        "reason": "device_missing",
         "label": "Device missing",
         "edge_node_id": None,
         "last_telemetry_epoch_ms": None,
     }
+
+
+def station_block_message(station_number: int, reason: str | None) -> str:
+    """Actionable, specific reason a station blocks race start."""
+    messages = {
+        "unassigned": (
+            f"Station {station_number}: no equipment assigned. "
+            "Assign a telemetry stream in System Admin -> Stations."
+        ),
+        "device_missing": (
+            f"Station {station_number}: assigned device not found on any edge node. "
+            "Re-check the binding, or reassign in Station Assignment."
+        ),
+        "edge_offline": (
+            f"Station {station_number}: the edge node is offline. "
+            "Check the edge node's power and Wi-Fi."
+        ),
+        "no_data": (
+            f"Station {station_number}: assigned device has sent no data yet. "
+            "Have the athlete start the machine, or check the antenna link."
+        ),
+        "stale": (
+            f"Station {station_number}: telemetry stopped (no data for over 10s). "
+            "Check the machine and the antenna link."
+        ),
+    }
+    return messages.get(
+        reason, f"Station {station_number}: device is missing or offline."
+    )
 
 
 def build_check(status: str, message: str) -> dict:
@@ -428,14 +463,16 @@ def get_race_readiness_status() -> dict:
         }
         station_health.append(health_item)
         if health["health"] in ("missing", "stale"):
-            blocking_issues.append(f"Station {station_number} device is missing or offline.")
+            blocking_issues.append(
+                station_block_message(station_number, health.get("reason"))
+            )
 
-    unhealthy_count = sum(
-        1 for station in station_health if station.get("health") != "online"
-    )
-    if unhealthy_count:
+    unhealthy = [s for s in station_health if s.get("health") != "online"]
+    if unhealthy:
+        station_list = ", ".join(str(s["station_number"]) for s in unhealthy)
         checks["stations"] = build_check(
-            "block", f"{unhealthy_count} registered station(s) need attention."
+            "block",
+            f"{len(unhealthy)} station(s) need attention (Station {station_list}).",
         )
 
     if config and config.competition_mode == "team":

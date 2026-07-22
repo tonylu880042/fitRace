@@ -684,7 +684,7 @@ def test_start_race_blocks_registered_station_without_online_device():
     blocked = client.post("/api/race/countdown-start")
 
     assert blocked.status_code == 409
-    assert "Station 1 device is missing or offline." in blocked.json()["detail"]
+    assert "Station 1: assigned device not found" in blocked.json()["detail"]
     client.post("/api/race/reset")
 
 

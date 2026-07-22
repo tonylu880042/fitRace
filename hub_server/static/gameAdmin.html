@@ -500,6 +500,20 @@
     .readiness-check.warn { border-color: rgba(245,158,11,0.55); }
     .readiness-check.block { border-color: rgba(244,63,94,0.65); }
 
+    .readiness-stations {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .readiness-station {
+      border: 1px solid rgba(244,63,94,0.65);
+      border-left-width: 3px;
+      border-radius: 4px;
+      background: rgba(244,63,94,0.06);
+      padding: 9px 12px;
+    }
+
     .readiness-check-title {
       color: var(--text);
       font-size: 11px;
@@ -923,6 +937,14 @@
         "text.needs_attention": "Needs Attention Before Start",
         "text.start_enabled": "Start Enabled",
         "text.start_locked": "Start Locked",
+        "text.station": "Station",
+        "text.readiness_meta": "Checks registrations, teams, station health, sound setting, and target value before Start Race.",
+        "station_reason.unassigned": "No equipment assigned — assign a telemetry stream in System Admin -> Stations.",
+        "station_reason.device_missing": "Assigned device not found on any edge node — re-check the binding or reassign it.",
+        "station_reason.edge_offline": "The edge node is offline — check its power and Wi-Fi.",
+        "station_reason.no_data": "Assigned device has sent no data yet — start the machine or check the antenna link.",
+        "station_reason.stale": "Telemetry stopped (no data for over 10s) — check the machine and antenna link.",
+        "station_reason.generic": "Device is missing or offline.",
         "text.idle": "IDLE",
         "text.ready": "READY",
         "text.running": "RUNNING",
@@ -1004,6 +1026,14 @@
       "text.needs_attention": "開始前需要注意",
       "text.start_enabled": "啟動已啟用",
       "text.start_locked": "啟動已鎖定",
+      "text.station": "站位",
+      "text.readiness_meta": "開始比賽前會檢查報名、隊伍、站位健康、開始音效與目標值。",
+      "station_reason.unassigned": "尚未指派設備——請到系統管理 → 站位(Stations),指派一條遙測資料流。",
+      "station_reason.device_missing": "指派的設備在任何 Edge 節點都找不到——請重新確認綁定或重新指派。",
+      "station_reason.edge_offline": "Edge 節點離線——請檢查它的電源與 Wi-Fi。",
+      "station_reason.no_data": "指派的設備尚未送出資料——請讓選手啟動器材,或檢查天線連線。",
+      "station_reason.stale": "遙測已中斷(超過 10 秒沒有資料)——請檢查器材與天線連線。",
+      "station_reason.generic": "設備遺失或離線。",
       "text.idle": "待命",
       "text.ready": "就緒",
       "text.running": "進行中",
@@ -1304,7 +1334,9 @@
       $("summary-readiness").textContent = readiness.ready ? t("text.ready") : t("text.check");
       const statusClass = readiness.ready ? "ok" : "block";
       const title = readiness.ready ? t("text.ready_to_start") : t("text.needs_attention");
-      const issues = readiness.blocking_issues || [];
+      // Station-specific issues are shown as localized cards below; keep only
+      // the rest (register athlete, target, teams) in the bullet list.
+      const issues = (readiness.blocking_issues || []).filter((i) => !/^Station \d+:/.test(i));
       const warnings = readiness.warnings || [];
       const issueHtml = [...issues, ...warnings].length
         ? `<ul class="issue-list">${[...issues, ...warnings].map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`
@@ -1329,17 +1361,39 @@
         `;
       }).join("");
 
+      const unhealthyStations = (readiness.station_health || []).filter((s) => s.health !== "online");
+      const stationDetailHtml = unhealthyStations.length
+        ? `<div class="readiness-stations">${unhealthyStations.map((s) => `
+            <div class="readiness-station block">
+              <div class="readiness-check-title">${escapeHtml(t("text.station"))} ${escapeHtml(String(s.station_number))}${s.athlete_name ? ` · ${escapeHtml(s.athlete_name)}` : ""}</div>
+              <div class="readiness-check-message">${escapeHtml(stationReasonText(s.reason))}</div>
+            </div>
+          `).join("")}</div>`
+        : "";
+
       panel.innerHTML = `
         <div class="readiness-card ${statusClass}">
           <div class="readiness-main">
             <div class="readiness-title">${escapeHtml(t("text.race_readiness"))} · ${title}</div>
             <span class="pill">${readiness.ready ? escapeHtml(t("text.start_enabled")) : escapeHtml(t("text.start_locked"))}</span>
           </div>
-          <div class="readiness-meta">Checks registrations, teams, station health, sound setting, and target value before Start Race.</div>
+          <div class="readiness-meta">${escapeHtml(t("text.readiness_meta"))}</div>
           ${issueHtml}
+          ${stationDetailHtml}
           <div class="readiness-checks">${checksHtml}</div>
         </div>
       `;
+    }
+
+    function stationReasonText(reason) {
+      const key = {
+        unassigned: "station_reason.unassigned",
+        device_missing: "station_reason.device_missing",
+        edge_offline: "station_reason.edge_offline",
+        no_data: "station_reason.no_data",
+        stale: "station_reason.stale",
+      }[reason];
+      return key ? t(key) : t("station_reason.generic");
     }
 
     function getStationHealth(stationNumber) {
