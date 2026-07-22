@@ -175,14 +175,22 @@ Password: configured per shipped system
 The AP credential should be provisioned during manufacturing or pre-delivery setup. Normal field setup should not require entering AP credentials.
 
 Enable the web UI Wi-Fi picker (edge and hub). The service user needs serial
-and NetworkManager access, and polkit must allow scan/connect from a systemd
-service (otherwise `nmcli --rescan yes` silently returns only the cached AP):
+access, and polkit must allow NetworkManager scan/connect from a systemd
+service. Without the rule, scan returns only the cached AP and **connecting to
+a new network fails with "Insufficient privileges"** (the default NM policy
+only grants a `local`+`active` subject, which a service never is).
 
 ```bash
-sudo usermod -aG dialout,netdev <service-user>
-sudo cp deploy_update/polkit/50-fitrace-netdev-nm.rules /etc/polkit-1/rules.d/
+sudo usermod -aG dialout <service-user>
+sudo cp deploy_update/polkit/00-fitrace-nm.rules /etc/polkit-1/rules.d/
 sudo systemctl restart polkit
 ```
+
+The rule's `00-` filename is load-bearing: polkit evaluates rules.d in
+lexicographic order and the vendor `49-polkit-pkla-compat.rules` returns a
+definitive auth requirement for `settings.modify.system`, so any later-sorting
+rule never runs. Edit the file to add the venue's service user if it is not
+`tony`/`ucare`. (Already applied on 192.168.0.130.)
 
 ## 5. mDNS Discovery
 

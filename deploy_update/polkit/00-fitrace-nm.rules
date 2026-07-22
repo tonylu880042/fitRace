@@ -1,0 +1,27 @@
+// Let the headless fitRace hub/edge web UI control NetworkManager
+// (Wi-Fi scan + connect) as the service user.
+//
+// Two things matter, both learned the hard way:
+//
+// 1. FILENAME MUST SORT FIRST. polkit merges every rules.d file (from
+//    /etc and /usr/share) and evaluates them in lexicographic filename
+//    order; the first rule to return a Result wins. The vendor
+//    `49-polkit-pkla-compat.rules` returns a definitive auth requirement
+//    for NetworkManager.settings.modify.system, so a rule named `50-...`
+//    never runs. The `00-` prefix guarantees this rule is evaluated first.
+//
+// 2. SCOPE BY USER, NOT the netdev group. The default NM policy grants
+//    settings.modify.system only to a `local` AND `active` subject, which
+//    a systemd service never is; and subject.isInGroup() is unreliable for
+//    service processes. Matching subject.user works reliably here.
+//
+// Add the venue's service user(s) below if they differ
+// (tony = hub/edge-01, ucare = edge-02).
+//
+// Install: copy to /etc/polkit-1/rules.d/ and `sudo systemctl restart polkit`.
+polkit.addRule(function(action, subject) {
+    if (action.id.indexOf("org.freedesktop.NetworkManager.") === 0 &&
+        (subject.user == "tony" || subject.user == "ucare")) {
+        return polkit.Result.YES;
+    }
+});
