@@ -211,21 +211,31 @@ def main():
                     "Antenna auto-connect enabled for %s UART channel(s)",
                     len(edge_config.antenna_channels),
                 )
-                antenna_manager = AntennaFtmsManager(
-                    edge_config=edge_config,
-                    on_telemetry=on_telemetry,
-                    event_log=event_log,
-                )
-                try:
-                    await antenna_manager.start()
-                    while True:
-                        if not antenna_manager.running:
-                            raise RuntimeError("Antenna FTMS manager stopped unexpectedly")
-                        await asyncio.sleep(1.0)
-                except asyncio.CancelledError:
-                    logger.info("Antenna FTMS manager task cancelled")
-                finally:
+                # Keep the antenna manager alive across board hiccups. A wedged
+                # board -- or a scan/STATUS issued from the web UI contending
+                # for the same serial port -- can stop the manager. Restart it
+                # instead of crashing the whole runtime, so MQTT and the node
+                # heartbeat stay up and the node never drops offline.
+                while True:
+                    antenna_manager = AntennaFtmsManager(
+                        edge_config=edge_config,
+                        on_telemetry=on_telemetry,
+                        event_log=event_log,
+                    )
+                    try:
+                        await antenna_manager.start()
+                        while antenna_manager.running:
+                            await asyncio.sleep(1.0)
+                    except asyncio.CancelledError:
+                        logger.info("Antenna FTMS manager task cancelled")
+                        await antenna_manager.stop()
+                        raise
                     await antenna_manager.stop()
+                    logger.warning(
+                        "Antenna FTMS manager stopped; restarting in 5s "
+                        "(MQTT and heartbeat stay up)."
+                    )
+                    await asyncio.sleep(5.0)
 
             elif edge_config.equipment_bindings and BLEAK_AVAILABLE:
 
