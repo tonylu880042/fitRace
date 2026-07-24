@@ -1430,7 +1430,7 @@ EDGE_SETUP_HTML = """
         "monitor.updated": "Updated",
         "bindings.title": "Equipment Bindings",
         "hub.address_label": "Central Hub address",
-        "hub.address_hint": "Use \"localhost\" when the hub runs on this device, or a .local hostname for a separate hub. \"auto\" also works.",
+        "hub.address_hint": "Use 'localhost' when the hub runs on this device, or a .local hostname for a separate hub. 'auto' also works.",
         "bindings.node_id": "Edge node",
         "bindings.name": "Display name",
         "bindings.type": "Equipment type",
