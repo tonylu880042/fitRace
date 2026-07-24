@@ -1197,6 +1197,11 @@ EDGE_SETUP_HTML = """
         <section class="panel" aria-labelledby="bindings-title" id="bindings-section">
           <h2 id="bindings-title" data-i18n="bindings.title">Equipment Bindings</h2>
           <div class="status-line"><span data-i18n="bindings.node_id">Edge node</span><strong id="config-node-id">--</strong></div>
+          <div class="field" style="margin-top:12px;">
+            <label data-i18n="hub.address_label">Central Hub address</label>
+            <input id="central-hub-input" type="text" autocomplete="off" placeholder="localhost">
+            <div class="sub" data-i18n="hub.address_hint">Use "localhost" when the hub runs on this device, or a .local hostname for a separate hub. "auto" also works.</div>
+          </div>
           <div class="sub" id="binding-filter-hint"></div>
           <div class="binding-list" id="binding-list" style="margin-top:14px;"></div>
           <div class="button-grid" style="margin-top:14px;">
@@ -1424,6 +1429,8 @@ EDGE_SETUP_HTML = """
         "monitor.calories": "Calories",
         "monitor.updated": "Updated",
         "bindings.title": "Equipment Bindings",
+        "hub.address_label": "Central Hub address",
+        "hub.address_hint": "Use \"localhost\" when the hub runs on this device, or a .local hostname for a separate hub. \"auto\" also works.",
         "bindings.node_id": "Edge node",
         "bindings.name": "Display name",
         "bindings.type": "Equipment type",
@@ -1544,6 +1551,8 @@ EDGE_SETUP_HTML = """
       "monitor.calories": "熱量",
       "monitor.updated": "更新時間",
       "bindings.title": "設備綁定",
+      "hub.address_label": "中央 Hub 位址",
+      "hub.address_hint": "Hub 在本機時填「localhost」;若 hub 是另一台機器,填它的 .local 主機名。也可填「auto」自動判斷。",
       "bindings.node_id": "Edge Node",
       "bindings.name": "顯示名稱",
       "bindings.type": "設備類型",
@@ -1933,6 +1942,10 @@ EDGE_SETUP_HTML = """
     function renderBindings(config) {
       edgeConfig = config;
       configNodeId.textContent = config.node_id || "--";
+      const hubInput = document.getElementById("central-hub-input");
+      if (hubInput && document.activeElement !== hubInput) {
+        hubInput.value = config.mqtt_host || "";
+      }
       const bindings = Array.isArray(config.equipment_bindings) ? config.equipment_bindings : [];
       if (!bindings.length) {
         bindingList.innerHTML = `<div class="empty">${escapeHtml(t("monitor.empty"))}</div>`;
@@ -1998,8 +2011,11 @@ EDGE_SETUP_HTML = """
           ble_target: original.ble_target,
         };
       });
+      const hubInput = document.getElementById("central-hub-input");
+      const mqttHost = (hubInput && hubInput.value.trim()) || "localhost";
       return {
         ...edgeConfig,
+        mqtt_host: mqttHost,
         max_ftms_connections: Math.max(1, bindings.length),
         equipment_bindings: bindings,
       };

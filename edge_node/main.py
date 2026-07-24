@@ -23,6 +23,38 @@ NODE_STATUS_INTERVAL_SEC = 5.0
 MAC_ADDRESS_PATTERN = re.compile(r"^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$")
 
 
+def _broker_reachable(host, port, timeout=1.5):
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def resolve_mqtt_host(configured, port, probe=_broker_reachable):
+    """Pick the MQTT broker host, tolerant of a stale/wrong config value.
+
+    - ""/"auto" -> localhost. On the all-in-one Pi the broker is always local,
+      so this is correct and survives any IP/network change (zero config).
+    - An explicit host that is reachable is used as-is (distributed setups;
+      prefer a .local hostname over an IP so it survives IP changes).
+    - An explicit host that is NOT reachable, when a local broker IS up, falls
+      back to localhost. This self-heals the exact failure where config was
+      pinned to an old hub IP and the network moved, stranding the edge.
+    """
+    if not configured or configured == "auto":
+        return "localhost"
+    if configured not in ("localhost", "127.0.0.1") and not probe(configured, port):
+        if probe("localhost", port):
+            logger.warning(
+                "Configured MQTT broker '%s' is unreachable but a local broker "
+                "is up; using localhost.",
+                configured,
+            )
+            return "localhost"
+    return configured
+
+
 async def shutdown(loop, signal=None):
     """Cleanup tasks on shutdown."""
     if signal:
@@ -76,8 +108,8 @@ def main():
 
     edge_config = _build_edge_config(config)
     node_id = edge_config.node_id
-    mqtt_host = edge_config.mqtt_host
     mqtt_port = edge_config.mqtt_port
+    mqtt_host = resolve_mqtt_host(edge_config.mqtt_host, mqtt_port)
 
     logger.info(
         "Starting Edge Node: %s with %s FTMS binding(s)",
