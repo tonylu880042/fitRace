@@ -108,7 +108,10 @@ deploy_edge() {
   info "Deploying edge to $target at $path..."
   preflight_check "$target"
 
-  run rsync -ac --delete --exclude=__pycache__ -e "ssh -o ConnectTimeout=6" \
+  # config.json is device-local (equipment bindings, mqtt_host) — never let a
+  # deploy overwrite or --delete it, or the venue's setup is lost.
+  run rsync -ac --delete --exclude=__pycache__ --exclude=config.json \
+    -e "ssh -o ConnectTimeout=6" \
     "$REPO_ROOT/edge_node/" "$target:$path/edge_node/"
   run rsync -ac --exclude=__pycache__ -e "ssh -o ConnectTimeout=6" \
     "$REPO_ROOT/fitrace_common/" "$target:$path/fitrace_common/"
