@@ -579,6 +579,32 @@ EDGE_SETUP_HTML = """
       font-weight: 700;
     }
 
+    .uartlog {
+      margin-top: 4px;
+      max-height: 340px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .uartlog-row {
+      display: flex;
+      gap: 8px;
+      align-items: baseline;
+    }
+    .uartlog-row .t { color: var(--muted); flex: none; }
+    .uartlog-row .dir { flex: none; width: 1.2em; text-align: center; font-weight: 700; }
+    .uartlog-row .ch { color: var(--muted); flex: none; }
+    .uartlog-row .raw { color: var(--text); word-break: break-all; }
+    .uartlog-row.tx .dir { color: #38bdf8; }
+    .uartlog-row.rx .dir { color: #22c55e; }
+    .uartlog-row.status .raw { color: var(--warn); font-weight: 700; }
+    .uartlog-row.torn .raw { color: var(--danger); }
+    .uartlog-empty { color: var(--muted); font-size: 12px; }
+
     .wifi-meter {
       display: grid;
       gap: 10px;
@@ -1116,6 +1142,10 @@ EDGE_SETUP_HTML = """
             <button id="wifi-choose-btn" type="button" class="button-secondary" data-i18n="wifi.choose" style="margin-top:10px;">Choose Wi-Fi network</button>
           </div>
         </section>
+        <section class="panel" aria-labelledby="uartlog-title">
+          <h2 id="uartlog-title" data-i18n="uartlog.title">Antenna UART log</h2>
+          <div class="uartlog" id="uartlog" aria-live="polite"></div>
+        </section>
       </div>
 
       <div class="stack">
@@ -1163,12 +1193,12 @@ EDGE_SETUP_HTML = """
               <button class="antenna-command" type="button" data-command="status">STATUS</button>
               <button class="antenna-command" type="button" data-command="version">VERSION</button>
               <button class="antenna-command" type="button" data-command="connect">CONNECT</button>
-              <button class="antenna-command button-secondary" type="button" data-command="disconnect_all">DISCONNECT</button>
+              <button class="antenna-command button-secondary" type="button" data-command="disconnect_all">DISCONNECT ALL</button>
               <button class="antenna-command button-secondary" type="button" data-command="reboot">REBOOT</button>
             </div>
             <div class="field" style="margin-top:14px;">
-              <label for="antenna-macs" data-i18n="antenna.macs">Device MACs / IDs for CONNECT</label>
-              <input id="antenna-macs" type="text" placeholder="AA:BB:CC:DD:EE:01,AA:BB:CC:DD:EE:02" autocomplete="off">
+              <label for="antenna-macs" data-i18n="antenna.macs">CONNECT target (bound devices on this channel)</label>
+              <select id="antenna-macs"></select>
             </div>
             <button id="antenna-connect-btn" type="button" class="button-secondary" data-i18n="antenna.connect">CONNECT selected devices</button>
             <button id="antenna-reconnect-configured-btn" type="button" class="button-secondary" data-i18n="antenna.reconnect_configured" style="margin-top:10px;">CONNECT configured devices</button>
@@ -1394,7 +1424,9 @@ EDGE_SETUP_HTML = """
         "antenna.rtscts": "RTS/CTS hardware flow control",
         "antenna.timeout": "Read timeout seconds",
         "antenna.scan_duration": "Scan duration seconds",
-        "antenna.macs": "Device MACs / IDs for CONNECT",
+        "antenna.macs": "CONNECT target (bound devices on this channel)",
+        "antenna.connect_all": "All bound on this channel ({count})",
+        "antenna.connect_none": "No bound devices on this channel",
         "antenna.connect": "CONNECT selected devices",
         "antenna.reconnect_configured": "CONNECT configured devices",
         "antenna.report_interval": "Report interval ms",
@@ -1410,6 +1442,8 @@ EDGE_SETUP_HTML = """
         "antenna.failed": "Command failed",
         "antenna.idle": "Idle",
         "monitor.title": "Runtime Monitor",
+        "uartlog.title": "Antenna UART log",
+        "uartlog.empty": "No UART traffic yet.",
         "monitor.refresh": "Refresh",
         "monitor.status": "Fixed equipment telemetry slots",
         "monitor.empty": "No equipment bindings configured.",
@@ -1516,7 +1550,9 @@ EDGE_SETUP_HTML = """
       "antenna.rtscts": "RTS/CTS 硬體流控",
       "antenna.timeout": "讀取逾時秒數",
       "antenna.scan_duration": "掃描秒數",
-      "antenna.macs": "CONNECT 用設備 MAC / ID",
+      "antenna.macs": "CONNECT 目標（本通道已綁定設備）",
+      "antenna.connect_all": "本通道全部已綁定（{count} 台）",
+      "antenna.connect_none": "本通道尚無已綁定設備",
       "antenna.connect": "CONNECT 選定設備",
       "antenna.reconnect_configured": "CONNECT 已設定設備",
       "antenna.report_interval": "回報週期 ms",
@@ -1532,6 +1568,8 @@ EDGE_SETUP_HTML = """
       "antenna.failed": "命令失敗",
       "antenna.idle": "閒置",
       "monitor.title": "運行監測",
+      "uartlog.title": "天線板 UART 記錄",
+      "uartlog.empty": "尚無 UART 往來。",
       "monitor.refresh": "重新整理",
       "monitor.status": "固定設備即時欄位",
       "monitor.empty": "尚未設定設備綁定。",
@@ -1817,6 +1855,35 @@ EDGE_SETUP_HTML = """
         }
       });
       renderMonitorEquipment();
+      renderUartLog(events);
+    }
+
+    const UARTLOG_MAX = 80;
+    function renderUartLog(events) {
+      const uartLog = document.getElementById("uartlog");
+      if (!uartLog) return;
+      const rows = events.filter(
+        (e) => e.source === "uart" && e.parsed && e.parsed.type !== "telemetry"
+      ).slice(0, UARTLOG_MAX);
+      if (!rows.length) {
+        uartLog.innerHTML = `<div class="uartlog-empty">${escapeHtml(t("uartlog.empty"))}</div>`;
+        return;
+      }
+      uartLog.innerHTML = rows.map((e) => {
+        const dir = e.direction === "tx" ? "tx" : "rx";
+        const arrow = dir === "tx" ? "▸" : "◂";
+        const raw = String((e.parsed && e.parsed.raw != null ? e.parsed.raw : e.message) || "");
+        const isStatus = e.parsed && e.parsed.type === "status";
+        // ponytail: a board line that isn't ';'-terminated is a torn/dropped UART frame
+        const torn = dir === "rx" && raw !== "" && !raw.trimEnd().endsWith(";");
+        const cls = torn ? "torn" : (isStatus ? "status" : "");
+        return `<div class="uartlog-row ${dir} ${cls}">`
+          + `<span class="t">${escapeHtml(formatEventTime(e.timestamp_epoch_ms))}</span>`
+          + `<span class="dir">${arrow}</span>`
+          + `<span class="ch">${escapeHtml(e.channel || "")}</span>`
+          + `<span class="raw">${escapeHtml(raw)}</span>`
+          + `</div>`;
+      }).join("");
     }
 
     async function refreshMonitorEvents() {
@@ -1880,6 +1947,39 @@ EDGE_SETUP_HTML = """
       antennaChannelLoad.textContent = `${t("antenna.channel_load", { max: ANTENNA_MAX_CONNECTIONS })} — ${summary}`;
       const selectedId = channelById.get(antennaChannelSelect.value) || "";
       renderSelectedChannel(selectedId, counts);
+      populateConnectTargets();
+    }
+
+    function currentChannelId() {
+      const byPort = new Map(antennaChannels.map((channel) => [channel.port, channel.id]));
+      return byPort.get(antennaPortInput.value) || "";
+    }
+
+    function boundTargetsForCurrentChannel() {
+      const channelId = currentChannelId();
+      const bindings = Array.isArray(edgeConfig?.equipment_bindings) ? edgeConfig.equipment_bindings : [];
+      // CONNECT is per-board, so only offer devices bound to the selected channel.
+      // On a manual serial port (no matching channel) fall back to every bound device.
+      return bindings.filter((binding) => binding.ble_target && (channelId ? binding.antenna_channel === channelId : true));
+    }
+
+    function populateConnectTargets() {
+      if (!antennaMacsInput || antennaMacsInput.tagName !== "SELECT") return;
+      const previous = antennaMacsInput.value;
+      const targets = boundTargetsForCurrentChannel();
+      if (!targets.length) {
+        antennaMacsInput.innerHTML = `<option value="" disabled selected>${escapeHtml(t("antenna.connect_none"))}</option>`;
+        return;
+      }
+      const options = [`<option value="__all__">${escapeHtml(t("antenna.connect_all", { count: targets.length }))}</option>`];
+      targets.forEach((binding) => {
+        const label = `${binding.equipment_id || binding.ble_target} · ${binding.ble_target}`;
+        options.push(`<option value="${escapeHtml(binding.ble_target)}">${escapeHtml(label)}</option>`);
+      });
+      antennaMacsInput.innerHTML = options.join("");
+      if (previous && Array.from(antennaMacsInput.options).some((option) => option.value === previous)) {
+        antennaMacsInput.value = previous;
+      }
     }
 
     function renderSelectedChannel(channelId, counts) {
@@ -2137,12 +2237,16 @@ EDGE_SETUP_HTML = """
       };
 
       if (command === "connect") {
-        payload.macs = antennaMacsInput.value
-          .split(",")
-          .map((value) => value.trim())
-          .filter(Boolean);
+        const target = antennaMacsInput.value;
+        if (target === "__all__") {
+          payload.macs = boundTargetsForCurrentChannel().map((binding) => binding.ble_target);
+        } else if (target) {
+          payload.macs = [target];
+        } else {
+          payload.macs = [];
+        }
         if (!payload.macs.length) {
-          throw new Error("Enter at least one device MAC or ID for CONNECT");
+          throw new Error("Select a device to CONNECT");
         }
       }
 
