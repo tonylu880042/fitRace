@@ -453,6 +453,18 @@ EDGE_SETUP_HTML = """
       box-shadow: 0 0 10px rgba(52, 211, 153, 0.48);
     }
 
+    .admin-auth-banner {
+      margin-top: 16px;
+      padding: 14px;
+      border: 1px solid var(--danger);
+      background: var(--surface-2);
+    }
+
+    .admin-auth-banner .field {
+      margin: 10px 0 0;
+      max-width: 320px;
+    }
+
     main {
       display: grid;
       grid-template-columns: 360px 1fr;
@@ -504,25 +516,6 @@ EDGE_SETUP_HTML = """
     }
 
     .field { margin-bottom: 14px; }
-
-    .toggle {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      padding: 10px 12px;
-      border: 1px solid var(--border);
-      border-radius: 0;
-      background: var(--surface-2);
-      color: var(--muted);
-      font-size: 14px;
-    }
-
-    .toggle input {
-      width: 18px;
-      height: 18px;
-      accent-color: var(--accent);
-    }
 
     button {
       width: 100%;
@@ -793,7 +786,7 @@ EDGE_SETUP_HTML = """
     }
 
     .binding-row.channel-dim {
-      display: none; /* only the selected channel's devices stay visible */
+      opacity: 0.35; /* dim rows outside the selected channel; keep them visible in place */
     }
 
     .binding-unbind {
@@ -1004,14 +997,6 @@ EDGE_SETUP_HTML = """
       flex: 1;
     }
 
-    .monitor-refresh {
-      width: auto;
-      min-width: 96px;
-      min-height: 34px;
-      padding: 0 12px;
-      font-size: 12px;
-    }
-
     .monitor-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1045,7 +1030,7 @@ EDGE_SETUP_HTML = """
       flex: 0 0 auto;
       padding: 4px 8px;
       border: 1px solid var(--border);
-      border-radius: 50%;
+      border-radius: 0;
       color: var(--muted);
       font-family: var(--mono);
       font-size: 11px;
@@ -1097,6 +1082,12 @@ EDGE_SETUP_HTML = """
       .binding-row { grid-template-columns: 1fr; }
       .binding-row .binding-target { grid-column: auto; }
       .monitor-grid { grid-template-columns: 1fr; }
+      /* ponytail: flatten the two .stack wrappers so `order` can move the UART log
+         (left stack) below the antenna control panel (right stack) on one column;
+         desktop's two-column layout above 820px is untouched. */
+      .stack { display: contents; }
+      section[aria-labelledby="uartlog-title"] { order: 1; }
+      .tab-bar, #bindings-section, #monitor-section { order: 2; }
     }
   </style>
 </head>
@@ -1115,6 +1106,15 @@ EDGE_SETUP_HTML = """
         <div class="badge"><span class="dot"></span><span>__EDGE_HOST_BADGE__</span></div>
       </div>
     </header>
+
+    <div id="admin-auth-banner" class="admin-auth-banner" hidden>
+      <div class="message error" data-i18n="admin.auth_required">Admin token required. Enter it below and save to continue.</div>
+      <div class="field">
+        <label for="admin-auth-input" data-i18n="admin.password_label">Admin token</label>
+        <input id="admin-auth-input" type="password" autocomplete="off">
+      </div>
+      <button id="admin-auth-save" type="button" class="button-secondary" data-i18n="admin.save">Save token</button>
+    </div>
 
     <main>
       <div class="stack">
@@ -1152,14 +1152,13 @@ EDGE_SETUP_HTML = """
         <section class="panel" aria-labelledby="antenna-title">
           <h2 id="antenna-title" data-i18n="antenna.title">UART Antenna Control</h2>
           <div class="field">
-            <label for="antenna-channel" data-i18n="antenna.channel">UART channel</label>
-            <select id="antenna-channel">
-              <option value="">Manual serial port</option>
-            </select>
-            <div class="sub" id="antenna-channel-load"></div>
+            <label id="antenna-channel-label" data-i18n="antenna.channel">Active UART channel</label>
+            <div class="tab-bar" id="antenna-channel" role="group" aria-labelledby="antenna-channel-label"></div>
             <div class="channel-slots" id="antenna-channel-slots" aria-live="polite"></div>
+            <div class="sub" id="binding-filter-hint"></div>
           </div>
           <button class="antenna-command" type="button" data-command="scan">SCAN</button>
+          <div class="message error" id="scan-live-warning" hidden data-i18n="antenna.scan_live_warning">Scanning interrupts live equipment data on connected devices.</div>
           <div class="status" aria-live="polite">
             <div class="status-line"><span data-i18n="antenna.command_status">Command status</span><strong id="antenna-state">Idle</strong></div>
             <div class="message" id="antenna-message">Ready to send UART commands.</div>
@@ -1167,18 +1166,9 @@ EDGE_SETUP_HTML = """
           <details class="antenna-advanced">
             <summary data-i18n="antenna.advanced">Advanced maintenance</summary>
             <div class="field">
-              <label for="antenna-port" data-i18n="antenna.port">Serial port</label>
-              <input id="antenna-port" type="text" value="/dev/serial0" autocomplete="off">
-            </div>
-            <div class="field">
-              <label for="antenna-baudrate" data-i18n="antenna.baudrate">Baudrate</label>
-              <input id="antenna-baudrate" type="number" min="9600" max="1000000" value="115200">
-            </div>
-            <div class="field">
-              <label class="toggle" for="antenna-rtscts">
-                <span data-i18n="antenna.rtscts">RTS/CTS hardware flow control</span>
-                <input id="antenna-rtscts" type="checkbox">
-              </label>
+              <div class="sub" data-i18n="antenna.protocol_hint">Fixed by the antenna board protocol — shown for reference only.</div>
+              <div class="status-line"><span data-i18n="antenna.baudrate">Baudrate</span><strong id="antenna-baudrate-value">--</strong></div>
+              <div class="status-line"><span data-i18n="antenna.rtscts">RTS/CTS hardware flow control</span><strong id="antenna-rtscts-value">--</strong></div>
             </div>
             <div class="field">
               <label for="antenna-timeout" data-i18n="antenna.timeout">Read timeout seconds</label>
@@ -1220,11 +1210,11 @@ EDGE_SETUP_HTML = """
         </section>
 
         <div class="tab-bar" role="tablist">
-          <button type="button" id="tab-bindings" class="tab-button active" data-i18n="bindings.title">Equipment Bindings</button>
-          <button type="button" id="tab-monitor" class="tab-button" data-i18n="monitor.title">Runtime Monitor</button>
+          <button type="button" id="tab-bindings" class="tab-button active" role="tab" aria-selected="true" aria-controls="bindings-section" data-i18n="bindings.title">Equipment Bindings</button>
+          <button type="button" id="tab-monitor" class="tab-button" role="tab" aria-selected="false" aria-controls="monitor-section" data-i18n="monitor.title">Runtime Monitor</button>
         </div>
 
-        <section class="panel" aria-labelledby="bindings-title" id="bindings-section">
+        <section class="panel" aria-labelledby="bindings-title" id="bindings-section" role="tabpanel">
           <h2 id="bindings-title" data-i18n="bindings.title">Equipment Bindings</h2>
           <div class="status-line"><span data-i18n="bindings.node_id">Edge node</span><strong id="config-node-id">--</strong></div>
           <div class="field" style="margin-top:12px;">
@@ -1232,7 +1222,6 @@ EDGE_SETUP_HTML = """
             <input id="central-hub-input" type="text" autocomplete="off" placeholder="localhost">
             <div class="sub" data-i18n="hub.address_hint">Use "localhost" when the hub runs on this device, or a .local hostname for a separate hub. "auto" also works.</div>
           </div>
-          <div class="sub" id="binding-filter-hint"></div>
           <div class="binding-list" id="binding-list" style="margin-top:14px;"></div>
           <div class="button-grid" style="margin-top:14px;">
             <button id="config-save-btn" type="button" data-i18n="bindings.save">Save bindings</button>
@@ -1241,10 +1230,9 @@ EDGE_SETUP_HTML = """
           <div class="message" id="config-message" data-i18n="bindings.ready">Edit names here, then save and restart Edge runtime.</div>
         </section>
 
-        <section class="panel" aria-labelledby="monitor-title" id="monitor-section" hidden>
+        <section class="panel" aria-labelledby="monitor-title" id="monitor-section" role="tabpanel" hidden>
           <div class="monitor-toolbar">
             <h2 id="monitor-title" data-i18n="monitor.title" style="margin:0;">Runtime Monitor</h2>
-            <button id="monitor-refresh-btn" type="button" class="button-secondary monitor-refresh" data-i18n="monitor.refresh">Refresh</button>
           </div>
           <div class="status-line">
             <span data-i18n="monitor.status">Fixed equipment telemetry slots</span>
@@ -1277,12 +1265,10 @@ EDGE_SETUP_HTML = """
     const wifiInterface = document.getElementById("wifi-interface");
     const wifiSsid = document.getElementById("wifi-ssid");
     const wifiMessage = document.getElementById("wifi-message");
-    const antennaPortInput = document.getElementById("antenna-port");
-    const antennaChannelSelect = document.getElementById("antenna-channel");
-    const antennaChannelLoad = document.getElementById("antenna-channel-load");
+    const antennaChannelGroup = document.getElementById("antenna-channel");
     const antennaChannelSlots = document.getElementById("antenna-channel-slots");
-    const antennaBaudrateInput = document.getElementById("antenna-baudrate");
-    const antennaRtsctsInput = document.getElementById("antenna-rtscts");
+    const antennaBaudrateValue = document.getElementById("antenna-baudrate-value");
+    const antennaRtsctsValue = document.getElementById("antenna-rtscts-value");
     const antennaTimeoutInput = document.getElementById("antenna-timeout");
     const antennaScanDurationInput = document.getElementById("antenna-scan-duration");
     const antennaMacsInput = document.getElementById("antenna-macs");
@@ -1293,7 +1279,6 @@ EDGE_SETUP_HTML = """
     const antennaOutput = document.getElementById("antenna-output");
     const monitorGrid = document.getElementById("monitor-grid");
     const monitorCount = document.getElementById("monitor-count");
-    const monitorRefreshBtn = document.getElementById("monitor-refresh-btn");
     const antennaCommandButtons = Array.from(document.querySelectorAll(".antenna-command"));
     const antennaConnectBtn = document.getElementById("antenna-connect-btn");
     const antennaReconnectConfiguredBtn = document.getElementById("antenna-reconnect-configured-btn");
@@ -1313,6 +1298,7 @@ EDGE_SETUP_HTML = """
     ];
     let edgeConfig = null;
     let antennaChannels = [];
+    let selectedAntennaPort = ""; // port of the channel currently active for UART commands
     const ANTENNA_MAX_CONNECTIONS = 3; // nRF52832 board hard limit: 3 BLE links per board
     const EQUIPMENT_TYPES = [
       "treadmill", "curved_treadmill", "spin_bike", "fan_bike", "upright_bike",
@@ -1334,6 +1320,7 @@ EDGE_SETUP_HTML = """
       )).join("");
     }
     let monitorLatestByNode = new Map();
+    let monitorLiveCount = 0; // read by the SCAN warning to know if a scan would interrupt live equipment
     let monitorDisplayedByNode = new Map();
     let monitorServerNowEpochMs = null;
     let monitorServerNowReceivedAtMs = null;
@@ -1389,12 +1376,9 @@ EDGE_SETUP_HTML = """
         "wifi.connect_ok": "Connected to {ssid}. IP: {ip}",
         "wifi.rescan": "Rescan",
         "antenna.title": "UART Antenna Control",
-        "antenna.port": "Serial port",
-        "antenna.channel": "UART channel",
+        "antenna.channel": "Active communication channel",
         "antenna.advanced": "Advanced maintenance",
-        "antenna.manual": "Manual serial port",
         "antenna.waiting": "Waiting for UART response...",
-        "antenna.channel_load": "Bound devices per channel (max {max}/board)",
         "antenna.slots_free": "{channel}: {free} slot(s) free for a new device",
         "antenna.slots_full": "{channel} is full — pick another channel for new devices",
         "wizard.title1": "Add scanned devices",
@@ -1422,6 +1406,9 @@ EDGE_SETUP_HTML = """
         "type.unknown": "Unknown",
         "antenna.baudrate": "Baudrate",
         "antenna.rtscts": "RTS/CTS hardware flow control",
+        "antenna.protocol_hint": "Fixed by the antenna board protocol — shown for reference only.",
+        "antenna.rtscts_on": "On",
+        "antenna.rtscts_off": "Off",
         "antenna.timeout": "Read timeout seconds",
         "antenna.scan_duration": "Scan duration seconds",
         "antenna.macs": "CONNECT target (bound devices on this channel)",
@@ -1441,11 +1428,18 @@ EDGE_SETUP_HTML = """
         "antenna.complete_state": "Complete",
         "antenna.failed": "Command failed",
         "antenna.idle": "Idle",
+        "antenna.channel_load_failed": "Failed to load UART channels",
+        "antenna.disconnect_all_confirm": "Disconnect all devices? Every device on the antenna boards will drop its connection.",
+        "antenna.reboot_confirm": "Reboot the antenna board? All connected devices will drop and reconnect after it restarts.",
+        "antenna.scan_live_warning": "Scanning interrupts live equipment data on connected devices.",
+        "antenna.scan_live_confirm": "Devices are live right now. Scanning will interrupt their data. Continue?",
+        "admin.auth_required": "Admin token required. Enter it below and save to continue.",
+        "admin.password_label": "Admin token",
+        "admin.save": "Save token",
         "monitor.title": "Runtime Monitor",
         "uartlog.title": "Antenna UART log",
         "uartlog.empty": "No UART traffic yet.",
-        "monitor.refresh": "Refresh",
-        "monitor.status": "Fixed equipment telemetry slots",
+        "monitor.status": "Live / bound equipment slots",
         "monitor.empty": "No equipment bindings configured.",
         "monitor.failed": "Monitor read failed",
         "monitor.waiting": "Waiting",
@@ -1474,16 +1468,16 @@ EDGE_SETUP_HTML = """
         "bindings.restart": "Restart Edge runtime",
         "bindings.ready": "Edit here; saving applies changes and restarts the Edge runtime automatically.",
         "bindings.saved": "Bindings saved. Restarting Edge runtime...",
-        "bindings.restarted": "Edge runtime restarted. Changes applied.",
+        "bindings.restarted": "Edge runtime is restarting. Telemetry may take up to a minute to reappear on the Runtime Monitor.",
         "bindings.failed": "Config update failed",
         "bindings.unbind": "Unbind",
         "bindings.unbind_confirm": "Unbind {name}? The device will be disconnected from the antenna board.",
         "bindings.unbinding": "Unbinding — refreshing antenna target lists...",
-        "bindings.unbound": "{name} unbound. Edge runtime restarted.",
+        "bindings.unbound": "{name} unbound. Edge runtime is restarting — telemetry may take up to a minute to reappear.",
         "bindings.clear_all": "Clear all bindings",
         "bindings.clear_all_confirm": "Unbind all {count} devices? Every device will be disconnected from the antenna boards.",
-        "bindings.cleared": "All bindings cleared. Edge runtime restarted.",
-        "bindings.filtered": "Showing {channel} devices ({count}). Pick another channel or Manual serial port to see the rest."
+        "bindings.cleared": "All bindings cleared. Edge runtime is restarting — telemetry may take up to a minute to reappear.",
+        "bindings.filtered": "Highlighting {channel} devices ({count}) in Equipment Bindings below — devices on other channels are dimmed, not hidden. Switch channel to highlight those instead."
       }
     };
     dictionaries["zh-TW"] = {
@@ -1515,12 +1509,9 @@ EDGE_SETUP_HTML = """
       "wifi.connect_ok": "已連上 {ssid}，IP：{ip}",
       "wifi.rescan": "重新掃描",
       "antenna.title": "UART 天線板控制",
-      "antenna.port": "Serial port",
-      "antenna.channel": "UART 通道",
+      "antenna.channel": "目前使用的通訊通道",
       "antenna.advanced": "進階維護",
-      "antenna.manual": "手動指定串口",
       "antenna.waiting": "等待 UART 回應中...",
-      "antenna.channel_load": "各通道已綁定設備（每板上限 {max}）",
       "antenna.slots_free": "{channel} 還有 {free} 個空位可綁定新設備",
       "antenna.slots_full": "{channel} 已滿，新設備請改用其他通道",
       "wizard.title1": "加入掃描到的設備",
@@ -1548,6 +1539,9 @@ EDGE_SETUP_HTML = """
       "type.unknown": "未知",
       "antenna.baudrate": "Baudrate",
       "antenna.rtscts": "RTS/CTS 硬體流控",
+      "antenna.protocol_hint": "由天線板協議固定，僅供查看。",
+      "antenna.rtscts_on": "啟用",
+      "antenna.rtscts_off": "停用",
       "antenna.timeout": "讀取逾時秒數",
       "antenna.scan_duration": "掃描秒數",
       "antenna.macs": "CONNECT 目標（本通道已綁定設備）",
@@ -1567,11 +1561,18 @@ EDGE_SETUP_HTML = """
       "antenna.complete_state": "完成",
       "antenna.failed": "命令失敗",
       "antenna.idle": "閒置",
+      "antenna.channel_load_failed": "讀取 UART 通道失敗",
+      "antenna.disconnect_all_confirm": "確定中斷所有設備？天線板上所有設備的連線都會斷開。",
+      "antenna.reboot_confirm": "確定重啟天線板？所有已連線設備都會斷開，重啟後才會重新連線。",
+      "antenna.scan_live_warning": "掃描會中斷目前已連線設備的即時數據。",
+      "antenna.scan_live_confirm": "目前有設備正在即時連線中，掃描會中斷其數據，確定要繼續嗎？",
+      "admin.auth_required": "需要 Admin token，請於下方輸入並儲存以繼續使用。",
+      "admin.password_label": "Admin token",
+      "admin.save": "儲存 token",
       "monitor.title": "運行監測",
       "uartlog.title": "天線板 UART 記錄",
       "uartlog.empty": "尚無 UART 往來。",
-      "monitor.refresh": "重新整理",
-      "monitor.status": "固定設備即時欄位",
+      "monitor.status": "即時／已綁定設備數",
       "monitor.empty": "尚未設定設備綁定。",
       "monitor.failed": "監測資料讀取失敗",
       "monitor.waiting": "等待中",
@@ -1600,16 +1601,16 @@ EDGE_SETUP_HTML = """
       "bindings.restart": "重啟 Edge runtime",
       "bindings.ready": "在這裡修改設定，儲存後會自動重啟 Edge runtime 套用。",
       "bindings.saved": "設備綁定已儲存，正在重啟 Edge runtime...",
-      "bindings.restarted": "Edge runtime 已重啟，設定已套用。",
+      "bindings.restarted": "Edge runtime 正在重啟，遙測資料最多可能需要一分鐘才會恢復。",
       "bindings.failed": "設定更新失敗",
       "bindings.unbind": "解綁",
       "bindings.unbind_confirm": "確定解綁 {name}？將從天線板斷開此設備連線。",
       "bindings.unbinding": "解綁中——更新天線板目標清單...",
-      "bindings.unbound": "{name} 已解綁，Edge runtime 已重啟。",
+      "bindings.unbound": "{name} 已解綁，Edge runtime 正在重啟，資料最多可能需要一分鐘才會恢復。",
       "bindings.clear_all": "清空全部綁定",
       "bindings.clear_all_confirm": "確定清空全部 {count} 個綁定？所有設備都會從天線板斷開連線。",
-      "bindings.cleared": "已清空全部綁定，Edge runtime 已重啟。",
-      "bindings.filtered": "目前只顯示 {channel} 的設備（{count} 台），切換通道或選「手動指定串口」可檢視全部。"
+      "bindings.cleared": "已清空全部綁定，Edge runtime 正在重啟，資料最多可能需要一分鐘才會恢復。",
+      "bindings.filtered": "以下「設備綁定」清單中，{channel} 的設備（{count} 台）已標亮，其他通道的設備只是淡化並未隱藏。切換通道即可改為標亮該通道。"
     };
 
     function t(key, params = {}) {
@@ -1626,12 +1627,11 @@ EDGE_SETUP_HTML = """
       document.querySelectorAll("[data-i18n]").forEach((element) => {
         element.innerText = t(element.dataset.i18n);
       });
-      antennaState.textContent = t("antenna.idle");
+      if (!antennaBusy) {
+        antennaState.textContent = t("antenna.idle"); // don't clobber a status reflecting a command still in flight
+      }
       if (!antennaMessage.classList.contains("error") && !antennaMessage.classList.contains("ok")) {
         antennaMessage.textContent = t("antenna.ready");
-      }
-      if (antennaChannelSelect.options.length) {
-        antennaChannelSelect.options[0].textContent = t("antenna.manual");
       }
       if (edgeConfig) {
         renderBindings(edgeConfig); // re-render dynamic rows in the new language
@@ -1663,6 +1663,19 @@ EDGE_SETUP_HTML = """
       }
       return headers;
     }
+
+    function showAdminAuthBanner() {
+      const banner = document.getElementById("admin-auth-banner");
+      if (banner) banner.hidden = false;
+    }
+
+    document.getElementById("admin-auth-save")?.addEventListener("click", () => {
+      const input = document.getElementById("admin-auth-input");
+      const value = (input?.value || "").trim();
+      if (!value) return;
+      localStorage.setItem("fitrace.adminPassword", value);
+      window.location.reload();
+    });
 
     function setAntennaMessage(text, type = "") {
       antennaMessage.textContent = text;
@@ -1732,11 +1745,12 @@ EDGE_SETUP_HTML = """
       return `${number.toFixed(digits)}${suffix}`;
     }
 
-    function renderMonitorField(labelKey, value, className = "") {
+    function renderMonitorField(labelKey, value, className = "", fieldName = "") {
+      const fieldAttr = fieldName ? ` data-field="${fieldName}"` : "";
       return `
         <div class="monitor-field ${className}">
           <span>${escapeHtml(t(labelKey))}</span>
-          <strong>${escapeHtml(value)}</strong>
+          <strong${fieldAttr}>${escapeHtml(value)}</strong>
         </div>
       `;
     }
@@ -1790,52 +1804,99 @@ EDGE_SETUP_HTML = """
       return { label: t("monitor.stale"), className: "stale" };
     }
 
-    function renderMonitorEquipment() {
-      const bindings = Array.isArray(edgeConfig?.equipment_bindings) ? edgeConfig.equipment_bindings : [];
-      const liveCount = bindings.filter((binding) => {
-        const payload = monitorLatestByNode.get(binding.node_id);
-        return payload?.node_id && monitorTelemetryAgeMs(payload) <= MONITOR_LIVE_WINDOW_MS;
-      }).length;
-      monitorCount.textContent = `${liveCount}/${bindings.length}`;
-      if (!bindings.length) {
-        monitorGrid.innerHTML = `<div class="empty">${escapeHtml(t("monitor.empty"))}</div>`;
-        return;
-      }
-      monitorGrid.innerHTML = bindings.map((binding) => {
-        const payload = monitorLatestByNode.get(binding.node_id) || {};
-        const displayPayload = monitorDisplayedByNode.get(binding.node_id) || payload;
-        const status = monitorStatusForPayload(payload);
-        const updated = formatEventTime(payload.timestamp_epoch_ms);
-        return `
+    function monitorCardHtml(binding) {
+      return `
           <div class="monitor-card" data-node-id="${escapeHtml(binding.node_id)}">
             <div class="monitor-card-header">
               <div class="monitor-equipment-name">${escapeHtml(binding.equipment_id || binding.node_id)}</div>
-              <div class="monitor-status-pill ${status.className}">${escapeHtml(status.label)}</div>
+              <div class="monitor-status-pill"></div>
             </div>
             <div class="monitor-fields">
               ${renderMonitorField("monitor.name", binding.equipment_id || "--")}
               ${renderMonitorField("monitor.type", binding.equipment_type ? typeLabel(binding.equipment_type) : "--")}
-              ${renderMonitorField("monitor.mac", payload.mac_address || binding.ble_target || "--", "wide")}
+              ${renderMonitorField("monitor.mac", "--", "wide", "mac")}
               ${renderMonitorField("monitor.channel", binding.antenna_channel || "--")}
-              ${renderMonitorField("monitor.updated", updated)}
-              ${renderMonitorField("monitor.speed", formatMetric(displayPayload.instantaneous_speed_kph, " kph", 2))}
-              ${renderMonitorField("monitor.distance", formatMetric(displayPayload.distance_m, " m", 0))}
-              ${renderMonitorField("monitor.power", formatMetric(displayPayload.power_watts, " W", 0))}
-              ${renderMonitorField("monitor.cadence", formatMetric(displayPayload.cadence_rpm, " rpm", 0))}
-              ${renderMonitorField("monitor.rssi", formatMetric(displayPayload.rssi, " dBm", 0))}
-              ${renderMonitorField("monitor.calories", formatMetric(displayPayload.calories ?? displayPayload.total_energy_kcal, " kcal", 0))}
+              ${renderMonitorField("monitor.updated", "--", "", "updated")}
+              ${renderMonitorField("monitor.speed", "--", "", "speed")}
+              ${renderMonitorField("monitor.distance", "--", "", "distance")}
+              ${renderMonitorField("monitor.power", "--", "", "power")}
+              ${renderMonitorField("monitor.cadence", "--", "", "cadence")}
+              ${renderMonitorField("monitor.rssi", "--", "", "rssi")}
+              ${renderMonitorField("monitor.calories", "--", "", "calories")}
             </div>
           </div>
         `;
-      }).join("");
+    }
+
+    // Writing textContent unconditionally replaces the text node even when the
+    // string is unchanged, which kills any DOM Selection anchored inside it (e.g. an
+    // operator selecting a MAC address) on the very next frame. Only write on change.
+    function setMonitorFieldText(el, value) {
+      if (el && el.textContent !== value) el.textContent = value;
+    }
+
+    // Writes the fields that change without touching card structure, so the DOM nodes
+    // (and any text selection / CSS transition on them) survive between rebuilds.
+    function updateMonitorCardLeaves(bindings) {
+      const cardsByNode = new Map();
+      monitorGrid.querySelectorAll(".monitor-card").forEach((card) => cardsByNode.set(card.dataset.nodeId, card));
+      bindings.forEach((binding) => {
+        const card = cardsByNode.get(binding.node_id);
+        if (!card) return;
+        const payload = monitorLatestByNode.get(binding.node_id) || {};
+        const displayPayload = monitorDisplayedByNode.get(binding.node_id) || payload;
+        const status = monitorStatusForPayload(payload);
+        const pill = card.querySelector(".monitor-status-pill");
+        if (pill) {
+          const pillClass = `monitor-status-pill ${status.className}`;
+          if (pill.className !== pillClass) pill.className = pillClass;
+          if (pill.textContent !== status.label) pill.textContent = status.label;
+        }
+        const fields = new Map();
+        card.querySelectorAll("[data-field]").forEach((el) => fields.set(el.dataset.field, el));
+        setMonitorFieldText(fields.get("mac"), payload.mac_address || binding.ble_target || "--");
+        setMonitorFieldText(fields.get("updated"), formatEventTime(payload.timestamp_epoch_ms));
+        setMonitorFieldText(fields.get("speed"), formatMetric(displayPayload.instantaneous_speed_kph, " kph", 2));
+        setMonitorFieldText(fields.get("distance"), formatMetric(displayPayload.distance_m, " m", 0));
+        setMonitorFieldText(fields.get("power"), formatMetric(displayPayload.power_watts, " W", 0));
+        setMonitorFieldText(fields.get("cadence"), formatMetric(displayPayload.cadence_rpm, " rpm", 0));
+        setMonitorFieldText(fields.get("rssi"), formatMetric(displayPayload.rssi, " dBm", 0));
+        setMonitorFieldText(fields.get("calories"), formatMetric(displayPayload.calories ?? displayPayload.total_energy_kcal, " kcal", 0));
+      });
+    }
+
+    let monitorGridSignature = null;
+    function renderMonitorEquipment() {
+      const bindings = Array.isArray(edgeConfig?.equipment_bindings) ? edgeConfig.equipment_bindings : [];
+      monitorLiveCount = bindings.filter((binding) => {
+        const payload = monitorLatestByNode.get(binding.node_id);
+        return payload?.node_id && monitorTelemetryAgeMs(payload) <= MONITOR_LIVE_WINDOW_MS;
+      }).length;
+      monitorCount.textContent = `${monitorLiveCount}/${bindings.length}`;
+      const scanLiveWarning = document.getElementById("scan-live-warning");
+      if (scanLiveWarning) scanLiveWarning.hidden = monitorLiveCount === 0;
+
+      // Rebuild the card DOM only when the set of cards actually changes (added,
+      // removed, renamed, retyped, rechanneled, or the locale switched) — every other
+      // call just updates leaf text below via updateMonitorCardLeaves.
+      const signature = `${currentLocale}|${bindings.map((b) => `${b.node_id}:${b.equipment_id}:${b.equipment_type}:${b.antenna_channel}`).join(",")}`;
+      if (signature !== monitorGridSignature) {
+        monitorGridSignature = signature;
+        monitorGrid.innerHTML = bindings.length
+          ? bindings.map(monitorCardHtml).join("")
+          : `<div class="empty">${escapeHtml(t("monitor.empty"))}</div>`;
+      }
+      if (bindings.length) updateMonitorCardLeaves(bindings);
     }
 
     let monitorLastFrameMs = performance.now();
     function animateMonitorEquipment(frameMs) {
       const deltaMs = frameMs - monitorLastFrameMs;
       monitorLastFrameMs = frameMs;
-      updateMonitorDisplayedPayloads(deltaMs);
-      renderMonitorEquipment();
+      if (!monitorSection.hidden) {
+        updateMonitorDisplayedPayloads(deltaMs);
+        renderMonitorEquipment();
+      }
       requestAnimationFrame(animateMonitorEquipment);
     }
 
@@ -1859,14 +1920,22 @@ EDGE_SETUP_HTML = """
     }
 
     const UARTLOG_MAX = 80;
+    let uartLogSignature = null;
     function renderUartLog(events) {
       const uartLog = document.getElementById("uartlog");
       if (!uartLog) return;
       const rows = events.filter(
         (e) => e.source === "uart" && e.parsed && e.parsed.type !== "telemetry"
       ).slice(0, UARTLOG_MAX);
+      // Skip the rebuild when nothing changed so an operator scrolled up to read a
+      // torn frame doesn't get snapped back to the top on the next 250ms poll.
+      const signature = `${currentLocale}|${rows.map((e) => `${e.timestamp_epoch_ms}|${e.direction}|${e.channel}|${(e.parsed && e.parsed.raw) ?? e.message}`).join(",")}`;
+      if (signature === uartLogSignature) return;
+      uartLogSignature = signature;
+      const scrollTop = uartLog.scrollTop;
       if (!rows.length) {
         uartLog.innerHTML = `<div class="uartlog-empty">${escapeHtml(t("uartlog.empty"))}</div>`;
+        uartLog.scrollTop = scrollTop;
         return;
       }
       uartLog.innerHTML = rows.map((e) => {
@@ -1884,6 +1953,7 @@ EDGE_SETUP_HTML = """
           + `<span class="raw">${escapeHtml(raw)}</span>`
           + `</div>`;
       }).join("");
+      uartLog.scrollTop = scrollTop;
     }
 
     async function refreshMonitorEvents() {
@@ -1893,6 +1963,7 @@ EDGE_SETUP_HTML = """
         });
         const payload = await response.json();
         if (!response.ok) {
+          if (response.status === 401) showAdminAuthBanner();
           throw new Error(payload.detail || t("monitor.failed"));
         }
         if (Number(payload.server_now_epoch_ms || 0)) {
@@ -1926,41 +1997,57 @@ EDGE_SETUP_HTML = """
       return counts;
     }
 
+    function selectedAntennaChannel() {
+      return antennaChannels.find((channel) => channel.port === selectedAntennaPort) || null;
+    }
+
+    function updateAntennaProtocolInfo() {
+      const channel = selectedAntennaChannel();
+      antennaBaudrateValue.textContent = channel ? String(channel.baudrate) : "--";
+      antennaRtsctsValue.textContent = channel ? t(channel.rtscts ? "antenna.rtscts_on" : "antenna.rtscts_off") : "--";
+    }
+
+    // One button per configured channel, occupancy baked into the label — this is the
+    // page's active-channel selector, not a settings dropdown, so every channel's load
+    // is visible without interacting (see antenna-channel field in the HTML above).
+    function renderAntennaChannelButtons(counts) {
+      antennaChannelGroup.innerHTML = antennaChannels.map((channel) => {
+        const used = counts.get(channel.id) || 0;
+        const active = channel.port === selectedAntennaPort;
+        return `<button type="button" class="tab-button${active ? " active" : ""}" data-port="${escapeHtml(channel.port)}" aria-pressed="${active}">${escapeHtml(channel.id)} · ${used}/${ANTENNA_MAX_CONNECTIONS}</button>`;
+      }).join("");
+    }
+
     function updateChannelOccupancy() {
       const counts = channelBindingCounts();
-      const channelById = new Map(antennaChannels.map((channel) => [channel.port, channel.id]));
-      Array.from(antennaChannelSelect.options).forEach((option) => {
-        const id = channelById.get(option.value);
-        if (!id) return;
-        const used = counts.get(id) || 0;
-        option.textContent = `${id} (${option.value}) · ${used}/${ANTENNA_MAX_CONNECTIONS}`;
-      });
-      if (!antennaChannels.length) {
-        antennaChannelLoad.textContent = "";
+      // With no channels configured (or the config failed to load), there is nothing
+      // a UART command could target — say so and keep the buttons from firing blind.
+      const channelsAvailable = antennaChannels.length > 0;
+      if (!antennaBusy) {
+        allAntennaButtons.forEach((button) => { button.disabled = !channelsAvailable; });
+      }
+      if (!channelsAvailable) {
+        antennaChannelGroup.innerHTML = "";
+        antennaChannelSlots.textContent = t("antenna.channel_load_failed");
+        antennaChannelSlots.className = "channel-slots full";
         return;
       }
-      const summary = antennaChannels.map((channel) => {
-        const used = counts.get(channel.id) || 0;
-        const mark = used >= ANTENNA_MAX_CONNECTIONS ? " ⚠" : "";
-        return `${channel.id}: ${used}/${ANTENNA_MAX_CONNECTIONS}${mark}`;
-      }).join(" · ");
-      antennaChannelLoad.textContent = `${t("antenna.channel_load", { max: ANTENNA_MAX_CONNECTIONS })} — ${summary}`;
-      const selectedId = channelById.get(antennaChannelSelect.value) || "";
-      renderSelectedChannel(selectedId, counts);
+      renderAntennaChannelButtons(counts);
+      renderSelectedChannel(currentChannelId(), counts);
       populateConnectTargets();
+      updateAntennaProtocolInfo();
     }
 
     function currentChannelId() {
-      const byPort = new Map(antennaChannels.map((channel) => [channel.port, channel.id]));
-      return byPort.get(antennaPortInput.value) || "";
+      const channel = selectedAntennaChannel();
+      return channel ? channel.id : "";
     }
 
     function boundTargetsForCurrentChannel() {
       const channelId = currentChannelId();
       const bindings = Array.isArray(edgeConfig?.equipment_bindings) ? edgeConfig.equipment_bindings : [];
       // CONNECT is per-board, so only offer devices bound to the selected channel.
-      // On a manual serial port (no matching channel) fall back to every bound device.
-      return bindings.filter((binding) => binding.ble_target && (channelId ? binding.antenna_channel === channelId : true));
+      return bindings.filter((binding) => binding.ble_target && binding.antenna_channel === channelId);
     }
 
     function populateConnectTargets() {
@@ -1986,19 +2073,13 @@ EDGE_SETUP_HTML = """
       let visible = 0;
       document.querySelectorAll(".binding-row").forEach((row) => {
         row.classList.remove("channel-active", "channel-dim");
-        if (!channelId) return;
         const match = row.dataset.channel === channelId;
         row.classList.add(match ? "channel-active" : "channel-dim");
         if (match) visible += 1;
       });
       const hint = document.getElementById("binding-filter-hint");
       if (hint) {
-        hint.textContent = channelId ? t("bindings.filtered", { channel: channelId, count: visible }) : "";
-      }
-      if (!channelId) {
-        antennaChannelSlots.textContent = "";
-        antennaChannelSlots.className = "channel-slots";
-        return;
+        hint.textContent = t("bindings.filtered", { channel: channelId, count: visible });
       }
       const used = counts.get(channelId) || 0;
       const free = Math.max(0, ANTENNA_MAX_CONNECTIONS - used);
@@ -2014,19 +2095,7 @@ EDGE_SETUP_HTML = """
     function renderAntennaConfig(config) {
       const channels = Array.isArray(config.channels) ? config.channels : [];
       antennaChannels = channels;
-      antennaChannelSelect.innerHTML = `<option value="">${escapeHtml(t("antenna.manual"))}</option>`;
-      channels.forEach((channel) => {
-        const option = document.createElement("option");
-        option.value = channel.port;
-        option.textContent = `${channel.id} (${channel.port})`;
-        option.dataset.baudrate = channel.baudrate || "";
-        option.dataset.rtscts = channel.rtscts ? "1" : "0";
-        antennaChannelSelect.appendChild(option);
-      });
-      if (config.default_port) {
-        antennaPortInput.value = config.default_port;
-        antennaChannelSelect.value = config.default_port;
-      }
+      selectedAntennaPort = channels[0]?.port || ""; // default to the first configured channel
       if (edgeConfig) {
         renderBindings(edgeConfig);
       }
@@ -2039,7 +2108,42 @@ EDGE_SETUP_HTML = """
       )).join("");
     }
 
+    // ponytail: keyed by node_id (not index) so a re-render can restore in-progress
+    // edits even if the underlying binding list order changes.
+    //
+    // "Dirty" is defined against what a render actually put in the DOM (row.dataset.rendered),
+    // not against the raw config value — the two differ whenever the render can't faithfully
+    // reproduce the config (empty antenna-channel list, blank/unknown equipment type both fall
+    // back to whatever <option> the browser auto-selects). Comparing to config directly treated
+    // those render quirks as user edits and made them sticky across re-renders.
+    function bindingRowValues(row) {
+      return {
+        equipment_id: row.querySelector(".binding-equipment-id").value,
+        equipment_type: row.querySelector(".binding-equipment-type").value,
+        antenna_channel: row.querySelector(".binding-channel").value,
+      };
+    }
+
+    function markBindingRowRendered(row) {
+      row.dataset.rendered = JSON.stringify(bindingRowValues(row));
+    }
+
+    function bindingRowDirty(row) {
+      return JSON.stringify(bindingRowValues(row)) !== row.dataset.rendered;
+    }
+
+    function captureBindingEdits() {
+      const edits = new Map();
+      bindingList.querySelectorAll(".binding-row").forEach((row) => {
+        const nodeId = row.dataset.nodeId;
+        if (!nodeId || !bindingRowDirty(row)) return;
+        edits.set(nodeId, bindingRowValues(row));
+      });
+      return edits;
+    }
+
     function renderBindings(config) {
+      const priorEdits = captureBindingEdits(); // must run before edgeConfig is reassigned below
       edgeConfig = config;
       configNodeId.textContent = config.node_id || "--";
       const hubInput = document.getElementById("central-hub-input");
@@ -2054,7 +2158,7 @@ EDGE_SETUP_HTML = """
         return;
       }
       bindingList.innerHTML = bindings.map((binding, index) => `
-        <div class="binding-row" data-index="${index}" data-channel="${escapeHtml(binding.antenna_channel || "")}">
+        <div class="binding-row" data-index="${index}" data-channel="${escapeHtml(binding.antenna_channel || "")}" data-node-id="${escapeHtml(binding.node_id || "")}">
           <div class="field">
             <label>${escapeHtml(t("bindings.name"))}</label>
             <input class="binding-equipment-id" type="text" value="${escapeHtml(binding.equipment_id || "")}" autocomplete="off">
@@ -2078,9 +2182,29 @@ EDGE_SETUP_HTML = """
           <button type="button" class="binding-unbind button-secondary" data-index="${index}">${escapeHtml(t("bindings.unbind"))}</button>
         </div>
       `).join("");
+      // Baseline every row against what this fresh render actually produced BEFORE restoring
+      // any prior edit onto it — otherwise a restored (still-unsaved) value would get recorded
+      // as its own baseline and immediately read back as clean.
+      bindingList.querySelectorAll(".binding-row").forEach(markBindingRowRendered);
+      priorEdits.forEach((values, nodeId) => {
+        const row = bindingList.querySelector(`.binding-row[data-node-id="${CSS.escape(nodeId)}"]`);
+        if (!row) return;
+        row.querySelector(".binding-equipment-id").value = values.equipment_id;
+        row.querySelector(".binding-equipment-type").value = values.equipment_type;
+        row.querySelector(".binding-channel").value = values.antenna_channel;
+        row.dataset.channel = values.antenna_channel;
+      });
       renderMonitorEquipment();
       updateChannelOccupancy();
     }
+
+    window.addEventListener("beforeunload", (event) => {
+      const dirty = Array.from(bindingList.querySelectorAll(".binding-row")).some(bindingRowDirty);
+      if (dirty) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    });
 
     async function loadEdgeConfig() {
       try {
@@ -2089,6 +2213,7 @@ EDGE_SETUP_HTML = """
         });
         const payload = await response.json();
         if (!response.ok) {
+          if (response.status === 401) showAdminAuthBanner();
           throw new Error(payload.detail || "Failed to load config");
         }
         renderBindings(payload);
@@ -2138,6 +2263,7 @@ EDGE_SETUP_HTML = """
         });
         const result = await response.json();
         if (!response.ok) {
+          if (response.status === 401) showAdminAuthBanner();
           throw new Error(result.detail || t("bindings.failed"));
         }
         edgeConfig = result.config;
@@ -2162,6 +2288,7 @@ EDGE_SETUP_HTML = """
         });
         const result = await response.json();
         if (!response.ok) {
+          if (response.status === 401) showAdminAuthBanner();
           throw new Error(result.detail || "Restart failed");
         }
         setConfigMessage(t("bindings.restarted"), "ok");
@@ -2214,24 +2341,29 @@ EDGE_SETUP_HTML = """
         const response = await fetch("/api/antenna/config", {
           headers: adminHeaders(),
         });
-        if (!response.ok) return;
+        if (!response.ok) {
+          if (response.status === 401) showAdminAuthBanner();
+          antennaChannelSlots.textContent = t("antenna.channel_load_failed");
+          return;
+        }
         renderAntennaConfig(await response.json());
       } catch (_error) {
-        // Keep the fallback value already rendered in the input.
+        antennaChannelSlots.textContent = t("antenna.channel_load_failed");
       }
     }
 
     function buildAntennaPayload(command) {
-      const port = antennaPortInput.value.trim();
+      const port = selectedAntennaPort;
       if (!port) {
         throw new Error("Serial port is required");
       }
+      const channel = selectedAntennaChannel();
 
       const payload = {
         port,
         command,
-        baudrate: Math.max(9600, Number(antennaBaudrateInput.value) || 115200),
-        rtscts: antennaRtsctsInput.checked,
+        baudrate: channel ? channel.baudrate : 115200,
+        rtscts: channel ? !!channel.rtscts : false,
         timeout_sec: Math.max(1, Math.min(30, Number(antennaTimeoutInput.value) || 5)),
         scan_duration_sec: Math.max(1, Math.min(30, Number(antennaScanDurationInput.value) || 5)),
       };
@@ -2264,10 +2396,15 @@ EDGE_SETUP_HTML = """
       return payload;
     }
 
+    let antennaBusy = false;
     function setAntennaButtonsDisabled(disabled) {
+      antennaBusy = disabled;
       allAntennaButtons.forEach((button) => {
         button.disabled = disabled;
       });
+      // the Wi-Fi picker reuses #scan-wizard with the scan wizard, so it must stay
+      // closed to the operator while a UART command (e.g. SCAN) owns that dialog
+      wifiChooseBtn.disabled = disabled;
     }
 
     const scanWizard = document.getElementById("scan-wizard");
@@ -2306,15 +2443,26 @@ EDGE_SETUP_HTML = """
         .map((binding) => binding.ble_target.toUpperCase()));
     }
 
+    function usefulName(value) {
+      const trimmed = (value || "").trim();
+      return trimmed && trimmed !== "UNKNOWN" ? trimmed : "";
+    }
+
     function openScanWizard(result) {
       const byAddress = new Map();
       (result.parsed || []).forEach((entry) => {
         if (entry.type !== "device" || !entry.address) return;
         const key = entry.address.toUpperCase();
         const previous = byAddress.get(key);
-        if (!previous || (entry.rssi ?? -999) > (previous.rssi ?? -999)) {
-          byAddress.set(key, entry);
+        // A single scan reports the same MAC many times; merge sightings so a
+        // nameless-but-stronger ping never discards a name seen earlier.
+        const merged = previous ? { ...previous } : { ...entry, name: usefulName(entry.name), device_type: usefulName(entry.device_type) };
+        if (previous) {
+          if ((entry.rssi ?? -999) > (previous.rssi ?? -999)) merged.rssi = entry.rssi;
+          if (!merged.name && usefulName(entry.name)) merged.name = usefulName(entry.name);
+          if (!merged.device_type && usefulName(entry.device_type)) merged.device_type = usefulName(entry.device_type);
         }
+        byAddress.set(key, merged);
       });
       wizardDevices = Array.from(byAddress.values());
       if (!wizardDevices.length) return;
@@ -2482,7 +2630,10 @@ EDGE_SETUP_HTML = """
       try {
         const response = await fetch("/api/wifi/networks", { headers: adminHeaders() });
         payload = await response.json();
-        if (!response.ok) throw new Error(payload.detail || "Wi-Fi scan failed");
+        if (!response.ok) {
+          if (response.status === 401) showAdminAuthBanner();
+          throw new Error(payload.detail || "Wi-Fi scan failed");
+        }
       } catch (error) {
         wizardBody.innerHTML = `<div class="wizard-step-hint">${escapeHtml(error.message)}</div>`;
         return;
@@ -2552,7 +2703,10 @@ EDGE_SETUP_HTML = """
             body: JSON.stringify({ ssid: net.ssid, password }),
           });
           const result = await response.json();
-          if (!response.ok) throw new Error(result.detail || "Connect failed");
+          if (!response.ok) {
+            if (response.status === 401) showAdminAuthBanner();
+            throw new Error(result.detail || "Connect failed");
+          }
           resultBox.textContent = t("wifi.connect_ok", { ssid: net.ssid, ip: result.ip || "?" });
           const ipLabel = document.getElementById("wifi-ip");
           if (ipLabel && result.ip) ipLabel.textContent = result.ip;
@@ -2576,6 +2730,8 @@ EDGE_SETUP_HTML = """
       monitorSection.hidden = !showMonitor;
       tabBindingsBtn.classList.toggle("active", !showMonitor);
       tabMonitorBtn.classList.toggle("active", showMonitor);
+      tabBindingsBtn.setAttribute("aria-selected", String(!showMonitor));
+      tabMonitorBtn.setAttribute("aria-selected", String(showMonitor));
     }
     tabBindingsBtn.addEventListener("click", () => selectTab(false));
     tabMonitorBtn.addEventListener("click", () => selectTab(true));
@@ -2603,6 +2759,7 @@ EDGE_SETUP_HTML = """
         });
         const result = await response.json();
         if (!response.ok) {
+          if (response.status === 401) showAdminAuthBanner();
           throw new Error(result.detail || "UART command failed");
         }
         antennaState.textContent = t("antenna.complete_state");
@@ -2639,6 +2796,7 @@ EDGE_SETUP_HTML = """
         });
         const result = await response.json();
         if (!response.ok) {
+          if (response.status === 401) showAdminAuthBanner();
           throw new Error(result.detail || "Configured reconnect failed");
         }
         const lineCount = result.channels.reduce((total, channel) => (
@@ -2665,6 +2823,7 @@ EDGE_SETUP_HTML = """
         });
         const status = await response.json();
         if (!response.ok) {
+          if (response.status === 401) showAdminAuthBanner();
           throw new Error(status.detail || "Failed to read Wi-Fi status");
         }
         renderWifiStatus(status);
@@ -2677,18 +2836,23 @@ EDGE_SETUP_HTML = """
       }
     }
 
+    const ANTENNA_CONFIRM_KEYS = {
+      disconnect_all: "antenna.disconnect_all_confirm",
+      reboot: "antenna.reboot_confirm",
+    };
     antennaCommandButtons.forEach((button) => {
-      button.addEventListener("click", () => runAntennaCommand(button.dataset.command));
+      button.addEventListener("click", () => {
+        const command = button.dataset.command;
+        const confirmKey = ANTENNA_CONFIRM_KEYS[command];
+        if (confirmKey && !window.confirm(t(confirmKey))) return;
+        if (command === "scan" && monitorLiveCount > 0 && !window.confirm(t("antenna.scan_live_confirm"))) return;
+        runAntennaCommand(command);
+      });
     });
-    antennaChannelSelect.addEventListener("change", () => {
-      const selected = antennaChannelSelect.selectedOptions[0];
-      if (selected && selected.value) {
-        antennaPortInput.value = selected.value;
-        if (selected.dataset.baudrate) {
-          antennaBaudrateInput.value = selected.dataset.baudrate;
-        }
-        antennaRtsctsInput.checked = selected.dataset.rtscts === "1";
-      }
+    antennaChannelGroup.addEventListener("click", (event) => {
+      const button = event.target.closest(".tab-button");
+      if (!button) return;
+      selectedAntennaPort = button.dataset.port;
       updateChannelOccupancy();
     });
     bindingList.addEventListener("change", (event) => {
@@ -2735,7 +2899,6 @@ EDGE_SETUP_HTML = """
     antennaRawBtn.addEventListener("click", () => runAntennaCommand("raw"));
     configSaveBtn.addEventListener("click", saveAndApplyBindings);
     configClearBtn.addEventListener("click", clearAllBindings);
-    monitorRefreshBtn.addEventListener("click", refreshMonitorEvents);
 
     applyTranslations();
     loadAntennaConfig();
