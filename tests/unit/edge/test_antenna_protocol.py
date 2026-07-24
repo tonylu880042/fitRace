@@ -135,3 +135,25 @@ def test_parse_legacy_key_value_status_line():
     assert status["state"] == "REPORT"
     assert status["connected"] == 2
     assert status["target"] == 3
+
+
+def test_parse_ble_device_line_with_manufacturer_data_keeps_type_unknown():
+    device = protocol.parse_line("BLE_DEVICE:AA:BB:CC:DD:EE:04,-70,VMAX TREAD 7,0102AAFF;")
+
+    assert device == {
+        "type": "device",
+        "address": "AA:BB:CC:DD:EE:04",
+        "rssi": -70,
+        "name": "VMAX TREAD 7",
+        "device_type": "UNKNOWN",
+        "manufacturer_data": "0102AAFF",
+        "raw": "BLE_DEVICE:AA:BB:CC:DD:EE:04,-70,VMAX TREAD 7,0102AAFF;",
+    }
+
+
+def test_parse_ble_device_line_without_manufacturer_data():
+    device = protocol.parse_line("BLE_DEVICE:AA:BB:CC:DD:EE:05,-65,VMAX BIKE 2;")
+
+    assert device["type"] == "device"
+    assert device["device_type"] == "UNKNOWN"
+    assert device["manufacturer_data"] == ""

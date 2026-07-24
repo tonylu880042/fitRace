@@ -92,6 +92,10 @@ def parse_line(line: str) -> dict[str, Any]:
             }
 
     if value.startswith("BLE_DEVICE:"):
+        # BLE_DEVICE:MAC,RSSI,NAME,RAW_HEX -- Vmax manufacturer-data path.
+        # The firmware cannot determine FTMS device type from manufacturer
+        # data alone, so device_type is always UNKNOWN here; the 4th field
+        # is the raw manufacturer-data hex, not a type.
         parts = value[11:].split(",", 3)
         if len(parts) >= 3:
             return {
@@ -99,7 +103,8 @@ def parse_line(line: str) -> dict[str, Any]:
                 "address": parts[0].strip(),
                 "rssi": _parse_int(parts[1]),
                 "name": parts[2].strip(),
-                "device_type": parts[3].strip() if len(parts) > 3 else "UNKNOWN",
+                "device_type": "UNKNOWN",
+                "manufacturer_data": parts[3].strip() if len(parts) > 3 else "",
                 "raw": raw,
             }
 
