@@ -1345,6 +1345,22 @@ EDGE_SETUP_HTML = """
     let monitorLatestByNode = new Map();
     let monitorLiveCount = 0; // read by the SCAN warning to know if a scan would interrupt live equipment
     let monitorDisplayedByNode = new Map();
+    // normalised MAC -> the node_id its telemetry actually arrives under.
+    let monitorNodeIdByMac = new Map();
+
+    function normalizeMonitorMac(value) {
+      return String(value || "").trim().toUpperCase();
+    }
+
+    // node_id is only a label, and it can disagree with the runtime: a binding
+    // edited while the runtime still holds an older config gets no match there,
+    // so its telemetry is published under a MAC-derived node_id instead. The MAC
+    // is the machine's real identity, so resolve by MAC first and keep node_id
+    // as the fallback for payloads that carry no mac_address.
+    function monitorKeyForBinding(binding) {
+      const byMac = monitorNodeIdByMac.get(normalizeMonitorMac(binding.ble_target));
+      return byMac || binding.node_id;
+    }
     let monitorServerNowEpochMs = null;
     let monitorServerNowReceivedAtMs = null;
     const ANTENNA_DEFAULT_REPORT_INTERVAL_MS = 250;
@@ -1611,8 +1627,11 @@ EDGE_SETUP_HTML = """
       bindings.forEach((binding) => {
         const refs = monitorCardRefs.get(binding.node_id);
         if (!refs) return;
-        const payload = monitorLatestByNode.get(binding.node_id) || {};
-        const displayPayload = monitorDisplayedByNode.get(binding.node_id) || payload;
+        // refs are keyed by the binding's own node_id (both sides come from the
+        // binding list), but telemetry is keyed by whatever the runtime published.
+        const key = monitorKeyForBinding(binding);
+        const payload = monitorLatestByNode.get(key) || {};
+        const displayPayload = monitorDisplayedByNode.get(key) || payload;
         const status = monitorStatusForPayload(payload);
         const pill = refs.pill;
         if (pill) {
@@ -1643,7 +1662,7 @@ EDGE_SETUP_HTML = """
     function recomputeMonitorLiveCount() {
       const bindings = Array.isArray(edgeConfig?.equipment_bindings) ? edgeConfig.equipment_bindings : [];
       monitorLiveCount = bindings.filter((binding) => {
-        const payload = monitorLatestByNode.get(binding.node_id);
+        const payload = monitorLatestByNode.get(monitorKeyForBinding(binding));
         return payload?.node_id && monitorTelemetryAgeMs(payload) <= MONITOR_LIVE_WINDOW_MS;
       }).length;
       monitorCount.textContent = `${monitorLiveCount}/${bindings.length}`;
@@ -1699,6 +1718,9 @@ EDGE_SETUP_HTML = """
         const previous = monitorLatestByNode.get(payload.node_id);
         if (!previous || Number(payload.timestamp_epoch_ms || 0) >= Number(previous.timestamp_epoch_ms || 0)) {
           monitorLatestByNode.set(payload.node_id, payload);
+          if (payload.mac_address) {
+            monitorNodeIdByMac.set(normalizeMonitorMac(payload.mac_address), payload.node_id);
+          }
         }
       });
       if (monitorSection.hidden) {

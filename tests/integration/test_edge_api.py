@@ -626,3 +626,30 @@ def test_edge_locale_files_contain_power_dry_run_keys():
     assert "power.dry_run_warning" in en
     assert "power.dry_run_warning" in zh_tw
     assert set(en.keys()) == set(zh_tw.keys())
+
+
+def test_edge_setup_page_monitor_matches_telemetry_by_mac_not_only_node_id():
+    # Bug seen on hardware: node_id is only a label. When the runtime runs a
+    # stale config it cannot find a binding for an incoming MAC and falls back
+    # to a derived "<edge_node_id>-<mac>" node_id (see AntennaFtmsManager.
+    # _to_telemetry), while the page looks up config.json's binding.node_id.
+    # The two never match, so a card renders completely blank even though
+    # correct telemetry for that exact machine is streaming. The MAC is the
+    # machine's real identity, so it must be the primary lookup key.
+    client = TestClient(edge_app_module.app)
+
+    source = client.get("/").text
+
+    assert "monitorNodeIdByMac" in source
+    assert "function monitorKeyForBinding(" in source
+
+    leaves_start = source.index("function updateMonitorCardLeaves(")
+    leaves_fn = source[leaves_start : leaves_start + 1800]
+    assert "monitorKeyForBinding(binding)" in leaves_fn
+    assert "monitorLatestByNode.get(binding.node_id)" not in leaves_fn
+    assert "monitorDisplayedByNode.get(binding.node_id)" not in leaves_fn
+
+    live_start = source.index("function recomputeMonitorLiveCount(")
+    live_fn = source[live_start : live_start + 800]
+    assert "monitorKeyForBinding(binding)" in live_fn
+    assert "monitorLatestByNode.get(binding.node_id)" not in live_fn
