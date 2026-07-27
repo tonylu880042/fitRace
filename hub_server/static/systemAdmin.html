@@ -978,7 +978,7 @@
     <header class="topbar">
       <div class="brand">
         <h1>FitRace<span>Studio</span> · System Admin</h1>
-        <p>Edge node status · software updates · system maintenance</p>
+        <p data-i18n="header.subtitle">Edge node status · software updates · system maintenance</p>
       </div>
       <div class="top-actions">
         <span class="lang-toggle">
@@ -1122,10 +1122,10 @@
         <section class="panel" id="panel-software" aria-labelledby="update-title">
           <div class="panel-header">
             <h2 class="panel-title" id="update-title" data-i18n="panel.software">Software</h2>
-            <span class="pill" id="update-state">never_checked</span>
+            <span class="pill" id="update-state" data-i18n="update.state_never_checked">never checked</span>
           </div>
           <div class="software-box">
-            <div class="row-meta" id="update-detail" style="margin-top:0;">No update check has completed in this browser session.</div>
+            <div class="row-meta" id="update-detail" style="margin-top:0;" data-i18n="update.no_check_completed">No update check has completed in this browser session.</div>
             <button type="button" onclick="checkUpdates()" data-i18n="button.check_now">Check Now</button>
           </div>
           <div class="button-row" id="update-actions" hidden>
@@ -1139,7 +1139,7 @@
         <section class="panel panel-danger" id="panel-power" aria-labelledby="power-title">
           <div class="panel-header">
             <h2 class="panel-title" id="power-title" data-i18n="panel.power_controls">Power Controls</h2>
-            <span class="pill" id="power-lock">IDLE only</span>
+            <span class="pill" id="power-lock" data-i18n="power.idle_only_pill">IDLE only</span>
           </div>
           <p class="danger-note" data-i18n="text.idle_only">Allowed only while race is IDLE.</p>
           <div class="button-row">
@@ -1286,7 +1286,44 @@
         "text.no_edge_heartbeat": "No Edge Node heartbeat received.",
         "text.no_station_or_stream": "No station or active telemetry stream is available.",
         "text.unassign_title": "Unassign station",
-        "text.open_device_page": "Open Device Page"
+        "text.open_device_page": "Open Device Page",
+        "header.subtitle": "Edge node status · software updates · system maintenance",
+        "power.idle_only_pill": "IDLE only",
+        "update.state_never_checked": "never checked",
+        "update.state_current": "current",
+        "update.state_available": "available",
+        "update.state_downloaded": "downloaded",
+        "update.state_hub_installed": "hub installed",
+        "update.state_error": "error",
+        "update.strip_up_to_date": "up to date",
+        "update.strip_update_available": "update available",
+        "update.no_check_completed": "No update check has completed in this browser session.",
+        "wifi.level_excellent": "Excellent",
+        "wifi.level_good": "Good",
+        "wifi.level_fair": "Fair",
+        "wifi.level_weak": "Weak",
+        "wifi.level_poor": "Poor",
+        "wifi.checking": "Checking",
+        "wifi.disconnected": "Disconnected",
+        "confirm.apply_hub_update": "Apply Hub update and restart the Hub service?",
+        "wifi.choose_network": "Choose a Wi-Fi network to connect.",
+        "wifi.not_connected": "not connected",
+        "message.password_required": "Password is required.",
+        "message.access_code_saved": "Access code saved.",
+        "wifi.connecting_to": "Connecting to {ssid}...",
+        "wifi.connected_to": "Connected to {ssid}. IP: {ip}",
+        "text.no_streams_discovered": "No streams discovered",
+        "wifi.select_ap_hint": "Select the AP this hub should connect to.",
+        "wifi.ip_change_warning": "The hub's IP may change and remote browsers will disconnect.",
+        "confirm.unassign_station": "Unassign station {stationNumber}?",
+        "message.select_station_and_stream": "Select a station number and telemetry stream.",
+        "message.station_assigned": "Station {stationNumber} assigned to {nodeId}.",
+        "message.station_unassigned": "Station {stationNumber} unassigned.",
+        "message.signup_link_copied": "Signup link copied.",
+        "message.select_and_copy_link": "Select and copy the signup link.",
+        "message.report_copied": "Report copied to clipboard.",
+        "message.copy_failed": "Copy failed — select the text above and copy manually.",
+        "text.unknown": "Unknown"
       }
     };
 
@@ -1364,7 +1401,44 @@
       "text.no_edge_heartbeat": "未收到 Edge Node 心跳。",
       "text.no_station_or_stream": "沒有站位或活躍的遙測資料流。",
       "text.unassign_title": "解除站位指派",
-      "text.open_device_page": "開啟裝置頁面"
+      "text.open_device_page": "開啟裝置頁面",
+      "header.subtitle": "Edge 節點狀態 · 軟體更新 · 系統維護",
+      "power.idle_only_pill": "僅限 IDLE",
+      "update.state_never_checked": "尚未檢查",
+      "update.state_current": "目前版本",
+      "update.state_available": "有更新",
+      "update.state_downloaded": "已下載",
+      "update.state_hub_installed": "Hub 已安裝",
+      "update.state_error": "錯誤",
+      "update.strip_up_to_date": "已是最新版本",
+      "update.strip_update_available": "有可用更新",
+      "update.no_check_completed": "此瀏覽器工作階段尚未完成任何更新檢查。",
+      "wifi.level_excellent": "極佳",
+      "wifi.level_good": "良好",
+      "wifi.level_fair": "普通",
+      "wifi.level_weak": "微弱",
+      "wifi.level_poor": "極弱",
+      "wifi.checking": "偵測中",
+      "wifi.disconnected": "未連線",
+      "confirm.apply_hub_update": "確定套用 Hub 更新並重新啟動 Hub 服務?",
+      "wifi.choose_network": "請選擇要連線的 Wi-Fi 網路。",
+      "wifi.not_connected": "未連線",
+      "message.password_required": "請輸入密碼。",
+      "message.access_code_saved": "存取碼已儲存。",
+      "wifi.connecting_to": "正在連線至 {ssid}...",
+      "wifi.connected_to": "已連線至 {ssid}。IP:{ip}",
+      "text.no_streams_discovered": "未發現任何資料流",
+      "wifi.select_ap_hint": "請選擇這台 Hub 要連線的無線基地台(AP)。",
+      "wifi.ip_change_warning": "Hub 的 IP 可能會改變,遠端瀏覽器將會中斷連線。",
+      "confirm.unassign_station": "確定要解除站位 {stationNumber} 的指派?",
+      "message.select_station_and_stream": "請選擇站位編號與遙測資料流。",
+      "message.station_assigned": "站位 {stationNumber} 已指派給 {nodeId}。",
+      "message.station_unassigned": "站位 {stationNumber} 已解除指派。",
+      "message.signup_link_copied": "報名連結已複製。",
+      "message.select_and_copy_link": "請選取並複製報名連結。",
+      "message.report_copied": "報告已複製到剪貼簿。",
+      "message.copy_failed": "複製失敗 — 請選取上方文字並手動複製。",
+      "text.unknown": "未知"
     };
 
     function t(key, params = {}) {
@@ -1453,7 +1527,7 @@
       state.adminToken = $("admin-token").value.trim();
       localStorage.setItem("fitrace.adminToken", state.adminToken);
       localStorage.setItem("fitrace.adminPassword", state.adminToken);
-      setMessage("login-message", "Access code saved.", "ok");
+      setMessage("login-message", t("message.access_code_saved"), "ok");
       window.setTimeout(closeLogin, 400);
     }
 
@@ -1630,7 +1704,7 @@
       const previousValue = select.value;
       const streams = getKnownStreams();
       if (!streams.length) {
-        select.innerHTML = `<option value="">No streams discovered</option>`;
+        select.innerHTML = `<option value="">${escapeHtml(t("text.no_streams_discovered"))}</option>`;
         return;
       }
       const newHtml = streams.map((stream) => (
@@ -1723,26 +1797,26 @@
       const stationNumber = parseInt($("station-number").value, 10);
       const nodeId = $("node-select").value;
       if (!Number.isFinite(stationNumber) || stationNumber <= 0 || !nodeId) {
-        setMessage("station-message", "Select a station number and telemetry stream.", "error");
+        setMessage("station-message", t("message.select_station_and_stream"), "error");
         return;
       }
       try {
         state.stations = await assignStation(stationNumber, nodeId);
         renderStations();
         renderNodeOptions();
-        setMessage("station-message", `Station ${stationNumber} assigned to ${nodeId}.`, "ok");
+        setMessage("station-message", t("message.station_assigned", { stationNumber, nodeId }), "ok");
       } catch (error) {
         setMessage("station-message", error.message, "error");
       }
     }
 
     async function unassignStation(stationNumber) {
-      if (!window.confirm(`Unassign station ${stationNumber}?`)) return;
+      if (!window.confirm(t("confirm.unassign_station", { stationNumber }))) return;
       try {
         state.stations = await assignStation(stationNumber, null);
         renderStations();
         renderNodeOptions();
-        setMessage("station-message", `Station ${stationNumber} unassigned.`, "ok");
+        setMessage("station-message", t("message.station_unassigned", { stationNumber }), "ok");
       } catch (error) {
         setMessage("station-message", error.message, "error");
       }
@@ -1754,17 +1828,31 @@
       if (!link) return;
       try {
         await navigator.clipboard.writeText(link);
-        setMessage("station-message", "Signup link copied.", "ok");
+        setMessage("station-message", t("message.signup_link_copied"), "ok");
       } catch (_) {
         $("signup-link").select();
-        setMessage("station-message", "Select and copy the signup link.", "warn");
+        setMessage("station-message", t("message.select_and_copy_link"), "warn");
       }
+    }
+
+    const UPDATE_STATE_KEYS = {
+      never_checked: "update.state_never_checked",
+      current: "update.state_current",
+      available: "update.state_available",
+      downloaded: "update.state_downloaded",
+      hub_installed: "update.state_hub_installed",
+      error: "update.state_error",
+    };
+
+    function updateStateLabel(updateState) {
+      const key = UPDATE_STATE_KEYS[updateState];
+      return key ? t(key) : updateState.replace(/_/g, " ");
     }
 
     function renderUpdate() {
       const update = state.update || {};
       const updateState = update.state || "never_checked";
-      $("update-state").textContent = updateState.replace(/_/g, " ");
+      $("update-state").textContent = updateStateLabel(updateState);
       const checked = update.checked_at_epoch_ms
         ? new Date(update.checked_at_epoch_ms).toLocaleString()
         : "never (auto-checks weekly)";
@@ -1777,9 +1865,9 @@
       ].join(" · ");
       $("update-actions").hidden = !["available", "downloaded", "hub_installed"].includes(updateState);
       $("strip-updates").textContent =
-        updateState === "current" ? "up to date"
-        : updateState === "available" ? "update available"
-        : updateState.replace(/_/g, " ");
+        updateState === "current" ? t("update.strip_up_to_date")
+        : updateState === "available" ? t("update.strip_update_available")
+        : updateStateLabel(updateState);
     }
 
 
@@ -1813,7 +1901,7 @@
     }
 
     async function applyHubUpdate() {
-      if (!window.confirm("Apply Hub update and restart the Hub service?")) return;
+      if (!window.confirm(t("confirm.apply_hub_update"))) return;
       await updateCommand("/api/updates/apply/hub", "Hub updater started.");
     }
 
@@ -1874,18 +1962,25 @@
     function renderWifiStatus(status) {
       const connected = Boolean(status.connected);
       const level = status.quality_level || "unknown";
-      const labels = { excellent: "Excellent", good: "Good", fair: "Fair", weak: "Weak", poor: "Poor", unknown: "Disconnected" };
+      const labels = {
+        excellent: t("wifi.level_excellent"),
+        good: t("wifi.level_good"),
+        fair: t("wifi.level_fair"),
+        weak: t("wifi.level_weak"),
+        poor: t("wifi.level_poor"),
+        unknown: t("wifi.disconnected"),
+      };
       const arcCounts = { excellent: 4, good: 3, fair: 2, weak: 1, poor: 1, unknown: 0 };
       const activeCount = connected ? (arcCounts[level] ?? 0) : 0;
-      $("wifi-level").textContent = connected ? (labels[level] || "Checking") : "Disconnected";
+      $("wifi-level").textContent = connected ? (labels[level] || t("wifi.checking")) : t("wifi.disconnected");
       $("wifi-sub").textContent = connected
         ? `${status.rssi_dbm} dBm`
-        : "Choose a Wi-Fi network to connect.";
+        : t("wifi.choose_network");
       $("wifi-interface").textContent = status.interface || "wlan0";
-      $("wifi-ssid").textContent = status.ssid || (connected ? "Unknown" : "Not connected");
+      $("wifi-ssid").textContent = status.ssid || (connected ? t("text.unknown") : t("wifi.disconnected"));
       $("wifi-ip").textContent = status.ip || "--";
       $("wifi-dot").className = `dot ${connected ? "online" : ""}`.trim();
-      $("strip-wifi").textContent = connected ? `${status.ssid || "?"} ${status.rssi_dbm} dBm` : "not connected";
+      $("strip-wifi").textContent = connected ? `${status.ssid || "?"} ${status.rssi_dbm} dBm` : t("wifi.not_connected");
       const icon = $("wifi-icon");
       icon.setAttribute("class", `wifi-icon ${connected ? level : "unknown"}`);
       icon.querySelectorAll(".wifi-arc").forEach((arc) => {
@@ -1900,7 +1995,7 @@
         return;
       }
       $("wifi-picker-body").innerHTML = `
-        <div class="wizard-step-hint">Select the AP this hub should connect to.</div>
+        <div class="wizard-step-hint">${escapeHtml(t("wifi.select_ap_hint"))}</div>
         <div class="wizard-list">
           ${networks.map((net, index) => `
             <div class="wizard-device">
@@ -1927,7 +2022,7 @@
       $("wifi-picker-title").textContent = net.ssid;
       const needsPassword = net.secured && !net.saved;
       $("wifi-picker-body").innerHTML = `
-        <div class="wizard-step-hint">The hub's IP may change and remote browsers will disconnect.</div>
+        <div class="wizard-step-hint">${escapeHtml(t("wifi.ip_change_warning"))}</div>
         ${needsPassword ? `
           <div class="field">
             <label for="wifi-password" data-i18n="wifi.password">${escapeHtml(t("wifi.password"))}</label>
@@ -1950,18 +2045,18 @@
       const confirmBtn = $("wifi-connect-confirm");
       const password = document.getElementById("wifi-password")?.value || null;
       if (net.secured && !net.saved && !password) {
-        resultBox.textContent = "Password is required.";
+        resultBox.textContent = t("message.password_required");
         return;
       }
       confirmBtn.disabled = true;
-      resultBox.textContent = `Connecting to ${net.ssid}...`;
+      resultBox.textContent = t("wifi.connecting_to", { ssid: net.ssid });
       try {
         const result = await fetchJson("/api/wifi/connect", {
           method: "POST",
           headers: adminHeaders({ "Content-Type": "application/json" }),
           body: JSON.stringify({ ssid: net.ssid, password }),
         });
-        resultBox.textContent = `Connected to ${net.ssid}. IP: ${result.ip}`;
+        resultBox.textContent = t("wifi.connected_to", { ssid: net.ssid, ip: result.ip });
         refreshWifiStatus();
       } catch (error) {
         resultBox.textContent = error.message;
@@ -2052,9 +2147,9 @@
       renderSupportReport();
       try {
         await navigator.clipboard.writeText($("support-report").textContent);
-        setMessage("support-message", "Report copied to clipboard.", "ok");
+        setMessage("support-message", t("message.report_copied"), "ok");
       } catch (_) {
-        setMessage("support-message", "Copy failed — select the text above and copy manually.", "error");
+        setMessage("support-message", t("message.copy_failed"), "error");
       }
     }
 

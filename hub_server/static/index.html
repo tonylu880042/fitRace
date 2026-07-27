@@ -2434,7 +2434,7 @@
     }
 
     function getRaceStageDetails(stage = currentState) {
-      const competition = currentConfig?.competition_mode === "team" ? "Team" : "Individual";
+      const competition = currentConfig?.competition_mode === "team" ? t("stage.team") : t("stage.individual");
       const raceType = currentConfig?.race_type || "";
       const target = currentConfig
         ? raceType === "distance"
@@ -2446,44 +2446,44 @@
       if (stage === "countdown") {
         return {
           className: "countdown",
-          kicker: "Countdown",
-          main: "3, 2, 1, Go",
-          sub: "Race timer starts on Go. Sound follows the Game Admin setting.",
-          timer: "GO",
+          kicker: t("stage.countdown"),
+          main: t("stage.go"),
+          sub: t("stage.countdown_sub"),
+          timer: t("stage.timer_go"),
         };
       }
       if (stage === "RUNNING") {
         return {
           className: "running",
-          kicker: "Live Race",
-          main: currentConfig ? `${competition} ${raceType.replace("_", " ")} race` : "Race in progress",
-          sub: target ? `Target ${target} · Ranking updates live from equipment telemetry.` : "Ranking updates live from equipment telemetry.",
+          kicker: t("stage.live_race"),
+          main: currentConfig ? t("stage.running_main", { competition, raceType: raceType.replace("_", " ") }) : t("stage.race_in_progress"),
+          sub: target ? t("stage.running_sub_target", { target }) : t("stage.running_sub_no_target"),
           timer: document.getElementById("stopwatch-lbl")?.innerText || "00:00.0",
         };
       }
       if (stage === "STOPPED") {
         return {
           className: "finished",
-          kicker: "Result",
-          main: currentConfig?.competition_mode === "team" ? "Team result locked" : "Race result locked",
-          sub: "Final ranking is shown below.",
-          timer: document.getElementById("stopwatch-lbl")?.innerText || "FINAL",
+          kicker: t("stage.result"),
+          main: currentConfig?.competition_mode === "team" ? t("stage.team_result_locked") : t("stage.race_result_locked"),
+          sub: t("stage.final_ranking_sub"),
+          timer: document.getElementById("stopwatch-lbl")?.innerText || t("stage.timer_final"),
         };
       }
       if (stage === "READY") {
         return {
           className: "ready",
-          kicker: "Ready",
-          main: currentConfig ? `${competition} race ready` : "Ready for setup",
-          sub: target ? `Target ${target}. Waiting for Start Race from Game Admin.` : "Waiting for Start Race from Game Admin.",
-          timer: "READY",
+          kicker: t("stage.ready"),
+          main: currentConfig ? t("stage.ready_main", { competition }) : t("stage.ready_for_setup"),
+          sub: target ? t("stage.ready_sub_target", { target }) : t("stage.ready_sub_no_target"),
+          timer: t("stage.timer_ready"),
         };
       }
       return {
         className: "idle",
-        kicker: "Venue Display",
-        main: "Waiting for setup",
-        sub: "Configure the race from Game Admin.",
+        kicker: t("stage.venue_display"),
+        main: t("stage.waiting_setup"),
+        sub: t("stage.configure_hint"),
         timer: "--:--",
       };
     }
@@ -3858,11 +3858,11 @@
         const rankClass = rankDelta > 0 ? "rank-up" : rankDelta < 0 ? "rank-down" : "";
         let rankDisplayHtml = '';
         if (currentRank === 1) {
-          rankDisplayHtml = `<span class="rank-champion" title="冠軍">👑</span>`;
+          rankDisplayHtml = `<span class="rank-champion" title="${t("rank.champion")}">👑</span>`;
         } else if (currentRank === 2) {
-          rankDisplayHtml = `<span class="rank-silver" title="亞軍">🥈</span>`;
+          rankDisplayHtml = `<span class="rank-silver" title="${t("rank.second")}">🥈</span>`;
         } else if (currentRank === 3) {
-          rankDisplayHtml = `<span class="rank-bronze" title="季軍">🥉</span>`;
+          rankDisplayHtml = `<span class="rank-bronze" title="${t("rank.third")}">🥉</span>`;
         } else {
           rankDisplayHtml = `<span>${currentRank}</span>`;
         }
@@ -3972,11 +3972,11 @@
         const rankClass = rankDelta > 0 ? "rank-up" : rankDelta < 0 ? "rank-down" : "";
         let rankDisplayHtml = '';
         if (currentRank === 1) {
-          rankDisplayHtml = `<span class="rank-champion" title="冠軍">👑</span>`;
+          rankDisplayHtml = `<span class="rank-champion" title="${t("rank.champion")}">👑</span>`;
         } else if (currentRank === 2) {
-          rankDisplayHtml = `<span class="rank-silver" title="亞軍">🥈</span>`;
+          rankDisplayHtml = `<span class="rank-silver" title="${t("rank.second")}">🥈</span>`;
         } else if (currentRank === 3) {
-          rankDisplayHtml = `<span class="rank-bronze" title="季軍">🥉</span>`;
+          rankDisplayHtml = `<span class="rank-bronze" title="${t("rank.third")}">🥉</span>`;
         } else {
           rankDisplayHtml = `<span>${currentRank}</span>`;
         }

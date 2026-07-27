@@ -686,7 +686,7 @@
     <header class="topbar">
       <div class="brand">
         <h1>FitRace<span>Studio</span> Game Admin</h1>
-        <p>Race setup and coach-operated event control</p>
+        <p data-i18n="header.subtitle">Race setup and coach-operated event control</p>
       </div>
       <div class="top-actions">
         <span class="lang-toggle">
@@ -704,7 +704,7 @@
 
     <section class="summary-grid" aria-label="System summary">
       <div class="metric">
-        <div class="metric-value" id="summary-state">IDLE</div>
+        <div class="metric-value" id="summary-state" data-i18n="text.idle">IDLE</div>
         <div class="metric-label" data-i18n="label.race_state">Race State</div>
       </div>
       <div class="metric">
@@ -712,11 +712,11 @@
         <div class="metric-label" data-i18n="label.stations">Stations</div>
       </div>
       <div class="metric">
-        <div class="metric-value" id="summary-readiness">WAIT</div>
+        <div class="metric-value" id="summary-readiness" data-i18n="text.wait">WAIT</div>
         <div class="metric-label" data-i18n="label.readiness">Readiness</div>
       </div>
       <div class="metric">
-        <div class="metric-value" id="summary-sound">ON</div>
+        <div class="metric-value" id="summary-sound" data-i18n="state.sound_on">ON</div>
         <div class="metric-label" data-i18n="label.start_sound">Start Sound</div>
       </div>
     </section>
@@ -726,7 +726,7 @@
         <section class="panel" aria-labelledby="race-title">
           <div class="panel-header">
             <h2 class="panel-title" id="race-title" data-i18n="panel.race_control">Race Control</h2>
-            <span class="pill race-state" id="race-state-pill">IDLE</span>
+            <span class="pill race-state" id="race-state-pill" data-i18n="text.idle">IDLE</span>
           </div>
           <div class="grid-3">
             <div class="field">
@@ -791,16 +791,16 @@
           <div class="guidance-grid" aria-label="Race setup guidance">
             <div class="guidance-card">
               <div class="guidance-title" data-i18n="guidance.team_rule">Team Rule</div>
-              <div class="guidance-body" id="team-rule-summary">Individual race. Team rules are not applied.</div>
+              <div class="guidance-body" id="team-rule-summary" data-i18n="text.individual_race">Individual race. Team rules are not applied.</div>
             </div>
             <div class="guidance-card">
               <div class="guidance-title" data-i18n="guidance.leaderboard_preview">Leaderboard Preview</div>
-              <div class="guidance-body" id="leaderboard-mode-summary">Classic ranking list for clear results.</div>
+              <div class="guidance-body" id="leaderboard-mode-summary" data-i18n="leaderboard.mode_classic_detail">Classic ranking list for clear results.</div>
               <div class="mode-preview" id="leaderboard-mode-preview" aria-hidden="true"></div>
             </div>
             <div class="guidance-card">
               <div class="guidance-title" data-i18n="guidance.start_flow">Start Flow</div>
-              <div class="guidance-body" id="start-flow-summary">Start Race sends the countdown to the Dashboard. The race timer begins on Go.</div>
+              <div class="guidance-body" id="start-flow-summary" data-i18n="text.start_flow_default">Start Race sends the countdown to the Dashboard. The race timer begins on Go.</div>
             </div>
           </div>
           <div class="readiness" id="race-readiness-panel" aria-live="polite"></div>
@@ -956,7 +956,40 @@
         "text.everyone_finishes_detail": "Everyone Finishes means every teammate must complete the {targetLabel}; one unfinished member keeps the team unfinished.",
         "text.team_target_detail": "Team Target lets the team finish when the selected team score reaches the target.",
         "text.team_average_detail": "Team Average ranks teams by each member's normalized contribution.",
-        "text.team_total_detail": "Team Total ranks teams by the whole team's combined output."
+        "text.team_total_detail": "Team Total ranks teams by the whole team's combined output.",
+        "header.subtitle": "Race setup and coach-operated event control",
+        "leaderboard.mode_classic_detail": "Classic ranking list for clear results.",
+        "leaderboard.mode_race_track_detail": "Race Track shows progress as lanes, best for distance or calorie targets.",
+        "leaderboard.mode_team_battle_detail": "Team Battle emphasizes team-versus-team momentum and member finish count.",
+        "leaderboard.mode_sprint_board_detail": "Sprint Board creates a compact high-energy board for short races.",
+        "label.calorie_target": "calorie target",
+        "label.distance_target": "distance target",
+        "label.challenge_window": "challenge window",
+        "text.sound_status_on_default": "on by default",
+        "text.sound_status_muted": "muted for this start",
+        "text.start_flow_detail": "Start Race sends a 3, 2, 1, Go countdown to the Dashboard. Sound is {soundStatus}; the race timer begins on Go.",
+        "text.start_flow_default": "Start Race sends the countdown to the Dashboard. The race timer begins on Go.",
+        "confirm.reset_race": "Reset race and clear current athlete registrations?",
+        "message.race_started": "Race started after Dashboard countdown.",
+        "message.race_stopped": "Race stopped.",
+        "message.race_reset": "Race reset.",
+        "message.start_sound_enabled": "Start sound enabled.",
+        "message.start_sound_disabled": "Start sound disabled.",
+        "state.sound_on": "ON",
+        "state.sound_off": "OFF",
+        "label.lane": "Lane",
+        "status.finish": "Finish",
+        "status.chase": "Chase",
+        "status.push": "Push",
+        "status.fast": "Fast",
+        "status.hot": "Hot",
+        "status.next": "Next",
+        "message.access_code_saved": "Access code saved.",
+        "message.value_required": "Enter a value greater than 0.",
+        "message.race_settings_saved": "Race settings saved.",
+        "message.leaderboard_updated": "Leaderboard view updated.",
+        "message.countdown_playing": "Countdown playing on Dashboard. Race starts on Go.",
+        "text.no_stations_available": "No configured station is available."
       }
     };
 
@@ -1045,7 +1078,40 @@
       "text.everyone_finishes_detail": "全員完成表示每位隊友都必須完成{targetLabel};一位隊友未完成將導致整個隊伍未完成。",
       "text.team_target_detail": "隊伍目標允許隊伍在選定的隊伍得分達到目標時完成。",
       "text.team_average_detail": "隊伍平均根據每位成員的標準化貢獻排名隊伍。",
-      "text.team_total_detail": "隊伍總計根據整個隊伍的合併輸出排名隊伍。"
+      "text.team_total_detail": "隊伍總計根據整個隊伍的合併輸出排名隊伍。",
+      "header.subtitle": "比賽設定與教練操作控制",
+      "leaderboard.mode_classic_detail": "經典排行榜,呈現清楚的名次結果。",
+      "leaderboard.mode_race_track_detail": "賽道模式以跑道呈現進度,最適合距離或卡路里目標。",
+      "leaderboard.mode_team_battle_detail": "隊伍對戰模式強調隊伍間的競賽氣勢與成員完成人數。",
+      "leaderboard.mode_sprint_board_detail": "衝刺排行以精簡、高能量的版面呈現短程比賽。",
+      "label.calorie_target": "卡路里目標",
+      "label.distance_target": "距離目標",
+      "label.challenge_window": "挑戰時限",
+      "text.sound_status_on_default": "預設開啟",
+      "text.sound_status_muted": "本次啟動靜音",
+      "text.start_flow_detail": "開始比賽會在儀表板播放 3, 2, 1, Go 倒數計時。聲音{soundStatus};比賽計時將在 Go 時開始。",
+      "text.start_flow_default": "開始比賽會將倒數計時傳送到儀表板。比賽計時將在 Go 時開始。",
+      "confirm.reset_race": "確定重設比賽並清除目前的運動員報名?",
+      "message.race_started": "比賽已在儀表板倒數後開始。",
+      "message.race_stopped": "比賽已停止。",
+      "message.race_reset": "比賽已重設。",
+      "message.start_sound_enabled": "啟動聲音已開啟。",
+      "message.start_sound_disabled": "啟動聲音已關閉。",
+      "state.sound_on": "開",
+      "state.sound_off": "關",
+      "label.lane": "跑道",
+      "status.finish": "終點",
+      "status.chase": "追趕中",
+      "status.push": "衝刺中",
+      "status.fast": "快速",
+      "status.hot": "火熱",
+      "status.next": "下一位",
+      "message.access_code_saved": "存取碼已儲存。",
+      "message.value_required": "請輸入大於 0 的數值。",
+      "message.race_settings_saved": "比賽設定已儲存。",
+      "message.leaderboard_updated": "排行榜顯示已更新。",
+      "message.countdown_playing": "倒數正在儀表板播放,比賽將於 Go 時開始。",
+      "text.no_stations_available": "目前沒有已設定的站位可用。"
     };
 
     function t(key, params = {}) {
@@ -1129,7 +1195,7 @@
       state.adminToken = $("admin-token").value.trim();
       localStorage.setItem("fitrace.adminToken", state.adminToken);
       localStorage.setItem("fitrace.adminPassword", state.adminToken);
-      setMessage("login-message", "Access code saved.", "ok");
+      setMessage("login-message", t("message.access_code_saved"), "ok");
       window.setTimeout(closeLogin, 400);
     }
 
@@ -1159,20 +1225,20 @@
       const scoring = $("team-scoring-policy").value;
       const completion = $("team-completion-policy").value;
       const raceType = $("race-type").value;
-      const targetLabel = raceType === "calories" ? "calorie target" : raceType === "distance" ? "distance target" : "challenge window";
+      const targetLabel = raceType === "calories" ? t("label.calorie_target") : raceType === "distance" ? t("label.distance_target") : t("label.challenge_window");
       const soundEnabled = $("start-sound-enabled").value !== "false";
       const mode = normalizeLeaderboardDisplayMode($("leaderboard-display-mode").value);
       const modeText = {
-        classic: "Classic ranking list for clear results.",
-        race_track: "Race Track shows progress as lanes, best for distance or calorie targets.",
-        team_battle: "Team Battle emphasizes team-versus-team momentum and member finish count.",
-        sprint_board: "Sprint Board creates a compact high-energy board for short races.",
+        classic: t("leaderboard.mode_classic_detail"),
+        race_track: t("leaderboard.mode_race_track_detail"),
+        team_battle: t("leaderboard.mode_team_battle_detail"),
+        sprint_board: t("leaderboard.mode_sprint_board_detail"),
       };
       const previewRows = {
         classic: [["#1", 92, "92%"], ["#2", 76, "76%"], ["#3", 61, "61%"]],
-        race_track: [["Lane 1", 92, "Finish"], ["Lane 2", 71, "Chase"], ["Lane 3", 48, "Push"]],
+        race_track: [[`${t("label.lane")} 1`, 92, t("status.finish")], [`${t("label.lane")} 2`, 71, t("status.chase")], [`${t("label.lane")} 3`, 48, t("status.push")]],
         team_battle: [["Volt", 88, "3/4"], ["Apex", 72, "2/4"], ["Pulse", 54, "1/4"]],
-        sprint_board: [["P1", 96, "Fast"], ["P2", 84, "Hot"], ["P3", 68, "Next"]],
+        sprint_board: [["P1", 96, t("status.fast")], ["P2", 84, t("status.hot")], ["P3", 68, t("status.next")]],
       };
 
       if (isTeamRace) {
@@ -1195,8 +1261,8 @@
           <span>${escapeHtml(value)}</span>
         </div>
       `).join("");
-      const soundStatus = soundEnabled ? "on by default" : "muted for this start";
-      $("start-flow-summary").textContent = `Start Race sends a 3, 2, 1, Go countdown to the Dashboard. Sound is ${soundStatus}; the race timer begins on Go.`;
+      const soundStatus = soundEnabled ? t("text.sound_status_on_default") : t("text.sound_status_muted");
+      $("start-flow-summary").textContent = t("text.start_flow_detail", { soundStatus });
     }
 
     async function fetchJson(url, options = {}) {
@@ -1274,7 +1340,7 @@
       const raceState = race.state || "IDLE";
       const raceStateDisplay = raceState === "IDLE" ? t("text.idle") : raceState === "READY" ? t("text.ready") : raceState === "RUNNING" ? t("text.running") : raceState === "STOPPED" ? t("text.stopped") : raceState;
       $("summary-state").textContent = raceStateDisplay;
-      $("summary-sound").textContent = race.start_countdown_sound_enabled === false ? "OFF" : "ON";
+      $("summary-sound").textContent = race.start_countdown_sound_enabled === false ? t("state.sound_off") : t("state.sound_on");
       $("race-state-pill").textContent = raceStateDisplay;
       $("race-state-pill").className = `pill race-state ${raceState}`;
 
@@ -1325,7 +1391,7 @@
               <div class="readiness-title">${escapeHtml(t("text.race_readiness"))}</div>
               <span class="pill">${escapeHtml(t("text.checking"))}</span>
             </div>
-            <div class="readiness-meta">Checking registrations, teams, station health, start sound, and target settings.</div>
+            <div class="readiness-meta">${escapeHtml(t("text.readiness_meta"))}</div>
           </div>
         `;
         return;
@@ -1409,7 +1475,7 @@
 
       const list = $("station-list");
       if (!keys.length && !(state.stations.unassigned_nodes || []).length) {
-        list.innerHTML = `<div class="empty">No configured station is available.</div>`;
+        list.innerHTML = `<div class="empty">${escapeHtml(t("text.no_stations_available"))}</div>`;
         return;
       }
 
@@ -1465,7 +1531,7 @@
       if (type === "distance" || type === "calories") payload.target_value = value;
       else payload.duration_sec = Math.round(value);
       if (value <= 0) {
-        setMessage("race-message", "Enter a value greater than 0.", "error");
+        setMessage("race-message", t("message.value_required"), "error");
         return;
       }
       try {
@@ -1476,7 +1542,7 @@
         });
         await refreshReadiness();
         renderRace();
-        setMessage("race-message", "Race settings saved.", "ok");
+        setMessage("race-message", t("message.race_settings_saved"), "ok");
       } catch (error) {
         setMessage("race-message", error.message, "error");
       }
@@ -1492,7 +1558,7 @@
           body: JSON.stringify({ mode: displayMode }),
         });
         renderRace();
-        setMessage("race-message", "Leaderboard view updated.", "ok");
+        setMessage("race-message", t("message.leaderboard_updated"), "ok");
       } catch (error) {
         $("leaderboard-display-mode").value = previousMode;
         setMessage("race-message", error.message, "error");
@@ -1509,7 +1575,7 @@
         });
         await refreshReadiness();
         renderRace();
-        setMessage("race-message", enabled ? "Start sound enabled." : "Start sound disabled.", "ok");
+        setMessage("race-message", enabled ? t("message.start_sound_enabled") : t("message.start_sound_disabled"), "ok");
       } catch (error) {
         $("start-sound-enabled").value = previousValue;
         setMessage("race-message", error.message, "error");
@@ -1527,9 +1593,9 @@
       }
       state.countdownActive = true;
       renderRace();
-      setMessage("race-message", "Countdown playing on Dashboard. Race starts on Go.", "warn");
+      setMessage("race-message", t("message.countdown_playing"), "warn");
       try {
-        await raceCommand("/api/race/countdown-start", "Race started after Dashboard countdown.");
+        await raceCommand("/api/race/countdown-start", t("message.race_started"));
       } finally {
         state.countdownActive = false;
         renderRace();
@@ -1537,12 +1603,12 @@
     }
 
     async function stopRace() {
-      await raceCommand("/api/race/stop", "Race stopped.");
+      await raceCommand("/api/race/stop", t("message.race_stopped"));
     }
 
     async function resetRace() {
-      if (!window.confirm("Reset race and clear current athlete registrations?")) return;
-      await raceCommand("/api/race/reset", "Race reset.");
+      if (!window.confirm(t("confirm.reset_race"))) return;
+      await raceCommand("/api/race/reset", t("message.race_reset"));
       await refreshStations();
     }
 
