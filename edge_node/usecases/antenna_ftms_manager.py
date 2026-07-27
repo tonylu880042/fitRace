@@ -8,13 +8,33 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
-from edge_node.domain.models import AntennaChannelConfig, EdgeNodeConfig, EquipmentBinding, TelemetryData
+from edge_node.domain.models import (
+    AntennaChannelConfig,
+    EdgeNodeConfig,
+    EquipmentBinding,
+    TelemetryData,
+)
 from edge_node.infrastructure.antenna import protocol
+from edge_node.infrastructure.antenna.port_lock import PortBusyError, port_lock
 
 logger = logging.getLogger("edge_node.antenna_ftms_manager")
 MAC_ADDRESS_PATTERN = re.compile(r"^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$")
 # antenna board firmware hard limit: CONNECT silently ignores MACs beyond 3
 MAX_MACS_PER_CHANNEL = 3
+
+# Cross-process UART lock (shared with AntennaCommandRunner, the setup-page
+# web service). Startup command sequences (PING, SCAN, CONNECT, ...) run
+# once and can afford to wait a while for a web command to finish with the
+# port.
+PORT_LOCK_TIMEOUT_SEC = 10.0
+# The telemetry read loop must not stall waiting for the lock -- if it's
+# busy, skip this channel for one pass rather than block the whole loop.
+READ_LOOP_LOCK_TIMEOUT_SEC = 0.2
+# Gap between telemetry read passes, held with NO lock at all. This is what
+# actually lets a waiting web command (e.g. a SCAN from the setup page) win
+# the cross-process lock -- without it the runtime would re-acquire the
+# port continuously and starve the web process.
+READ_LOOP_YIELD_SEC = 0.03
 
 
 @dataclass(frozen=True)
@@ -42,6 +62,9 @@ class AntennaFtmsManager:
         if not edge_config.antenna_channels:
             raise ValueError("antenna_channels is required for antenna FTMS manager")
         self._edge_config = edge_config
+        self._channels_by_id: dict[str, AntennaChannelConfig] = {
+            channel.id: channel for channel in edge_config.antenna_channels
+        }
         self._on_telemetry = on_telemetry
         self._serial_factory = serial_factory
         self._scan_duration_sec = scan_duration_sec
@@ -199,21 +222,34 @@ class AntennaFtmsManager:
     def _ping_channels(self) -> dict[str, bool]:
         boot_has_list: dict[str, bool] = {}
         for channel_id, serial_port in self._serials.items():
-            # drop stale lines a previous process left in the UART buffer
-            if hasattr(serial_port, "reset_input_buffer"):
-                serial_port.reset_input_buffer()
             parsed = None
-            for _ in range(3):  # spec: resend PING until the board answers BOOT
-                self._write(serial_port, protocol.build_ping(), channel_id)
-                parsed = self._await_response(
-                    serial_port,
-                    self._command_timeout_sec,
-                    channel_id,
-                    wanted_types=frozenset({"boot"}),
+            try:
+                with port_lock(
+                    self._channels_by_id[channel_id].port,
+                    timeout_sec=PORT_LOCK_TIMEOUT_SEC,
+                ):
+                    # drop stale lines a previous process left in the UART buffer
+                    if hasattr(serial_port, "reset_input_buffer"):
+                        serial_port.reset_input_buffer()
+                    for _ in range(3):  # spec: resend PING until the board answers BOOT
+                        self._write(serial_port, protocol.build_ping(), channel_id)
+                        parsed = self._await_response(
+                            serial_port,
+                            self._command_timeout_sec,
+                            channel_id,
+                            wanted_types=frozenset({"boot"}),
+                        )
+                        if parsed or self._stop_event.is_set():
+                            break
+            except PortBusyError as exc:
+                logger.warning(
+                    "[%s] antenna PING skipped, port busy: %s", channel_id, exc
                 )
-                if parsed or self._stop_event.is_set():
-                    break
-            logger.info("[%s] antenna boot response: %s", channel_id, parsed and parsed.get("raw"))
+            logger.info(
+                "[%s] antenna boot response: %s",
+                channel_id,
+                parsed and parsed.get("raw"),
+            )
             boot_has_list[channel_id] = bool(parsed and parsed.get("has_list"))
         return boot_has_list
 
@@ -226,14 +262,20 @@ class AntennaFtmsManager:
             if channel_ids is None or channel_id in channel_ids
         }
         for channel_id, serial_port in scanned.items():
-            self._write(serial_port, protocol.build_scan_start(), channel_id)
+            self._run_locked_channel_op(
+                channel_id,
+                "scan start",
+                lambda serial_port=serial_port, channel_id=channel_id: self._write(
+                    serial_port, protocol.build_scan_start(), channel_id
+                ),
+            )
 
         scan_results = {channel_id: [] for channel_id in scanned}
         deadline = time.monotonic() + max(0.1, self._scan_duration_sec)
         while time.monotonic() < deadline and not self._stop_event.is_set():
             # read every channel so non-scanned channels keep streaming
             for channel_id, serial_port in self._serials.items():
-                line = self._read_line(serial_port, channel_id)
+                line = self._read_line_yielding(serial_port, channel_id)
                 if not line:
                     continue
                 parsed = protocol.parse_line(line)
@@ -255,38 +297,94 @@ class AntennaFtmsManager:
                         )
                     )
         for channel_id, devices in scan_results.items():
-            logger.info("[%s] antenna scan found %s device(s)", channel_id, len(devices))
+            logger.info(
+                "[%s] antenna scan found %s device(s)", channel_id, len(devices)
+            )
 
         for channel_id, serial_port in scanned.items():
-            self._write(serial_port, protocol.build_scan_stop(), channel_id)
+            self._run_locked_channel_op(
+                channel_id,
+                "scan stop",
+                lambda serial_port=serial_port, channel_id=channel_id: self._write(
+                    serial_port, protocol.build_scan_stop(), channel_id
+                ),
+            )
         for channel_id, serial_port in scanned.items():
-            self._read_lines(serial_port, self._command_timeout_sec, channel_id=channel_id)
+            self._run_locked_channel_op(
+                channel_id,
+                "scan drain",
+                lambda serial_port=serial_port, channel_id=channel_id: self._read_lines(
+                    serial_port, self._command_timeout_sec, channel_id=channel_id
+                ),
+            )
         return scan_results
 
     def _set_report_interval_all(self, channel_ids: set[str] | None = None):
         for channel_id, serial_port in self._serials.items():
             if channel_ids is not None and channel_id not in channel_ids:
                 continue
-            self._write(serial_port, protocol.build_report_interval(self._report_interval_ms), channel_id)
-            parsed = self._await_response(
-                serial_port, self._command_timeout_sec, channel_id, ok_command="REPORT"
+            parsed = None
+            try:
+                with port_lock(
+                    self._channels_by_id[channel_id].port,
+                    timeout_sec=PORT_LOCK_TIMEOUT_SEC,
+                ):
+                    self._write(
+                        serial_port,
+                        protocol.build_report_interval(self._report_interval_ms),
+                        channel_id,
+                    )
+                    parsed = self._await_response(
+                        serial_port,
+                        self._command_timeout_sec,
+                        channel_id,
+                        ok_command="REPORT",
+                    )
+            except PortBusyError as exc:
+                logger.warning(
+                    "[%s] antenna REPORT skipped, port busy: %s", channel_id, exc
+                )
+            logger.info(
+                "[%s] antenna report interval response: %s",
+                channel_id,
+                parsed and parsed.get("raw"),
             )
-            logger.info("[%s] antenna report interval response: %s", channel_id, parsed and parsed.get("raw"))
 
     def _disconnect_all_channels(self, channel_ids: set[str] | None = None):
         for channel_id, serial_port in self._serials.items():
             if channel_ids is not None and channel_id not in channel_ids:
                 continue
-            self._write(serial_port, protocol.build_disconnect_all(), channel_id)
-            parsed = self._await_response(
-                serial_port, self._command_timeout_sec, channel_id, ok_command="DISCONNECT"
+            parsed = None
+            try:
+                with port_lock(
+                    self._channels_by_id[channel_id].port,
+                    timeout_sec=PORT_LOCK_TIMEOUT_SEC,
+                ):
+                    self._write(
+                        serial_port, protocol.build_disconnect_all(), channel_id
+                    )
+                    parsed = self._await_response(
+                        serial_port,
+                        self._command_timeout_sec,
+                        channel_id,
+                        ok_command="DISCONNECT",
+                    )
+            except PortBusyError as exc:
+                logger.warning(
+                    "[%s] antenna DISCONNECT skipped, port busy: %s", channel_id, exc
+                )
+            logger.info(
+                "[%s] antenna disconnect all response: %s",
+                channel_id,
+                parsed and parsed.get("raw"),
             )
-            logger.info("[%s] antenna disconnect all response: %s", channel_id, parsed and parsed.get("raw"))
 
     def _connect_assignments(self, assignments: dict[str, list[str]]):
         for channel_id, macs in assignments.items():
             if not macs:
-                logger.warning("[%s] no antenna devices assigned after scan", channel_id)
+                logger.warning(
+                    "[%s] no antenna devices assigned after scan", channel_id
+                )
                 continue
             if len(macs) > MAX_MACS_PER_CHANNEL:
                 # keep this channel's configured targets; firmware silently
@@ -312,21 +410,45 @@ class AntennaFtmsManager:
             self._assigned_macs_by_channel[channel_id] = {
                 _normalize_device_id(mac) for mac in macs
             }
-            self._write(serial_port, protocol.build_connect(macs), channel_id)
-            parsed = self._await_response(
-                serial_port, self._command_timeout_sec, channel_id, ok_command="CONNECT"
-            )
-            logger.info("[%s] antenna connect %s -> %s", channel_id, macs, parsed and parsed.get("raw"))
-            self._write(serial_port, protocol.build_report_interval(self._report_interval_ms), channel_id)
-            self._await_response(
-                serial_port, self._command_timeout_sec, channel_id, ok_command="REPORT"
-            )
+            try:
+                with port_lock(
+                    self._channels_by_id[channel_id].port,
+                    timeout_sec=PORT_LOCK_TIMEOUT_SEC,
+                ):
+                    self._write(serial_port, protocol.build_connect(macs), channel_id)
+                    parsed = self._await_response(
+                        serial_port,
+                        self._command_timeout_sec,
+                        channel_id,
+                        ok_command="CONNECT",
+                    )
+                    logger.info(
+                        "[%s] antenna connect %s -> %s",
+                        channel_id,
+                        macs,
+                        parsed and parsed.get("raw"),
+                    )
+                    self._write(
+                        serial_port,
+                        protocol.build_report_interval(self._report_interval_ms),
+                        channel_id,
+                    )
+                    self._await_response(
+                        serial_port,
+                        self._command_timeout_sec,
+                        channel_id,
+                        ok_command="REPORT",
+                    )
+            except PortBusyError as exc:
+                logger.warning(
+                    "[%s] antenna CONNECT skipped, port busy: %s", channel_id, exc
+                )
 
     def _read_telemetry_loop(self):
         next_retry = time.monotonic() + self._reconnect_interval_sec
         while not self._stop_event.is_set():
             for channel_id, serial_port in self._serials.items():
-                line = self._read_line(serial_port, channel_id)
+                line = self._read_line_yielding(serial_port, channel_id)
                 if not line:
                     continue
                 parsed = protocol.parse_line(line)
@@ -336,6 +458,44 @@ class AntennaFtmsManager:
             if time.monotonic() >= next_retry:
                 self._reconnect_missing_targets()
                 next_retry = time.monotonic() + self._reconnect_interval_sec
+            # Release the port for a beat, with NO lock held at all, so a
+            # waiting web command (e.g. a SCAN from the setup page) can win
+            # the cross-process lock. Without this gap the runtime would
+            # re-acquire the port continuously and starve the web process.
+            # ponytail: flock has no fairness guarantee -- this yield window
+            # makes starvation unlikely, not impossible.
+            self._stop_event.wait(READ_LOOP_YIELD_SEC)
+
+    def _read_line_yielding(self, serial_port, channel_id: str) -> str | None:
+        """Read one line for `channel_id`, holding the cross-process port
+        lock only for the read itself. If the web command runner is
+        currently mid-command on this same port, back off for this pass
+        instead of blocking the whole telemetry loop."""
+        try:
+            with port_lock(
+                self._channels_by_id[channel_id].port,
+                timeout_sec=READ_LOOP_LOCK_TIMEOUT_SEC,
+            ):
+                return self._read_line(serial_port, channel_id)
+        except PortBusyError:
+            return None
+
+    def _run_locked_channel_op(self, channel_id: str, description: str, fn):
+        """Run `fn` (a no-arg callable doing one write/read on `channel_id`'s
+        port) while holding that channel's cross-process port lock. Used for
+        the per-channel steps of a command sequence (e.g. SCAN start/stop)
+        so the lock is released between channels instead of held once
+        around the whole multi-channel loop."""
+        try:
+            with port_lock(
+                self._channels_by_id[channel_id].port, timeout_sec=PORT_LOCK_TIMEOUT_SEC
+            ):
+                return fn()
+        except PortBusyError as exc:
+            logger.warning(
+                "[%s] antenna %s skipped, port busy: %s", channel_id, description, exc
+            )
+            return None
 
     def _dispatch_telemetry(self, channel_id: str, parsed: dict[str, Any]):
         mac = _normalize_device_id(parsed.get("address"))
@@ -360,7 +520,9 @@ class AntennaFtmsManager:
         DISCONNECT, so healthy links and the data stream stay untouched."""
         expected_by_channel: dict[str, list[str]] = {}
         for binding in self._edge_config.equipment_bindings:
-            if not binding.ble_target or not MAC_ADDRESS_PATTERN.match(binding.ble_target):
+            if not binding.ble_target or not MAC_ADDRESS_PATTERN.match(
+                binding.ble_target
+            ):
                 continue
             if binding.antenna_channel not in self._serials:
                 continue  # ponytail: MACs without a configured channel are not recovered
@@ -369,13 +531,23 @@ class AntennaFtmsManager:
             )
         for channel_id, expected in expected_by_channel.items():
             serial_port = self._serials[channel_id]
-            self._write(serial_port, protocol.build_status(), channel_id)
-            status = self._await_response(
-                serial_port,
-                self._command_timeout_sec,
-                channel_id,
-                wanted_types=frozenset({"status"}),
-            )
+            status = None
+            try:
+                with port_lock(
+                    self._channels_by_id[channel_id].port,
+                    timeout_sec=PORT_LOCK_TIMEOUT_SEC,
+                ):
+                    self._write(serial_port, protocol.build_status(), channel_id)
+                    status = self._await_response(
+                        serial_port,
+                        self._command_timeout_sec,
+                        channel_id,
+                        wanted_types=frozenset({"status"}),
+                    )
+            except PortBusyError as exc:
+                logger.warning(
+                    "[%s] antenna STATUS skipped, port busy: %s", channel_id, exc
+                )
             if status is None:
                 logger.warning("[%s] antenna STATUS not answered", channel_id)
                 continue
@@ -398,7 +570,9 @@ class AntennaFtmsManager:
         normalized_mac = _normalize_device_id(mac)
         raw_distance_m = float(parsed.get("distance_m") or 0.0)
         raw_energy_kcal = parsed.get("total_energy_kcal")
-        raw_energy_value = float(raw_energy_kcal) if raw_energy_kcal is not None else None
+        raw_energy_value = (
+            float(raw_energy_kcal) if raw_energy_kcal is not None else None
+        )
         delta_distance_m = self._delta_from_previous(
             self._last_raw_distance_by_mac,
             normalized_mac,
@@ -414,7 +588,11 @@ class AntennaFtmsManager:
             else None
         )
         return TelemetryData(
-            node_id=binding.node_id if binding else f"{self._edge_config.node_id}-{mac.replace(':', '').lower()}",
+            node_id=(
+                binding.node_id
+                if binding
+                else f"{self._edge_config.node_id}-{mac.replace(':', '').lower()}"
+            ),
             edge_node_id=self._edge_config.node_id,
             mac_address=mac,
             equipment_id=binding.equipment_id if binding else mac,
@@ -463,7 +641,12 @@ class AntennaFtmsManager:
         for candidate in self._edge_config.equipment_bindings:
             if _normalize_device_id(candidate.ble_target) == _normalize_device_id(mac):
                 self._bindings_by_mac[mac] = candidate
-                logger.info("[%s] matched antenna target %s to %s", channel_id, mac, candidate.node_id)
+                logger.info(
+                    "[%s] matched antenna target %s to %s",
+                    channel_id,
+                    mac,
+                    candidate.node_id,
+                )
                 return candidate
 
         channel_bindings = [
@@ -472,9 +655,7 @@ class AntennaFtmsManager:
             if binding.antenna_channel == channel_id
         ]
 
-        used_node_ids = {
-            binding.node_id for binding in self._bindings_by_mac.values()
-        }
+        used_node_ids = {binding.node_id for binding in self._bindings_by_mac.values()}
         start_index = self._next_binding_index_by_channel.get(channel_id, 0)
         for index in range(start_index, len(channel_bindings)):
             candidate = channel_bindings[index]
@@ -482,7 +663,12 @@ class AntennaFtmsManager:
                 continue
             self._bindings_by_mac[mac] = candidate
             self._next_binding_index_by_channel[channel_id] = index + 1
-            logger.info("[%s] assigned saved antenna target %s to %s", channel_id, mac, candidate.node_id)
+            logger.info(
+                "[%s] assigned saved antenna target %s to %s",
+                channel_id,
+                mac,
+                candidate.node_id,
+            )
             return candidate
         return None
 
@@ -561,7 +747,9 @@ def assign_devices_by_rssi(
     tie_threshold_db: int = 5,
 ) -> dict[str, list[str]]:
     channel_ids = [channel.id for channel in channels]
-    max_per_channel = max(1, math.ceil(_unique_device_count(scan_results) / len(channel_ids)))
+    max_per_channel = max(
+        1, math.ceil(_unique_device_count(scan_results) / len(channel_ids))
+    )
     assignments = {channel_id: [] for channel_id in channel_ids}
     rssi_by_mac: dict[str, dict[str, int]] = {}
     for channel_id, devices in scan_results.items():
@@ -574,19 +762,29 @@ def assign_devices_by_rssi(
         reverse=True,
     )
     for mac, readings in candidates:
-        visible_channels = [channel_id for channel_id in channel_ids if channel_id in readings]
+        visible_channels = [
+            channel_id for channel_id in channel_ids if channel_id in readings
+        ]
         if not visible_channels:
             continue
         available = [
-            channel_id for channel_id in visible_channels
+            channel_id
+            for channel_id in visible_channels
             if len(assignments[channel_id]) < max_per_channel
         ] or visible_channels
         best_rssi = max(readings[channel_id] for channel_id in available)
         close = [
-            channel_id for channel_id in available
+            channel_id
+            for channel_id in available
             if abs(readings[channel_id] - best_rssi) < tie_threshold_db
         ]
-        winner = min(close, key=lambda channel_id: (len(assignments[channel_id]), channel_ids.index(channel_id)))
+        winner = min(
+            close,
+            key=lambda channel_id: (
+                len(assignments[channel_id]),
+                channel_ids.index(channel_id),
+            ),
+        )
         assignments[winner].append(mac)
     return assignments
 
@@ -666,7 +864,9 @@ def bind_assignments_to_streams(
 
 
 def _unique_device_count(scan_results: dict[str, list[ScannedDevice]]) -> int:
-    return len({device.address for devices in scan_results.values() for device in devices})
+    return len(
+        {device.address for devices in scan_results.values() for device in devices}
+    )
 
 
 def _normalize_device_id(value: str | None) -> str:

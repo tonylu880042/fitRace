@@ -1,7 +1,21 @@
+import threading
 import time
 from dataclasses import dataclass, field
 
 from edge_node.infrastructure.antenna import protocol
+from edge_node.infrastructure.antenna.port_lock import PortBusyError, port_lock
+
+# In-process lock: two browser tabs hitting the sync FastAPI endpoints can
+# call AntennaCommandRunner.run() from two different threadpool threads at
+# once. This keeps their whole open->command->read->close sessions from
+# interleaving on the same UART.
+_SERIAL_LOCK = threading.Lock()
+
+# How long a web command waits to win the cross-process UART lock away from
+# the edge runtime (AntennaFtmsManager) before giving up. The runtime only
+# ever holds the port for short per-channel bursts, so this is generous
+# headroom, not an expected wait.
+PORT_LOCK_TIMEOUT_SEC = 5.0
 
 
 @dataclass(frozen=True)
@@ -28,29 +42,54 @@ class AntennaCommandRunner:
         rx: list[str] = []
         started = time.monotonic()
 
-        try:
-            serial_port = serial_module.Serial(
-                port=request.port,
-                baudrate=request.baudrate,
-                rtscts=request.rtscts,
-                timeout=0.1,
-            )
-            commands = _build_commands(request)
-            for index, command in enumerate(commands):
-                serial_port.write(command.encode("ascii"))
-                tx.append(command.strip())
-                self._record_event("tx", request.port, command.strip())
+        # Hold the in-process lock for the whole open->command->read->close
+        # session so two concurrent HTTP commands (e.g. two browser tabs)
+        # can't interleave writes on the same UART and wedge the antenna
+        # board. Inside that, hold the cross-process port lock for the same
+        # span so the edge runtime (a separate process) can't open the port
+        # underneath us either.
+        with _SERIAL_LOCK:
+            try:
+                with port_lock(request.port, timeout_sec=PORT_LOCK_TIMEOUT_SEC):
+                    try:
+                        serial_port = serial_module.Serial(
+                            port=request.port,
+                            baudrate=request.baudrate,
+                            rtscts=request.rtscts,
+                            timeout=0.1,
+                            exclusive=True,
+                        )
+                        commands = _build_commands(request)
+                        for index, command in enumerate(commands):
+                            serial_port.write(command.encode("ascii"))
+                            tx.append(command.strip())
+                            self._record_event("tx", request.port, command.strip())
 
-                if request.command == "scan" and index == 0:
-                    rx.extend(self._read_lines(serial_port, request.scan_duration_sec, request.port))
-                    continue
+                            if request.command == "scan" and index == 0:
+                                rx.extend(
+                                    self._read_lines(
+                                        serial_port,
+                                        request.scan_duration_sec,
+                                        request.port,
+                                    )
+                                )
+                                continue
 
-                rx.extend(self._read_lines(serial_port, request.timeout_sec, request.port))
-        except serial_module.SerialException as exc:
-            raise RuntimeError(f"UART connection failed: {exc}") from exc
-        finally:
-            if serial_port and getattr(serial_port, "is_open", False):
-                serial_port.close()
+                            rx.extend(
+                                self._read_lines(
+                                    serial_port, request.timeout_sec, request.port
+                                )
+                            )
+                    except serial_module.SerialException as exc:
+                        raise RuntimeError(f"UART connection failed: {exc}") from exc
+                    finally:
+                        if serial_port and getattr(serial_port, "is_open", False):
+                            serial_port.close()
+            except PortBusyError as exc:
+                raise RuntimeError(
+                    f"UART port {request.port!r} is busy: the edge runtime or "
+                    f"another command is using it right now ({exc})"
+                ) from exc
 
         return {
             "port": request.port,
