@@ -48,7 +48,7 @@ Production deployments must configure local management tokens before enabling op
 | --- | --- | --- |
 | `FITRACE_ADMIN_TOKEN` | Hub and Edge services | Protects HTTP management APIs such as race control, station assignment, updates, power actions, Edge Wi-Fi status, and Edge BLE troubleshooting scan. |
 | `FITRACE_NODE_COMMAND_TOKEN` | Hub and Edge services | Protects Hub-to-Edge MQTT commands such as Edge shutdown. Hub and every Edge Node in one shipped system must share this value. |
-| `FITRACE_POWER_COMMANDS_ENABLED` | Hub and Edge services | Set to `1` only on deployed hardware where real reboot/shutdown commands are allowed. Omit or set anything else for dry-run mode. |
+| `FITRACE_POWER_COMMANDS_ENABLED` | Hub and Edge services | Set to `1` on deployed hardware — required for restart/reboot/shutdown buttons to work at all. Omit it only on development machines; without it those buttons report success but run nothing, and the setup page shows a "power actions not enabled" warning. |
 | `FITRACE_EDGE_MONITOR_PATH` | Edge service | Stores recent UART RX/TX and MQTT publish monitor events shown on the Edge setup page. |
 
 Use a systemd drop-in so release updates do not overwrite local secrets:
@@ -59,7 +59,9 @@ sudo tee /etc/fitracestudio/hub.env >/dev/null <<'EOF'
 FITRACE_ADMIN_TOKEN=replace-with-local-admin-token
 FITRACE_NODE_COMMAND_TOKEN=replace-with-hub-edge-command-token
 FITRACE_RACE_RESULTS_PATH=/opt/fitracestudio/race_results.jsonl
-# FITRACE_POWER_COMMANDS_ENABLED=1
+# Real hardware: keep this enabled, or power/restart buttons silently do
+# nothing. Comment it out only on a development machine.
+FITRACE_POWER_COMMANDS_ENABLED=1
 EOF
 sudo chown root:fitrace /etc/fitracestudio/hub.env
 sudo chmod 0640 /etc/fitracestudio/hub.env
@@ -90,7 +92,10 @@ sudo tee /etc/fitracestudio/edge.env >/dev/null <<'EOF'
 FITRACE_ADMIN_TOKEN=replace-with-local-admin-token
 FITRACE_NODE_COMMAND_TOKEN=replace-with-hub-edge-command-token
 FITRACE_EDGE_MONITOR_PATH=/opt/fitracestudio/edge_monitor.jsonl
-# FITRACE_POWER_COMMANDS_ENABLED=1
+# Real hardware: keep this enabled, or the setup page's Restart / reboot /
+# shutdown buttons silently do nothing (they return success without running).
+# Comment it out only on a development machine you do not want rebooted.
+FITRACE_POWER_COMMANDS_ENABLED=1
 EOF
 sudo chown root:fitrace /etc/fitracestudio/edge.env
 sudo chmod 0640 /etc/fitracestudio/edge.env
