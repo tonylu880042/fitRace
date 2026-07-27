@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 import json
+from pathlib import Path
 
 from edge_node.domain.models import FtmsDevice
 from edge_node.infrastructure.fastapi import app as edge_app_module
@@ -67,7 +68,10 @@ def test_edge_setup_page_includes_uart_antenna_controls_without_ble_scan_panel()
     assert "/api/monitor/events" in response.text
     assert 'id="antenna-reconnect-configured-btn"' in response.text
     assert "/api/antenna/reconnect-configured" in response.text
-    assert 'id="antenna-report-interval" type="number" min="100" max="10000" value="250"' in response.text
+    assert (
+        'id="antenna-report-interval" type="number" min="100" max="10000" value="250"'
+        in response.text
+    )
     assert "ANTENNA_DEFAULT_REPORT_INTERVAL_MS = 250" in response.text
     assert "MONITOR_REFRESH_MS = 250" in response.text
     assert "MONITOR_LIVE_WINDOW_MS = 3000" in response.text
@@ -79,10 +83,12 @@ def test_edge_setup_page_includes_uart_antenna_controls_without_ble_scan_panel()
     assert "monitorServerNowEpochMs" in response.text
     assert "monitorNowEpochMs() - timestamp" in response.text
     assert "Date.now() - timestamp" not in response.text
-    assert 'setInterval(refreshMonitorEvents, MONITOR_REFRESH_MS)' in response.text
+    assert "setInterval(refreshMonitorEvents, MONITOR_REFRESH_MS)" in response.text
 
 
-def test_edge_config_endpoint_reads_and_writes_equipment_bindings(monkeypatch, tmp_path):
+def test_edge_config_endpoint_reads_and_writes_equipment_bindings(
+    monkeypatch, tmp_path
+):
     config_path = tmp_path / "config.json"
     config_path.write_text(
         json.dumps(
@@ -125,7 +131,9 @@ def test_edge_config_endpoint_reads_and_writes_equipment_bindings(monkeypatch, t
     assert saved["equipment_bindings"][0]["equipment_id"] == "跑步機_A"
 
 
-def test_reconnect_configured_antenna_devices_groups_targets_by_channel(monkeypatch, tmp_path):
+def test_reconnect_configured_antenna_devices_groups_targets_by_channel(
+    monkeypatch, tmp_path
+):
     config_path = tmp_path / "config.json"
     config_path.write_text(
         json.dumps(
@@ -204,8 +212,12 @@ def test_reconnect_configured_antenna_devices_groups_targets_by_channel(monkeypa
         "AA:BB:CC:DD:EE:02",
     ]
     assert payload["channels"][1]["macs"] == ["AA:BB:CC:DD:EE:03"]
-    connect_requests = [request for request in fake_runner.requests if request.command == "connect"]
-    report_requests = [request for request in fake_runner.requests if request.command == "report"]
+    connect_requests = [
+        request for request in fake_runner.requests if request.command == "connect"
+    ]
+    report_requests = [
+        request for request in fake_runner.requests if request.command == "report"
+    ]
     assert connect_requests[0].port == "/dev/ttyAMA0"
     assert connect_requests[0].macs == ["AA:BB:CC:DD:EE:01", "AA:BB:CC:DD:EE:02"]
     assert connect_requests[1].port == "/dev/ttyAMA4"
@@ -393,7 +405,9 @@ def test_edge_monitor_events_endpoint_reads_event_log(monkeypatch, tmp_path):
     assert payload["events"][0]["message"] == "BOOT:NO_LIST;"
 
 
-def test_edge_antenna_command_defaults_to_configured_first_channel(monkeypatch, tmp_path):
+def test_edge_antenna_command_defaults_to_configured_first_channel(
+    monkeypatch, tmp_path
+):
     config_path = tmp_path / "config.json"
     config_path.write_text(
         json.dumps(
@@ -439,3 +453,176 @@ def test_edge_antenna_command_endpoint_requires_admin_token(monkeypatch):
     )
 
     assert response.status_code == 401
+
+
+def test_edge_setup_page_monitor_poll_failure_resets_rebuild_guard():
+    # Fix A: refreshMonitorEvents' catch block writes an error into monitorGrid
+    # but must also null out monitorGridSignature, otherwise the very next
+    # successful poll thinks nothing changed and never rebuilds the cards.
+    client = TestClient(edge_app_module.app)
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    # One `let` declaration plus one reset inside the catch block.
+    assert response.text.count("monitorGridSignature = null;") == 2
+
+
+def test_edge_setup_page_empty_channels_keep_uart_controls_reachable():
+    # Fix B: an empty/failed channel list must fall back to the server's
+    # default_port instead of bricking every antenna button (including REBOOT).
+    client = TestClient(edge_app_module.app)
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "antenna.no_channels" in response.text
+    assert (
+        '"antenna.no_channels": "No UART channels configured — using default serial port."'
+        in response.text
+    )
+    assert (
+        '"antenna.no_channels": "尚未設定 UART 通道，使用預設串口。"' in response.text
+    )
+    assert "config.default_port" in response.text
+    # loadAntennaConfig must stop clobbering selectedAntennaPort/antennaChannels
+    # on a failed fetch and instead defer to updateChannelOccupancy's fallback logic.
+    assert response.text.count('t("antenna.channel_load_failed")') == 1
+
+
+def test_edge_setup_page_unassigned_bindings_stay_reachable_on_every_channel():
+    # Fix C: a binding with a blank/unknown antenna_channel must never be
+    # permanently dimmed or excluded from CONNECT targets on every channel.
+    client = TestClient(edge_app_module.app)
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "function knownChannelIds()" in response.text
+    assert "binding.antenna_channel === channelId : true" in response.text
+    assert "if (!assigned) return;" in response.text
+
+
+def test_edge_setup_page_single_fetch_wrapper_owns_401_banner():
+    # Fix D: adminFetch() must be the only place that reacts to a 401 so the
+    # banner can never be silently skipped by a copy-pasted call site.
+    client = TestClient(edge_app_module.app)
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "async function adminFetch(url, options = {}) {" in response.text
+    # The only raw `await fetch(` left must be the one inside adminFetch itself —
+    # every call site should go through the wrapper instead.
+    assert response.text.count("await fetch(") == 1
+    assert (
+        response.text.count("if (response.status === 401) showAdminAuthBanner();") == 1
+    )
+    # clearAllBindings' reconnect call must stop swallowing failures silently.
+    assert (
+        'setConfigMessage(detail ? `${t("bindings.failed")}: ${detail}` : t("bindings.failed"), "error");'
+        in response.text
+    )
+
+
+def test_edge_setup_page_monitor_hidden_poll_only_recomputes_live_count():
+    # The 250ms poll (updateMonitorFromEvents) must not do full card DOM work
+    # while the Monitor tab is hidden — it only needs monitorLiveCount fresh
+    # for the SCAN confirm guard. When hidden it should call the cheaper
+    # recomputeMonitorLiveCount() instead of the full renderMonitorEquipment().
+    client = TestClient(edge_app_module.app)
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "function recomputeMonitorLiveCount()" in response.text
+    assert "if (monitorSection.hidden) {" in response.text
+    assert "recomputeMonitorLiveCount();" in response.text
+    assert "} else {\n        renderMonitorEquipment();\n      }" in response.text
+
+
+def test_edge_setup_page_serves_i18n_via_server_side_injection_not_inline_dict():
+    # AGENT.md §2.3: locale dictionaries live under infrastructure/locales/ and
+    # get injected server-side into the rendered page at module-load time —
+    # the static HTML/JS must no longer hardcode the translation strings.
+    client = TestClient(edge_app_module.app)
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "掃描會中斷目前已連線設備的即時數據。" in response.text
+    assert "__I18N_DICTIONARIES__" not in response.text
+
+
+def test_edge_setup_page_uart_log_filter_keeps_tx_events_without_parsed():
+    # Bug: TX events are recorded without a `parsed` field (see
+    # antenna_ftms_manager._write / command_runner._record_event), so the old
+    # filter `e.parsed && e.parsed.type !== "telemetry"` dropped every TX row.
+    # The fix keeps a uart event unless it is specifically parsed telemetry.
+    client = TestClient(edge_app_module.app)
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert (
+        'e.source === "uart" && e.parsed && e.parsed.type !== "telemetry"'
+        not in response.text
+    )
+    assert (
+        'e.source === "uart" && !(e.parsed && e.parsed.type === "telemetry")'
+        in response.text
+    )
+
+
+def test_edge_i18n_endpoint_returns_both_locale_dictionaries():
+    # NOTE: the runtime locale key is "en-US" (matching dictionaries["en-US"]
+    # and getBrowserLocale()/localStorage in the page JS), not "en".
+    client = TestClient(edge_app_module.app)
+
+    response = client.get("/api/i18n")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert set(data.keys()) >= {"en-US", "zh-TW"}
+    assert "antenna.scan_live_warning" in data["en-US"]
+    assert "antenna.scan_live_warning" in data["zh-TW"]
+
+
+def test_edge_locale_json_files_parse_and_share_identical_key_sets():
+    locales_dir = Path(edge_app_module.__file__).resolve().parent.parent / "locales"
+    en = json.loads((locales_dir / "en.json").read_text(encoding="utf-8"))
+    zh_tw = json.loads((locales_dir / "zh_tw.json").read_text(encoding="utf-8"))
+
+    assert set(en.keys()) == set(zh_tw.keys())
+    assert "antenna.scan_live_warning" in en
+    assert "antenna.scan_live_warning" in zh_tw
+
+
+def test_edge_setup_page_restart_runtime_surfaces_dry_run_instead_of_false_success():
+    # Bug: PowerManager in dry-run mode (the default unless
+    # FITRACE_POWER_COMMANDS_ENABLED=1 is set) returns HTTP 200 with
+    # dry_run=True, executed=False, but restartEdgeRuntime() only checked
+    # response.ok -- so the operator saw a cheerful "restarted" success
+    # message while the runtime never actually restarted. The fix must
+    # branch on dry_run/executed instead of just response.ok.
+    client = TestClient(edge_app_module.app)
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    source = response.text
+    restart_fn_start = source.index("async function restartEdgeRuntime()")
+    restart_fn = source[restart_fn_start : restart_fn_start + 1500]
+
+    assert "dry_run" in restart_fn
+    assert "power.dry_run_warning" in restart_fn
+
+
+def test_edge_locale_files_contain_power_dry_run_keys():
+    locales_dir = Path(edge_app_module.__file__).resolve().parent.parent / "locales"
+    en = json.loads((locales_dir / "en.json").read_text(encoding="utf-8"))
+    zh_tw = json.loads((locales_dir / "zh_tw.json").read_text(encoding="utf-8"))
+
+    assert "power.dry_run_warning" in en
+    assert "power.dry_run_warning" in zh_tw
+    assert set(en.keys()) == set(zh_tw.keys())

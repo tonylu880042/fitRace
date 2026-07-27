@@ -21,7 +21,6 @@ from edge_node.usecases.ftms_scanner import scan_ftms_devices
 from fitrace_common import wifi_manager
 from fitrace_common.power_manager import PowerActionError, PowerManager
 
-
 app = FastAPI(title="FitRaceStudio Edge Node")
 ftms_scanner = BleakFtmsScanner()
 wifi_status_reader = LinuxWifiStatusReader()
@@ -81,7 +80,9 @@ def load_edge_config() -> EdgeNodeConfig:
         with open(CONFIG_PATH, encoding="utf-8") as f:
             return EdgeNodeConfig.model_validate(json.load(f))
     except FileNotFoundError:
-        return EdgeNodeConfig(node_id="fitrace-edge", antenna_protocol_version="unknown")
+        return EdgeNodeConfig(
+            node_id="fitrace-edge", antenna_protocol_version="unknown"
+        )
     except (json.JSONDecodeError, ValueError) as e:
         raise HTTPException(status_code=500, detail=f"Invalid Edge Node config: {e}")
 
@@ -103,6 +104,11 @@ def default_antenna_port() -> str:
 @app.get("/health")
 def health_check():
     return {"status": "ok", "role": "edge"}
+
+
+@app.get("/api/i18n")
+def get_i18n_dictionaries():
+    return _I18N
 
 
 @app.get("/api/system/power/status")
@@ -139,7 +145,9 @@ def shutdown_edge(payload: PowerActionPayload, request: Request):
 def local_ip_address() -> str:
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-            s.connect(("8.8.8.8", 80))  # no packet sent; just selects the outbound interface
+            s.connect(
+                ("8.8.8.8", 80)
+            )  # no packet sent; just selects the outbound interface
             return s.getsockname()[0]
     except OSError:
         return ""
@@ -149,7 +157,7 @@ def local_ip_address() -> str:
 def edge_setup_page():
     ip = local_ip_address()
     badge = f"{ip}:8001" if ip else "Local web setup :8001"
-    html = EDGE_SETUP_HTML.replace("__EDGE_HOST_BADGE__", badge)
+    html = EDGE_SETUP_HTML_RENDERED.replace("__EDGE_HOST_BADGE__", badge)
     html = html.replace("__EDGE_HOST_IP__", ip or "--")
     return HTMLResponse(html)
 
@@ -206,7 +214,7 @@ def get_wifi_status(
     interface: str = Query(
         "wlan0",
         description="Linux Wi-Fi interface to inspect for RSSI.",
-    )
+    ),
 ):
     require_admin(request)
     return wifi_status_reader.read(interface=interface).model_dump()
@@ -216,7 +224,10 @@ def get_wifi_status(
 def list_wifi_networks(request: Request, interface: str = Query("wlan0")):
     require_admin(request)
     try:
-        return {"interface": interface, "networks": wifi_manager.list_networks(interface)}
+        return {
+            "interface": interface,
+            "networks": wifi_manager.list_networks(interface),
+        }
     except wifi_manager.WifiError as e:
         raise HTTPException(status_code=e.status_code, detail=str(e))
 
@@ -280,7 +291,9 @@ def run_antenna_command(payload: AntennaCommandPayload, request: Request):
 
 
 @app.post("/api/antenna/reconnect-configured")
-def reconnect_configured_antenna_devices(payload: AntennaReconnectPayload, request: Request):
+def reconnect_configured_antenna_devices(
+    payload: AntennaReconnectPayload, request: Request
+):
     require_admin(request)
     config = load_edge_config()
     channels_by_id = {channel.id: channel for channel in config.antenna_channels}
@@ -290,10 +303,14 @@ def reconnect_configured_antenna_devices(payload: AntennaReconnectPayload, reque
             continue
         if binding.antenna_channel not in channels_by_id:
             continue
-        targets_by_channel.setdefault(binding.antenna_channel, []).append(binding.ble_target)
+        targets_by_channel.setdefault(binding.antenna_channel, []).append(
+            binding.ble_target
+        )
 
     if not targets_by_channel and not payload.disconnect_first:
-        raise HTTPException(status_code=400, detail="No configured antenna targets found")
+        raise HTTPException(
+            status_code=400, detail="No configured antenna targets found"
+        )
 
     results = []
     try:
@@ -574,14 +591,17 @@ EDGE_SETUP_HTML = """
 
     .uartlog {
       margin-top: 4px;
-      max-height: 340px;
+      /* tall enough to read a whole 30s poll cycle without scrolling, but capped
+         by viewport height so the panel never pushes the page taller than the screen */
+      max-height: min(70vh, 720px);
+      min-height: 320px;
       overflow-y: auto;
       display: flex;
       flex-direction: column;
-      gap: 2px;
+      gap: 3px;
       font-family: var(--mono);
-      font-size: 12px;
-      line-height: 1.5;
+      font-size: 15px;
+      line-height: 1.6;
     }
     .uartlog-row {
       display: flex;
@@ -596,7 +616,7 @@ EDGE_SETUP_HTML = """
     .uartlog-row.rx .dir { color: #22c55e; }
     .uartlog-row.status .raw { color: var(--warn); font-weight: 700; }
     .uartlog-row.torn .raw { color: var(--danger); }
-    .uartlog-empty { color: var(--muted); font-size: 12px; }
+    .uartlog-empty { color: var(--muted); font-size: 14px; }
 
     .wifi-meter {
       display: grid;
@@ -1223,6 +1243,7 @@ EDGE_SETUP_HTML = """
             <div class="sub" data-i18n="hub.address_hint">Use "localhost" when the hub runs on this device, or a .local hostname for a separate hub. "auto" also works.</div>
           </div>
           <div class="binding-list" id="binding-list" style="margin-top:14px;"></div>
+          <div class="message error" id="power-dry-run-badge" hidden data-i18n="power.dry_run_badge">Dry-run mode — power commands are not executed</div>
           <div class="button-grid" style="margin-top:14px;">
             <button id="config-save-btn" type="button" data-i18n="bindings.save">Save bindings</button>
             <button id="config-clear-btn" type="button" class="button-secondary" data-i18n="bindings.clear_all">Clear all bindings</button>
@@ -1279,6 +1300,7 @@ EDGE_SETUP_HTML = """
     const antennaOutput = document.getElementById("antenna-output");
     const monitorGrid = document.getElementById("monitor-grid");
     const monitorCount = document.getElementById("monitor-count");
+    const scanLiveWarning = document.getElementById("scan-live-warning");
     const antennaCommandButtons = Array.from(document.querySelectorAll(".antenna-command"));
     const antennaConnectBtn = document.getElementById("antenna-connect-btn");
     const antennaReconnectConfiguredBtn = document.getElementById("antenna-reconnect-configured-btn");
@@ -1287,6 +1309,7 @@ EDGE_SETUP_HTML = """
     const bindingList = document.getElementById("binding-list");
     const configNodeId = document.getElementById("config-node-id");
     const configMessage = document.getElementById("config-message");
+    const powerDryRunBadge = document.getElementById("power-dry-run-badge");
     const configSaveBtn = document.getElementById("config-save-btn");
     const configClearBtn = document.getElementById("config-clear-btn");
     const allAntennaButtons = [
@@ -1347,271 +1370,7 @@ EDGE_SETUP_HTML = """
       return "en-US";
     }
     let currentLocale = getBrowserLocale();
-    const dictionaries = {
-      "en-US": {
-        "edge.subtitle": "Local Edge Node setup",
-        "wifi.title": "Wi-Fi Signal",
-        "wifi.checking": "Checking",
-        "wifi.reading": "Reading Wi-Fi status",
-        "wifi.excellent": "Excellent Wi-Fi",
-        "wifi.good": "Good Wi-Fi",
-        "wifi.fair": "Usable Wi-Fi",
-        "wifi.weak": "Weak Wi-Fi",
-        "wifi.poor": "Poor Wi-Fi",
-        "wifi.disconnected": "Disconnected",
-        "wifi.position_hint": "Signal state helps adjust on-site placement",
-        "wifi.connect_hint": "Confirm the Edge Node is connected to the AP",
-        "wifi.choose": "Choose Wi-Fi network",
-        "wifi.picker_title": "Wi-Fi networks",
-        "wifi.picker_hint": "Select the AP this Edge Node should connect to.",
-        "wifi.scanning": "Scanning for networks (about 10 seconds)...",
-        "wifi.none_found": "No networks found. Move closer to the AP and retry.",
-        "wifi.saved": "saved",
-        "wifi.connected": "Connected",
-        "wifi.connect": "Connect",
-        "wifi.switch_warning": "Switching networks changes this device's IP. A remote browser will lose this page — reconnect via the new IP or fitrace-pi.local. The on-device screen is unaffected.",
-        "wifi.password": "Wi-Fi password",
-        "wifi.password_required": "Password is required for this network.",
-        "wifi.connecting": "Connecting...",
-        "wifi.connect_ok": "Connected to {ssid}. IP: {ip}",
-        "wifi.rescan": "Rescan",
-        "antenna.title": "UART Antenna Control",
-        "antenna.channel": "Active communication channel",
-        "antenna.advanced": "Advanced maintenance",
-        "antenna.waiting": "Waiting for UART response...",
-        "antenna.slots_free": "{channel}: {free} slot(s) free for a new device",
-        "antenna.slots_full": "{channel} is full — pick another channel for new devices",
-        "wizard.title1": "Add scanned devices",
-        "wizard.hint1": "Tick the devices to add, then bind them all at once. Names and channels are assigned automatically — edit them later in the bindings list.",
-        "wizard.bound": "Already bound",
-        "wizard.bind_selected": "Bind selected",
-        "wizard.bind_selected_count": "Bind selected ({count})",
-        "wizard.capacity_free": "{free} free slot(s) across the antenna boards.",
-        "wizard.capacity_full": "All antenna channels are full — unbind some devices first.",
-        "wizard.back": "Back",
-        "wizard.title3": "Done",
-        "wizard.saved_multi": "{count} device(s) bound. Connecting now — watch the Runtime Monitor; it can take up to a minute for data to appear.",
-        "wizard.some_skipped": " {skipped} skipped (channels full).",
-        "wizard.close": "Close",
-        "type.treadmill": "Treadmill",
-        "type.curved_treadmill": "Curved treadmill (non-motorized)",
-        "type.spin_bike": "Spin bike",
-        "type.fan_bike": "Fan bike (air bike)",
-        "type.upright_bike": "Upright bike",
-        "type.recumbent_bike": "Recumbent bike",
-        "type.elliptical": "Elliptical",
-        "type.stair_climber": "Stair climber",
-        "type.rowing_machine": "Rowing machine",
-        "type.ski_erg": "Ski erg",
-        "type.unknown": "Unknown",
-        "antenna.baudrate": "Baudrate",
-        "antenna.rtscts": "RTS/CTS hardware flow control",
-        "antenna.protocol_hint": "Fixed by the antenna board protocol — shown for reference only.",
-        "antenna.rtscts_on": "On",
-        "antenna.rtscts_off": "Off",
-        "antenna.timeout": "Read timeout seconds",
-        "antenna.scan_duration": "Scan duration seconds",
-        "antenna.macs": "CONNECT target (bound devices on this channel)",
-        "antenna.connect_all": "All bound on this channel ({count})",
-        "antenna.connect_none": "No bound devices on this channel",
-        "antenna.connect": "CONNECT selected devices",
-        "antenna.reconnect_configured": "CONNECT configured devices",
-        "antenna.report_interval": "Report interval ms",
-        "antenna.report": "Set report interval",
-        "antenna.raw": "Raw command",
-        "antenna.send_raw": "Send raw command",
-        "antenna.command_status": "Command status",
-        "antenna.output": "UART Response",
-        "antenna.ready": "Ready to send UART commands.",
-        "antenna.running": "Sending {command} to {port}.",
-        "antenna.complete": "{command} complete. Received {count} line(s).",
-        "antenna.complete_state": "Complete",
-        "antenna.failed": "Command failed",
-        "antenna.idle": "Idle",
-        "antenna.channel_load_failed": "Failed to load UART channels",
-        "antenna.disconnect_all_confirm": "Disconnect all devices? Every device on the antenna boards will drop its connection.",
-        "antenna.reboot_confirm": "Reboot the antenna board? All connected devices will drop and reconnect after it restarts.",
-        "antenna.scan_live_warning": "Scanning interrupts live equipment data on connected devices.",
-        "antenna.scan_live_confirm": "Devices are live right now. Scanning will interrupt their data. Continue?",
-        "admin.auth_required": "Admin token required. Enter it below and save to continue.",
-        "admin.password_label": "Admin token",
-        "admin.save": "Save token",
-        "monitor.title": "Runtime Monitor",
-        "uartlog.title": "Antenna UART log",
-        "uartlog.empty": "No UART traffic yet.",
-        "monitor.status": "Live / bound equipment slots",
-        "monitor.empty": "No equipment bindings configured.",
-        "monitor.failed": "Monitor read failed",
-        "monitor.waiting": "Waiting",
-        "monitor.live": "Live",
-        "monitor.stale": "Idle (no data)",
-        "monitor.name": "Name",
-        "monitor.type": "Type",
-        "monitor.mac": "MAC",
-        "monitor.channel": "UART",
-        "monitor.speed": "Speed",
-        "monitor.distance": "Distance",
-        "monitor.power": "Power",
-        "monitor.cadence": "Cadence",
-        "monitor.rssi": "RSSI",
-        "monitor.calories": "Calories",
-        "monitor.updated": "Updated",
-        "bindings.title": "Equipment Bindings",
-        "hub.address_label": "Central Hub address",
-        "hub.address_hint": "Use 'localhost' when the hub runs on this device, or a .local hostname for a separate hub. 'auto' also works.",
-        "bindings.node_id": "Edge node",
-        "bindings.name": "Display name",
-        "bindings.type": "Equipment type",
-        "bindings.channel": "UART channel",
-        "bindings.target": "BLE target / MAC",
-        "bindings.save": "Save and apply",
-        "bindings.restart": "Restart Edge runtime",
-        "bindings.ready": "Edit here; saving applies changes and restarts the Edge runtime automatically.",
-        "bindings.saved": "Bindings saved. Restarting Edge runtime...",
-        "bindings.restarted": "Edge runtime is restarting. Telemetry may take up to a minute to reappear on the Runtime Monitor.",
-        "bindings.failed": "Config update failed",
-        "bindings.unbind": "Unbind",
-        "bindings.unbind_confirm": "Unbind {name}? The device will be disconnected from the antenna board.",
-        "bindings.unbinding": "Unbinding — refreshing antenna target lists...",
-        "bindings.unbound": "{name} unbound. Edge runtime is restarting — telemetry may take up to a minute to reappear.",
-        "bindings.clear_all": "Clear all bindings",
-        "bindings.clear_all_confirm": "Unbind all {count} devices? Every device will be disconnected from the antenna boards.",
-        "bindings.cleared": "All bindings cleared. Edge runtime is restarting — telemetry may take up to a minute to reappear.",
-        "bindings.filtered": "Highlighting {channel} devices ({count}) in Equipment Bindings below — devices on other channels are dimmed, not hidden. Switch channel to highlight those instead."
-      }
-    };
-    dictionaries["zh-TW"] = {
-      ...dictionaries["en-US"],
-      "edge.subtitle": "Edge Node 本機設定",
-      "wifi.title": "Wi-Fi 訊號",
-      "wifi.checking": "檢查中",
-      "wifi.reading": "讀取 Wi-Fi 狀態中",
-      "wifi.excellent": "極佳 Wi-Fi",
-      "wifi.good": "良好 Wi-Fi",
-      "wifi.fair": "可用 Wi-Fi",
-      "wifi.weak": "弱 Wi-Fi",
-      "wifi.poor": "不良 Wi-Fi",
-      "wifi.disconnected": "未連線",
-      "wifi.position_hint": "訊號狀態可用於現場位置調整",
-      "wifi.connect_hint": "請確認 Edge Node 已連上 AP",
-      "wifi.choose": "選擇 Wi-Fi 網路",
-      "wifi.picker_title": "Wi-Fi 網路清單",
-      "wifi.picker_hint": "選擇這台 Edge Node 要連線的 AP。",
-      "wifi.scanning": "掃描網路中（約 10 秒）...",
-      "wifi.none_found": "找不到網路，請靠近 AP 後重試。",
-      "wifi.saved": "已儲存",
-      "wifi.connected": "使用中",
-      "wifi.connect": "連線",
-      "wifi.switch_warning": "切換網路後裝置 IP 會改變，遠端瀏覽器會斷開此頁面——請改用新 IP 或 fitrace-pi.local 重連。機上螢幕不受影響。",
-      "wifi.password": "Wi-Fi 密碼",
-      "wifi.password_required": "此網路需要密碼。",
-      "wifi.connecting": "連線中...",
-      "wifi.connect_ok": "已連上 {ssid}，IP：{ip}",
-      "wifi.rescan": "重新掃描",
-      "antenna.title": "UART 天線板控制",
-      "antenna.channel": "目前使用的通訊通道",
-      "antenna.advanced": "進階維護",
-      "antenna.waiting": "等待 UART 回應中...",
-      "antenna.slots_free": "{channel} 還有 {free} 個空位可綁定新設備",
-      "antenna.slots_full": "{channel} 已滿，新設備請改用其他通道",
-      "wizard.title1": "加入掃描到的設備",
-      "wizard.hint1": "勾選要加入的設備，一次綁定多台。名稱與通道會自動指派，之後可到綁定清單修改。",
-      "wizard.bound": "已綁定",
-      "wizard.bind_selected": "綁定所選",
-      "wizard.bind_selected_count": "綁定所選（{count}）",
-      "wizard.capacity_free": "天線板還有 {free} 個空位。",
-      "wizard.capacity_full": "所有天線通道都已滿，請先解綁部分設備。",
-      "wizard.back": "上一步",
-      "wizard.title3": "完成",
-      "wizard.saved_multi": "已綁定 {count} 台設備，正在連線中——請切到「Runtime Monitor」查看,資料最多可能需要一分鐘才會出現。",
-      "wizard.some_skipped": " 有 {skipped} 台因通道已滿未綁定。",
-      "wizard.close": "關閉",
-      "type.treadmill": "跑步機",
-      "type.curved_treadmill": "無動力跑步機",
-      "type.spin_bike": "飛輪車",
-      "type.fan_bike": "風扇車",
-      "type.upright_bike": "立式健身車",
-      "type.recumbent_bike": "臥式健身車",
-      "type.elliptical": "橢圓機",
-      "type.stair_climber": "樓梯機",
-      "type.rowing_machine": "划船機",
-      "type.ski_erg": "滑雪機",
-      "type.unknown": "未知",
-      "antenna.baudrate": "Baudrate",
-      "antenna.rtscts": "RTS/CTS 硬體流控",
-      "antenna.protocol_hint": "由天線板協議固定，僅供查看。",
-      "antenna.rtscts_on": "啟用",
-      "antenna.rtscts_off": "停用",
-      "antenna.timeout": "讀取逾時秒數",
-      "antenna.scan_duration": "掃描秒數",
-      "antenna.macs": "CONNECT 目標（本通道已綁定設備）",
-      "antenna.connect_all": "本通道全部已綁定（{count} 台）",
-      "antenna.connect_none": "本通道尚無已綁定設備",
-      "antenna.connect": "CONNECT 選定設備",
-      "antenna.reconnect_configured": "CONNECT 已設定設備",
-      "antenna.report_interval": "回報週期 ms",
-      "antenna.report": "設定回報週期",
-      "antenna.raw": "原始命令",
-      "antenna.send_raw": "送出原始命令",
-      "antenna.command_status": "命令狀態",
-      "antenna.output": "UART 回應",
-      "antenna.ready": "準備送出 UART 命令。",
-      "antenna.running": "正在送出 {command} 到 {port}。",
-      "antenna.complete": "{command} 完成，收到 {count} 行。",
-      "antenna.complete_state": "完成",
-      "antenna.failed": "命令失敗",
-      "antenna.idle": "閒置",
-      "antenna.channel_load_failed": "讀取 UART 通道失敗",
-      "antenna.disconnect_all_confirm": "確定中斷所有設備？天線板上所有設備的連線都會斷開。",
-      "antenna.reboot_confirm": "確定重啟天線板？所有已連線設備都會斷開，重啟後才會重新連線。",
-      "antenna.scan_live_warning": "掃描會中斷目前已連線設備的即時數據。",
-      "antenna.scan_live_confirm": "目前有設備正在即時連線中，掃描會中斷其數據，確定要繼續嗎？",
-      "admin.auth_required": "需要 Admin token，請於下方輸入並儲存以繼續使用。",
-      "admin.password_label": "Admin token",
-      "admin.save": "儲存 token",
-      "monitor.title": "運行監測",
-      "uartlog.title": "天線板 UART 記錄",
-      "uartlog.empty": "尚無 UART 往來。",
-      "monitor.status": "即時／已綁定設備數",
-      "monitor.empty": "尚未設定設備綁定。",
-      "monitor.failed": "監測資料讀取失敗",
-      "monitor.waiting": "等待中",
-      "monitor.live": "即時",
-      "monitor.stale": "閒置（無數據）",
-      "monitor.name": "名稱",
-      "monitor.type": "類型",
-      "monitor.mac": "MAC",
-      "monitor.channel": "UART",
-      "monitor.speed": "速度",
-      "monitor.distance": "距離",
-      "monitor.power": "功率",
-      "monitor.cadence": "步頻",
-      "monitor.rssi": "RSSI",
-      "monitor.calories": "熱量",
-      "monitor.updated": "更新時間",
-      "bindings.title": "設備綁定",
-      "hub.address_label": "中央 Hub 位址",
-      "hub.address_hint": "Hub 在本機時填「localhost」;若 hub 是另一台機器,填它的 .local 主機名。也可填「auto」自動判斷。",
-      "bindings.node_id": "Edge Node",
-      "bindings.name": "顯示名稱",
-      "bindings.type": "設備類型",
-      "bindings.channel": "UART 通道",
-      "bindings.target": "BLE 目標 / MAC",
-      "bindings.save": "儲存並套用",
-      "bindings.restart": "重啟 Edge runtime",
-      "bindings.ready": "在這裡修改設定，儲存後會自動重啟 Edge runtime 套用。",
-      "bindings.saved": "設備綁定已儲存，正在重啟 Edge runtime...",
-      "bindings.restarted": "Edge runtime 正在重啟，遙測資料最多可能需要一分鐘才會恢復。",
-      "bindings.failed": "設定更新失敗",
-      "bindings.unbind": "解綁",
-      "bindings.unbind_confirm": "確定解綁 {name}？將從天線板斷開此設備連線。",
-      "bindings.unbinding": "解綁中——更新天線板目標清單...",
-      "bindings.unbound": "{name} 已解綁，Edge runtime 正在重啟，資料最多可能需要一分鐘才會恢復。",
-      "bindings.clear_all": "清空全部綁定",
-      "bindings.clear_all_confirm": "確定清空全部 {count} 個綁定？所有設備都會從天線板斷開連線。",
-      "bindings.cleared": "已清空全部綁定，Edge runtime 正在重啟，資料最多可能需要一分鐘才會恢復。",
-      "bindings.filtered": "以下「設備綁定」清單中，{channel} 的設備（{count} 台）已標亮，其他通道的設備只是淡化並未隱藏。切換通道即可改為標亮該通道。"
-    };
+    const dictionaries = __I18N_DICTIONARIES__;
 
     function t(key, params = {}) {
       let value = (dictionaries[currentLocale] || dictionaries["en-US"])[key] || dictionaries["en-US"][key] || key;
@@ -1667,6 +1426,15 @@ EDGE_SETUP_HTML = """
     function showAdminAuthBanner() {
       const banner = document.getElementById("admin-auth-banner");
       if (banner) banner.hidden = false;
+    }
+
+    // Single choke point for the admin token header and the 401 banner — every
+    // authenticated call goes through here so a copy-pasted fetch() can never
+    // forget the 401 check again.
+    async function adminFetch(url, options = {}) {
+      const response = await fetch(url, { ...options, headers: adminHeaders(options.headers || {}) });
+      if (response.status === 401) showAdminAuthBanner();
+      return response;
     }
 
     document.getElementById("admin-auth-save")?.addEventListener("click", () => {
@@ -1837,23 +1605,22 @@ EDGE_SETUP_HTML = """
 
     // Writes the fields that change without touching card structure, so the DOM nodes
     // (and any text selection / CSS transition on them) survive between rebuilds.
+    // Reads from monitorCardRefs (built once per card-DOM rebuild, see renderMonitorEquipment)
+    // instead of re-querying the DOM on every call — this runs every animation frame.
     function updateMonitorCardLeaves(bindings) {
-      const cardsByNode = new Map();
-      monitorGrid.querySelectorAll(".monitor-card").forEach((card) => cardsByNode.set(card.dataset.nodeId, card));
       bindings.forEach((binding) => {
-        const card = cardsByNode.get(binding.node_id);
-        if (!card) return;
+        const refs = monitorCardRefs.get(binding.node_id);
+        if (!refs) return;
         const payload = monitorLatestByNode.get(binding.node_id) || {};
         const displayPayload = monitorDisplayedByNode.get(binding.node_id) || payload;
         const status = monitorStatusForPayload(payload);
-        const pill = card.querySelector(".monitor-status-pill");
+        const pill = refs.pill;
         if (pill) {
           const pillClass = `monitor-status-pill ${status.className}`;
           if (pill.className !== pillClass) pill.className = pillClass;
           if (pill.textContent !== status.label) pill.textContent = status.label;
         }
-        const fields = new Map();
-        card.querySelectorAll("[data-field]").forEach((el) => fields.set(el.dataset.field, el));
+        const fields = refs.fields;
         setMonitorFieldText(fields.get("mac"), payload.mac_address || binding.ble_target || "--");
         setMonitorFieldText(fields.get("updated"), formatEventTime(payload.timestamp_epoch_ms));
         setMonitorFieldText(fields.get("speed"), formatMetric(displayPayload.instantaneous_speed_kph, " kph", 2));
@@ -1866,15 +1633,26 @@ EDGE_SETUP_HTML = """
     }
 
     let monitorGridSignature = null;
-    function renderMonitorEquipment() {
+    // node_id -> { pill, fields: Map(fieldName -> element) }; rebuilt only when the
+    // card DOM itself is rebuilt (see the signature branch below), never per-frame.
+    let monitorCardRefs = new Map();
+
+    // Keeps monitorLiveCount (and its two DOM reflections) fresh without touching
+    // card DOM — cheap enough to call on every 250ms poll even while the Monitor
+    // tab is hidden, since the SCAN confirm guard reads monitorLiveCount regardless.
+    function recomputeMonitorLiveCount() {
       const bindings = Array.isArray(edgeConfig?.equipment_bindings) ? edgeConfig.equipment_bindings : [];
       monitorLiveCount = bindings.filter((binding) => {
         const payload = monitorLatestByNode.get(binding.node_id);
         return payload?.node_id && monitorTelemetryAgeMs(payload) <= MONITOR_LIVE_WINDOW_MS;
       }).length;
       monitorCount.textContent = `${monitorLiveCount}/${bindings.length}`;
-      const scanLiveWarning = document.getElementById("scan-live-warning");
       if (scanLiveWarning) scanLiveWarning.hidden = monitorLiveCount === 0;
+    }
+
+    function renderMonitorEquipment() {
+      recomputeMonitorLiveCount();
+      const bindings = Array.isArray(edgeConfig?.equipment_bindings) ? edgeConfig.equipment_bindings : [];
 
       // Rebuild the card DOM only when the set of cards actually changes (added,
       // removed, renamed, retyped, rechanneled, or the locale switched) — every other
@@ -1885,6 +1663,14 @@ EDGE_SETUP_HTML = """
         monitorGrid.innerHTML = bindings.length
           ? bindings.map(monitorCardHtml).join("")
           : `<div class="empty">${escapeHtml(t("monitor.empty"))}</div>`;
+        monitorCardRefs = new Map();
+        if (bindings.length) {
+          monitorGrid.querySelectorAll(".monitor-card").forEach((card) => {
+            const fields = new Map();
+            card.querySelectorAll("[data-field]").forEach((el) => fields.set(el.dataset.field, el));
+            monitorCardRefs.set(card.dataset.nodeId, { pill: card.querySelector(".monitor-status-pill"), fields });
+          });
+        }
       }
       if (bindings.length) updateMonitorCardLeaves(bindings);
     }
@@ -1915,7 +1701,11 @@ EDGE_SETUP_HTML = """
           monitorLatestByNode.set(payload.node_id, payload);
         }
       });
-      renderMonitorEquipment();
+      if (monitorSection.hidden) {
+        recomputeMonitorLiveCount();
+      } else {
+        renderMonitorEquipment();
+      }
       renderUartLog(events);
     }
 
@@ -1925,7 +1715,7 @@ EDGE_SETUP_HTML = """
       const uartLog = document.getElementById("uartlog");
       if (!uartLog) return;
       const rows = events.filter(
-        (e) => e.source === "uart" && e.parsed && e.parsed.type !== "telemetry"
+        (e) => e.source === "uart" && !(e.parsed && e.parsed.type === "telemetry")
       ).slice(0, UARTLOG_MAX);
       // Skip the rebuild when nothing changed so an operator scrolled up to read a
       // torn frame doesn't get snapped back to the top on the next 250ms poll.
@@ -1958,12 +1748,9 @@ EDGE_SETUP_HTML = """
 
     async function refreshMonitorEvents() {
       try {
-        const response = await fetch("/api/monitor/events?limit=200", {
-          headers: adminHeaders(),
-        });
+        const response = await adminFetch("/api/monitor/events?limit=200");
         const payload = await response.json();
         if (!response.ok) {
-          if (response.status === 401) showAdminAuthBanner();
           throw new Error(payload.detail || t("monitor.failed"));
         }
         if (Number(payload.server_now_epoch_ms || 0)) {
@@ -1974,6 +1761,7 @@ EDGE_SETUP_HTML = """
       } catch (error) {
         monitorCount.textContent = "!";
         monitorGrid.innerHTML = `<div class="empty">${escapeHtml(error.message || t("monitor.failed"))}</div>`;
+        monitorGridSignature = null; // force a rebuild on the next successful poll
       }
     }
 
@@ -2020,16 +1808,25 @@ EDGE_SETUP_HTML = """
 
     function updateChannelOccupancy() {
       const counts = channelBindingCounts();
-      // With no channels configured (or the config failed to load), there is nothing
-      // a UART command could target — say so and keep the buttons from firing blind.
+      // With no channels configured, a UART command can still target the server's
+      // fallback default_port (selectedAntennaPort gets set to it in renderAntennaConfig)
+      // — only a total absence of any known port leaves nothing to send a command to.
       const channelsAvailable = antennaChannels.length > 0;
+      const hasFallbackPort = !channelsAvailable && Boolean(selectedAntennaPort);
       if (!antennaBusy) {
-        allAntennaButtons.forEach((button) => { button.disabled = !channelsAvailable; });
+        allAntennaButtons.forEach((button) => { button.disabled = !channelsAvailable && !hasFallbackPort; });
       }
       if (!channelsAvailable) {
         antennaChannelGroup.innerHTML = "";
-        antennaChannelSlots.textContent = t("antenna.channel_load_failed");
-        antennaChannelSlots.className = "channel-slots full";
+        if (hasFallbackPort) {
+          antennaChannelSlots.textContent = t("antenna.no_channels");
+          antennaChannelSlots.className = "channel-slots";
+        } else {
+          antennaChannelSlots.textContent = t("antenna.channel_load_failed");
+          antennaChannelSlots.className = "channel-slots full";
+        }
+        populateConnectTargets();
+        updateAntennaProtocolInfo();
         return;
       }
       renderAntennaChannelButtons(counts);
@@ -2043,11 +1840,22 @@ EDGE_SETUP_HTML = """
       return channel ? channel.id : "";
     }
 
+    function knownChannelIds() {
+      return new Set(antennaChannels.map((channel) => channel.id));
+    }
+
     function boundTargetsForCurrentChannel() {
       const channelId = currentChannelId();
+      const channelIds = knownChannelIds();
       const bindings = Array.isArray(edgeConfig?.equipment_bindings) ? edgeConfig.equipment_bindings : [];
-      // CONNECT is per-board, so only offer devices bound to the selected channel.
-      return bindings.filter((binding) => binding.ble_target && binding.antenna_channel === channelId);
+      // CONNECT is per-board, so normally only offer devices bound to the selected
+      // channel — but a binding whose channel is blank or no longer configured has
+      // nowhere else to go, so treat it as unassigned and offer it on every channel.
+      return bindings.filter((binding) => {
+        if (!binding.ble_target) return false;
+        const assigned = binding.antenna_channel && channelIds.has(binding.antenna_channel);
+        return assigned ? binding.antenna_channel === channelId : true;
+      });
     }
 
     function populateConnectTargets() {
@@ -2070,10 +1878,14 @@ EDGE_SETUP_HTML = """
     }
 
     function renderSelectedChannel(channelId, counts) {
+      const channelIds = knownChannelIds();
       let visible = 0;
       document.querySelectorAll(".binding-row").forEach((row) => {
         row.classList.remove("channel-active", "channel-dim");
-        const match = row.dataset.channel === channelId;
+        const rowChannel = row.dataset.channel;
+        const assigned = rowChannel && channelIds.has(rowChannel);
+        if (!assigned) return; // unassigned/unknown channel — reachable everywhere, never dimmed
+        const match = rowChannel === channelId;
         row.classList.add(match ? "channel-active" : "channel-dim");
         if (match) visible += 1;
       });
@@ -2095,7 +1907,9 @@ EDGE_SETUP_HTML = """
     function renderAntennaConfig(config) {
       const channels = Array.isArray(config.channels) ? config.channels : [];
       antennaChannels = channels;
-      selectedAntennaPort = channels[0]?.port || ""; // default to the first configured channel
+      // A fresh/uncommissioned node has no channels yet — fall back to the server's
+      // default_port so UART controls (including REBOOT) stay reachable.
+      selectedAntennaPort = channels.length ? (channels[0]?.port || "") : (config.default_port || "");
       if (edgeConfig) {
         renderBindings(edgeConfig);
       }
@@ -2208,12 +2022,9 @@ EDGE_SETUP_HTML = """
 
     async function loadEdgeConfig() {
       try {
-        const response = await fetch("/api/config", {
-          headers: adminHeaders(),
-        });
+        const response = await adminFetch("/api/config");
         const payload = await response.json();
         if (!response.ok) {
-          if (response.status === 401) showAdminAuthBanner();
           throw new Error(payload.detail || "Failed to load config");
         }
         renderBindings(payload);
@@ -2256,14 +2067,13 @@ EDGE_SETUP_HTML = """
       }
       configSaveBtn.disabled = true;
       try {
-        const response = await fetch("/api/config", {
+        const response = await adminFetch("/api/config", {
           method: "POST",
-          headers: adminHeaders({ "Content-Type": "application/json" }),
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
         const result = await response.json();
         if (!response.ok) {
-          if (response.status === 401) showAdminAuthBanner();
           throw new Error(result.detail || t("bindings.failed"));
         }
         edgeConfig = result.config;
@@ -2278,22 +2088,48 @@ EDGE_SETUP_HTML = """
       }
     }
 
+    // Shows a persistent notice up front so an operator never has to press
+    // Restart to discover power commands are dry-run-only on this device.
+    async function checkPowerDryRunMode() {
+      try {
+        const response = await adminFetch("/api/system/power/status");
+        if (!response.ok) return;
+        const status = await response.json();
+        if (status.dry_run) {
+          powerDryRunBadge.textContent = t("power.dry_run_badge");
+          powerDryRunBadge.hidden = false;
+        }
+      } catch (_error) {
+        // best-effort; badge just stays hidden if status can't be fetched
+      }
+    }
+
+    // Returns true when the runtime actually restarted, false otherwise (dry-run
+    // or failure). Callers that show their own follow-up success message must
+    // check this before overwriting the dry-run warning below.
     async function restartEdgeRuntime() {
       configSaveBtn.disabled = true;
       try {
-        const response = await fetch("/api/system/power/restart-service", {
+        const response = await adminFetch("/api/system/power/restart-service", {
           method: "POST",
-          headers: adminHeaders({ "Content-Type": "application/json" }),
+          headers: { "Content-Type": "application/json" },
           body: "{}",
         });
         const result = await response.json();
         if (!response.ok) {
-          if (response.status === 401) showAdminAuthBanner();
           throw new Error(result.detail || "Restart failed");
         }
+        // PowerManager still returns HTTP 200 in dry-run mode (accepted but not
+        // executed) -- surface that loudly instead of reporting false success.
+        if (result.dry_run === true || result.executed === false) {
+          setConfigMessage(t("power.dry_run_warning"), "error");
+          return false;
+        }
         setConfigMessage(t("bindings.restarted"), "ok");
+        return true;
       } catch (error) {
         setConfigMessage(error.message, "error");
+        return false;
       } finally {
         window.setTimeout(() => {
           configSaveBtn.disabled = false;
@@ -2320,35 +2156,48 @@ EDGE_SETUP_HTML = """
       }
       setConfigMessage(t("bindings.unbinding"), "ok");
       try {
-        await fetch("/api/antenna/reconnect-configured", {
+        const response = await adminFetch("/api/antenna/reconnect-configured", {
           method: "POST",
-          headers: adminHeaders({ "Content-Type": "application/json" }),
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             disconnect_first: true,
             timeout_sec: Math.max(1, Math.min(30, Number(antennaTimeoutInput.value) || 5)),
             report_interval_ms: Math.max(100, Math.min(10000, Number(antennaReportIntervalInput.value) || ANTENNA_DEFAULT_REPORT_INTERVAL_MS)),
           }),
         });
-      } catch (_error) {
-        // board list refresh is best-effort; runtime restart below reloads config
+        if (!response.ok) {
+          let detail = "";
+          try {
+            const result = await response.json();
+            detail = result?.detail || "";
+          } catch (_parseError) {
+            // response body wasn't JSON — fall back to the generic message below
+          }
+          setConfigMessage(detail ? `${t("bindings.failed")}: ${detail}` : t("bindings.failed"), "error");
+          return;
+        }
+      } catch (error) {
+        setConfigMessage(error.message || t("bindings.failed"), "error");
+        return;
       }
-      await restartEdgeRuntime();
-      setConfigMessage(t("bindings.cleared"), "ok");
+      const restarted = await restartEdgeRuntime();
+      if (restarted) {
+        setConfigMessage(t("bindings.cleared"), "ok");
+      }
     }
 
     async function loadAntennaConfig() {
       try {
-        const response = await fetch("/api/antenna/config", {
-          headers: adminHeaders(),
-        });
+        const response = await adminFetch("/api/antenna/config");
         if (!response.ok) {
-          if (response.status === 401) showAdminAuthBanner();
-          antennaChannelSlots.textContent = t("antenna.channel_load_failed");
+          // Keep whatever selectedAntennaPort/antennaChannels are already known —
+          // updateChannelOccupancy alone decides fallback vs. fully-disabled.
+          updateChannelOccupancy();
           return;
         }
         renderAntennaConfig(await response.json());
       } catch (_error) {
-        antennaChannelSlots.textContent = t("antenna.channel_load_failed");
+        updateChannelOccupancy();
       }
     }
 
@@ -2590,9 +2439,9 @@ EDGE_SETUP_HTML = """
       // in seconds, not after the runtime's slow reconcile loop. disconnect_first
       // is false: adding devices must not drop the ones already streaming.
       try {
-        await fetch("/api/antenna/reconnect-configured", {
+        await adminFetch("/api/antenna/reconnect-configured", {
           method: "POST",
-          headers: adminHeaders({ "Content-Type": "application/json" }),
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             disconnect_first: false,
             timeout_sec: Math.max(1, Math.min(30, Number(antennaTimeoutInput.value) || 5)),
@@ -2628,10 +2477,9 @@ EDGE_SETUP_HTML = """
       showWizardAt(wifiChooseBtn);
       let payload;
       try {
-        const response = await fetch("/api/wifi/networks", { headers: adminHeaders() });
+        const response = await adminFetch("/api/wifi/networks");
         payload = await response.json();
         if (!response.ok) {
-          if (response.status === 401) showAdminAuthBanner();
           throw new Error(payload.detail || "Wi-Fi scan failed");
         }
       } catch (error) {
@@ -2697,14 +2545,13 @@ EDGE_SETUP_HTML = """
         confirmBtn.disabled = true;
         resultBox.textContent = t("wifi.connecting");
         try {
-          const response = await fetch("/api/wifi/connect", {
+          const response = await adminFetch("/api/wifi/connect", {
             method: "POST",
-            headers: adminHeaders({ "Content-Type": "application/json" }),
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ ssid: net.ssid, password }),
           });
           const result = await response.json();
           if (!response.ok) {
-            if (response.status === 401) showAdminAuthBanner();
             throw new Error(result.detail || "Connect failed");
           }
           resultBox.textContent = t("wifi.connect_ok", { ssid: net.ssid, ip: result.ip || "?" });
@@ -2752,14 +2599,13 @@ EDGE_SETUP_HTML = """
       antennaOutput.textContent = t("antenna.waiting");
 
       try {
-        const response = await fetch("/api/antenna/command", {
+        const response = await adminFetch("/api/antenna/command", {
           method: "POST",
-          headers: adminHeaders({ "Content-Type": "application/json" }),
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
         const result = await response.json();
         if (!response.ok) {
-          if (response.status === 401) showAdminAuthBanner();
           throw new Error(result.detail || "UART command failed");
         }
         antennaState.textContent = t("antenna.complete_state");
@@ -2786,9 +2632,9 @@ EDGE_SETUP_HTML = """
       antennaOutput.textContent = t("antenna.waiting");
 
       try {
-        const response = await fetch("/api/antenna/reconnect-configured", {
+        const response = await adminFetch("/api/antenna/reconnect-configured", {
           method: "POST",
-          headers: adminHeaders({ "Content-Type": "application/json" }),
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             timeout_sec: timeoutSec,
             report_interval_ms: reportIntervalMs,
@@ -2796,7 +2642,6 @@ EDGE_SETUP_HTML = """
         });
         const result = await response.json();
         if (!response.ok) {
-          if (response.status === 401) showAdminAuthBanner();
           throw new Error(result.detail || "Configured reconnect failed");
         }
         const lineCount = result.channels.reduce((total, channel) => (
@@ -2818,12 +2663,9 @@ EDGE_SETUP_HTML = """
 
     async function refreshWifiStatus() {
       try {
-        const response = await fetch("/api/wifi/status?interface=wlan0", {
-          headers: adminHeaders(),
-        });
+        const response = await adminFetch("/api/wifi/status?interface=wlan0");
         const status = await response.json();
         if (!response.ok) {
-          if (response.status === 401) showAdminAuthBanner();
           throw new Error(status.detail || "Failed to read Wi-Fi status");
         }
         renderWifiStatus(status);
@@ -2878,9 +2720,9 @@ EDGE_SETUP_HTML = """
       }
       setConfigMessage(t("bindings.unbinding"), "ok");
       try {
-        await fetch("/api/antenna/reconnect-configured", {
+        await adminFetch("/api/antenna/reconnect-configured", {
           method: "POST",
-          headers: adminHeaders({ "Content-Type": "application/json" }),
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             disconnect_first: true,
             timeout_sec: Math.max(1, Math.min(30, Number(antennaTimeoutInput.value) || 5)),
@@ -2890,8 +2732,10 @@ EDGE_SETUP_HTML = """
       } catch (_error) {
         // board list refresh is best-effort; runtime restart below reloads config
       }
-      await restartEdgeRuntime();
-      setConfigMessage(t("bindings.unbound", { name: binding.equipment_id }), "ok");
+      const restarted = await restartEdgeRuntime();
+      if (restarted) {
+        setConfigMessage(t("bindings.unbound", { name: binding.equipment_id }), "ok");
+      }
     });
     antennaConnectBtn.addEventListener("click", () => runAntennaCommand("connect"));
     antennaReconnectConfiguredBtn.addEventListener("click", reconnectConfiguredDevices);
@@ -2903,6 +2747,7 @@ EDGE_SETUP_HTML = """
     applyTranslations();
     loadAntennaConfig();
     loadEdgeConfig();
+    checkPowerDryRunMode();
     refreshWifiStatus();
     refreshMonitorEvents();
     setInterval(refreshWifiStatus, 5000);
@@ -2912,3 +2757,13 @@ EDGE_SETUP_HTML = """
 </body>
 </html>
 """
+
+LOCALES_DIR = Path(__file__).resolve().parent.parent / "locales"
+_I18N = {
+    "en-US": json.loads((LOCALES_DIR / "en.json").read_text(encoding="utf-8")),
+    "zh-TW": json.loads((LOCALES_DIR / "zh_tw.json").read_text(encoding="utf-8")),
+}
+EDGE_SETUP_HTML_RENDERED = EDGE_SETUP_HTML.replace(
+    "__I18N_DICTIONARIES__",
+    json.dumps(_I18N, ensure_ascii=False).replace("</", "<\\/"),
+)
