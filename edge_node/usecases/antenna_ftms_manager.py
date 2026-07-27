@@ -22,6 +22,16 @@ MAC_ADDRESS_PATTERN = re.compile(r"^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$")
 # antenna board firmware hard limit: CONNECT silently ignores MACs beyond 3
 MAX_MACS_PER_CHANNEL = 3
 
+# CONNECT is destructive on the nRF52832 antenna board: firmware always does
+# a full disconnect-all, then scans and reconnects the given MAC list from
+# scratch -- it is a "reset target list and reconnect everything" command,
+# never an incremental add. Each connection takes ~10-20s to establish, so
+# reissuing CONNECT while a previous push is still converging tears down
+# every in-progress link and restarts the whole process. This cooldown gives
+# the board a full window to finish before the watchdog is allowed to push
+# the same list again.
+CONNECT_COOLDOWN_SEC = 90.0
+
 # Cross-process UART lock (shared with AntennaCommandRunner, the setup-page
 # web service). Startup command sequences (PING, SCAN, CONNECT, ...) run
 # once and can afford to wait a while for a web command to finish with the
@@ -58,6 +68,7 @@ class AntennaFtmsManager:
         reconnect_interval_sec: float = 30.0,
         data_timeout_sec: float = 10.0,
         event_log=None,
+        clock: Callable[[], float] = time.monotonic,
     ):
         if not edge_config.antenna_channels:
             raise ValueError("antenna_channels is required for antenna FTMS manager")
@@ -73,10 +84,17 @@ class AntennaFtmsManager:
         self._rssi_tie_threshold_db = rssi_tie_threshold_db
         self._reconnect_interval_sec = reconnect_interval_sec
         self._data_timeout_sec = data_timeout_sec
+        self._clock = clock
         self._last_data_by_mac: dict[str, float] = {}
         self._last_raw_distance_by_mac: dict[str, float] = {}
         self._last_raw_energy_by_mac: dict[str, float] = {}
         self._assigned_macs_by_channel: dict[str, set[str]] = {}
+        # Per channel: the MAC list (normalized, order-insensitive) most
+        # recently pushed via CONNECT, and when -- lets the watchdog tell
+        # "board is still converging on what we already sent" apart from
+        # "we need to send something new/different".
+        self._last_connect_macs_by_channel: dict[str, frozenset[str]] = {}
+        self._last_connect_at_by_channel: dict[str, float] = {}
         self._stop_event = threading.Event()
         self._task: asyncio.Task | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -416,6 +434,14 @@ class AntennaFtmsManager:
                     timeout_sec=PORT_LOCK_TIMEOUT_SEC,
                 ):
                     self._write(serial_port, protocol.build_connect(macs), channel_id)
+                    # Record what was actually pushed only once the write
+                    # itself has gone out (not just been attempted): this is
+                    # what the watchdog compares against next time, and what
+                    # starts its cooldown window.
+                    self._last_connect_macs_by_channel[channel_id] = frozenset(
+                        _normalize_device_id(mac) for mac in macs
+                    )
+                    self._last_connect_at_by_channel[channel_id] = self._clock()
                     parsed = self._await_response(
                         serial_port,
                         self._command_timeout_sec,
@@ -513,11 +539,24 @@ class AntennaFtmsManager:
         asyncio.run_coroutine_threadsafe(self._on_telemetry(telemetry), self._loop)
 
     def _reconnect_missing_targets(self):
-        """Spec-compliant recovery: STATUS decides, not data silence.
-        Idle machines produce no FTMS rows while staying connected, so the
-        only reliable disconnect signal is connected < target. Recovery is a
-        plain CONNECT with the channel's configured list — no scan, no
-        DISCONNECT, so healthy links and the data stream stay untouched."""
+        """Spec-compliant recovery: STATUS decides, not data silence. Idle
+        machines produce no FTMS rows while staying connected, so the only
+        reliable disconnect signal is connected < target.
+
+        CONNECT is DESTRUCTIVE on the nRF52832 board: firmware always does a
+        full disconnect-all, then scans and reconnects the given MAC list
+        from scratch (~10-20s per device) -- it is a "reset target list and
+        reconnect everything" command, never an incremental add. So this is
+        NOT a plain "resend if short" loop: reissuing CONNECT while the board
+        is still converging on the list we already gave it would tear down
+        every in-progress link and restart the whole process, looping
+        forever. Recovery only pushes CONNECT when there is good reason to
+        believe the board doesn't already have the right list in flight:
+        the expected list itself changed since our last push (STATUS can't
+        reveal a same-count MAC swap), the board's own target count doesn't
+        match what we expect, and the cooldown since our last push has
+        elapsed. Otherwise we wait and let the board's own auto-reconnect
+        converge."""
         expected_by_channel: dict[str, list[str]] = {}
         for binding in self._edge_config.equipment_bindings:
             if not binding.ble_target or not MAC_ADDRESS_PATTERN.match(
@@ -552,8 +591,50 @@ class AntennaFtmsManager:
                 logger.warning("[%s] antenna STATUS not answered", channel_id)
                 continue
             connected = status.get("connected")
+            expected_set = frozenset(expected)
             if connected is None or connected >= len(expected):
                 continue
+
+            last_macs = self._last_connect_macs_by_channel.get(channel_id)
+            if last_macs != expected_set:
+                # The list itself changed (or we never pushed it at all).
+                # STATUS only reports a count, so it cannot tell us a
+                # same-count MAC swap happened -- push regardless of
+                # cooldown or what the board's own target count says.
+                logger.warning(
+                    "[%s] antenna target list changed, reissuing CONNECT %s",
+                    channel_id,
+                    sorted(expected),
+                )
+                self._connect_assignments({channel_id: sorted(expected)})
+                continue
+
+            board_target = status.get("target")
+            if board_target == len(expected):
+                # The board already holds the right list and its firmware
+                # auto-reconnect is presumably still in progress -- resending
+                # CONNECT here would tear down that progress and restart it.
+                logger.info(
+                    "[%s] board target list matches (%s/%s connected); "
+                    "waiting for board auto-reconnect",
+                    channel_id,
+                    connected,
+                    len(expected),
+                )
+                continue
+
+            last_push_at = self._last_connect_at_by_channel.get(channel_id)
+            elapsed = self._clock() - last_push_at if last_push_at is not None else None
+            if elapsed is not None and elapsed < CONNECT_COOLDOWN_SEC:
+                logger.info(
+                    "[%s] antenna connect on cooldown, %.1fs remaining before resend",
+                    channel_id,
+                    CONNECT_COOLDOWN_SEC - elapsed,
+                )
+                continue
+
+            # Genuine "board lost its list" case (e.g. STATUS target=0 after
+            # an NVS wipe) and the cooldown has elapsed -- safe to resend.
             logger.warning(
                 "[%s] antenna connected %s/%s targets, reissuing CONNECT %s",
                 channel_id,
