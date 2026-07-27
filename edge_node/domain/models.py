@@ -36,14 +36,21 @@ class TelemetryData(BaseModel):
         None,
         description="Physical Edge Node that produced this telemetry stream",
     )
-    mac_address: str | None = Field(None, description="BLE MAC address for the physical equipment")
+    mac_address: str | None = Field(
+        None, description="BLE MAC address for the physical equipment"
+    )
     equipment_id: str = Field(..., description="Identity of the bound equipment")
     equipment_type: str = Field(
         ...,
         description="Type of the equipment (e.g. treadmill, fan_bike, rowing_machine, ski_erg)",
     )
-    ftms_type: str | None = Field(None, description="Antenna board FTMS TYPE value such as TMILL, BIKE, ROWER, ELLIP")
-    rssi: int | float | None = Field(None, description="Equipment BLE RSSI reported by the antenna board")
+    ftms_type: str | None = Field(
+        None,
+        description="Antenna board FTMS TYPE value such as TMILL, BIKE, ROWER, ELLIP",
+    )
+    rssi: int | float | None = Field(
+        None, description="Equipment BLE RSSI reported by the antenna board"
+    )
     instantaneous_speed_kph: float = Field(0.0, ge=0.0)
     cadence_rpm: int = Field(0, ge=0)
     pace_sec_per_500m: int | float | None = Field(None, ge=0)
@@ -85,7 +92,9 @@ class TelemetryData(BaseModel):
 
 
 class FtmsDevice(BaseModel):
-    address: str = Field(..., description="Bluetooth address or platform-specific BLE identifier")
+    address: str = Field(
+        ..., description="Bluetooth address or platform-specific BLE identifier"
+    )
     name: str | None = Field(None, description="Advertised BLE device name")
     rssi: int | None = Field(None, description="Received signal strength in dBm")
     service_uuids: list[str] = Field(default_factory=list)
@@ -111,6 +120,13 @@ class EquipmentBinding(BaseModel):
         if not value or not value.strip():
             raise ValueError("value cannot be blank")
         return value.strip()
+
+
+# nRF52832 per-board BLE link limit: each antenna channel (one board) can hold
+# at most this many concurrent equipment connections. Page JS
+# (ANTENNA_MAX_CONNECTIONS in edge_node/infrastructure/fastapi/app.py) mirrors
+# this value for the setup UI; keep the two in sync if it ever changes.
+MAX_CONNECTIONS_PER_CHANNEL = 3
 
 
 class AntennaChannelConfig(BaseModel):
@@ -156,4 +172,18 @@ class EdgeNodeConfig(BaseModel):
             raise ValueError("equipment_bindings cannot exceed max_ftms_connections")
         if len(self.equipment_bindings) > 10:
             raise ValueError("equipment_bindings cannot exceed 10 devices")
+
+        channel_counts: dict[str, int] = {}
+        for binding in self.equipment_bindings:
+            if binding.antenna_channel:
+                channel_counts[binding.antenna_channel] = (
+                    channel_counts.get(binding.antenna_channel, 0) + 1
+                )
+        for channel_id, count in channel_counts.items():
+            if count > MAX_CONNECTIONS_PER_CHANNEL:
+                raise ValueError(
+                    f"antenna_channel '{channel_id}' has {count} bindings, "
+                    f"exceeding the {MAX_CONNECTIONS_PER_CHANNEL}-connection "
+                    "nRF52832 board limit"
+                )
         return self
