@@ -122,22 +122,27 @@ def test_game_admin_subtitle_has_data_i18n():
     assert "data-i18n=" in subtitle_line
 
 
-def test_game_admin_combines_save_and_start_into_one_action():
+def test_game_admin_uses_one_button_for_separate_save_and_start_steps():
     source = _read("gameAdmin.html")
 
-    assert 'id="btn-save-start"' in source
-    assert 'onclick="saveAndStartRace()"' in source
-    assert 'data-i18n="button.save_and_start_race"' in source
-    assert '"button.save_and_start_race": "Save & Start Race"' in source
-    assert '"button.save_and_start_race": "儲存與開始比賽"' in source
+    assert 'id="btn-race-action"' in source
+    assert 'onclick="handleRaceAction()"' in source
+    assert 'data-i18n="button.save_race"' in source
+    assert '"button.save_race": "Save Race"' in source
+    assert '"button.save_race": "儲存比賽"' in source
+    assert '"button.start_race": "Start Race"' in source
+    assert '"button.start_race": "開始比賽"' in source
+    assert "button.save_and_start_race" not in source
     assert 'id="btn-configure"' not in source
     assert 'id="btn-start"' not in source
 
-    action_start = source.index("async function saveAndStartRace()")
+    action_start = source.index("async function handleRaceAction()")
     action_end = source.index("async function stopRace()", action_start)
     action_source = source[action_start:action_end]
-    assert "const saved = await configureRace();" in action_source
-    assert "if (!saved) return;" in action_source
+    assert 'const shouldSave = state.raceConfigDirty || raceState !== "READY";' in action_source
+    assert "if (shouldSave) {" in action_source
+    assert "await configureRace();" in action_source
+    assert "} else {" in action_source
     assert "await startRace();" in action_source
 
     configure_start = source.index("async function configureRace()")
@@ -145,8 +150,18 @@ def test_game_admin_combines_save_and_start_into_one_action():
         "async function setLeaderboardDisplayMode", configure_start
     )
     configure_source = source[configure_start:configure_end]
-    assert "return true;" in configure_source
-    assert configure_source.count("return false;") >= 2
+    assert "state.raceConfigDirty = false;" in configure_source
+
+    render_start = source.index("function renderRace()")
+    render_end = source.index("function readinessStatusClass", render_start)
+    render_source = source[render_start:render_end]
+    assert 'const shouldSave = state.raceConfigDirty || raceState !== "READY";' in render_source
+    assert 't("button.save_race")' in render_source
+    assert 't("button.start_race")' in render_source
+    assert "!shouldSave && !readinessReady" in render_source
+
+    assert source.count("markRaceConfigDirty()") >= 6
+    assert "if (config && !state.raceConfigDirty)" in source
 
 
 def test_game_admin_and_system_admin_inline_dictionaries_stay_symmetric():
