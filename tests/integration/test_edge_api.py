@@ -112,6 +112,21 @@ def test_edge_operator_workspace_is_two_columns_and_stacks_on_narrow_screens():
     assert "grid-template-columns: 1fr" in source
 
 
+def test_edge_operator_disconnect_action_stacks_before_the_main_mobile_breakpoint():
+    client = TestClient(edge_app_module.app)
+
+    source = client.get("/").text
+
+    assert "@media (max-width: 1100px)" in source
+    responsive_start = source.index("@media (max-width: 1100px)")
+    responsive_end = source.index("@media (max-width: 820px)", responsive_start)
+    responsive_source = source[responsive_start:responsive_end]
+    assert ".disconnect-all-bar" in responsive_source
+    assert "flex-direction: column" in responsive_source
+    assert ".disconnect-all-message" in responsive_source
+    assert "text-align: left" in responsive_source
+
+
 def test_edge_operator_wifi_view_uses_existing_scan_and_connect_apis():
     client = TestClient(edge_app_module.app)
 
