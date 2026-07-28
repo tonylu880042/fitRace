@@ -49,6 +49,17 @@ def test_edge_operator_page_served_at_root():
     assert "新增設備" in response.text
 
 
+def test_edge_operator_page_uses_edge_node_setup_title():
+    client = TestClient(edge_app_module.app)
+
+    source = client.get("/").text
+
+    assert "<title>Edge Node Setup</title>" in source
+    assert '"operator.title": "Edge Node Setup"' in source
+    assert '"operator.title": "Edge Node 設定"' in source
+    assert 'document.title = t("operator.title")' in source
+
+
 def test_edge_operator_page_can_scan_and_connect_wifi_without_maintenance_page():
     client = TestClient(edge_app_module.app)
 
@@ -62,6 +73,10 @@ def test_edge_operator_page_can_scan_and_connect_wifi_without_maintenance_page()
     assert 'id="wifi-networks"' in source
     assert 'id="wifi-scan-message"' in source
     assert 'aria-live="polite"' in source
+    assert 'id="wifi-toggle-btn"' in source
+    assert 'aria-expanded="false"' in source
+    assert 'aria-controls="wifi-picker-body"' in source
+    assert 'id="wifi-picker-body" class="wifi-picker-body" hidden' in source
     assert source.index('id="wifi-column"') < source.index('id="edge-column"')
     assert 'id="wifi-settings-btn"' not in source
     assert 'id="view-wifi"' not in source
@@ -86,6 +101,7 @@ def test_edge_operator_wifi_view_uses_existing_scan_and_connect_apis():
     assert "/api/wifi/networks" in source
     assert "/api/wifi/connect" in source
     assert "async function scanWifiNetworks()" in source
+    assert "async function toggleWifiPicker()" in source
     assert "function renderWifiConnect(net)" in source
     assert "async function openWifiSettings()" not in source
     assert "showView(\"wifi\")" not in source
@@ -96,7 +112,10 @@ def test_edge_operator_wifi_view_uses_existing_scan_and_connect_apis():
         in source
     )
     assert 't("wifi.back_to_list")' in source
-    assert "\n    scanWifiNetworks();" in source
+    assert "if (expanded && !wifiNetworksLoaded)" in source
+    init_start = source.index("applyTranslations();")
+    init_source = source[init_start:]
+    assert "scanWifiNetworks();" not in init_source
 
 
 def test_edge_maintenance_page_serves_old_setup_page():

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="fitrace-page" content="operator">
-  <title>FitRace Equipment Setup</title>
+  <title>Edge Node Setup</title>
   <style>
     :root {
       --bg: #0a0a0a;
@@ -465,10 +465,27 @@
 
     .wifi-network-list {
       display: grid;
+      flex: 1;
       gap: 8px;
       margin-top: 12px;
       min-height: 0;
       overflow-y: auto;
+    }
+
+    .wifi-picker-body {
+      display: flex;
+      min-height: 0;
+      flex: 1;
+      flex-direction: column;
+    }
+
+    .wifi-picker-body[hidden] {
+      display: none;
+    }
+
+    .wifi-toggle-btn {
+      width: 100%;
+      margin-top: 12px;
     }
 
     .wifi-network-row {
@@ -575,7 +592,7 @@
     <div id="edge-workspace" class="workspace">
       <aside id="wifi-column" class="wifi-column" aria-labelledby="wifi-settings-title">
         <section class="panel">
-          <h2 id="wifi-settings-title" data-i18n="wifi.picker_title">Wi-Fi networks</h2>
+          <h2 id="wifi-settings-title" data-i18n="wifi.title">Wi-Fi Signal</h2>
           <div class="wifi-current">
             <div class="wifi-current-summary">
               <div class="wifi-current-name">
@@ -585,10 +602,20 @@
               <span id="wifi-current-signal">--</span>
             </div>
           </div>
-          <div data-i18n="wifi.picker_hint">Select the AP this Edge Node should connect to.</div>
-          <div id="wifi-networks" class="wifi-network-list" tabindex="0"></div>
-          <div id="wifi-scan-message" class="message" aria-live="polite"></div>
-          <button type="button" id="wifi-rescan-btn" class="btn-secondary" data-i18n="wifi.rescan">Rescan</button>
+          <button
+            type="button"
+            id="wifi-toggle-btn"
+            class="btn-secondary wifi-toggle-btn"
+            aria-expanded="false"
+            aria-controls="wifi-picker-body"
+            data-i18n="wifi.choose_other"
+          >Choose another Wi-Fi network</button>
+          <div id="wifi-picker-body" class="wifi-picker-body" hidden>
+            <div data-i18n="wifi.picker_hint">Select the AP this Edge Node should connect to.</div>
+            <div id="wifi-networks" class="wifi-network-list" tabindex="0"></div>
+            <div id="wifi-scan-message" class="message" aria-live="polite"></div>
+            <button type="button" id="wifi-rescan-btn" class="btn-secondary" data-i18n="wifi.rescan">Rescan</button>
+          </div>
         </section>
       </aside>
 
@@ -680,6 +707,7 @@
 
     function applyTranslations() {
       document.documentElement.lang = currentLocale;
+      document.title = t("operator.title");
       document.querySelectorAll("[data-i18n]").forEach((element) => {
         element.innerText = t(element.dataset.i18n);
       });
@@ -758,6 +786,7 @@
     let selectedCandidate = null;
     let selectedType = null;
     let wifiNetworks = [];
+    let wifiNetworksLoaded = false;
 
     function bindingTargetCount(target) {
       const normalized = normalizeMac(target);
@@ -870,13 +899,27 @@
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.detail || t("wifi.scan_failed"));
         wifiNetworks = payload.networks || [];
+        wifiNetworksLoaded = true;
         renderWifiNetworks();
       } catch (error) {
         wifiNetworks = [];
+        wifiNetworksLoaded = false;
         message.textContent = error.message || t("wifi.scan_failed");
         message.className = "message error";
       } finally {
         rescanBtn.disabled = false;
+      }
+    }
+
+    async function toggleWifiPicker() {
+      const toggleBtn = document.getElementById("wifi-toggle-btn");
+      const pickerBody = document.getElementById("wifi-picker-body");
+      const expanded = toggleBtn.getAttribute("aria-expanded") !== "true";
+      toggleBtn.setAttribute("aria-expanded", String(expanded));
+      toggleBtn.textContent = t(expanded ? "wifi.collapse" : "wifi.choose_other");
+      pickerBody.hidden = !expanded;
+      if (expanded && !wifiNetworksLoaded) {
+        await scanWifiNetworks();
       }
     }
 
@@ -1341,6 +1384,7 @@
     // -- wiring ---------------------------------------------------------
 
     document.getElementById("add-device-btn").addEventListener("click", startPairing);
+    document.getElementById("wifi-toggle-btn").addEventListener("click", toggleWifiPicker);
     document.getElementById("wifi-rescan-btn").addEventListener("click", scanWifiNetworks);
     document.getElementById("pairing-rescan-btn").addEventListener("click", rescan);
     document.getElementById("pairing-cancel-btn").addEventListener("click", async () => {
@@ -1354,7 +1398,6 @@
     loadConfig();
     checkPowerDryRunMode();
     refreshWifiStatus();
-    scanWifiNetworks();
     refreshTelemetry();
     setInterval(refreshWifiStatus, 5000);
     setInterval(refreshTelemetry, HOME_MONITOR_POLL_MS);
