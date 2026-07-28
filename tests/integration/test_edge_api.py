@@ -154,6 +154,7 @@ def test_edge_operator_diagnostics_hide_unrelated_live_telemetry_from_results():
     assert 'new Set(["status", "error"])' in helper_source
     assert 'new Set(["boot", "ok", "error"])' in helper_source
     assert "result.parsed" in helper_source
+    assert 'entry.command === "PING"' in helper_source
     assert 'entry.type !== "telemetry"' not in helper_source
     assert ".slice(0, 3)" in helper_source
     assert "diagnosticReplies(result, command)" in source

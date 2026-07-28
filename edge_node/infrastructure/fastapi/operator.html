@@ -1436,7 +1436,13 @@
         : new Set(["boot", "ok", "error"]);
       const parsed = Array.isArray(result?.parsed) ? result.parsed : [];
       return parsed
-        .filter((entry) => expectedTypes.has(entry?.type))
+        .filter((entry) => {
+          if (!expectedTypes.has(entry?.type)) return false;
+          if (command === "ping" && entry.type === "ok") {
+            return entry.command === "PING";
+          }
+          return true;
+        })
         .map((entry) => String(entry.raw || ""))
         .filter(Boolean)
         .slice(0, 3);
