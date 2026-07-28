@@ -116,7 +116,7 @@
       gap: 18px;
       margin-top: 14px;
       padding: 14px;
-      border: 1px solid rgba(255, 75, 75, 0.65);
+      border: 1px solid var(--border);
       background: var(--surface);
     }
 
@@ -125,7 +125,7 @@
     }
 
     .disconnect-all-copy h2 {
-      color: var(--danger);
+      color: var(--text);
       font-size: 14px;
       text-transform: uppercase;
     }
@@ -136,26 +136,11 @@
       font-size: 12px;
     }
 
-    .btn-danger {
-      flex: 0 0 auto;
+    .disconnect-all-button {
+      width: auto;
+      margin-top: 0;
       padding: 12px 16px;
-      border: 1px solid var(--danger);
-      background: transparent;
-      color: var(--danger);
       font-size: 13px;
-      font-weight: 800;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-    }
-
-    .btn-danger:hover {
-      background: var(--danger);
-      color: #0a0a0a;
-    }
-
-    .btn-danger:disabled {
-      opacity: 0.45;
-      cursor: wait;
     }
 
     .disconnect-all-message {
@@ -674,6 +659,10 @@
         min-width: 0;
         text-align: left;
       }
+
+      .disconnect-all-button {
+        width: 100%;
+      }
     }
 
     @media (max-width: 820px) {
@@ -731,7 +720,7 @@
         <button
           type="button"
           id="disconnect-all-btn"
-          class="btn-danger"
+          class="btn-primary disconnect-all-button"
           data-i18n="operator.disconnect_all"
           disabled
         >Disconnect all &amp; clear bindings</button>

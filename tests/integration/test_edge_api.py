@@ -70,6 +70,10 @@ def test_edge_operator_page_exposes_disconnect_all_and_clear_bindings_action():
     source = client.get("/").text
 
     assert 'id="disconnect-all-btn"' in source
+    assert 'class="btn-primary disconnect-all-button"' in source
+    assert ".disconnect-all-bar {" in source
+    assert "border: 1px solid var(--border);" in source
+    assert ".btn-danger" not in source
     assert 'id="disconnect-all-message"' in source
     assert 'data-i18n="operator.disconnect_all"\n          disabled' in source
     assert '"operator.disconnect_all": "Disconnect all & clear bindings"' in source
