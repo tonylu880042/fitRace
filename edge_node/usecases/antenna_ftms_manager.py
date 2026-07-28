@@ -16,6 +16,7 @@ from edge_node.domain.models import (
 )
 from edge_node.infrastructure.antenna import protocol
 from edge_node.infrastructure.antenna.port_lock import PortBusyError, port_lock
+from edge_node.usecases.pairing_session import is_pairing_active
 
 logger = logging.getLogger("edge_node.antenna_ftms_manager")
 MAC_ADDRESS_PATTERN = re.compile(r"^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$")
@@ -557,6 +558,24 @@ class AntennaFtmsManager:
         match what we expect, and the cooldown since our last push has
         elapsed. Otherwise we wait and let the board's own auto-reconnect
         converge."""
+        # A pairing session (see usecases/pairing_session.py) temp-CONNECTs a
+        # deliberately different MAC list per channel while it observes
+        # candidates. Without this check that difference looks exactly like
+        # "the expected list changed" below and triggers an immediate
+        # destructive CONNECT that wrecks the session. The flag file uses the
+        # same shared-cwd convention as data/uart-locks (port_lock.py): the
+        # edge runtime and the web process are both launched from the same
+        # working directory, so this relative path resolves to one shared
+        # file for both processes with no extra configuration. Its mtime
+        # must be fresh (< pairing_session.FLAG_STALE_AFTER_SEC old) so a
+        # crashed/killed web process can't wedge this watchdog forever behind
+        # a flag nobody will ever delete.
+        if is_pairing_active():
+            logger.info(
+                "Pairing session flag is active; skipping reconnect watchdog "
+                "pass so its temp CONNECT list is left alone"
+            )
+            return
         expected_by_channel: dict[str, list[str]] = {}
         for binding in self._edge_config.equipment_bindings:
             if not binding.ble_target or not MAC_ADDRESS_PATTERN.match(

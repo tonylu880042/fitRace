@@ -10,6 +10,8 @@ tests pin down the cooldown/backoff logic that prevents that.
 """
 
 import logging
+import os
+import time
 
 from edge_node.domain.models import (
     AntennaChannelConfig,
@@ -20,6 +22,7 @@ from edge_node.usecases.antenna_ftms_manager import (
     CONNECT_COOLDOWN_SEC,
     AntennaFtmsManager,
 )
+from edge_node.usecases.pairing_session import FLAG_STALE_AFTER_SEC
 
 
 class FakeSerial:
@@ -197,3 +200,64 @@ def test_expected_list_change_bypasses_cooldown_and_matching_target():
     sent = connect_writes(serial)
     assert len(sent) == 1
     assert "AA:BB:CC:DD:EE:02" in sent[0]
+
+
+def test_fresh_pairing_flag_pauses_the_whole_watchdog_pass(
+    monkeypatch, tmp_path, caplog
+):
+    # A pairing session's temp CONNECT list looks exactly like "the expected
+    # list changed" to the logic below (same scenario as the test above),
+    # which would normally bypass cooldown and reissue CONNECT immediately.
+    # A fresh pairing flag must suppress the entire pass -- not even STATUS
+    # should be sent -- so the session's temp-connected candidates are left
+    # alone.
+    flag_path = tmp_path / "pairing.flag"
+    flag_path.write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("FITRACE_PAIRING_FLAG_PATH", str(flag_path))
+
+    serial = FakeSerial(
+        {
+            "CONNECT:AA:BB:CC:DD:EE:01;\r\n": ["CONNECT:OK;\r\n"],
+            "CONNECT:AA:BB:CC:DD:EE:02;\r\n": ["CONNECT:OK;\r\n"],
+            "REPORT:250;\r\n": ["REPORT:OK;\r\n"],
+            "STATUS;\r\n": ["STATUS:IDLE,0/1;\r\n"],
+        }
+    )
+    clock = FakeClock()
+    manager = make_manager(serial, clock, ble_target="AA:BB:CC:DD:EE:02")
+    manager._connect_assignments({"uart-1": ["AA:BB:CC:DD:EE:01"]})
+    serial.writes.clear()
+
+    with caplog.at_level(logging.INFO, logger="edge_node.antenna_ftms_manager"):
+        manager._reconnect_missing_targets()
+
+    assert connect_writes(serial) == []
+    assert not any(w == "STATUS;\r\n" for w in serial.writes)
+    assert any(
+        "skipping reconnect watchdog" in record.message for record in caplog.records
+    )
+
+
+def test_stale_pairing_flag_lets_the_watchdog_run_normally(monkeypatch, tmp_path):
+    flag_path = tmp_path / "pairing.flag"
+    flag_path.write_text("{}", encoding="utf-8")
+    stale_time = time.time() - FLAG_STALE_AFTER_SEC - 1
+    os.utime(flag_path, (stale_time, stale_time))
+    monkeypatch.setenv("FITRACE_PAIRING_FLAG_PATH", str(flag_path))
+
+    serial = FakeSerial(
+        {
+            "CONNECT:AA:BB:CC:DD:EE:01;\r\n": ["CONNECT:OK;\r\n"],
+            "CONNECT:AA:BB:CC:DD:EE:02;\r\n": ["CONNECT:OK;\r\n"],
+            "REPORT:250;\r\n": ["REPORT:OK;\r\n"],
+            "STATUS;\r\n": ["STATUS:IDLE,0/1;\r\n"],
+        }
+    )
+    clock = FakeClock()
+    manager = make_manager(serial, clock, ble_target="AA:BB:CC:DD:EE:02")
+    manager._connect_assignments({"uart-1": ["AA:BB:CC:DD:EE:01"]})
+    serial.writes.clear()
+
+    manager._reconnect_missing_targets()
+
+    assert connect_writes(serial) == ["CONNECT:AA:BB:CC:DD:EE:02;\r\n"]

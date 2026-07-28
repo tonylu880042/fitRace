@@ -128,6 +128,27 @@ class EquipmentBinding(BaseModel):
 # this value for the setup UI; keep the two in sync if it ever changes.
 MAX_CONNECTIONS_PER_CHANNEL = 3
 
+# Domain source of truth for valid equipment types, used by server-side
+# validation (e.g. the pairing-session confirm endpoint). The setup page's
+# embedded JS keeps its own EQUIPMENT_TYPES list in sync by hand (see
+# EDGE_SETUP_HTML in edge_node/infrastructure/fastapi/app.py) -- that string
+# is Python-source, not template-rendered, so this constant cannot be
+# injected into it without risking the backslash-unescaping trap documented
+# in CLAUDE.md. Keep the two lists identical if either changes.
+EQUIPMENT_TYPES: tuple[str, ...] = (
+    "treadmill",
+    "curved_treadmill",
+    "spin_bike",
+    "fan_bike",
+    "upright_bike",
+    "recumbent_bike",
+    "elliptical",
+    "stair_climber",
+    "rowing_machine",
+    "ski_erg",
+    "unknown",
+)
+
 
 class AntennaChannelConfig(BaseModel):
     id: str = Field(..., description="Stable channel id used by equipment bindings")
