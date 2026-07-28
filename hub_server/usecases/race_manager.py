@@ -99,6 +99,36 @@ class RaceManager:
         self._persist_settings()
         return self._start_countdown_sound_enabled
 
+    @staticmethod
+    def _empty_participant_progress(
+        node_id: str,
+        athlete_name: str,
+        station_number: Optional[int],
+    ) -> Dict[str, Any]:
+        return {
+            "node_id": node_id,
+            "athlete_name": athlete_name,
+            "station_number": station_number,
+            "team_name": None,
+            "avatar_url": None,
+            "distance_m": 0.0,
+            "elapsed_time_ms": 0,
+            "instantaneous_speed_kph": 0.0,
+            "progress_percent": 0.0,
+            "calories": 0.0,
+            "power_watts": 0,
+            "max_power_watts": 0,
+            "finished_time_ms": None,
+        }
+
+    def _default_participant_name(self, node_id: str) -> str:
+        if not self._config or self._config.competition_mode != "individual":
+            return f"Athlete {node_id}"
+        for station_number, assigned_node_id in self._stations.items():
+            if assigned_node_id == node_id:
+                return f"Station {station_number}"
+        return "Anonymous Participant"
+
     def get_state_snapshot(self) -> Dict[str, Any]:
         config = self.get_config()
         team_leaderboard = (
@@ -171,6 +201,14 @@ class RaceManager:
                     "max_power_watts": 0,
                     "finished_time_ms": None,
                 }
+        if self._config and self._config.competition_mode == "individual":
+            for station_number, node_id in self._stations.items():
+                if node_id and node_id not in progress:
+                    progress[node_id] = self._empty_participant_progress(
+                        node_id,
+                        f"Station {station_number}",
+                        station_number,
+                    )
         return progress
 
     def get_team_leaderboard_progress(self) -> list[Dict[str, Any]]:
@@ -404,24 +442,22 @@ class RaceManager:
         if node_id in self.get_registered_nodes():
             return
 
-        athlete_name = f"Athlete {node_id}"
+        athlete_name = self._default_participant_name(node_id)
         self._registered_nodes[node_id] = athlete_name
         if node_id not in self._progress:
-            self._progress[node_id] = {
-                "node_id": node_id,
-                "athlete_name": athlete_name,
-                "station_number": None,
-                "team_name": None,
-                "avatar_url": None,
-                "distance_m": 0.0,
-                "elapsed_time_ms": 0,
-                "instantaneous_speed_kph": 0.0,
-                "progress_percent": 0.0,
-                "calories": 0.0,
-                "power_watts": 0,
-                "max_power_watts": 0,
-                "finished_time_ms": None,
-            }
+            station_number = next(
+                (
+                    number
+                    for number, assigned_node_id in self._stations.items()
+                    if assigned_node_id == node_id
+                ),
+                None,
+            )
+            self._progress[node_id] = self._empty_participant_progress(
+                node_id,
+                athlete_name,
+                station_number,
+            )
 
     def ingest_telemetry(self, payload: Dict[str, Any]) -> Optional[Dict[str, Dict[str, Any]]]:
         node_id = payload.get("node_id")
@@ -560,6 +596,14 @@ class RaceManager:
                     "max_power_watts": 0,
                     "finished_time_ms": None,
                 }
+        if self._config and self._config.competition_mode == "individual":
+            for station_number, node_id in self._stations.items():
+                if node_id and node_id not in self._progress:
+                    self._progress[node_id] = self._empty_participant_progress(
+                        node_id,
+                        f"Station {station_number}",
+                        station_number,
+                    )
 
     def stop_race(self):
         if self._state == RaceState.STOPPED:
@@ -610,13 +654,17 @@ class RaceManager:
         team_name = None
         avatar_url = None
         if station_number is not None:
-            athlete_name = self._station_registrations.get(station_number, f"Athlete {node_id}")
+            athlete_name = self._station_registrations.get(
+                station_number, self._default_participant_name(node_id)
+            )
             team_name = self._station_teams.get(station_number)
             has_avatar = self._station_has_avatar.get(station_number, False)
             import time
             avatar_url = f"/static/avatars/station_{station_number}.webp?t={int(time.time())}" if has_avatar else None
         else:
-            athlete_name = self._registered_nodes.get(node_id, f"Athlete {node_id}")
+            athlete_name = self._registered_nodes.get(
+                node_id, self._default_participant_name(node_id)
+            )
 
         # Clean up placeholder key if device is dynamically bound/discovered
         if station_number is not None:

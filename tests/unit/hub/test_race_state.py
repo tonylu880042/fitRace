@@ -139,6 +139,37 @@ def test_race_manager_valid_flow():
     assert len(manager.get_registered_nodes()) == 0
 
 
+def test_individual_race_uses_station_name_for_anonymous_participant():
+    manager = RaceManager()
+    manager.assign_station(1, "bike-01")
+    manager.configure(
+        RaceConfig(
+            race_type="distance",
+            target_value=500.0,
+            duration_sec=0,
+            competition_mode="individual",
+        )
+    )
+
+    manager.start_race()
+
+    progress = manager.get_leaderboard_progress()
+    assert progress["bike-01"]["athlete_name"] == "Station 1"
+    assert progress["bike-01"]["station_number"] == 1
+    assert progress["bike-01"]["team_name"] is None
+
+    progress = manager.ingest_telemetry(
+        {
+            "node_id": "bike-01",
+            "equipment_type": "fan_bike",
+            "distance_m": 50.0,
+            "elapsed_time_ms": 5000,
+        }
+    )
+    assert progress["bike-01"]["athlete_name"] == "Station 1"
+    assert progress["bike-01"]["distance_m"] == 50.0
+
+
 def test_distance_race_accumulates_delta_instead_of_raw_equipment_total():
     manager = RaceManager()
     config = RaceConfig(race_type="distance", target_value=100.0)
