@@ -15,9 +15,14 @@ from edge_node.infrastructure.antenna.command_runner import (
     AntennaCommandRunner,
 )
 from edge_node.infrastructure.ble.ftms_scanner import BleakFtmsScanner
-from fitrace_common.wifi_status import LinuxWifiStatusReader, WifiStatus
+from fitrace_common.wifi_status import (
+    LinuxWifiStatusReader,
+    WifiStatus,  # noqa: F401 -- re-exported: tests build fakes via edge_app_module.WifiStatus(...)
+)
+from edge_node.usecases.antenna_reconnect import reconnect_configured_devices
 from edge_node.usecases.event_log import EdgeEventLog
 from edge_node.usecases.ftms_scanner import scan_ftms_devices
+from edge_node.usecases.pairing_session import PairingSession, PairingSessionError
 from fitrace_common import wifi_manager
 from fitrace_common.power_manager import PowerActionError, PowerManager
 
@@ -66,6 +71,16 @@ class EdgeConfigPayload(EdgeNodeConfig):
     pass
 
 
+class PairingStartPayload(BaseModel):
+    scan_duration_sec: float | None = None
+
+
+class PairingConfirmPayload(BaseModel):
+    mac: str
+    equipment_type: str
+    display_name: str | None = None
+
+
 def require_admin(request: Request):
     expected_token = os.getenv("FITRACE_ADMIN_TOKEN")
     if not expected_token:
@@ -99,6 +114,30 @@ def default_antenna_port() -> str:
     if config.antenna_channels:
         return config.antenna_channels[0].port
     return FALLBACK_ANTENNA_PORT
+
+
+def _pairing_restore_configured_devices(config: EdgeNodeConfig) -> dict:
+    return reconnect_configured_devices(
+        config,
+        antenna_command_runner,
+        disconnect_first=True,
+        timeout_sec=5.0,
+        report_interval_ms=250,
+    )
+
+
+def _pairing_restart_service() -> dict:
+    return asdict(power_manager.restart_service())
+
+
+pairing_session = PairingSession(
+    command_runner=antenna_command_runner,
+    event_log=edge_event_log,
+    load_config=load_edge_config,
+    save_config=save_edge_config,
+    restore_configured_devices=_pairing_restore_configured_devices,
+    restart_service=_pairing_restart_service,
+)
 
 
 @app.get("/health")
@@ -154,6 +193,11 @@ def local_ip_address() -> str:
 
 
 @app.get("/", response_class=HTMLResponse)
+def operator_page():
+    return HTMLResponse(OPERATOR_HTML_RENDERED)
+
+
+@app.get("/maintenance", response_class=HTMLResponse)
 def edge_setup_page():
     ip = local_ip_address()
     badge = f"{ip}:8001" if ip else "Local web setup :8001"
@@ -296,74 +340,59 @@ def reconnect_configured_antenna_devices(
 ):
     require_admin(request)
     config = load_edge_config()
-    channels_by_id = {channel.id: channel for channel in config.antenna_channels}
-    targets_by_channel: dict[str, list[str]] = {}
-    for binding in config.equipment_bindings:
-        if not binding.antenna_channel:
-            continue
-        if binding.antenna_channel not in channels_by_id:
-            continue
-        targets_by_channel.setdefault(binding.antenna_channel, []).append(
-            binding.ble_target
-        )
-
-    if not targets_by_channel and not payload.disconnect_first:
-        raise HTTPException(
-            status_code=400, detail="No configured antenna targets found"
-        )
-
-    results = []
     try:
-        if payload.disconnect_first:
-            # clear every board's link/target list so removed bindings
-            # actually free their connection slot (firmware only has ALL)
-            for channel in config.antenna_channels:
-                antenna_command_runner.run(
-                    AntennaCommandRequest(
-                        port=channel.port,
-                        baudrate=channel.baudrate,
-                        rtscts=channel.rtscts,
-                        command="disconnect_all",
-                        timeout_sec=payload.timeout_sec,
-                    )
-                )
-        for channel_id, macs in targets_by_channel.items():
-            channel = channels_by_id[channel_id]
-            connect_result = antenna_command_runner.run(
-                AntennaCommandRequest(
-                    port=channel.port,
-                    baudrate=channel.baudrate,
-                    rtscts=channel.rtscts,
-                    command="connect",
-                    timeout_sec=payload.timeout_sec,
-                    macs=macs,
-                )
-            )
-            report_result = antenna_command_runner.run(
-                AntennaCommandRequest(
-                    port=channel.port,
-                    baudrate=channel.baudrate,
-                    rtscts=channel.rtscts,
-                    command="report",
-                    timeout_sec=payload.timeout_sec,
-                    report_interval_ms=payload.report_interval_ms,
-                )
-            )
-            results.append(
-                {
-                    "channel_id": channel_id,
-                    "port": channel.port,
-                    "macs": macs,
-                    "connect": connect_result,
-                    "report": report_result,
-                }
-            )
+        return reconnect_configured_devices(
+            config,
+            antenna_command_runner,
+            disconnect_first=payload.disconnect_first,
+            timeout_sec=payload.timeout_sec,
+            report_interval_ms=payload.report_interval_ms,
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
 
-    return {"status": "reconnected", "channels": results}
+
+@app.post("/api/pairing/start")
+def start_pairing_session(payload: PairingStartPayload, request: Request):
+    require_admin(request)
+    try:
+        return pairing_session.start(scan_duration_sec=payload.scan_duration_sec)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+
+@app.get("/api/pairing/status")
+def get_pairing_status(request: Request):
+    require_admin(request)
+    return pairing_session.status()
+
+
+@app.post("/api/pairing/confirm")
+def confirm_pairing_session(payload: PairingConfirmPayload, request: Request):
+    require_admin(request)
+    try:
+        return pairing_session.confirm(
+            payload.mac, payload.equipment_type, payload.display_name
+        )
+    except PairingSessionError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+
+@app.post("/api/pairing/cancel")
+def cancel_pairing_session(request: Request):
+    require_admin(request)
+    try:
+        return pairing_session.cancel()
+    except PairingSessionError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
 
 EDGE_SETUP_HTML = """
@@ -2785,7 +2814,13 @@ _I18N = {
     "en-US": json.loads((LOCALES_DIR / "en.json").read_text(encoding="utf-8")),
     "zh-TW": json.loads((LOCALES_DIR / "zh_tw.json").read_text(encoding="utf-8")),
 }
-EDGE_SETUP_HTML_RENDERED = EDGE_SETUP_HTML.replace(
-    "__I18N_DICTIONARIES__",
-    json.dumps(_I18N, ensure_ascii=False).replace("</", "<\\/"),
-)
+_I18N_JSON = json.dumps(_I18N, ensure_ascii=False).replace("</", "<\\/")
+EDGE_SETUP_HTML_RENDERED = EDGE_SETUP_HTML.replace("__I18N_DICTIONARIES__", _I18N_JSON)
+
+# The new operator page is a real static file (not a Python string), which
+# permanently escapes the backslash-unescaping trap documented in CLAUDE.md
+# for EDGE_SETUP_HTML above. Same __I18N_DICTIONARIES__ placeholder + `</`
+# escaping convention, read and rendered once at import time.
+OPERATOR_HTML_PATH = Path(__file__).resolve().parent / "operator.html"
+OPERATOR_HTML = OPERATOR_HTML_PATH.read_text(encoding="utf-8")
+OPERATOR_HTML_RENDERED = OPERATOR_HTML.replace("__I18N_DICTIONARIES__", _I18N_JSON)

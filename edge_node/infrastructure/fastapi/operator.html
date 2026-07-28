@@ -1,0 +1,1113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="fitrace-page" content="operator">
+  <title>FitRace Equipment Setup</title>
+  <style>
+    :root {
+      --bg: #0a0a0a;
+      --surface: #161616;
+      --surface-2: #101010;
+      --border: #333;
+      --text: #eaeaea;
+      --muted: #8c8c8c;
+      --accent: #d4f326;
+      --warn: #f59e0b;
+      --danger: #ff4b4b;
+      --ok: #34d399;
+      --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    body {
+      min-height: 100vh;
+      font-family: -apple-system, "Segoe UI", "Noto Sans TC", sans-serif;
+      line-height: 1.45;
+    }
+
+    .app {
+      width: min(560px, 100vw);
+      margin: 0 auto;
+      padding: 20px 16px 48px;
+    }
+
+    h1, h2, h3 {
+      margin: 0;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+    }
+
+    button {
+      font: inherit;
+      cursor: pointer;
+      border-radius: 0;
+    }
+
+    a { color: var(--accent); }
+
+    .op-header {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .op-header h1 {
+      font-size: 22px;
+      text-transform: uppercase;
+    }
+
+    .chip-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .chip-dot {
+      width: 7px;
+      height: 7px;
+      background: var(--muted);
+    }
+
+    .chip-dot.ok { background: var(--ok); box-shadow: 0 0 8px rgba(52, 211, 153, 0.5); }
+    .chip-dot.bad { background: var(--danger); box-shadow: 0 0 8px rgba(255, 75, 75, 0.5); }
+
+    .banner {
+      margin-top: 14px;
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .banner.warn {
+      border-color: var(--warn);
+      color: var(--warn);
+    }
+
+    .view { margin-top: 16px; }
+
+    .panel {
+      border: 1px solid var(--border);
+      background: var(--surface);
+      padding: 14px;
+    }
+
+    .panel h2 {
+      font-size: 13px;
+      text-transform: uppercase;
+      color: var(--muted);
+      letter-spacing: 0.06em;
+      margin-bottom: 12px;
+    }
+
+    .card-grid {
+      display: grid;
+      gap: 10px;
+    }
+
+    .binding-card {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      padding: 12px;
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+    }
+
+    .binding-card-name {
+      font-size: 15px;
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }
+
+    .binding-card-type {
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .binding-card-metrics {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-top: 6px;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .binding-card-metrics strong {
+      display: block;
+      margin-top: 2px;
+      color: var(--text);
+      font-size: 15px;
+    }
+
+    .pill {
+      align-self: start;
+      padding: 3px 8px;
+      border: 1px solid var(--border);
+      font-family: var(--mono);
+      font-size: 10px;
+      text-transform: uppercase;
+      color: var(--muted);
+      letter-spacing: 0.06em;
+    }
+
+    .pill.live {
+      color: var(--ok);
+      border-color: rgba(52, 211, 153, 0.5);
+    }
+
+    .empty {
+      padding: 28px 12px;
+      border: 1px dashed var(--border);
+      color: var(--muted);
+      text-align: center;
+      font-size: 13px;
+    }
+
+    .btn-primary {
+      display: block;
+      width: 100%;
+      margin-top: 16px;
+      padding: 16px;
+      border: 1px solid var(--accent);
+      background: var(--accent);
+      color: #0a0a0a;
+      font-size: 15px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .btn-primary:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .btn-secondary {
+      flex: 1;
+      padding: 12px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+
+    .message {
+      min-height: 18px;
+      margin-top: 10px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .message.error { color: var(--danger); }
+    .message.ok { color: var(--ok); }
+
+    .op-footer {
+      margin-top: 22px;
+      text-align: center;
+      font-size: 13px;
+    }
+
+    .op-footer a {
+      color: var(--muted);
+      text-decoration: none;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .capacity-strip {
+      margin-top: 12px;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .group-label {
+      margin-top: 18px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+    }
+
+    .candidate-moving {
+      margin-top: 12px;
+      padding: 18px;
+      border: 2px solid var(--accent);
+      background: var(--surface);
+      box-shadow: 0 0 18px rgba(212, 243, 38, 0.18);
+      cursor: pointer;
+    }
+
+    .candidate-moving .candidate-name {
+      font-family: var(--mono);
+      font-size: 22px;
+      font-weight: 800;
+      color: var(--accent);
+    }
+
+    .candidate-moving .candidate-speed {
+      margin-top: 6px;
+      font-family: var(--mono);
+      font-size: 15px;
+      color: var(--text);
+    }
+
+    .candidate-row {
+      margin-top: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      cursor: pointer;
+    }
+
+    .candidate-row.unranked {
+      opacity: 0.55;
+    }
+
+    .candidate-row .candidate-meta {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--muted);
+      overflow-wrap: anywhere;
+    }
+
+    .candidate-row .candidate-rssi {
+      font-family: var(--mono);
+      font-size: 13px;
+      color: var(--accent);
+    }
+
+    .wizard-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 18px;
+    }
+
+    .confirm-hero {
+      padding: 22px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      text-align: center;
+    }
+
+    .confirm-name {
+      font-family: var(--mono);
+      font-size: 30px;
+      font-weight: 800;
+      word-break: break-word;
+    }
+
+    .confirm-tag {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .confirm-metric {
+      margin-top: 10px;
+      font-family: var(--mono);
+      font-size: 16px;
+      color: var(--accent);
+      min-height: 20px;
+    }
+
+    .field { margin-top: 16px; }
+
+    .field label {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .type-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .type-chip {
+      position: relative;
+      padding: 14px 10px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 13px;
+      text-align: center;
+    }
+
+    .type-chip.hinted {
+      border-color: rgba(212, 243, 38, 0.5);
+    }
+
+    .type-chip.selected {
+      border-color: var(--accent);
+      background: rgba(212, 243, 38, 0.12);
+      color: var(--accent);
+    }
+
+    .type-chip .suggested-tag {
+      position: absolute;
+      top: -9px;
+      right: 6px;
+      padding: 1px 6px;
+      background: var(--accent);
+      color: #0a0a0a;
+      font-size: 9px;
+      text-transform: uppercase;
+      font-weight: 700;
+    }
+
+    .readonly-rows {
+      margin-top: 16px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .status-line {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      font-family: var(--mono);
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .status-line strong { color: var(--text); }
+
+    #confirm-advanced-toggle {
+      display: inline-block;
+      margin-top: 14px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    input[type="text"] {
+      width: 100%;
+      height: 42px;
+      padding: 0 12px;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text);
+      font: inherit;
+    }
+
+    .admin-auth-banner {
+      margin-top: 14px;
+      padding: 12px;
+      border: 1px solid var(--danger);
+      background: var(--surface);
+    }
+
+    .admin-auth-banner .field { margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <div class="app" id="app">
+    <header class="op-header">
+      <h1 data-i18n="operator.title">FitRace Equipment Setup</h1>
+      <div class="chip-row">
+        <div class="chip" id="wifi-chip">
+          <span class="chip-dot" id="wifi-chip-dot"></span>
+          <span id="wifi-chip-text">--</span>
+        </div>
+        <div class="chip" id="hub-chip">
+          <span data-i18n="operator.hub_label">Hub</span>
+          <span id="hub-chip-text">--</span>
+        </div>
+      </div>
+    </header>
+
+    <div id="admin-auth-banner" class="admin-auth-banner" hidden>
+      <div class="message error" data-i18n="admin.auth_required">Admin token required. Enter it below and save to continue.</div>
+      <div class="field">
+        <label for="admin-auth-input" data-i18n="admin.password_label">Admin token</label>
+        <input id="admin-auth-input" type="password" autocomplete="off">
+      </div>
+      <button id="admin-auth-save" type="button" class="btn-secondary" data-i18n="admin.save">Save token</button>
+    </div>
+
+    <div id="power-dry-run-banner" class="banner warn" hidden data-i18n="power.dry_run_badge"></div>
+
+    <main id="view-home" class="view">
+      <section class="panel">
+        <h2 id="bindings-count-title"></h2>
+        <div id="binding-cards" class="card-grid"></div>
+      </section>
+      <button id="add-device-btn" class="btn-primary" type="button" data-i18n="operator.add_device">+ Add device</button>
+      <div class="message" id="add-device-message"></div>
+      <footer class="op-footer">
+        <a href="/maintenance" id="maintenance-link" data-i18n="operator.maintenance_link">Maintenance mode</a>
+      </footer>
+    </main>
+
+    <main id="view-pairing" class="view" hidden>
+      <div class="banner" data-i18n="pairing.instruction"></div>
+      <div class="capacity-strip" id="pairing-capacity"></div>
+      <div id="pairing-moving"></div>
+      <div id="pairing-idle"></div>
+      <div class="group-label" id="pairing-unranked-label" data-i18n="pairing.unranked_group" hidden></div>
+      <div id="pairing-unranked"></div>
+      <div class="message" id="pairing-message"></div>
+      <div class="wizard-actions">
+        <button type="button" id="pairing-rescan-btn" class="btn-secondary" data-i18n="pairing.rescan">Rescan</button>
+        <button type="button" id="pairing-cancel-btn" class="btn-secondary" data-i18n="pairing.cancel">Cancel</button>
+      </div>
+    </main>
+
+    <main id="view-confirm" class="view" hidden>
+      <div class="confirm-hero">
+        <div class="confirm-name" id="confirm-name"></div>
+        <div class="confirm-tag" data-i18n="confirm.hero_tag">Matches the display on the equipment console</div>
+        <div class="confirm-metric" id="confirm-metric"></div>
+      </div>
+      <div class="field">
+        <label data-i18n="bindings.type">Equipment type</label>
+        <div class="type-grid" id="type-grid"></div>
+        <div class="message" id="confirm-type-hint" data-i18n="confirm.select_type_hint">Choose the equipment type to continue</div>
+      </div>
+      <div class="readonly-rows">
+        <div class="status-line"><span data-i18n="confirm.channel_label">Channel</span><strong id="confirm-channel">--</strong></div>
+        <div class="status-line"><span data-i18n="monitor.mac">MAC</span><strong id="confirm-mac">--</strong></div>
+      </div>
+      <a href="#" id="confirm-advanced-toggle" data-i18n="confirm.custom_name_toggle">Advanced: custom display name</a>
+      <div class="field" id="confirm-name-field" hidden>
+        <label data-i18n="bindings.name">Display name</label>
+        <input id="confirm-name-input" type="text" autocomplete="off">
+      </div>
+      <button type="button" id="confirm-submit-btn" class="btn-primary" disabled data-i18n="confirm.submit">Confirm &amp; add</button>
+      <div class="message" id="confirm-message"></div>
+      <div class="wizard-actions">
+        <button type="button" id="confirm-back-btn" class="btn-secondary" data-i18n="wizard.back">Back</button>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const dictionaries = __I18N_DICTIONARIES__;
+
+    function getBrowserLocale() {
+      const saved = localStorage.getItem("fitrace.edge.locale");
+      if (saved === "en-US" || saved === "zh-TW") return saved;
+      const browserLang = navigator.language || navigator.userLanguage;
+      if (browserLang && browserLang.toLowerCase().startsWith("zh")) {
+        return "zh-TW";
+      }
+      return "en-US";
+    }
+
+    let currentLocale = getBrowserLocale();
+
+    function t(key, params = {}) {
+      let value = (dictionaries[currentLocale] || dictionaries["en-US"])[key] || dictionaries["en-US"][key] || key;
+      Object.entries(params).forEach(([name, replacement]) => {
+        value = value.replaceAll(`{${name}}`, String(replacement));
+      });
+      return value;
+    }
+
+    function typeLabel(value) {
+      const key = `type.${value}`;
+      const label = t(key);
+      return label === key ? value : label;
+    }
+
+    function applyTranslations() {
+      document.documentElement.lang = currentLocale;
+      document.querySelectorAll("[data-i18n]").forEach((element) => {
+        element.innerText = t(element.dataset.i18n);
+      });
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    // -- admin auth (mirrors /maintenance's adminFetch pattern) -------------
+
+    function adminHeaders(extra = {}) {
+      const headers = { ...extra };
+      const token = localStorage.getItem("fitrace.adminPassword") || localStorage.getItem("fitrace.adminToken") || "";
+      if (token) {
+        headers["X-FitRace-Admin-Token"] = token;
+      }
+      return headers;
+    }
+
+    function showAdminAuthBanner() {
+      const banner = document.getElementById("admin-auth-banner");
+      if (banner) banner.hidden = false;
+    }
+
+    async function adminFetch(url, options = {}) {
+      const response = await fetch(url, { ...options, headers: adminHeaders(options.headers || {}) });
+      if (response.status === 401) showAdminAuthBanner();
+      return response;
+    }
+
+    document.getElementById("admin-auth-save")?.addEventListener("click", () => {
+      const input = document.getElementById("admin-auth-input");
+      const value = (input?.value || "").trim();
+      if (!value) return;
+      localStorage.setItem("fitrace.adminPassword", value);
+      window.location.reload();
+    });
+
+    // -- shared constants -----------------------------------------------
+
+    const ANTENNA_MAX_CONNECTIONS_PER_CHANNEL = 3; // nRF52832 per-board BLE link limit
+    const EQUIPMENT_TYPE_CHIPS = [
+      "spin_bike", "fan_bike", "treadmill", "curved_treadmill", "rowing_machine", "ski_erg",
+    ];
+    // Antenna board FTMS TYPE -> candidate chip(s) it hints at. BIKE is
+    // ambiguous between spin_bike/fan_bike so both are hinted but neither is
+    // pre-selected (see confirm.suggested_tag rendering below).
+    const FTMS_HINT_MAP = {
+      TMILL: ["treadmill"],
+      ROWER: ["rowing_machine"],
+      BIKE: ["spin_bike", "fan_bike"],
+    };
+    const MONITOR_LIVE_WINDOW_MS = 3000;
+    const HOME_MONITOR_POLL_MS = 500;
+    const PAIRING_POLL_MS = 1000;
+
+    function normalizeMac(value) {
+      return String(value || "").trim().toUpperCase();
+    }
+
+    // -- global state -----------------------------------------------------
+
+    let edgeConfig = null;
+    let telemetryByMac = new Map(); // normalized MAC -> latest telemetry payload
+    let telemetryByNodeId = new Map(); // node_id -> latest telemetry payload (fallback)
+    let currentView = "home";
+    let pairingCapacity = null; // {per_channel, total_free} from the start() response
+    let pairingCandidates = [];
+    let pairingActive = false;
+    let selectedCandidate = null;
+    let selectedType = null;
+
+    function monitorKeyForBinding(binding) {
+      // Same reasoning as /maintenance's monitorKeyForBinding: node_id is only
+      // a label and can disagree with a stale runtime, so resolve by MAC
+      // first and fall back to node_id.
+      const byMac = telemetryByMac.get(normalizeMac(binding.ble_target));
+      return byMac ? binding.ble_target : binding.node_id;
+    }
+
+    function telemetryForBinding(binding) {
+      const byMac = telemetryByMac.get(normalizeMac(binding.ble_target));
+      if (byMac) return byMac;
+      return telemetryByNodeId.get(binding.node_id) || null;
+    }
+
+    function telemetryAgeMs(payload) {
+      const timestamp = Number(payload?.timestamp_epoch_ms || 0);
+      if (!timestamp) return Infinity;
+      return Date.now() - timestamp;
+    }
+
+    function formatMetric(value, suffix = "", digits = 0) {
+      if (value === null || value === undefined || value === "") return "--";
+      const number = Number(value);
+      if (!Number.isFinite(number)) return String(value);
+      return `${number.toFixed(digits)}${suffix}`;
+    }
+
+    // -- Wi-Fi / Hub chips --------------------------------------------------
+
+    async function refreshWifiChip() {
+      const dot = document.getElementById("wifi-chip-dot");
+      const text = document.getElementById("wifi-chip-text");
+      try {
+        const response = await adminFetch("/api/wifi/status?interface=wlan0");
+        const status = await response.json();
+        if (!response.ok) throw new Error(status.detail || "wifi status failed");
+        const connected = Boolean(status.connected);
+        dot.className = `chip-dot ${connected ? "ok" : "bad"}`;
+        const signal = status.quality_percent != null ? `${status.quality_percent}%` : "--";
+        text.textContent = connected ? `${status.ssid || "?"} · ${signal}` : t("wifi.disconnected");
+      } catch (_error) {
+        dot.className = "chip-dot bad";
+        text.textContent = t("wifi.disconnected");
+      }
+    }
+
+    function refreshHubChip() {
+      const text = document.getElementById("hub-chip-text");
+      text.textContent = (edgeConfig && edgeConfig.mqtt_host) || "--";
+    }
+
+    async function checkPowerDryRunMode() {
+      const banner = document.getElementById("power-dry-run-banner");
+      try {
+        const response = await adminFetch("/api/system/power/status");
+        if (!response.ok) return;
+        const status = await response.json();
+        if (status.dry_run) banner.hidden = false;
+      } catch (_error) {
+        // best-effort; banner just stays hidden
+      }
+    }
+
+    // -- Home view: bindings cards -----------------------------------------
+
+    function totalCapacity() {
+      const channels = Array.isArray(edgeConfig?.antenna_channels) ? edgeConfig.antenna_channels : [];
+      if (!channels.length) return Math.max(edgeConfig?.max_ftms_connections || 1, 1);
+      return channels.length * ANTENNA_MAX_CONNECTIONS_PER_CHANNEL;
+    }
+
+    function renderBindingCards() {
+      const bindings = Array.isArray(edgeConfig?.equipment_bindings) ? edgeConfig.equipment_bindings : [];
+      const total = totalCapacity();
+      document.getElementById("bindings-count-title").textContent = t("operator.bindings_count", { count: bindings.length, total });
+
+      const grid = document.getElementById("binding-cards");
+      if (!bindings.length) {
+        grid.innerHTML = `<div class="empty">${escapeHtml(t("monitor.empty"))}</div>`;
+      } else {
+        grid.innerHTML = bindings.map((binding) => `
+          <div class="binding-card" data-node-id="${escapeHtml(binding.node_id)}">
+            <div>
+              <div class="binding-card-name">${escapeHtml(binding.equipment_id || binding.node_id)}</div>
+              <div class="binding-card-type">${escapeHtml(binding.equipment_type ? typeLabel(binding.equipment_type) : "--")}</div>
+            </div>
+            <div class="pill" data-role="pill"></div>
+            <div class="binding-card-metrics">
+              <div>${escapeHtml(t("monitor.speed"))}<strong data-field="speed">--</strong></div>
+              <div>${escapeHtml(t("monitor.power"))}<strong data-field="power">--</strong></div>
+              <div>${escapeHtml(t("monitor.rssi"))}<strong data-field="rssi">--</strong></div>
+            </div>
+          </div>
+        `).join("");
+      }
+      updateBindingCardLeaves();
+
+      const addBtn = document.getElementById("add-device-btn");
+      const full = bindings.length >= total;
+      addBtn.disabled = full;
+      document.getElementById("add-device-message").textContent = full ? t("operator.add_device_full") : "";
+    }
+
+    function updateBindingCardLeaves() {
+      const bindings = Array.isArray(edgeConfig?.equipment_bindings) ? edgeConfig.equipment_bindings : [];
+      bindings.forEach((binding) => {
+        const card = document.querySelector(`.binding-card[data-node-id="${CSS.escape(binding.node_id)}"]`);
+        if (!card) return;
+        const payload = telemetryForBinding(binding);
+        const live = payload && telemetryAgeMs(payload) <= MONITOR_LIVE_WINDOW_MS;
+        const pill = card.querySelector('[data-role="pill"]');
+        pill.className = `pill ${live ? "live" : ""}`;
+        pill.textContent = live ? t("monitor.live") : t("monitor.waiting");
+        card.querySelector('[data-field="speed"]').textContent = formatMetric(payload?.instantaneous_speed_kph, " kph", 1);
+        card.querySelector('[data-field="power"]').textContent = formatMetric(payload?.power_watts, " W", 0);
+        card.querySelector('[data-field="rssi"]').textContent = formatMetric(payload?.rssi, " dBm", 0);
+      });
+    }
+
+    async function loadConfig() {
+      try {
+        const response = await adminFetch("/api/config");
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.detail || "Failed to load config");
+        edgeConfig = payload;
+        refreshHubChip();
+        if (currentView === "home") renderBindingCards();
+      } catch (_error) {
+        // best-effort; next poll retries
+      }
+    }
+
+    // -- global telemetry poller (drives Home cards + the confirm hint) ----
+
+    async function refreshTelemetry() {
+      try {
+        const response = await adminFetch("/api/monitor/events?limit=200");
+        const payload = await response.json();
+        if (!response.ok) return;
+        (payload.events || []).forEach((event) => {
+          const data = event.payload || {};
+          const topic = event.topic || "";
+          if ((event.source !== "mqtt" && event.source !== "local") || event.direction !== "publish" || !topic.startsWith("gym/telemetry/")) {
+            return;
+          }
+          if (!data.node_id) return;
+          const previous = telemetryByNodeId.get(data.node_id);
+          if (previous && Number(data.timestamp_epoch_ms || 0) < Number(previous.timestamp_epoch_ms || 0)) {
+            return;
+          }
+          telemetryByNodeId.set(data.node_id, data);
+          if (data.mac_address) {
+            telemetryByMac.set(normalizeMac(data.mac_address), data);
+          }
+        });
+      } catch (_error) {
+        // best-effort; next poll retries
+      }
+      if (currentView === "home") updateBindingCardLeaves();
+      if (currentView === "confirm" && selectedCandidate) updateConfirmHeroMetric();
+    }
+
+    // -- view switching -----------------------------------------------------
+
+    function showView(name) {
+      currentView = name;
+      document.getElementById("view-home").hidden = name !== "home";
+      document.getElementById("view-pairing").hidden = name !== "pairing";
+      document.getElementById("view-confirm").hidden = name !== "confirm";
+    }
+
+    async function goHome() {
+      showView("home");
+      await loadConfig();
+    }
+
+    // -- pairing scan (View 2) ----------------------------------------------
+
+    function renderCapacityStrip() {
+      const el = document.getElementById("pairing-capacity");
+      if (!pairingCapacity) {
+        el.textContent = "";
+        return;
+      }
+      const perChannel = pairingCapacity.per_channel || {};
+      const total = Object.keys(perChannel).length * ANTENNA_MAX_CONNECTIONS_PER_CHANNEL;
+      const fullChannels = Object.entries(perChannel).filter(([, free]) => free === 0).map(([id]) => id);
+      let text = t("pairing.capacity_strip", { free: pairingCapacity.total_free, total });
+      fullChannels.forEach((channel) => {
+        text += ` · ${t("pairing.channel_full", { channel })}`;
+      });
+      el.textContent = text;
+    }
+
+    function candidateRowHtml(candidate, extraClass = "") {
+      const speed = formatMetric(candidate.latest?.speed_kph, "", 1);
+      return `
+        <div class="candidate-row ${extraClass}" data-mac="${escapeHtml(candidate.mac)}">
+          <div>
+            <div>${escapeHtml(candidate.name || candidate.mac)}</div>
+            <div class="candidate-meta">${escapeHtml(candidate.mac)}</div>
+          </div>
+          <div class="candidate-rssi">${escapeHtml(String(candidate.rssi ?? "--"))} dBm · ${escapeHtml(speed)}</div>
+        </div>
+      `;
+    }
+
+    function renderPairingCandidates() {
+      const moving = pairingCandidates.filter((c) => c.moving === true);
+      const idle = pairingCandidates.filter((c) => c.moving === false);
+      const unranked = pairingCandidates.filter((c) => c.moving === null || c.moving === undefined);
+
+      document.getElementById("pairing-moving").innerHTML = moving.map((candidate) => `
+        <div class="candidate-moving" data-mac="${escapeHtml(candidate.mac)}">
+          <div class="candidate-name">${escapeHtml(candidate.name || candidate.mac)}</div>
+          <div class="candidate-speed">${escapeHtml(formatMetric(candidate.latest?.speed_kph, " kph", 1))}</div>
+        </div>
+      `).join("");
+
+      document.getElementById("pairing-idle").innerHTML = idle.map((candidate) => candidateRowHtml(candidate)).join("");
+
+      const unrankedLabel = document.getElementById("pairing-unranked-label");
+      unrankedLabel.hidden = unranked.length === 0;
+      document.getElementById("pairing-unranked").innerHTML = unranked
+        .slice()
+        .sort((a, b) => (b.rssi ?? -999) - (a.rssi ?? -999))
+        .map((candidate) => candidateRowHtml(candidate, "unranked"))
+        .join("");
+
+      const message = document.getElementById("pairing-message");
+      message.textContent = pairingCandidates.length ? "" : t("pairing.no_candidates");
+
+      document.querySelectorAll("#pairing-moving [data-mac], #pairing-idle [data-mac], #pairing-unranked [data-mac]").forEach((el) => {
+        el.addEventListener("click", () => selectCandidate(el.dataset.mac));
+      });
+    }
+
+    let pairingPollHandle = null;
+
+    async function pollPairingStatus() {
+      try {
+        const response = await adminFetch("/api/pairing/status");
+        const payload = await response.json();
+        if (!response.ok) return;
+        if (payload.state === "idle" || payload.state === "stale") {
+          pairingActive = false;
+          stopPairingPoll();
+          if (currentView !== "home") await goHome();
+          return;
+        }
+        pairingCandidates = payload.candidates || [];
+        if (currentView === "pairing") renderPairingCandidates();
+        if (currentView === "confirm") updateConfirmHeroMetric();
+      } catch (_error) {
+        // best-effort; next tick retries
+      }
+    }
+
+    function startPairingPoll() {
+      stopPairingPoll();
+      pollPairingStatus();
+      pairingPollHandle = setInterval(pollPairingStatus, PAIRING_POLL_MS);
+    }
+
+    function stopPairingPoll() {
+      if (pairingPollHandle) {
+        clearInterval(pairingPollHandle);
+        pairingPollHandle = null;
+      }
+    }
+
+    async function startPairing() {
+      const addBtn = document.getElementById("add-device-btn");
+      addBtn.disabled = true;
+      try {
+        const response = await adminFetch("/api/pairing/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.detail || t("pairing.start_failed"));
+        pairingCapacity = payload.capacity || null;
+        pairingCandidates = payload.candidates || [];
+        pairingActive = true;
+        showView("pairing");
+        renderCapacityStrip();
+        renderPairingCandidates();
+        startPairingPoll();
+      } catch (error) {
+        document.getElementById("add-device-message").textContent = error.message;
+      } finally {
+        addBtn.disabled = false;
+      }
+    }
+
+    async function cancelPairing() {
+      pairingActive = false;
+      stopPairingPoll();
+      try {
+        await adminFetch("/api/pairing/cancel", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        });
+      } catch (_error) {
+        // best-effort
+      }
+    }
+
+    async function rescan() {
+      await cancelPairing();
+      await startPairing();
+    }
+
+    // -- confirm view (View 3) ----------------------------------------------
+
+    function selectCandidate(mac) {
+      const candidate = pairingCandidates.find((c) => c.mac === mac);
+      if (!candidate) return;
+      selectedCandidate = candidate;
+      selectedType = null;
+      renderConfirmView();
+      showView("confirm");
+    }
+
+    function ftmsHintsForCandidate() {
+      const telemetry = telemetryByMac.get(normalizeMac(selectedCandidate.mac));
+      const ftmsType = (telemetry?.ftms_type || "").toUpperCase();
+      return FTMS_HINT_MAP[ftmsType] || [];
+    }
+
+    function renderTypeGrid() {
+      const hints = ftmsHintsForCandidate();
+      const preselect = hints.length === 1 ? hints[0] : null;
+      if (preselect) selectedType = preselect;
+
+      const grid = document.getElementById("type-grid");
+      grid.innerHTML = EQUIPMENT_TYPE_CHIPS.map((type) => {
+        const hinted = hints.includes(type);
+        const selected = selectedType === type;
+        return `
+          <button type="button" class="type-chip ${hinted ? "hinted" : ""} ${selected ? "selected" : ""}" data-type="${escapeHtml(type)}">
+            ${hinted ? `<span class="suggested-tag">${escapeHtml(t("confirm.suggested_tag"))}</span>` : ""}
+            ${escapeHtml(typeLabel(type))}
+          </button>
+        `;
+      }).join("");
+
+      grid.querySelectorAll(".type-chip").forEach((chip) => {
+        chip.addEventListener("click", () => {
+          selectedType = chip.dataset.type;
+          renderTypeGrid();
+          updateConfirmSubmitState();
+        });
+      });
+      updateConfirmSubmitState();
+    }
+
+    function updateConfirmSubmitState() {
+      const submitBtn = document.getElementById("confirm-submit-btn");
+      submitBtn.disabled = !selectedType;
+      document.getElementById("confirm-type-hint").hidden = Boolean(selectedType);
+    }
+
+    function updateConfirmHeroMetric() {
+      if (!selectedCandidate) return;
+      const live = pairingCandidates.find((c) => c.mac === selectedCandidate.mac);
+      if (!live) return;
+      selectedCandidate = live;
+      const metricEl = document.getElementById("confirm-metric");
+      metricEl.textContent = live.moving ? formatMetric(live.latest?.speed_kph, " kph", 1) : "";
+    }
+
+    function renderConfirmView() {
+      document.getElementById("confirm-name").textContent = selectedCandidate.name || selectedCandidate.mac;
+      document.getElementById("confirm-channel").textContent = selectedCandidate.channel_id || "--";
+      document.getElementById("confirm-mac").textContent = selectedCandidate.mac;
+      const nameInput = document.getElementById("confirm-name-input");
+      nameInput.value = selectedCandidate.name || selectedCandidate.mac;
+      document.getElementById("confirm-name-field").hidden = true;
+      document.getElementById("confirm-message").textContent = "";
+      document.getElementById("confirm-message").className = "message";
+      updateConfirmHeroMetric();
+      renderTypeGrid();
+    }
+
+    document.getElementById("confirm-advanced-toggle").addEventListener("click", (event) => {
+      event.preventDefault();
+      const field = document.getElementById("confirm-name-field");
+      field.hidden = !field.hidden;
+    });
+
+    async function confirmPairing() {
+      if (!selectedCandidate || !selectedType) return;
+      const submitBtn = document.getElementById("confirm-submit-btn");
+      const messageEl = document.getElementById("confirm-message");
+      submitBtn.disabled = true;
+      const nameInput = document.getElementById("confirm-name-input");
+      const displayName = (nameInput.value || "").trim() || null;
+      try {
+        const response = await adminFetch("/api/pairing/confirm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            mac: selectedCandidate.mac,
+            equipment_type: selectedType,
+            display_name: displayName,
+          }),
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result.detail ? `${t("bindings.failed")}: ${result.detail}` : t("bindings.failed"));
+        }
+        pairingActive = false;
+        stopPairingPoll();
+        if (result.restart && result.restart.dry_run) {
+          messageEl.textContent = t("power.dry_run_warning");
+          messageEl.className = "message error";
+        } else {
+          messageEl.textContent = t("confirm.success");
+          messageEl.className = "message ok";
+        }
+        selectedCandidate = null;
+        selectedType = null;
+        window.setTimeout(goHome, 800);
+      } catch (error) {
+        messageEl.textContent = error.message;
+        messageEl.className = "message error";
+      } finally {
+        submitBtn.disabled = !selectedType;
+      }
+    }
+
+    // -- best-effort session cleanup on navigate-away -----------------------
+
+    function beaconCancelPairing() {
+      if (!pairingActive) return;
+      try {
+        const token = localStorage.getItem("fitrace.adminPassword") || localStorage.getItem("fitrace.adminToken") || "";
+        if (navigator.sendBeacon && !token) {
+          // sendBeacon can't attach custom headers; only usable when no admin
+          // token is configured. Otherwise fall through to the keepalive fetch.
+          navigator.sendBeacon("/api/pairing/cancel", new Blob([JSON.stringify({})], { type: "application/json" }));
+          return;
+        }
+        fetch("/api/pairing/cancel", {
+          method: "POST",
+          headers: adminHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({}),
+          keepalive: true,
+        }).catch(() => {});
+      } catch (_error) {
+        // best-effort only
+      }
+    }
+
+    window.addEventListener("beforeunload", beaconCancelPairing);
+    window.addEventListener("pagehide", beaconCancelPairing);
+
+    // -- wiring ---------------------------------------------------------
+
+    document.getElementById("add-device-btn").addEventListener("click", startPairing);
+    document.getElementById("pairing-rescan-btn").addEventListener("click", rescan);
+    document.getElementById("pairing-cancel-btn").addEventListener("click", async () => {
+      await cancelPairing();
+      await goHome();
+    });
+    document.getElementById("confirm-submit-btn").addEventListener("click", confirmPairing);
+    document.getElementById("confirm-back-btn").addEventListener("click", () => showView("pairing"));
+
+    applyTranslations();
+    loadConfig();
+    checkPowerDryRunMode();
+    refreshWifiChip();
+    refreshTelemetry();
+    setInterval(refreshWifiChip, 5000);
+    setInterval(refreshTelemetry, HOME_MONITOR_POLL_MS);
+  </script>
+</body>
+</html>

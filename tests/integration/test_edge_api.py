@@ -34,10 +34,35 @@ def test_edge_health_endpoint():
     assert response.json() == {"status": "ok", "role": "edge"}
 
 
-def test_edge_setup_page_includes_uart_antenna_controls_without_ble_scan_panel():
+def test_edge_operator_page_served_at_root():
+    # AGENT.md architecture decision: `/` now serves the new simplified
+    # operator page (a real static file, operator.html), i18n-injected the
+    # same way as the old page. `/maintenance` keeps the full old page.
     client = TestClient(edge_app_module.app)
 
     response = client.get("/")
+
+    assert response.status_code == 200
+    assert 'name="fitrace-page" content="operator"' in response.text
+    assert "__I18N_DICTIONARIES__" not in response.text
+    # zh-TW sample string proves server-side i18n injection actually ran.
+    assert "新增設備" in response.text
+
+
+def test_edge_maintenance_page_serves_old_setup_page():
+    client = TestClient(edge_app_module.app)
+
+    response = client.get("/maintenance")
+
+    assert response.status_code == 200
+    assert "UART Antenna Control" in response.text
+    assert 'name="fitrace-page" content="operator"' not in response.text
+
+
+def test_edge_setup_page_includes_uart_antenna_controls_without_ble_scan_panel():
+    client = TestClient(edge_app_module.app)
+
+    response = client.get("/maintenance")
 
     assert response.status_code == 200
     assert "FitRace Edge Node" in response.text
@@ -461,7 +486,7 @@ def test_edge_setup_page_monitor_poll_failure_resets_rebuild_guard():
     # successful poll thinks nothing changed and never rebuilds the cards.
     client = TestClient(edge_app_module.app)
 
-    response = client.get("/")
+    response = client.get("/maintenance")
 
     assert response.status_code == 200
     # One `let` declaration plus one reset inside the catch block.
@@ -473,7 +498,7 @@ def test_edge_setup_page_empty_channels_keep_uart_controls_reachable():
     # default_port instead of bricking every antenna button (including REBOOT).
     client = TestClient(edge_app_module.app)
 
-    response = client.get("/")
+    response = client.get("/maintenance")
 
     assert response.status_code == 200
     assert "antenna.no_channels" in response.text
@@ -495,7 +520,7 @@ def test_edge_setup_page_unassigned_bindings_stay_reachable_on_every_channel():
     # permanently dimmed or excluded from CONNECT targets on every channel.
     client = TestClient(edge_app_module.app)
 
-    response = client.get("/")
+    response = client.get("/maintenance")
 
     assert response.status_code == 200
     assert "function knownChannelIds()" in response.text
@@ -508,7 +533,7 @@ def test_edge_setup_page_single_fetch_wrapper_owns_401_banner():
     # banner can never be silently skipped by a copy-pasted call site.
     client = TestClient(edge_app_module.app)
 
-    response = client.get("/")
+    response = client.get("/maintenance")
 
     assert response.status_code == 200
     assert "async function adminFetch(url, options = {}) {" in response.text
@@ -532,7 +557,7 @@ def test_edge_setup_page_monitor_hidden_poll_only_recomputes_live_count():
     # recomputeMonitorLiveCount() instead of the full renderMonitorEquipment().
     client = TestClient(edge_app_module.app)
 
-    response = client.get("/")
+    response = client.get("/maintenance")
 
     assert response.status_code == 200
     assert "function recomputeMonitorLiveCount()" in response.text
@@ -547,7 +572,7 @@ def test_edge_setup_page_serves_i18n_via_server_side_injection_not_inline_dict()
     # the static HTML/JS must no longer hardcode the translation strings.
     client = TestClient(edge_app_module.app)
 
-    response = client.get("/")
+    response = client.get("/maintenance")
 
     assert response.status_code == 200
     assert "掃描會中斷目前已連線設備的即時數據。" in response.text
@@ -561,7 +586,7 @@ def test_edge_setup_page_uart_log_filter_keeps_tx_events_without_parsed():
     # The fix keeps a uart event unless it is specifically parsed telemetry.
     client = TestClient(edge_app_module.app)
 
-    response = client.get("/")
+    response = client.get("/maintenance")
 
     assert response.status_code == 200
     assert (
@@ -607,7 +632,7 @@ def test_edge_setup_page_restart_runtime_surfaces_dry_run_instead_of_false_succe
     # branch on dry_run/executed instead of just response.ok.
     client = TestClient(edge_app_module.app)
 
-    response = client.get("/")
+    response = client.get("/maintenance")
 
     assert response.status_code == 200
     source = response.text
@@ -638,7 +663,7 @@ def test_edge_setup_page_monitor_matches_telemetry_by_mac_not_only_node_id():
     # machine's real identity, so it must be the primary lookup key.
     client = TestClient(edge_app_module.app)
 
-    source = client.get("/").text
+    source = client.get("/maintenance").text
 
     assert "monitorNodeIdByMac" in source
     assert "function monitorKeyForBinding(" in source
@@ -653,3 +678,173 @@ def test_edge_setup_page_monitor_matches_telemetry_by_mac_not_only_node_id():
     live_fn = source[live_start : live_start + 800]
     assert "monitorKeyForBinding(binding)" in live_fn
     assert "monitorLatestByNode.get(binding.node_id)" not in live_fn
+
+
+class FakePairingAntennaRunner:
+    """Fakes AntennaCommandRunner for pairing-session integration tests:
+    "scan" answers with canned device sightings per port, everything else
+    just acks so reconnect_configured_devices' disconnect/connect/report
+    sequence doesn't blow up."""
+
+    def __init__(self, scan_results_by_port=None):
+        self.scan_results_by_port = scan_results_by_port or {}
+        self.calls = []
+
+    def run(self, request):
+        self.calls.append(request)
+        if request.command == "scan":
+            parsed = self.scan_results_by_port.get(request.port, [])
+            return {"port": request.port, "command": "scan", "parsed": parsed}
+        return {
+            "port": request.port,
+            "command": request.command,
+            "parsed": [{"type": "ok", "command": request.command.upper()}],
+        }
+
+
+def _install_fresh_pairing_session(
+    monkeypatch, tmp_path, runner, *, power_manager=None
+):
+    from edge_node.usecases.pairing_session import PairingSession
+
+    def restore(config):
+        return edge_app_module.reconnect_configured_devices(
+            config,
+            runner,
+            disconnect_first=True,
+            timeout_sec=5.0,
+            report_interval_ms=250,
+        )
+
+    manager = power_manager or edge_app_module.power_manager
+
+    def restart():
+        return edge_app_module.asdict(manager.restart_service())
+
+    session = PairingSession(
+        command_runner=runner,
+        event_log=edge_app_module.edge_event_log,
+        load_config=edge_app_module.load_edge_config,
+        save_config=edge_app_module.save_edge_config,
+        restore_configured_devices=restore,
+        restart_service=restart,
+        flag_path=tmp_path / "pairing.flag",
+    )
+    monkeypatch.setattr(edge_app_module, "pairing_session", session)
+    return session
+
+
+def test_pairing_session_start_status_confirm_happy_path(monkeypatch, tmp_path):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "node_id": "fitrace-edge-test",
+                "antenna_channels": [
+                    {"id": "uart-1", "port": "/dev/ttyAMA0"},
+                    {"id": "uart-2", "port": "/dev/ttyAMA4"},
+                ],
+                "equipment_bindings": [],
+                "max_ftms_connections": 10,
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(edge_app_module, "CONFIG_PATH", config_path)
+    runner = FakePairingAntennaRunner(
+        scan_results_by_port={
+            "/dev/ttyAMA0": [
+                {
+                    "type": "device",
+                    "address": "AA:BB:CC:DD:EE:05",
+                    "rssi": -40,
+                    "name": "Bike A",
+                }
+            ],
+        }
+    )
+    _install_fresh_pairing_session(monkeypatch, tmp_path, runner)
+    client = TestClient(edge_app_module.app)
+
+    start_response = client.post("/api/pairing/start", json={})
+    assert start_response.status_code == 200
+    start_payload = start_response.json()
+    assert start_payload["candidates"][0]["mac"] == "AA:BB:CC:DD:EE:05"
+    assert start_payload["capacity"]["per_channel"] == {"uart-1": 3, "uart-2": 3}
+
+    status_response = client.get("/api/pairing/status")
+    assert status_response.status_code == 200
+    status_payload = status_response.json()
+    assert status_payload["state"] == "observing"
+    assert status_payload["candidates"][0]["mac"] == "AA:BB:CC:DD:EE:05"
+
+    confirm_response = client.post(
+        "/api/pairing/confirm",
+        json={
+            "mac": "AA:BB:CC:DD:EE:05",
+            "equipment_type": "fan_bike",
+            "display_name": "Bike One",
+        },
+    )
+    assert confirm_response.status_code == 200
+    confirm_payload = confirm_response.json()
+    assert confirm_payload["binding"]["equipment_id"] == "Bike One"
+    assert confirm_payload["binding"]["ble_target"] == "AA:BB:CC:DD:EE:05"
+    assert confirm_payload["binding"]["antenna_channel"] == "uart-1"
+    assert "channels" in confirm_payload["reconnect"]
+    assert "dry_run" in confirm_payload["restart"]
+
+    saved = json.loads(config_path.read_text(encoding="utf-8"))
+    assert any(
+        binding["equipment_id"] == "Bike One" for binding in saved["equipment_bindings"]
+    )
+    # session must be idle again, ready for a fresh pairing attempt
+    assert client.get("/api/pairing/status").json() == {"state": "idle"}
+
+
+def test_pairing_confirm_surfaces_dry_run_power_manager_result(monkeypatch, tmp_path):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "node_id": "fitrace-edge-test",
+                "antenna_channels": [{"id": "uart-1", "port": "/dev/ttyAMA0"}],
+                "equipment_bindings": [],
+                "max_ftms_connections": 10,
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(edge_app_module, "CONFIG_PATH", config_path)
+    runner = FakePairingAntennaRunner(
+        scan_results_by_port={
+            "/dev/ttyAMA0": [
+                {
+                    "type": "device",
+                    "address": "AA:BB:CC:DD:EE:07",
+                    "rssi": -35,
+                    "name": "Rower Z",
+                }
+            ],
+        }
+    )
+    from fitrace_common.power_manager import PowerManager
+
+    dry_run_power_manager = PowerManager(
+        target="edge", service_name="fitracestudio-edge.service", dry_run=True
+    )
+    _install_fresh_pairing_session(
+        monkeypatch, tmp_path, runner, power_manager=dry_run_power_manager
+    )
+    client = TestClient(edge_app_module.app)
+
+    client.post("/api/pairing/start", json={})
+    confirm_response = client.post(
+        "/api/pairing/confirm",
+        json={"mac": "AA:BB:CC:DD:EE:07", "equipment_type": "rowing_machine"},
+    )
+
+    assert confirm_response.status_code == 200
+    payload = confirm_response.json()
+    assert payload["restart"]["dry_run"] is True
+    assert payload["restart"]["executed"] is False
