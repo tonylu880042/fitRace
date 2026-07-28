@@ -32,9 +32,23 @@ ftms_scanner = BleakFtmsScanner()
 wifi_status_reader = LinuxWifiStatusReader()
 edge_event_log = EdgeEventLog.from_env()
 antenna_command_runner = AntennaCommandRunner(event_log=edge_event_log)
+
+
+def _edge_service_restart_enabled() -> bool:
+    return (
+        os.getenv("FITRACE_EDGE_SERVICE_RESTART_ENABLED") == "1"
+        or os.getenv("FITRACE_POWER_COMMANDS_ENABLED") == "1"
+    )
+
+
 power_manager = PowerManager(
     target="edge",
     service_name="fitracestudio-edge.service",
+)
+service_restart_manager = PowerManager(
+    target="edge",
+    service_name="fitracestudio-edge.service",
+    dry_run=not _edge_service_restart_enabled(),
 )
 CONFIG_PATH = Path(__file__).resolve().parents[2] / "config.json"
 FALLBACK_ANTENNA_PORT = "/dev/serial0"
@@ -161,7 +175,7 @@ def _pairing_restore_configured_devices(config: EdgeNodeConfig) -> dict:
 
 
 def _pairing_restart_service() -> dict:
-    return asdict(power_manager.restart_service())
+    return asdict(service_restart_manager.restart_service())
 
 
 pairing_session = PairingSession(
@@ -187,7 +201,13 @@ def get_i18n_dictionaries():
 @app.get("/api/system/power/status")
 def get_power_status(request: Request):
     require_admin(request)
-    return power_manager.status()
+    status = power_manager.status()
+    restart_status = service_restart_manager.status()
+    return {
+        **status,
+        "restart_service_dry_run": restart_status["dry_run"],
+        "restart_service_enabled": not restart_status["dry_run"],
+    }
 
 
 def run_power_action(action):
@@ -200,7 +220,7 @@ def run_power_action(action):
 @app.post("/api/system/power/restart-service")
 def restart_edge_service(request: Request):
     require_admin(request)
-    return run_power_action(power_manager.restart_service)
+    return run_power_action(service_restart_manager.restart_service)
 
 
 @app.post("/api/system/power/reboot")
@@ -2192,7 +2212,7 @@ EDGE_SETUP_HTML = """
         const response = await adminFetch("/api/system/power/status");
         if (!response.ok) return;
         const status = await response.json();
-        if (status.dry_run) {
+        if (status.restart_service_dry_run ?? status.dry_run) {
           powerDryRunBadge.textContent = t("power.dry_run_badge");
           powerDryRunBadge.hidden = false;
         }

@@ -698,7 +698,7 @@
         const response = await adminFetch("/api/system/power/status");
         if (!response.ok) return;
         const status = await response.json();
-        if (status.dry_run) banner.hidden = false;
+        if (status.restart_service_dry_run ?? status.dry_run) banner.hidden = false;
       } catch (_error) {
         // best-effort; banner just stays hidden
       }

@@ -654,6 +654,20 @@ FITRACE_RACE_RESULTS_PATH=/var/lib/fitracestudio/race_results.jsonl
 FITRACE_EDGE_MONITOR_PATH=/var/lib/fitracestudio/edge_monitor.jsonl
 ```
 
+Edge runtime restart can be enabled independently from full-machine power
+actions. This is the preferred setting for the Edge setup UI because saving
+equipment or network settings only needs to restart the Edge runtime:
+
+```text
+FITRACE_EDGE_SERVICE_RESTART_ENABLED=1
+```
+
+Provision it with
+`deploy_update/systemd/install-edge-service-restart.sh install`. The installer
+grants the Edge web-config service user permission to run only
+`/usr/bin/systemctl restart fitracestudio-edge.service`; it does not grant
+reboot, shutdown, arbitrary `systemctl`, or arbitrary service access.
+
 `FITRACE_ADMIN_TOKEN` protects Hub and Edge HTTP management APIs. `FITRACE_NODE_COMMAND_TOKEN` protects MQTT commands sent from the Hub to Edge Nodes, including system shutdown. Hub and Edge services in the same shipped system must share the same `FITRACE_NODE_COMMAND_TOKEN`. If `FITRACE_NODE_COMMAND_TOKEN` is not set, the current implementation falls back to `FITRACE_ADMIN_TOKEN`; production deployments should set both explicitly so browser-facing admin access and machine-to-machine command authorization can rotate independently.
 
 `FITRACE_RACE_RESULTS_PATH` controls where completed race snapshots are stored.

@@ -48,7 +48,8 @@ Production deployments must configure local management tokens before enabling op
 | --- | --- | --- |
 | `FITRACE_ADMIN_TOKEN` | Hub and Edge services | Protects HTTP management APIs such as race control, station assignment, updates, power actions, Edge Wi-Fi status, and Edge BLE troubleshooting scan. |
 | `FITRACE_NODE_COMMAND_TOKEN` | Hub and Edge services | Protects Hub-to-Edge MQTT commands such as Edge shutdown. Hub and every Edge Node in one shipped system must share this value. |
-| `FITRACE_POWER_COMMANDS_ENABLED` | Hub and Edge services | Set to `1` on deployed hardware — required for restart/reboot/shutdown buttons to work at all. Omit it only on development machines; without it those buttons report success but run nothing, and the setup page shows a "power actions not enabled" warning. |
+| `FITRACE_POWER_COMMANDS_ENABLED` | Hub and Edge services | Enables full-machine reboot and shutdown in addition to service restart. Keep it unset unless every exposed action is intentionally authorized. |
+| `FITRACE_EDGE_SERVICE_RESTART_ENABLED` | Edge web-config service | Enables only the allowlisted `fitracestudio-edge.service` restart used after saving Edge settings. It does not enable reboot or shutdown. |
 | `FITRACE_EDGE_MONITOR_PATH` | Edge service | Stores recent UART RX/TX and MQTT publish monitor events shown on the Edge setup page. |
 
 Use a systemd drop-in so release updates do not overwrite local secrets:
@@ -92,13 +93,35 @@ sudo tee /etc/fitracestudio/edge.env >/dev/null <<'EOF'
 FITRACE_ADMIN_TOKEN=replace-with-local-admin-token
 FITRACE_NODE_COMMAND_TOKEN=replace-with-hub-edge-command-token
 FITRACE_EDGE_MONITOR_PATH=/opt/fitracestudio/edge_monitor.jsonl
-# Real hardware: keep this enabled, or the setup page's Restart / reboot /
-# shutdown buttons silently do nothing (they return success without running).
-# Comment it out only on a development machine you do not want rebooted.
-FITRACE_POWER_COMMANDS_ENABLED=1
+# Only the Edge web-config service needs this. It enables the exact runtime
+# restart used to apply saved settings, without enabling machine power actions.
+FITRACE_EDGE_SERVICE_RESTART_ENABLED=1
+# Enable this separately only when the deployment intentionally exposes
+# full-machine reboot and shutdown:
+# FITRACE_POWER_COMMANDS_ENABLED=1
 EOF
 sudo chown root:fitrace /etc/fitracestudio/edge.env
 sudo chmod 0640 /etc/fitracestudio/edge.env
+```
+
+For an Edge installed with `fitracestudio-edge-web-config.service`, provision
+the narrow restart capability with the repository installer:
+
+```bash
+sudo deploy_update/systemd/install-edge-service-restart.sh install
+```
+
+The installer adds only this sudo command for the Edge service user:
+
+```text
+/usr/bin/systemctl restart fitracestudio-edge.service
+```
+
+It also enables `FITRACE_EDGE_SERVICE_RESTART_ENABLED` on the web-config
+service. Reboot and shutdown remain in dry-run mode. To remove the capability:
+
+```bash
+sudo deploy_update/systemd/install-edge-service-restart.sh uninstall
 ```
 
 ## Runtime verification

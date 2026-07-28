@@ -357,6 +357,68 @@ def test_edge_power_shutdown_requires_confirmation_and_defaults_to_dry_run():
     assert payload["command"] == ["sudo", "systemctl", "poweroff"]
 
 
+def test_edge_runtime_restart_flag_keeps_full_power_flag_backward_compatible(
+    monkeypatch,
+):
+    monkeypatch.delenv("FITRACE_EDGE_SERVICE_RESTART_ENABLED", raising=False)
+    monkeypatch.delenv("FITRACE_POWER_COMMANDS_ENABLED", raising=False)
+    assert edge_app_module._edge_service_restart_enabled() is False
+
+    monkeypatch.setenv("FITRACE_EDGE_SERVICE_RESTART_ENABLED", "1")
+    assert edge_app_module._edge_service_restart_enabled() is True
+
+    monkeypatch.delenv("FITRACE_EDGE_SERVICE_RESTART_ENABLED")
+    monkeypatch.setenv("FITRACE_POWER_COMMANDS_ENABLED", "1")
+    assert edge_app_module._edge_service_restart_enabled() is True
+
+
+def test_edge_runtime_restart_can_be_enabled_without_enabling_machine_power(
+    monkeypatch,
+):
+    from fitrace_common.power_manager import PowerManager
+
+    executed_commands = []
+    service_restart_manager = PowerManager(
+        target="edge",
+        service_name="fitracestudio-edge.service",
+        dry_run=False,
+        command_runner=executed_commands.append,
+    )
+    machine_power_manager = PowerManager(
+        target="edge",
+        service_name="fitracestudio-edge.service",
+        dry_run=True,
+        command_runner=lambda command: (_ for _ in ()).throw(
+            AssertionError(f"machine power command must not run: {command}")
+        ),
+    )
+    monkeypatch.setattr(
+        edge_app_module, "service_restart_manager", service_restart_manager
+    )
+    monkeypatch.setattr(edge_app_module, "power_manager", machine_power_manager)
+    client = TestClient(edge_app_module.app)
+
+    status = client.get("/api/system/power/status").json()
+    assert status["dry_run"] is True
+    assert status["restart_service_dry_run"] is False
+    assert status["restart_service_enabled"] is True
+
+    restart = client.post("/api/system/power/restart-service", json={})
+    assert restart.status_code == 200
+    assert restart.json()["executed"] is True
+    assert executed_commands == [
+        ["sudo", "systemctl", "restart", "fitracestudio-edge.service"]
+    ]
+
+    reboot = client.post(
+        "/api/system/power/reboot",
+        json={"confirmation": "REBOOT"},
+    )
+    assert reboot.status_code == 200
+    assert reboot.json()["executed"] is False
+    assert reboot.json()["dry_run"] is True
+
+
 def test_edge_ble_scan_endpoint_filters_ftms_devices(monkeypatch):
     monkeypatch.setattr(edge_app_module, "ftms_scanner", FakeScanner())
     client = TestClient(edge_app_module.app)
@@ -681,6 +743,16 @@ def test_edge_setup_page_restart_runtime_surfaces_dry_run_instead_of_false_succe
     assert "power.dry_run_warning" in restart_fn
 
 
+def test_edge_pages_use_the_runtime_restart_capability_for_the_warning_banner():
+    client = TestClient(edge_app_module.app)
+
+    for path in ("/", "/maintenance"):
+        source = client.get(path).text
+        check_start = source.index("async function checkPowerDryRunMode()")
+        check_fn = source[check_start : check_start + 800]
+        assert "status.restart_service_dry_run ?? status.dry_run" in check_fn
+
+
 def test_edge_locale_files_contain_power_dry_run_keys():
     locales_dir = Path(edge_app_module.__file__).resolve().parent.parent / "locales"
     en = json.loads((locales_dir / "en.json").read_text(encoding="utf-8"))
@@ -775,7 +847,7 @@ def _install_fresh_pairing_session(
             report_interval_ms=250,
         )
 
-    manager = power_manager or edge_app_module.power_manager
+    manager = power_manager or edge_app_module.service_restart_manager
 
     def restart():
         return edge_app_module.asdict(manager.restart_service())
