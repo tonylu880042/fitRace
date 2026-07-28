@@ -942,7 +942,7 @@
     };
     const MONITOR_LIVE_WINDOW_MS = 3000;
     const HOME_MONITOR_POLL_MS = 500;
-    const UART_MONITOR_MAX = 80;
+    const UART_MONITOR_MAX = 200;
     const PAIRING_POLL_MS = 1000;
 
     function normalizeMac(value) {
@@ -1232,7 +1232,7 @@
       const rows = events.filter(
         (event) => event.source === "uart"
           && (event.direction === "rx" || event.direction === "tx")
-      ).slice(-UART_MONITOR_MAX);
+      ).slice(-UART_MONITOR_MAX).reverse();
       const signature = `${currentLocale}|${rows.map((event) => (
         `${event.timestamp_epoch_ms}|${event.direction}|${event.channel}|${(
           event.parsed && event.parsed.raw != null ? event.parsed.raw : event.message
@@ -1241,7 +1241,9 @@
       if (signature === uartMonitorSignature) return;
 
       const firstRender = uartMonitorSignature === null;
-      const wasAtBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 24;
+      const wasAtTop = log.scrollTop < 24;
+      // Keep the snapshot stable while the operator reads older rows.
+      if (!firstRender && !wasAtTop) return;
       uartMonitorSignature = signature;
       if (!rows.length) {
         log.innerHTML = `<div class="uart-monitor-empty">${escapeHtml(t("uartlog.empty"))}</div>`;
@@ -1260,8 +1262,8 @@
             + `</div>`;
         }).join("");
       }
-      if (firstRender || wasAtBottom) {
-        log.scrollTop = log.scrollHeight;
+      if (firstRender || wasAtTop) {
+        log.scrollTop = 0;
       }
     }
 
@@ -1319,7 +1321,7 @@
 
     async function refreshTelemetry() {
       try {
-        const response = await adminFetch("/api/monitor/events?limit=200");
+        const response = await adminFetch("/api/monitor/events?limit=500");
         const payload = await response.json();
         if (!response.ok) return;
         const events = Array.isArray(payload.events) ? payload.events : [];

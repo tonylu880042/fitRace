@@ -182,7 +182,7 @@ def test_edge_operator_uart_monitor_is_three_times_taller():
     assert ".uart-monitor-log {\n        height: 720px;" in mobile_source
 
 
-def test_edge_operator_uart_monitor_reuses_telemetry_poll_and_keeps_latest_events():
+def test_edge_operator_uart_monitor_shows_latest_first_and_keeps_only_200_messages():
     client = TestClient(edge_app_module.app)
 
     source = client.get("/").text
@@ -193,12 +193,18 @@ def test_edge_operator_uart_monitor_reuses_telemetry_poll_and_keeps_latest_event
     refresh_end = source.index("// -- view switching", refresh_start)
     refresh_source = source[refresh_start:refresh_end]
 
-    assert "const UART_MONITOR_MAX = 80" in source
+    assert "const UART_MONITOR_MAX = 200" in source
     assert 'event.source === "uart"' in render_source
     assert 'event.direction === "rx" || event.direction === "tx"' in render_source
-    assert ".slice(-UART_MONITOR_MAX)" in render_source
+    assert ".slice(-UART_MONITOR_MAX).reverse()" in render_source
     assert 'event.parsed && event.parsed.raw != null' in render_source
     assert "parsed.type === \"telemetry\"" not in render_source
+    assert "const wasAtTop = log.scrollTop < 24;" in render_source
+    assert "if (firstRender || wasAtTop)" in render_source
+    assert "log.scrollTop = 0;" in render_source
+    assert "wasAtBottom" not in render_source
+    assert "log.scrollTop = log.scrollHeight" not in render_source
+    assert 'adminFetch("/api/monitor/events?limit=500")' in refresh_source
     assert "renderUartMonitor(events);" in refresh_source
 
 
