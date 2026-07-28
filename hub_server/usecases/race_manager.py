@@ -201,14 +201,6 @@ class RaceManager:
                     "max_power_watts": 0,
                     "finished_time_ms": None,
                 }
-        if self._config and self._config.competition_mode == "individual":
-            for station_number, node_id in self._stations.items():
-                if node_id and node_id not in progress:
-                    progress[node_id] = self._empty_participant_progress(
-                        node_id,
-                        f"Station {station_number}",
-                        station_number,
-                    )
         return progress
 
     def get_team_leaderboard_progress(self) -> list[Dict[str, Any]]:
@@ -596,15 +588,6 @@ class RaceManager:
                     "max_power_watts": 0,
                     "finished_time_ms": None,
                 }
-        if self._config and self._config.competition_mode == "individual":
-            for station_number, node_id in self._stations.items():
-                if node_id and node_id not in self._progress:
-                    self._progress[node_id] = self._empty_participant_progress(
-                        node_id,
-                        f"Station {station_number}",
-                        station_number,
-                    )
-
     def stop_race(self):
         if self._state == RaceState.STOPPED:
             return

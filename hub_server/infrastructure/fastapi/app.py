@@ -478,6 +478,7 @@ def get_race_readiness_status() -> dict:
             )
 
     station_health = []
+    individual_station_issues: list[str] = []
     for station_number, station in participant_stations:
         health = station_stream_health(station.get("node_id"))
         health_item = {
@@ -489,17 +490,35 @@ def get_race_readiness_status() -> dict:
         }
         station_health.append(health_item)
         if health["health"] in ("missing", "stale"):
-            blocking_issues.append(
-                station_block_message(station_number, health.get("reason"))
-            )
+            issue = station_block_message(station_number, health.get("reason"))
+            if is_team_race:
+                blocking_issues.append(issue)
+            else:
+                individual_station_issues.append(issue)
 
     unhealthy = [s for s in station_health if s.get("health") != "online"]
-    if unhealthy:
+    if is_team_race and unhealthy:
         station_list = ", ".join(str(s["station_number"]) for s in unhealthy)
         checks["stations"] = build_check(
             "block",
             f"{len(unhealthy)} station(s) need attention (Station {station_list}).",
         )
+    elif not is_team_race and assigned_stations:
+        online_count = sum(
+            1 for station in station_health if station.get("health") == "online"
+        )
+        if online_count == 0:
+            blocking_issues.extend(individual_station_issues)
+            checks["stations"] = build_check(
+                "block", "No assigned station is online."
+            )
+        elif unhealthy:
+            warnings.extend(individual_station_issues)
+            checks["stations"] = build_check(
+                "warn",
+                f"{online_count} station(s) online; "
+                f"{len(unhealthy)} offline station(s) will be excluded.",
+            )
 
     if is_team_race:
         team_names = {

@@ -154,9 +154,7 @@ def test_individual_race_uses_station_name_for_anonymous_participant():
     manager.start_race()
 
     progress = manager.get_leaderboard_progress()
-    assert progress["bike-01"]["athlete_name"] == "Station 1"
-    assert progress["bike-01"]["station_number"] == 1
-    assert progress["bike-01"]["team_name"] is None
+    assert progress == {}
 
     progress = manager.ingest_telemetry(
         {
@@ -167,6 +165,8 @@ def test_individual_race_uses_station_name_for_anonymous_participant():
         }
     )
     assert progress["bike-01"]["athlete_name"] == "Station 1"
+    assert progress["bike-01"]["station_number"] == 1
+    assert progress["bike-01"]["team_name"] is None
     assert progress["bike-01"]["distance_m"] == 50.0
 
 

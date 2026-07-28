@@ -656,6 +656,10 @@ def test_individual_race_can_start_anonymously_with_an_online_station():
     node_registry.clear()
     set_online_station(1, "node-01")
     client.post(
+        "/api/stations/assign",
+        json={"station_number": 2, "node_id": "offline-node"},
+    )
+    client.post(
         "/api/race/configure",
         json={
             "race_type": "distance",
@@ -675,9 +679,13 @@ def test_individual_race_can_start_anonymously_with_an_online_station():
         "status": "info",
         "message": "Individual race allows anonymous participation.",
     }
-    assert payload["checks"]["stations"]["status"] == "ok"
-    assert payload["station_health"][0]["station_number"] == 1
-    assert payload["station_health"][0]["athlete_name"] is None
+    assert payload["checks"]["stations"]["status"] == "warn"
+    station_health = {
+        station["station_number"]: station for station in payload["station_health"]
+    }
+    assert station_health[1]["health"] == "online"
+    assert station_health[1]["athlete_name"] is None
+    assert station_health[2]["health"] == "missing"
 
     started = client.post("/api/race/start")
     assert started.status_code == 200
