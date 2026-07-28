@@ -542,7 +542,7 @@
       </section>
       <div class="wizard-actions">
         <button type="button" id="wifi-rescan-btn" class="btn-secondary" data-i18n="wifi.rescan">Rescan</button>
-        <button type="button" id="wifi-back-btn" class="btn-secondary" data-i18n="wizard.back">Back</button>
+        <button type="button" id="wifi-back-btn" class="btn-secondary" data-i18n="operator.back_home">Back to home</button>
       </div>
     </main>
 
@@ -786,7 +786,7 @@
             type="button"
             class="btn-secondary"
             data-wifi-index="${index}"
-            aria-label="${escapeHtml(`${t("wifi.connect")} ${net.ssid}`)}"
+            aria-label="${escapeHtml(`${net.active ? t("wifi.connected") : t("wifi.connect")} ${net.ssid}`)}"
             ${net.active ? "disabled" : ""}
           >${escapeHtml(net.active ? t("wifi.connected") : t("wifi.connect"))}</button>
         </div>
@@ -839,7 +839,7 @@
           <input id="wifi-password" type="password" autocomplete="new-password">
         </div>
         <div class="wizard-actions">
-          <button type="button" class="btn-secondary" id="wifi-network-back">${escapeHtml(t("wizard.back"))}</button>
+          <button type="button" class="btn-secondary" id="wifi-network-back">${escapeHtml(t("wifi.back_to_list"))}</button>
           <button type="button" class="btn-secondary" id="wifi-connect-confirm">${escapeHtml(t("wifi.connect"))}</button>
         </div>
       `;

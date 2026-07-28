@@ -76,6 +76,12 @@ def test_edge_operator_wifi_view_uses_existing_scan_and_connect_apis():
     assert "showView(\"wifi\")" in source
     assert 'body: JSON.stringify({ ssid: net.ssid, password })' in source
     assert 'id="wifi-password"' in source
+    assert (
+        '${net.active ? t("wifi.connected") : t("wifi.connect")} ${net.ssid}'
+        in source
+    )
+    assert 'data-i18n="operator.back_home"' in source
+    assert 't("wifi.back_to_list")' in source
 
 
 def test_edge_maintenance_page_serves_old_setup_page():
