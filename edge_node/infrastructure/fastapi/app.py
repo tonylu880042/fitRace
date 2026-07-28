@@ -475,28 +475,44 @@ def configure_central_hub(payload: CentralHubPayload, request: Request):
 
     config = load_edge_config()
     changed = config.mqtt_host != payload.host or config.mqtt_port != payload.port
+    if not changed:
+        return {
+            "status": "saved",
+            "reachable": True,
+            "config": config.model_dump(),
+            "restart": None,
+            "warnings": [],
+        }
+
     updated_config = config.model_copy(
         update={"mqtt_host": payload.host, "mqtt_port": payload.port},
         deep=True,
     )
     save_edge_config(updated_config)
 
-    restart = None
-    warnings = []
-    if changed:
+    try:
+        restart = _pairing_restart_service()
+        if not restart.get("executed"):
+            raise RuntimeError("runtime restart was not executed")
+    except (PowerActionError, RuntimeError, OSError) as exc:
         try:
-            restart = _pairing_restart_service()
-            if restart.get("dry_run"):
-                warnings.append("runtime restart is not enabled")
-        except (PowerActionError, RuntimeError, OSError) as exc:
-            warnings.append(f"runtime restart: {exc}")
+            save_edge_config(config)
+        except Exception as rollback_error:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Central Hub update failed and rollback failed: {rollback_error}",
+            ) from rollback_error
+        raise HTTPException(
+            status_code=503,
+            detail=f"Central Hub update was not applied: {exc}",
+        ) from exc
 
     return {
-        "status": "saved" if not warnings else "saved_with_warnings",
+        "status": "saved",
         "reachable": True,
         "config": updated_config.model_dump(),
         "restart": restart,
-        "warnings": warnings,
+        "warnings": [],
     }
 
 

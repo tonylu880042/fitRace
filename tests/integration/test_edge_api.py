@@ -888,6 +888,53 @@ def test_configure_central_hub_verifies_then_saves_and_restarts_runtime(
     assert saved["mqtt_port"] == 1883
 
 
+def test_configure_central_hub_rolls_back_when_runtime_restart_is_not_executed(
+    monkeypatch, tmp_path
+):
+    from fitrace_common.power_manager import PowerActionResult
+
+    original = {
+        "node_id": "fitrace-edge-test",
+        "mqtt_host": "localhost",
+        "mqtt_port": 1883,
+        "equipment_bindings": [],
+    }
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps(original), encoding="utf-8")
+    monkeypatch.setattr(edge_app_module, "CONFIG_PATH", config_path)
+    monkeypatch.setattr(
+        edge_app_module,
+        "central_hub_reachable",
+        lambda host, port, timeout_sec=2.0: True,
+    )
+
+    class FakeServiceRestartManager:
+        def restart_service(self):
+            return PowerActionResult(
+                action="restart-service",
+                target="edge",
+                dry_run=True,
+                command=["sudo", "systemctl", "restart", "fitracestudio-edge.service"],
+                executed=False,
+            )
+
+    monkeypatch.setattr(
+        edge_app_module, "service_restart_manager", FakeServiceRestartManager()
+    )
+    client = TestClient(edge_app_module.app)
+
+    response = client.post(
+        "/api/central-hub",
+        json={"host": "192.168.0.130", "port": 1883},
+    )
+
+    assert response.status_code == 503
+    assert "restart" in response.json()["detail"].lower()
+    saved = json.loads(config_path.read_text(encoding="utf-8"))
+    assert saved["mqtt_host"] == original["mqtt_host"]
+    assert saved["mqtt_port"] == original["mqtt_port"]
+
+
 def test_configure_central_hub_rejects_unreachable_address_without_saving(
     monkeypatch, tmp_path
 ):
