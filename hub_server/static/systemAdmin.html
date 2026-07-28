@@ -2174,9 +2174,9 @@
       const update = state.update || {};
       const nodes = (state.nodes || []).map((node) => {
         const streams = (node.equipment_streams || [])
-          .map((s) => `${s.equipment_id || s.node_id}${s.antenna_channel ? `@${s.antenna_channel}` : ""}`)
+          .map((s) => `${s.display_name || s.equipment_id || s.node_id}${s.antenna_channel ? `@${s.antenna_channel}` : ""}`)
           .join(", ") || "no streams";
-        return `  ${node.edge_node_id} · ${node.status} · v${node.software_version || "?"} · ${node.ip || "?"} · ${streams}`;
+        return `  ${node.display_name || node.edge_node_id} · ${node.status} · v${node.software_version || "?"} · ${node.ip || "?"} · ${streams}`;
       }).join("\n") || "  none seen";
       return [
         "FitRaceStudio system report",

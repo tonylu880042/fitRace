@@ -423,6 +423,8 @@ def test_system_admin_uses_friendly_stream_labels_and_filters_stale_edge_ids():
     assert "function staleStreamLabel(nodeId, catalog)" in source
     assert "if (staleStreamLabel(nodeId, catalog)) return;" in source
     assert "streamDisplayLabel(station.node_id" in source
+    assert "s.display_name || s.equipment_id || s.node_id" in source
+    assert "node.display_name || node.edge_node_id" in source
     assert (
         "const staleAssigned = Boolean(staleStreamLabel(station.node_id, catalog));"
         in source
