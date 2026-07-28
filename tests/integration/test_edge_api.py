@@ -118,6 +118,45 @@ def test_edge_operator_wifi_view_uses_existing_scan_and_connect_apis():
     assert "scanWifiNetworks();" not in init_source
 
 
+def test_edge_operator_page_shows_live_uart_rx_tx_monitor_below_wifi():
+    client = TestClient(edge_app_module.app)
+
+    source = client.get("/").text
+
+    wifi_title_index = source.index('id="wifi-settings-title"')
+    uart_title_index = source.index('id="uart-monitor-title"')
+    edge_column_index = source.index('id="edge-column"')
+    assert wifi_title_index < uart_title_index < edge_column_index
+    assert 'aria-labelledby="wifi-settings-title uart-monitor-title"' in source
+    assert 'aria-labelledby="uart-monitor-title"' in source
+    assert 'id="uart-monitor-log"' in source
+    assert 'tabindex="0"' in source
+    assert '"uartmonitor.title": "UART RX/TX Monitor"' in source
+    assert '"uartmonitor.title": "UART 收發監看"' in source
+    assert '"uartmonitor.rx": "RX Receive"' in source
+    assert '"uartmonitor.tx": "TX Send"' in source
+
+
+def test_edge_operator_uart_monitor_reuses_telemetry_poll_and_keeps_latest_events():
+    client = TestClient(edge_app_module.app)
+
+    source = client.get("/").text
+    render_start = source.index("function renderUartMonitor(events)")
+    render_end = source.index("async function refreshTelemetry()", render_start)
+    render_source = source[render_start:render_end]
+    refresh_start = render_end
+    refresh_end = source.index("// -- view switching", refresh_start)
+    refresh_source = source[refresh_start:refresh_end]
+
+    assert "const UART_MONITOR_MAX = 80" in source
+    assert 'event.source === "uart"' in render_source
+    assert 'event.direction === "rx" || event.direction === "tx"' in render_source
+    assert ".slice(-UART_MONITOR_MAX)" in render_source
+    assert 'event.parsed && event.parsed.raw != null' in render_source
+    assert "parsed.type === \"telemetry\"" not in render_source
+    assert "renderUartMonitor(events);" in refresh_source
+
+
 def test_edge_maintenance_page_serves_old_setup_page():
     client = TestClient(edge_app_module.app)
 
