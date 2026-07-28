@@ -630,16 +630,27 @@
     let selectedCandidate = null;
     let selectedType = null;
 
+    function bindingTargetCount(target) {
+      const normalized = normalizeMac(target);
+      if (!normalized) return 0;
+      const bindings = Array.isArray(edgeConfig?.equipment_bindings) ? edgeConfig.equipment_bindings : [];
+      return bindings.filter((binding) => normalizeMac(binding.ble_target) === normalized).length;
+    }
+
     function monitorKeyForBinding(binding) {
       // Same reasoning as /maintenance's monitorKeyForBinding: node_id is only
       // a label and can disagree with a stale runtime, so resolve by MAC
       // first and fall back to node_id.
-      const byMac = telemetryByMac.get(normalizeMac(binding.ble_target));
+      const byMac = bindingTargetCount(binding.ble_target) === 1
+        ? telemetryByMac.get(normalizeMac(binding.ble_target))
+        : null;
       return byMac ? binding.ble_target : binding.node_id;
     }
 
     function telemetryForBinding(binding) {
-      const byMac = telemetryByMac.get(normalizeMac(binding.ble_target));
+      const byMac = bindingTargetCount(binding.ble_target) === 1
+        ? telemetryByMac.get(normalizeMac(binding.ble_target))
+        : null;
       if (byMac) return byMac;
       return telemetryByNodeId.get(binding.node_id) || null;
     }

@@ -156,6 +156,44 @@ def test_edge_config_endpoint_reads_and_writes_equipment_bindings(
     assert saved["equipment_bindings"][0]["equipment_id"] == "跑步機_A"
 
 
+def test_edge_config_endpoint_rejects_duplicate_binding_macs(monkeypatch, tmp_path):
+    config_path = tmp_path / "config.json"
+    original = {
+        "node_id": "fitrace-edge-test",
+        "max_ftms_connections": 2,
+        "antenna_channels": [{"id": "uart-1", "port": "/dev/ttyAMA0"}],
+        "equipment_bindings": [],
+    }
+    config_path.write_text(json.dumps(original), encoding="utf-8")
+    monkeypatch.setattr(edge_app_module, "CONFIG_PATH", config_path)
+    client = TestClient(edge_app_module.app)
+
+    duplicate_payload = {
+        **original,
+        "equipment_bindings": [
+            {
+                "node_id": "fitrace-edge-test-01",
+                "equipment_id": "BIKE_A",
+                "equipment_type": "fan_bike",
+                "ble_target": "74:46:B3:DB:48:49",
+                "antenna_channel": "uart-1",
+            },
+            {
+                "node_id": "fitrace-edge-test-02",
+                "equipment_id": "BIKE_B",
+                "equipment_type": "fan_bike",
+                "ble_target": "74:46:b3:db:48:49",
+                "antenna_channel": "uart-1",
+            },
+        ],
+    }
+
+    response = client.post("/api/config", json=duplicate_payload)
+
+    assert response.status_code == 422
+    assert json.loads(config_path.read_text(encoding="utf-8")) == original
+
+
 def test_reconnect_configured_antenna_devices_groups_targets_by_channel(
     monkeypatch, tmp_path
 ):
@@ -678,6 +716,27 @@ def test_edge_setup_page_monitor_matches_telemetry_by_mac_not_only_node_id():
     live_fn = source[live_start : live_start + 800]
     assert "monitorKeyForBinding(binding)" in live_fn
     assert "monitorLatestByNode.get(binding.node_id)" not in live_fn
+
+
+def test_edge_setup_page_duplicate_mac_bindings_fall_back_to_node_id():
+    client = TestClient(edge_app_module.app)
+
+    source = client.get("/maintenance").text
+    key_fn_start = source.index("function monitorKeyForBinding(")
+    key_fn = source[key_fn_start : key_fn_start + 700]
+
+    assert "monitorBindingTargetCount" in source
+    assert "monitorBindingTargetCount(binding.ble_target) === 1" in key_fn
+    assert "return binding.node_id;" in key_fn
+
+    operator_source = client.get("/").text
+    operator_key_fn_start = operator_source.index("function telemetryForBinding(")
+    operator_key_fn = operator_source[
+        operator_key_fn_start : operator_key_fn_start + 700
+    ]
+    assert "bindingTargetCount" in operator_source
+    assert "bindingTargetCount(binding.ble_target) === 1" in operator_key_fn
+    assert "telemetryByNodeId.get(binding.node_id)" in operator_key_fn
 
 
 class FakePairingAntennaRunner:

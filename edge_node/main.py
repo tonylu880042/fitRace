@@ -10,7 +10,10 @@ from edge_node.domain.models import EdgeNodeConfig, EquipmentBinding
 from edge_node.infrastructure.mqtt.client import AsyncMqttClient
 from edge_node.adapters.mqtt_publisher import MqttPublisher
 from edge_node.usecases.mock_generator import generate_mock_telemetry
-from edge_node.infrastructure.ble.bleak_client import BleakTelemetryClient, BLEAK_AVAILABLE
+from edge_node.infrastructure.ble.bleak_client import (
+    BleakTelemetryClient,
+    BLEAK_AVAILABLE,
+)
 from edge_node.usecases.multi_ftms_manager import MultiFtmsManager
 from edge_node.usecases.antenna_ftms_manager import AntennaFtmsManager
 from edge_node.usecases.event_log import EdgeEventLog
@@ -66,6 +69,7 @@ async def shutdown(loop, signal=None):
     await asyncio.gather(*tasks, return_exceptions=True)
     loop.stop()
 
+
 async def execute_node_shutdown():
     logger.info("Initiating system shutdown for Edge Node...")
     await asyncio.sleep(0.5)
@@ -75,6 +79,7 @@ async def execute_node_shutdown():
     else:
         try:
             import subprocess
+
             subprocess.run(["sudo", "systemctl", "poweroff"], check=True, timeout=15)
         except Exception as e:
             logger.error(f"Failed to execute sudo systemctl poweroff: {e}")
@@ -94,17 +99,7 @@ def _is_authorized_node_command(payload: dict) -> bool:
 def main():
     # Load configuration
     config_path = os.path.join(os.path.dirname(__file__), "config.json")
-    if os.path.exists(config_path):
-        with open(config_path, "r") as f:
-            config = json.load(f)
-    else:
-        config = {
-            "node_id": "treadmill-01",
-            "equipment_id": "TREAD_01",
-            "equipment_type": "treadmill",
-            "mqtt_host": "localhost",
-            "mqtt_port": 1883,
-        }
+    config = _load_config_file(config_path)
 
     edge_config = _build_edge_config(config)
     node_id = edge_config.node_id
@@ -139,7 +134,7 @@ def main():
 
         try:
             await mqtt_client.connect()
-            
+
             # Subscribe to command topics
             command_topic_broadcast = "fitrace/nodes/command"
             command_topic_specific = f"fitrace/nodes/{node_id}/command"
@@ -150,7 +145,9 @@ def main():
                     action = payload.get("action")
                     if action == "shutdown":
                         if not _is_authorized_node_command(payload):
-                            logger.warning("Rejected unauthorized MQTT shutdown command")
+                            logger.warning(
+                                "Rejected unauthorized MQTT shutdown command"
+                            )
                             return
                         logger.info("Received MQTT shutdown command")
                         loop.call_soon_threadsafe(
@@ -162,7 +159,11 @@ def main():
             mqtt_client._client.on_message = on_message
             mqtt_client._client.subscribe(command_topic_broadcast)
             mqtt_client._client.subscribe(command_topic_specific)
-            logger.info("Subscribed to MQTT command topics: %s and %s", command_topic_broadcast, command_topic_specific)
+            logger.info(
+                "Subscribed to MQTT command topics: %s and %s",
+                command_topic_broadcast,
+                command_topic_specific,
+            )
 
         except Exception as e:
             logger.error(
@@ -171,7 +172,9 @@ def main():
             # In standalone mode, we still generate logs to stdout
             mqtt_client = None
 
-        publisher = MqttPublisher(mqtt_client, event_log=event_log) if mqtt_client else None
+        publisher = (
+            MqttPublisher(mqtt_client, event_log=event_log) if mqtt_client else None
+        )
         heartbeat_task = None
         if publisher:
             heartbeat_task = asyncio.create_task(
@@ -179,6 +182,7 @@ def main():
             )
 
         try:
+
             async def on_telemetry(telemetry):
                 logger.info(
                     "Telemetry [%s/%s]: Speed=%skph, Dist=%sm, Power=%sW, Cadence=%srpm, HR=%sbpm",
@@ -221,6 +225,9 @@ def main():
                         edge_config=edge_config,
                         on_telemetry=on_telemetry,
                         event_log=event_log,
+                        config_loader=lambda: _build_edge_config(
+                            _load_config_file(config_path)
+                        ),
                     )
                     try:
                         await antenna_manager.start()
@@ -268,7 +275,9 @@ def main():
                     await ftms_manager.stop()
             else:
                 if edge_config.equipment_bindings and not BLEAK_AVAILABLE:
-                    logger.warning("BLE configured but bleak is not installed. Falling back to Mock generator.")
+                    logger.warning(
+                        "BLE configured but bleak is not installed. Falling back to Mock generator."
+                    )
 
                 mock_bindings = edge_config.equipment_bindings or [
                     EquipmentBinding(
@@ -313,12 +322,15 @@ def _build_edge_config(config: dict) -> EdgeNodeConfig:
     if "equipment_bindings" in config:
         return EdgeNodeConfig.model_validate(config)
 
-    ble_target = config.get("ble_target") or config.get("ble_mac") or config.get("ble_name")
+    ble_target = (
+        config.get("ble_target") or config.get("ble_mac") or config.get("ble_name")
+    )
     bindings = []
     if ble_target:
         bindings.append(
             {
-                "node_id": config.get("telemetry_node_id") or config.get("node_id", "treadmill-01"),
+                "node_id": config.get("telemetry_node_id")
+                or config.get("node_id", "treadmill-01"),
                 "equipment_id": config.get("equipment_id", "TREAD_01"),
                 "equipment_type": config.get("equipment_type", "treadmill"),
                 "ble_target": ble_target,
@@ -333,8 +345,23 @@ def _build_edge_config(config: dict) -> EdgeNodeConfig:
         available_channels=config.get("available_channels", 2),
         software_version=config.get("software_version"),
         antenna_protocol_version=config.get("antenna_protocol_version"),
-        equipment_bindings=[EquipmentBinding.model_validate(binding) for binding in bindings],
+        equipment_bindings=[
+            EquipmentBinding.model_validate(binding) for binding in bindings
+        ],
     )
+
+
+def _load_config_file(config_path: str) -> dict:
+    if os.path.exists(config_path):
+        with open(config_path, encoding="utf-8") as config_file:
+            return json.load(config_file)
+    return {
+        "node_id": "treadmill-01",
+        "equipment_id": "TREAD_01",
+        "equipment_type": "treadmill",
+        "mqtt_host": "localhost",
+        "mqtt_port": 1883,
+    }
 
 
 def _build_node_status(
@@ -394,7 +421,9 @@ async def _run_node_status_heartbeat(
         await asyncio.sleep(interval_sec)
 
 
-async def _run_mock_telemetry_stream(binding: EquipmentBinding, publisher: MqttPublisher | None):
+async def _run_mock_telemetry_stream(
+    binding: EquipmentBinding, publisher: MqttPublisher | None
+):
     topic = f"gym/telemetry/{binding.node_id}"
     generator = generate_mock_telemetry(
         node_id=binding.node_id,
@@ -417,7 +446,9 @@ async def _run_mock_telemetry_stream(binding: EquipmentBinding, publisher: MqttP
             try:
                 await publisher.publish_telemetry(topic, telemetry)
             except Exception as e:
-                logger.error("Failed to publish telemetry for %s: %s", binding.node_id, e)
+                logger.error(
+                    "Failed to publish telemetry for %s: %s", binding.node_id, e
+                )
 
 
 def _get_lan_ip() -> str | None:

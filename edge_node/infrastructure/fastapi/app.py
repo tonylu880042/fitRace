@@ -1,11 +1,12 @@
 import json
 import os
 import socket
+import tempfile
 import time
 from dataclasses import asdict
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 
@@ -68,7 +69,20 @@ class WifiConnectPayload(BaseModel):
 
 
 class EdgeConfigPayload(EdgeNodeConfig):
-    pass
+    @model_validator(mode="after")
+    def reject_duplicate_binding_identities(self):
+        seen_node_ids: set[str] = set()
+        seen_targets: set[str] = set()
+        for binding in self.equipment_bindings:
+            if binding.node_id in seen_node_ids:
+                raise ValueError(f"duplicate binding node_id: {binding.node_id}")
+            seen_node_ids.add(binding.node_id)
+
+            normalized_target = binding.ble_target.strip().upper()
+            if normalized_target in seen_targets:
+                raise ValueError(f"duplicate binding ble_target: {binding.ble_target}")
+            seen_targets.add(normalized_target)
+        return self
 
 
 class PairingStartPayload(BaseModel):
@@ -103,10 +117,30 @@ def load_edge_config() -> EdgeNodeConfig:
 
 
 def save_edge_config(config: EdgeNodeConfig):
-    CONFIG_PATH.write_text(
-        json.dumps(config.model_dump(), indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
+    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=CONFIG_PATH.parent,
+            prefix=f".{CONFIG_PATH.name}.",
+            delete=False,
+        ) as config_file:
+            temp_path = Path(config_file.name)
+            json.dump(
+                config.model_dump(),
+                config_file,
+                indent=2,
+                ensure_ascii=False,
+            )
+            config_file.write("\n")
+            config_file.flush()
+            os.fsync(config_file.fileno())
+        os.replace(temp_path, CONFIG_PATH)
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
 
 
 def default_antenna_port() -> str:
@@ -1381,14 +1415,26 @@ EDGE_SETUP_HTML = """
       return String(value || "").trim().toUpperCase();
     }
 
+    function monitorBindingTargetCount(target) {
+      const normalized = normalizeMonitorMac(target);
+      if (!normalized) return 0;
+      const bindings = Array.isArray(edgeConfig?.equipment_bindings) ? edgeConfig.equipment_bindings : [];
+      return bindings.filter((binding) => normalizeMonitorMac(binding.ble_target) === normalized).length;
+    }
+
     // node_id is only a label, and it can disagree with the runtime: a binding
     // edited while the runtime still holds an older config gets no match there,
     // so its telemetry is published under a MAC-derived node_id instead. The MAC
     // is the machine's real identity, so resolve by MAC first and keep node_id
-    // as the fallback for payloads that carry no mac_address.
+    // as the fallback for payloads that carry no mac_address. A corrupt/legacy
+    // config may contain the same MAC twice; in that case MAC is ambiguous, so
+    // keep the two cards separate by their node_id instead of collapsing them.
     function monitorKeyForBinding(binding) {
-      const byMac = monitorNodeIdByMac.get(normalizeMonitorMac(binding.ble_target));
-      return byMac || binding.node_id;
+      const byMac = monitorBindingTargetCount(binding.ble_target) === 1
+        ? monitorNodeIdByMac.get(normalizeMonitorMac(binding.ble_target))
+        : null;
+      if (byMac) return byMac;
+      return binding.node_id;
     }
     let monitorServerNowEpochMs = null;
     let monitorServerNowReceivedAtMs = null;

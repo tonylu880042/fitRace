@@ -460,41 +460,70 @@ class PairingSession:
         if equipment_type not in EQUIPMENT_TYPES:
             raise PairingSessionError(f"unknown equipment_type: {equipment_type!r}")
 
-        config = self._load_config()
-        name = display_name or candidate.name or candidate.mac
-        existing_equipment_ids = {
-            binding.equipment_id for binding in config.equipment_bindings
-        }
-        if name in existing_equipment_ids:
-            mac_suffix = candidate.mac.replace(":", "")[-4:]
-            name = f"{name}-{mac_suffix}"
+        if self._pending_binding is not None:
+            binding = self._pending_binding
+            if (
+                _normalize_mac(binding.ble_target) != normalized_mac
+                or binding.equipment_type != equipment_type
+            ):
+                raise PairingSessionError(
+                    "A different binding confirmation is already being finalized"
+                )
+            new_config = self._pending_config or self._load_config()
+        else:
+            config = self._load_config()
+            duplicate = next(
+                (
+                    binding
+                    for binding in config.equipment_bindings
+                    if _normalize_mac(binding.ble_target) == normalized_mac
+                ),
+                None,
+            )
+            if duplicate is not None:
+                raise PairingSessionError(
+                    f"{candidate.mac} is already bound to {duplicate.equipment_id!r}"
+                )
 
-        node_id = _next_node_id(config)
-        binding = EquipmentBinding(
-            node_id=node_id,
-            equipment_id=name,
-            equipment_type=equipment_type,
-            ble_target=candidate.mac,
-            antenna_channel=candidate.channel_id,
-        )
+            name = display_name or candidate.name or candidate.mac
+            existing_equipment_ids = {
+                binding.equipment_id for binding in config.equipment_bindings
+            }
+            if name in existing_equipment_ids:
+                mac_suffix = candidate.mac.replace(":", "")[-4:]
+                name = f"{name}-{mac_suffix}"
 
-        payload = config.model_dump()
-        payload["equipment_bindings"] = [
-            *payload["equipment_bindings"],
-            binding.model_dump(),
-        ]
-        if len(payload["equipment_bindings"]) > payload["max_ftms_connections"]:
-            payload["max_ftms_connections"] = len(payload["equipment_bindings"])
-        try:
-            # EdgeNodeConfig's own validators (in particular the per-channel
-            # <=3 connections limit) are the real enforcement point here --
-            # our accepts_new check above is only a cheap pre-check for a
-            # friendlier error message.
-            new_config = EdgeNodeConfig.model_validate(payload)
-        except ValidationError as exc:
-            raise PairingSessionError(str(exc)) from exc
+            node_id = _next_node_id(config)
+            binding = EquipmentBinding(
+                node_id=node_id,
+                equipment_id=name,
+                equipment_type=equipment_type,
+                ble_target=candidate.mac,
+                antenna_channel=candidate.channel_id,
+            )
 
-        self._save_config(new_config)
+            payload = config.model_dump()
+            payload["equipment_bindings"] = [
+                *payload["equipment_bindings"],
+                binding.model_dump(),
+            ]
+            if len(payload["equipment_bindings"]) > payload["max_ftms_connections"]:
+                payload["max_ftms_connections"] = len(payload["equipment_bindings"])
+            try:
+                # EdgeNodeConfig's own validators (in particular the per-channel
+                # <=3 connections limit) are the real enforcement point here --
+                # our accepts_new check above is only a cheap pre-check for a
+                # friendlier error message.
+                new_config = EdgeNodeConfig.model_validate(payload)
+            except ValidationError as exc:
+                raise PairingSessionError(str(exc)) from exc
+
+            self._save_config(new_config)
+            # Persistence succeeded, but UART restoration and service restart
+            # below may still fail. Keep this exact result so an operator retry
+            # finalizes the same binding instead of appending the MAC again.
+            self._pending_binding = binding
+            self._pending_config = new_config
         reconnect_result = self._restore_configured_devices(new_config)
         restart_result = self._restart_service()
         self._delete_flag()
@@ -526,6 +555,8 @@ class PairingSession:
         self._started_at: int | None = None
         self._candidates: list[PairingCandidate] = []
         self._start_result: dict | None = None
+        self._pending_binding: EquipmentBinding | None = None
+        self._pending_config: EdgeNodeConfig | None = None
 
     def _current_flag_path(self) -> Path:
         return self._explicit_flag_path or pairing_flag_path()

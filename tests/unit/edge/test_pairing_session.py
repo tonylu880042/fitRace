@@ -578,6 +578,31 @@ def test_confirm_persists_config_restores_devices_restarts_and_clears_flag(tmp_p
     assert harness.session.state == PairingSession.STATE_IDLE
 
 
+def test_confirm_retry_after_restore_failure_does_not_duplicate_binding(tmp_path):
+    harness = _harness_ready_to_confirm(tmp_path)
+    restore_attempts = 0
+
+    def flaky_restore(_config):
+        nonlocal restore_attempts
+        restore_attempts += 1
+        if restore_attempts == 1:
+            raise RuntimeError("transient UART restore failure")
+        return {"status": "reconnected", "channels": []}
+
+    harness.session._restore_configured_devices = flaky_restore
+
+    with pytest.raises(RuntimeError, match="transient UART restore failure"):
+        harness.session.confirm("AA:BB:CC:DD:EE:05", "fan_bike")
+
+    assert len(harness.config_holder["config"].equipment_bindings) == 1
+
+    result = harness.session.confirm("AA:BB:CC:DD:EE:05", "fan_bike")
+
+    assert result["binding"]["ble_target"] == "AA:BB:CC:DD:EE:05"
+    assert len(harness.config_holder["config"].equipment_bindings) == 1
+    assert restore_attempts == 2
+
+
 def test_confirm_config_validation_is_the_real_enforcement_point(tmp_path):
     # Precondition at scan time: uart-1 has 2 configured bindings, so the
     # candidate's cached channel_accepts_new is True. Simulate the config

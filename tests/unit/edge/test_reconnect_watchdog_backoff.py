@@ -64,7 +64,12 @@ class FakeClock:
         self._now += seconds
 
 
-def make_manager(serial, clock, ble_target="AA:BB:CC:DD:EE:01"):
+def make_manager(
+    serial,
+    clock,
+    ble_target="AA:BB:CC:DD:EE:01",
+    config_loader=None,
+):
     channels = [AntennaChannelConfig(id="uart-1", port="/dev/ttyAMA0")]
     config = EdgeNodeConfig(
         node_id="fitrace-edge-01",
@@ -83,12 +88,16 @@ def make_manager(serial, clock, ble_target="AA:BB:CC:DD:EE:01"):
     async def on_telemetry(_telemetry):
         pass
 
+    manager_kwargs = {}
+    if config_loader is not None:
+        manager_kwargs["config_loader"] = config_loader
     manager = AntennaFtmsManager(
         edge_config=config,
         on_telemetry=on_telemetry,
         serial_factory=lambda channel: serial,
         command_timeout_sec=0.05,
         clock=clock,
+        **manager_kwargs,
     )
     manager._serials = {"uart-1": serial}
     return manager
@@ -123,6 +132,76 @@ def test_matching_board_target_does_not_resend_connect(caplog):
     assert any(
         "waiting for board auto-reconnect" in record.message
         for record in caplog.records
+    )
+
+
+def test_cold_start_trusts_matching_board_target_without_prior_connect(caplog):
+    serial = FakeSerial(
+        {
+            "STATUS;\r\n": ["STATUS:IDLE,0/1;\r\n"],
+        }
+    )
+    clock = FakeClock()
+    manager = make_manager(serial, clock)
+    manager._saved_list_channels = {"uart-1"}
+
+    with caplog.at_level(logging.INFO, logger="edge_node.antenna_ftms_manager"):
+        manager._reconnect_missing_targets()
+
+    assert connect_writes(serial) == []
+    assert any(
+        "waiting for board auto-reconnect" in record.message
+        for record in caplog.records
+    )
+
+
+def test_config_change_during_watchdog_prevents_reconnecting_removed_mac():
+    serial = FakeSerial(
+        {
+            "STATUS;\r\n": ["STATUS:IDLE,0/0;\r\n"],
+            "CONNECT:AA:BB:CC:DD:EE:01;\r\n": ["CONNECT:OK;\r\n"],
+            "REPORT:250;\r\n": ["REPORT:OK;\r\n"],
+        }
+    )
+    clock = FakeClock()
+    configs = []
+
+    def load_config():
+        return configs.pop(0) if len(configs) > 1 else configs[0]
+
+    manager = make_manager(serial, clock, config_loader=load_config)
+    old_config = manager._edge_config.model_copy(deep=True)
+    cleared_config = manager._edge_config.model_copy(deep=True)
+    cleared_config.equipment_bindings = []
+    configs.extend([old_config, cleared_config])
+
+    manager._reconnect_missing_targets()
+
+    assert connect_writes(serial) == []
+    assert manager._edge_config.equipment_bindings == []
+
+
+def test_config_reload_failure_skips_stale_reconnect(caplog):
+    serial = FakeSerial(
+        {
+            "STATUS;\r\n": ["STATUS:IDLE,0/0;\r\n"],
+            "CONNECT:AA:BB:CC:DD:EE:01;\r\n": ["CONNECT:OK;\r\n"],
+            "REPORT:250;\r\n": ["REPORT:OK;\r\n"],
+        }
+    )
+    clock = FakeClock()
+
+    def load_config():
+        raise OSError("config temporarily unavailable")
+
+    manager = make_manager(serial, clock, config_loader=load_config)
+
+    with caplog.at_level(logging.WARNING, logger="edge_node.antenna_ftms_manager"):
+        manager._reconnect_missing_targets()
+
+    assert serial.writes == []
+    assert any(
+        "skipping reconnect watchdog" in record.message for record in caplog.records
     )
 
 

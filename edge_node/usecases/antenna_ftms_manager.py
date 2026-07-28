@@ -70,6 +70,7 @@ class AntennaFtmsManager:
         data_timeout_sec: float = 10.0,
         event_log=None,
         clock: Callable[[], float] = time.monotonic,
+        config_loader: Callable[[], EdgeNodeConfig] | None = None,
     ):
         if not edge_config.antenna_channels:
             raise ValueError("antenna_channels is required for antenna FTMS manager")
@@ -86,6 +87,7 @@ class AntennaFtmsManager:
         self._reconnect_interval_sec = reconnect_interval_sec
         self._data_timeout_sec = data_timeout_sec
         self._clock = clock
+        self._config_loader = config_loader
         self._last_data_by_mac: dict[str, float] = {}
         self._last_raw_distance_by_mac: dict[str, float] = {}
         self._last_raw_energy_by_mac: dict[str, float] = {}
@@ -96,6 +98,7 @@ class AntennaFtmsManager:
         # "we need to send something new/different".
         self._last_connect_macs_by_channel: dict[str, frozenset[str]] = {}
         self._last_connect_at_by_channel: dict[str, float] = {}
+        self._saved_list_channels: set[str] = set()
         self._stop_event = threading.Event()
         self._task: asyncio.Task | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -131,6 +134,9 @@ class AntennaFtmsManager:
         }
         try:
             boot_has_list = self._ping_channels()
+            self._saved_list_channels = {
+                channel_id for channel_id, has_list in boot_has_list.items() if has_list
+            }
             no_list_channels = {
                 channel_id
                 for channel_id, has_list in boot_has_list.items()
@@ -576,6 +582,12 @@ class AntennaFtmsManager:
                 "pass so its temp CONNECT list is left alone"
             )
             return
+        if self._refresh_configured_bindings() is None:
+            logger.warning(
+                "Configured bindings are unavailable; skipping reconnect watchdog "
+                "pass to avoid using stale MACs"
+            )
+            return
         expected_by_channel: dict[str, list[str]] = {}
         for binding in self._edge_config.equipment_bindings:
             if not binding.ble_target or not MAC_ADDRESS_PATTERN.match(
@@ -611,15 +623,48 @@ class AntennaFtmsManager:
                 continue
             connected = status.get("connected")
             expected_set = frozenset(expected)
-            if connected is None or connected >= len(expected):
+            last_macs = self._last_connect_macs_by_channel.get(channel_id)
+            board_target = status.get("target")
+
+            if (
+                last_macs is None
+                and channel_id in self._saved_list_channels
+                and board_target == len(expected)
+            ):
+                # A HAS_LIST board survives runtime restarts with its target
+                # list intact, while this manager's in-memory "last pushed"
+                # record does not. When STATUS confirms the expected target
+                # count, adopt the configured set as our baseline instead of
+                # destructively sending CONNECT just because memory is empty.
+                self._last_connect_macs_by_channel[channel_id] = expected_set
+                if connected is not None and connected < len(expected):
+                    logger.info(
+                        "[%s] board target list matches (%s/%s connected); "
+                        "waiting for board auto-reconnect",
+                        channel_id,
+                        connected,
+                        len(expected),
+                    )
                 continue
 
-            last_macs = self._last_connect_macs_by_channel.get(channel_id)
-            if last_macs != expected_set:
-                # The list itself changed (or we never pushed it at all).
+            if last_macs is not None and last_macs != expected_set:
+                # The list itself changed.
                 # STATUS only reports a count, so it cannot tell us a
                 # same-count MAC swap happened -- push regardless of
                 # cooldown or what the board's own target count says.
+                refresh_result = self._refresh_configured_bindings()
+                if refresh_result is not False:
+                    if refresh_result:
+                        logger.info(
+                            "Configured bindings changed during watchdog pass; "
+                            "discarding the stale reconnect decision"
+                        )
+                    else:
+                        logger.warning(
+                            "Configured bindings became unavailable during watchdog "
+                            "pass; discarding the stale reconnect decision"
+                        )
+                    return
                 logger.warning(
                     "[%s] antenna target list changed, reissuing CONNECT %s",
                     channel_id,
@@ -628,8 +673,13 @@ class AntennaFtmsManager:
                 self._connect_assignments({channel_id: sorted(expected)})
                 continue
 
-            board_target = status.get("target")
-            if board_target == len(expected):
+            if connected is None or connected >= len(expected):
+                continue
+
+            if (
+                board_target == len(expected)
+                and self._last_connect_macs_by_channel.get(channel_id) == expected_set
+            ):
                 # The board already holds the right list and its firmware
                 # auto-reconnect is presumably still in progress -- resending
                 # CONNECT here would tear down that progress and restart it.
@@ -661,7 +711,74 @@ class AntennaFtmsManager:
                 len(expected),
                 sorted(expected),
             )
+            refresh_result = self._refresh_configured_bindings()
+            if refresh_result is not False:
+                if refresh_result:
+                    logger.info(
+                        "Configured bindings changed during watchdog pass; "
+                        "discarding the stale reconnect decision"
+                    )
+                else:
+                    logger.warning(
+                        "Configured bindings became unavailable during watchdog "
+                        "pass; discarding the stale reconnect decision"
+                    )
+                return
             self._connect_assignments({channel_id: sorted(expected)})
+
+    def _refresh_configured_bindings(self) -> bool | None:
+        """Reload bindings before watchdog decisions.
+
+        The web setup service writes config.json in a separate process. Without
+        this refresh, a successful DISCONNECT after removing a binding can be
+        immediately undone by this long-running runtime using its stale
+        in-memory MAC list. Returns True when the binding set changed so a
+        caller holding an old reconciliation decision can safely abandon it.
+        Returns None when the latest config cannot be loaded; callers must
+        fail closed rather than reconnecting a stale MAC list.
+        """
+        if self._config_loader is None:
+            return False
+        try:
+            fresh_config = self._config_loader()
+        except Exception as exc:
+            logger.warning("Unable to refresh Edge config for watchdog: %s", exc)
+            return None
+
+        current_signature = tuple(
+            (
+                binding.node_id,
+                binding.equipment_id,
+                binding.equipment_type,
+                _normalize_device_id(binding.ble_target),
+                binding.antenna_channel,
+            )
+            for binding in self._edge_config.equipment_bindings
+        )
+        fresh_signature = tuple(
+            (
+                binding.node_id,
+                binding.equipment_id,
+                binding.equipment_type,
+                _normalize_device_id(binding.ble_target),
+                binding.antenna_channel,
+            )
+            for binding in fresh_config.equipment_bindings
+        )
+        if fresh_signature == current_signature:
+            return False
+
+        self._edge_config.equipment_bindings = [
+            binding.model_copy(deep=True) for binding in fresh_config.equipment_bindings
+        ]
+        self._edge_config.max_ftms_connections = fresh_config.max_ftms_connections
+        self._bindings_by_mac.clear()
+        self._next_binding_index_by_channel.clear()
+        logger.info(
+            "Reloaded %s configured antenna binding(s)",
+            len(self._edge_config.equipment_bindings),
+        )
+        return True
 
     def _to_telemetry(self, channel_id: str, parsed: dict[str, Any]) -> TelemetryData:
         mac = parsed["address"]
