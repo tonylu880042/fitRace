@@ -56,11 +56,25 @@ def test_edge_operator_page_can_scan_and_connect_wifi_without_maintenance_page()
 
     assert response.status_code == 200
     source = response.text
-    assert 'id="wifi-settings-btn"' in source
-    assert 'id="view-wifi"' in source
+    assert 'id="edge-workspace"' in source
+    assert 'id="wifi-column"' in source
+    assert 'id="edge-column"' in source
     assert 'id="wifi-networks"' in source
     assert 'id="wifi-scan-message"' in source
     assert 'aria-live="polite"' in source
+    assert source.index('id="wifi-column"') < source.index('id="edge-column"')
+    assert 'id="wifi-settings-btn"' not in source
+    assert 'id="view-wifi"' not in source
+
+
+def test_edge_operator_workspace_is_two_columns_and_stacks_on_narrow_screens():
+    client = TestClient(edge_app_module.app)
+
+    source = client.get("/").text
+
+    assert "grid-template-columns: minmax(300px, 360px) minmax(0, 1fr)" in source
+    assert "@media (max-width: 820px)" in source
+    assert "grid-template-columns: 1fr" in source
 
 
 def test_edge_operator_wifi_view_uses_existing_scan_and_connect_apis():
@@ -70,18 +84,18 @@ def test_edge_operator_wifi_view_uses_existing_scan_and_connect_apis():
 
     assert "/api/wifi/networks" in source
     assert "/api/wifi/connect" in source
-    assert "async function openWifiSettings()" in source
     assert "async function scanWifiNetworks()" in source
     assert "function renderWifiConnect(net)" in source
-    assert "showView(\"wifi\")" in source
+    assert "async function openWifiSettings()" not in source
+    assert "showView(\"wifi\")" not in source
     assert 'body: JSON.stringify({ ssid: net.ssid, password })' in source
     assert 'id="wifi-password"' in source
     assert (
         '${net.active ? t("wifi.connected") : t("wifi.connect")} ${net.ssid}'
         in source
     )
-    assert 'data-i18n="operator.back_home"' in source
     assert 't("wifi.back_to_list")' in source
+    assert "\n    scanWifiNetworks();" in source
 
 
 def test_edge_maintenance_page_serves_old_setup_page():

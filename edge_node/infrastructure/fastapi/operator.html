@@ -35,7 +35,7 @@
     }
 
     .app {
-      width: min(560px, 100vw);
+      width: min(1180px, 100vw);
       margin: 0 auto;
       padding: 20px 16px 48px;
     }
@@ -108,7 +108,30 @@
       color: var(--warn);
     }
 
-    .view { margin-top: 16px; }
+    .view { margin-top: 0; }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
+      align-items: start;
+      gap: 16px;
+      margin-top: 16px;
+    }
+
+    .wifi-column {
+      position: sticky;
+      top: 16px;
+    }
+
+    .wifi-column .panel {
+      display: flex;
+      max-height: calc(100vh - 32px);
+      flex-direction: column;
+    }
+
+    .edge-column {
+      min-width: 0;
+    }
 
     .panel {
       border: 1px solid var(--border);
@@ -223,12 +246,6 @@
     }
 
     .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
-
-    .btn-secondary.full-width {
-      display: block;
-      width: 100%;
-      margin-top: 12px;
-    }
 
     .message {
       min-height: 18px;
@@ -450,6 +467,8 @@
       display: grid;
       gap: 8px;
       margin-top: 12px;
+      min-height: 0;
+      overflow-y: auto;
     }
 
     .wifi-network-row {
@@ -485,6 +504,49 @@
       padding-bottom: 12px;
       border-bottom: 1px solid var(--border);
     }
+
+    .wifi-current-summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      font-family: var(--mono);
+    }
+
+    .wifi-current-name {
+      display: flex;
+      min-width: 0;
+      align-items: center;
+      gap: 8px;
+    }
+
+    #wifi-current-network {
+      overflow-wrap: anywhere;
+    }
+
+    #wifi-current-signal {
+      flex: none;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    @media (max-width: 820px) {
+      .workspace {
+        grid-template-columns: 1fr;
+      }
+
+      .wifi-column {
+        position: static;
+      }
+
+      .wifi-column .panel {
+        max-height: none;
+      }
+
+      .wifi-network-list {
+        max-height: 360px;
+      }
+    }
   </style>
 </head>
 <body>
@@ -492,10 +554,6 @@
     <header class="op-header">
       <h1 data-i18n="operator.title">FitRace Equipment Setup</h1>
       <div class="chip-row">
-        <div class="chip" id="wifi-chip">
-          <span class="chip-dot" id="wifi-chip-dot"></span>
-          <span id="wifi-chip-text">--</span>
-        </div>
         <div class="chip" id="hub-chip">
           <span data-i18n="operator.hub_label">Hub</span>
           <span id="hub-chip-text">--</span>
@@ -514,78 +572,81 @@
 
     <div id="power-dry-run-banner" class="banner warn" hidden data-i18n="power.dry_run_badge"></div>
 
-    <main id="view-home" class="view">
-      <section class="panel">
-        <h2 id="bindings-count-title"></h2>
-        <div id="binding-cards" class="card-grid"></div>
-      </section>
-      <button id="wifi-settings-btn" class="btn-secondary full-width" type="button" data-i18n="operator.wifi_settings">Choose Wi-Fi network</button>
-      <button id="add-device-btn" class="btn-primary" type="button" data-i18n="operator.add_device">+ Add device</button>
-      <div class="message" id="add-device-message"></div>
-      <footer class="op-footer">
-        <a href="/maintenance" id="maintenance-link" data-i18n="operator.maintenance_link">Maintenance mode</a>
-      </footer>
-    </main>
-
-    <main id="view-wifi" class="view" hidden>
-      <section class="panel" aria-labelledby="wifi-settings-title">
-        <h2 id="wifi-settings-title" data-i18n="wifi.picker_title">Wi-Fi networks</h2>
-        <div class="wifi-current">
-          <div class="status-line">
-            <span data-i18n="wifi.current_network">Current network</span>
-            <strong id="wifi-current-network">--</strong>
+    <div id="edge-workspace" class="workspace">
+      <aside id="wifi-column" class="wifi-column" aria-labelledby="wifi-settings-title">
+        <section class="panel">
+          <h2 id="wifi-settings-title" data-i18n="wifi.picker_title">Wi-Fi networks</h2>
+          <div class="wifi-current">
+            <div class="wifi-current-summary">
+              <div class="wifi-current-name">
+                <span class="chip-dot" id="wifi-chip-dot"></span>
+                <strong id="wifi-current-network">--</strong>
+              </div>
+              <span id="wifi-current-signal">--</span>
+            </div>
           </div>
-        </div>
-        <div data-i18n="wifi.picker_hint">Select the AP this Edge Node should connect to.</div>
-        <div id="wifi-networks" class="wifi-network-list"></div>
-        <div id="wifi-scan-message" class="message" aria-live="polite"></div>
-      </section>
-      <div class="wizard-actions">
-        <button type="button" id="wifi-rescan-btn" class="btn-secondary" data-i18n="wifi.rescan">Rescan</button>
-        <button type="button" id="wifi-back-btn" class="btn-secondary" data-i18n="operator.back_home">Back to home</button>
-      </div>
-    </main>
+          <div data-i18n="wifi.picker_hint">Select the AP this Edge Node should connect to.</div>
+          <div id="wifi-networks" class="wifi-network-list" tabindex="0"></div>
+          <div id="wifi-scan-message" class="message" aria-live="polite"></div>
+          <button type="button" id="wifi-rescan-btn" class="btn-secondary" data-i18n="wifi.rescan">Rescan</button>
+        </section>
+      </aside>
 
-    <main id="view-pairing" class="view" hidden>
-      <div class="banner" data-i18n="pairing.instruction"></div>
-      <div class="capacity-strip" id="pairing-capacity"></div>
-      <div id="pairing-moving"></div>
-      <div id="pairing-idle"></div>
-      <div class="group-label" id="pairing-unranked-label" data-i18n="pairing.unranked_group" hidden></div>
-      <div id="pairing-unranked"></div>
-      <div class="message" id="pairing-message"></div>
-      <div class="wizard-actions">
-        <button type="button" id="pairing-rescan-btn" class="btn-secondary" data-i18n="pairing.rescan">Rescan</button>
-        <button type="button" id="pairing-cancel-btn" class="btn-secondary" data-i18n="pairing.cancel">Cancel</button>
-      </div>
-    </main>
+      <div id="edge-column" class="edge-column">
+        <main id="view-home" class="view">
+          <section class="panel">
+            <h2 id="bindings-count-title"></h2>
+            <div id="binding-cards" class="card-grid"></div>
+          </section>
+          <button id="add-device-btn" class="btn-primary" type="button" data-i18n="operator.add_device">+ Add device</button>
+          <div class="message" id="add-device-message"></div>
+          <footer class="op-footer">
+            <a href="/maintenance" id="maintenance-link" data-i18n="operator.maintenance_link">Maintenance mode</a>
+          </footer>
+        </main>
 
-    <main id="view-confirm" class="view" hidden>
-      <div class="confirm-hero">
-        <div class="confirm-name" id="confirm-name"></div>
-        <div class="confirm-tag" data-i18n="confirm.hero_tag">Matches the display on the equipment console</div>
-        <div class="confirm-metric" id="confirm-metric"></div>
+        <main id="view-pairing" class="view" hidden>
+          <div class="banner" data-i18n="pairing.instruction"></div>
+          <div class="capacity-strip" id="pairing-capacity"></div>
+          <div id="pairing-moving"></div>
+          <div id="pairing-idle"></div>
+          <div class="group-label" id="pairing-unranked-label" data-i18n="pairing.unranked_group" hidden></div>
+          <div id="pairing-unranked"></div>
+          <div class="message" id="pairing-message"></div>
+          <div class="wizard-actions">
+            <button type="button" id="pairing-rescan-btn" class="btn-secondary" data-i18n="pairing.rescan">Rescan</button>
+            <button type="button" id="pairing-cancel-btn" class="btn-secondary" data-i18n="pairing.cancel">Cancel</button>
+          </div>
+        </main>
+
+        <main id="view-confirm" class="view" hidden>
+          <div class="confirm-hero">
+            <div class="confirm-name" id="confirm-name"></div>
+            <div class="confirm-tag" data-i18n="confirm.hero_tag">Matches the display on the equipment console</div>
+            <div class="confirm-metric" id="confirm-metric"></div>
+          </div>
+          <div class="field">
+            <label data-i18n="bindings.type">Equipment type</label>
+            <div class="type-grid" id="type-grid"></div>
+            <div class="message" id="confirm-type-hint" data-i18n="confirm.select_type_hint">Choose the equipment type to continue</div>
+          </div>
+          <div class="readonly-rows">
+            <div class="status-line"><span data-i18n="confirm.channel_label">Channel</span><strong id="confirm-channel">--</strong></div>
+            <div class="status-line"><span data-i18n="monitor.mac">MAC</span><strong id="confirm-mac">--</strong></div>
+          </div>
+          <a href="#" id="confirm-advanced-toggle" data-i18n="confirm.custom_name_toggle">Advanced: custom display name</a>
+          <div class="field" id="confirm-name-field" hidden>
+            <label data-i18n="bindings.name">Display name</label>
+            <input id="confirm-name-input" type="text" autocomplete="off">
+          </div>
+          <button type="button" id="confirm-submit-btn" class="btn-primary" disabled data-i18n="confirm.submit">Confirm &amp; add</button>
+          <div class="message" id="confirm-message"></div>
+          <div class="wizard-actions">
+            <button type="button" id="confirm-back-btn" class="btn-secondary" data-i18n="wizard.back">Back</button>
+          </div>
+        </main>
       </div>
-      <div class="field">
-        <label data-i18n="bindings.type">Equipment type</label>
-        <div class="type-grid" id="type-grid"></div>
-        <div class="message" id="confirm-type-hint" data-i18n="confirm.select_type_hint">Choose the equipment type to continue</div>
-      </div>
-      <div class="readonly-rows">
-        <div class="status-line"><span data-i18n="confirm.channel_label">Channel</span><strong id="confirm-channel">--</strong></div>
-        <div class="status-line"><span data-i18n="monitor.mac">MAC</span><strong id="confirm-mac">--</strong></div>
-      </div>
-      <a href="#" id="confirm-advanced-toggle" data-i18n="confirm.custom_name_toggle">Advanced: custom display name</a>
-      <div class="field" id="confirm-name-field" hidden>
-        <label data-i18n="bindings.name">Display name</label>
-        <input id="confirm-name-input" type="text" autocomplete="off">
-      </div>
-      <button type="button" id="confirm-submit-btn" class="btn-primary" disabled data-i18n="confirm.submit">Confirm &amp; add</button>
-      <div class="message" id="confirm-message"></div>
-      <div class="wizard-actions">
-        <button type="button" id="confirm-back-btn" class="btn-secondary" data-i18n="wizard.back">Back</button>
-      </div>
-    </main>
+    </div>
   </div>
 
   <script>
@@ -736,11 +797,12 @@
       return `${number.toFixed(digits)}${suffix}`;
     }
 
-    // -- Wi-Fi / Hub chips --------------------------------------------------
+    // -- Wi-Fi / Hub status -------------------------------------------------
 
-    async function refreshWifiChip() {
+    async function refreshWifiStatus() {
       const dot = document.getElementById("wifi-chip-dot");
-      const text = document.getElementById("wifi-chip-text");
+      const currentNetwork = document.getElementById("wifi-current-network");
+      const currentSignal = document.getElementById("wifi-current-signal");
       try {
         const response = await adminFetch("/api/wifi/status?interface=wlan0");
         const status = await response.json();
@@ -748,16 +810,12 @@
         const connected = Boolean(status.connected);
         dot.className = `chip-dot ${connected ? "ok" : "bad"}`;
         const signal = status.quality_percent != null ? `${status.quality_percent}%` : "--";
-        text.textContent = connected ? `${status.ssid || "?"} · ${signal}` : t("wifi.disconnected");
-        const currentNetwork = document.getElementById("wifi-current-network");
-        if (currentNetwork) {
-          currentNetwork.textContent = connected ? (status.ssid || "?") : t("wifi.disconnected");
-        }
+        currentNetwork.textContent = connected ? (status.ssid || "?") : t("wifi.disconnected");
+        currentSignal.textContent = connected ? signal : "--";
       } catch (_error) {
         dot.className = "chip-dot bad";
-        text.textContent = t("wifi.disconnected");
-        const currentNetwork = document.getElementById("wifi-current-network");
-        if (currentNetwork) currentNetwork.textContent = t("wifi.disconnected");
+        currentNetwork.textContent = t("wifi.disconnected");
+        currentSignal.textContent = "--";
       }
     }
 
@@ -822,12 +880,6 @@
       }
     }
 
-    async function openWifiSettings() {
-      showView("wifi");
-      await refreshWifiChip();
-      await scanWifiNetworks();
-    }
-
     function renderWifiConnect(net) {
       const list = document.getElementById("wifi-networks");
       const message = document.getElementById("wifi-scan-message");
@@ -867,7 +919,7 @@
           if (!response.ok) throw new Error(result.detail || t("wifi.connect_failed"));
           message.textContent = t("wifi.connect_ok", { ssid: net.ssid, ip: result.ip || "?" });
           message.className = "message ok";
-          await refreshWifiChip();
+          await refreshWifiStatus();
         } catch (error) {
           message.textContent = error.message || t("wifi.connection_interrupted");
           message.className = "message error";
@@ -993,7 +1045,6 @@
     function showView(name) {
       currentView = name;
       document.getElementById("view-home").hidden = name !== "home";
-      document.getElementById("view-wifi").hidden = name !== "wifi";
       document.getElementById("view-pairing").hidden = name !== "pairing";
       document.getElementById("view-confirm").hidden = name !== "confirm";
     }
@@ -1290,9 +1341,7 @@
     // -- wiring ---------------------------------------------------------
 
     document.getElementById("add-device-btn").addEventListener("click", startPairing);
-    document.getElementById("wifi-settings-btn").addEventListener("click", openWifiSettings);
     document.getElementById("wifi-rescan-btn").addEventListener("click", scanWifiNetworks);
-    document.getElementById("wifi-back-btn").addEventListener("click", goHome);
     document.getElementById("pairing-rescan-btn").addEventListener("click", rescan);
     document.getElementById("pairing-cancel-btn").addEventListener("click", async () => {
       await cancelPairing();
@@ -1304,9 +1353,10 @@
     applyTranslations();
     loadConfig();
     checkPowerDryRunMode();
-    refreshWifiChip();
+    refreshWifiStatus();
+    scanWifiNetworks();
     refreshTelemetry();
-    setInterval(refreshWifiChip, 5000);
+    setInterval(refreshWifiStatus, 5000);
     setInterval(refreshTelemetry, HOME_MONITOR_POLL_MS);
   </script>
 </body>
