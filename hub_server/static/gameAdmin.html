@@ -806,8 +806,7 @@
           <div class="readiness" id="race-readiness-panel" aria-live="polite"></div>
           <div class="countdown-banner" id="countdown-status" aria-live="polite" data-i18n="banner.countdown_active">Countdown active on Dashboard. Race starts on Go.</div>
           <div class="button-row">
-            <button type="button" class="primary" id="btn-configure" onclick="configureRace()" data-i18n="button.save_settings">Save Settings</button>
-            <button type="button" id="btn-start" onclick="startRace()" data-i18n="button.start_race">Start Race</button>
+            <button type="button" class="primary" id="btn-save-start" onclick="saveAndStartRace()" data-i18n="button.save_and_start_race">Save &amp; Start Race</button>
             <button type="button" class="danger" id="btn-stop" onclick="stopRace()" data-i18n="button.stop_race">Stop Race</button>
             <button type="button" class="danger" id="btn-reset" onclick="resetRace()" data-i18n="button.reset_race">Reset Race</button>
           </div>
@@ -852,6 +851,7 @@
       refreshTimer: null,
       wsConnected: false,
       countdownActive: false,
+      saveStartPending: false,
       adminToken: localStorage.getItem("fitrace.adminPassword") || localStorage.getItem("fitrace.adminToken") || "",
     };
 
@@ -920,8 +920,7 @@
         "guidance.leaderboard_preview": "Leaderboard Preview",
         "guidance.start_flow": "Start Flow",
         "banner.countdown_active": "Countdown active on Dashboard. Race starts on Go.",
-        "button.save_settings": "Save Settings",
-        "button.start_race": "Start Race",
+        "button.save_and_start_race": "Save & Start Race",
         "button.stop_race": "Stop Race",
         "button.reset_race": "Reset Race",
         "button.refresh": "Refresh",
@@ -930,6 +929,7 @@
         "login.title": "Operator Unlock",
         "login.description": "Enter the operator access code for protected race actions. Local test systems can leave this blank until protection is enabled.",
         "text.checking": "Checking",
+        "text.saving_and_starting": "Saving and starting",
         "text.online": "Online",
         "text.wait": "WAIT",
         "text.race_readiness": "Race Readiness",
@@ -1042,8 +1042,7 @@
       "guidance.leaderboard_preview": "排行榜預覽",
       "guidance.start_flow": "啟動流程",
       "banner.countdown_active": "儀表板上倒計時進行中。比賽將在 Go 開始。",
-      "button.save_settings": "儲存設定",
-      "button.start_race": "開始比賽",
+      "button.save_and_start_race": "儲存與開始比賽",
       "button.stop_race": "停止比賽",
       "button.reset_race": "重設比賽",
       "button.refresh": "重新整理",
@@ -1052,6 +1051,7 @@
       "login.title": "操作解鎖",
       "login.description": "輸入受保護比賽操作的操作存取碼。本機測試系統可以先留空,待啟用保護後再更新。",
       "text.checking": "檢查中",
+      "text.saving_and_starting": "正在儲存並啟動",
       "text.online": "上線",
       "text.wait": "等待",
       "text.race_readiness": "比賽整備",
@@ -1359,12 +1359,15 @@
           : metricNumber(config.duration_sec, 0);
       }
 
-      const readinessReady = state.readiness?.ready === true;
-      $("btn-start").disabled = raceState !== "READY" || state.countdownActive || !readinessReady;
-      $("btn-start").textContent = state.countdownActive ? t("text.countdown_active") : t("button.start_race");
+      const saveStartButton = $("btn-save-start");
+      saveStartButton.disabled = raceState === "RUNNING" || state.countdownActive || state.saveStartPending;
+      saveStartButton.textContent = state.countdownActive
+        ? t("text.countdown_active")
+        : state.saveStartPending
+          ? t("text.saving_and_starting")
+          : t("button.save_and_start_race");
       $("btn-stop").disabled = raceState !== "RUNNING";
       $("btn-reset").disabled = raceState === "RUNNING";
-      $("btn-configure").disabled = raceState === "RUNNING";
       $("countdown-status").classList.toggle("show", state.countdownActive);
       updateControlGuidance();
       renderReadinessPanel();
@@ -1532,7 +1535,7 @@
       else payload.duration_sec = Math.round(value);
       if (value <= 0) {
         setMessage("race-message", t("message.value_required"), "error");
-        return;
+        return false;
       }
       try {
         state.race = await fetchJson("/api/race/configure", {
@@ -1543,8 +1546,10 @@
         await refreshReadiness();
         renderRace();
         setMessage("race-message", t("message.race_settings_saved"), "ok");
+        return true;
       } catch (error) {
         setMessage("race-message", error.message, "error");
+        return false;
       }
     }
 
@@ -1579,6 +1584,21 @@
       } catch (error) {
         $("start-sound-enabled").value = previousValue;
         setMessage("race-message", error.message, "error");
+      }
+    }
+
+    async function saveAndStartRace() {
+      if (state.saveStartPending || state.countdownActive || state.race?.state === "RUNNING") return;
+      state.saveStartPending = true;
+      $("btn-save-start").disabled = true;
+      $("btn-save-start").textContent = t("text.saving_and_starting");
+      try {
+        const saved = await configureRace();
+        if (!saved) return;
+        await startRace();
+      } finally {
+        state.saveStartPending = false;
+        renderRace();
       }
     }
 

@@ -122,6 +122,33 @@ def test_game_admin_subtitle_has_data_i18n():
     assert "data-i18n=" in subtitle_line
 
 
+def test_game_admin_combines_save_and_start_into_one_action():
+    source = _read("gameAdmin.html")
+
+    assert 'id="btn-save-start"' in source
+    assert 'onclick="saveAndStartRace()"' in source
+    assert 'data-i18n="button.save_and_start_race"' in source
+    assert '"button.save_and_start_race": "Save & Start Race"' in source
+    assert '"button.save_and_start_race": "儲存與開始比賽"' in source
+    assert 'id="btn-configure"' not in source
+    assert 'id="btn-start"' not in source
+
+    action_start = source.index("async function saveAndStartRace()")
+    action_end = source.index("async function stopRace()", action_start)
+    action_source = source[action_start:action_end]
+    assert "const saved = await configureRace();" in action_source
+    assert "if (!saved) return;" in action_source
+    assert "await startRace();" in action_source
+
+    configure_start = source.index("async function configureRace()")
+    configure_end = source.index(
+        "async function setLeaderboardDisplayMode", configure_start
+    )
+    configure_source = source[configure_start:configure_end]
+    assert "return true;" in configure_source
+    assert configure_source.count("return false;") >= 2
+
+
 def test_game_admin_and_system_admin_inline_dictionaries_stay_symmetric():
     for name in ("gameAdmin.html", "systemAdmin.html"):
         source = _read(name)
