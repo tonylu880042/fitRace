@@ -346,6 +346,74 @@ def test_nodes_endpoint_returns_registered_edge_nodes():
     )
 
 
+def test_race_and_station_endpoints_include_operator_node_labels():
+    from hub_server.infrastructure.fastapi.app import node_registry
+
+    client.post("/api/race/reset")
+    node_registry.clear()
+    node_registry.update_status(
+        {
+            "edge_node_id": "fitrace-edge-01",
+            "ip": "192.168.0.130",
+            "status": "online",
+            "last_seen_epoch_ms": int(time.time() * 1000),
+            "equipment_streams": [
+                {
+                    "node_id": "fitrace-edge-01-01",
+                    "equipment_id": "Vmax_1183",
+                    "equipment_type": "spin_bike",
+                    "status": "configured",
+                    "last_telemetry_epoch_ms": int(time.time() * 1000),
+                }
+            ],
+        }
+    )
+    client.post(
+        "/api/stations/assign",
+        json={"station_number": 1, "node_id": "fitrace-edge-01-01"},
+    )
+    client.post(
+        "/api/race/register",
+        json={"station_number": 1, "athlete_name": "Runner A"},
+    )
+
+    race_state = client.get("/api/race/state").json()
+    participant = race_state["leaderboard"]["fitrace-edge-01-01"]
+    assert participant["node_id"] == "fitrace-edge-01-01"
+    assert participant["node_display_name"] == "Node130+Vmax_1183"
+
+    stations = client.get("/api/stations").json()
+    station = stations["stations"]["1"]
+    assert station["node_id"] == "fitrace-edge-01-01"
+    assert station["node_display_name"] == "Node130+Vmax_1183"
+
+    readiness = client.get("/api/race/readiness").json()
+    assert readiness["station_health"][0]["node_display_name"] == "Node130+Vmax_1183"
+    assert readiness["station_health"][0]["edge_display_name"] == "Node130"
+
+    client.post("/api/race/reset")
+    node_registry.clear()
+
+
+def test_user_facing_pages_prefer_operator_node_labels():
+    dashboard = client.get("/static/index.html").text
+    game_admin = client.get("/static/gameAdmin.html").text
+    signup = client.get("/static/signup.html").text
+
+    assert "function nodeDisplayName(node)" in dashboard
+    assert "nodeDisplayName(row.raw)" in dashboard
+    assert "nodeDisplayName(node)" in dashboard
+    assert "stream.display_name || stream.equipment_id" in dashboard
+    assert "node.display_name || node.edge_node_id" in dashboard
+    assert "info.node_display_name || info.node_id" in dashboard
+
+    assert "station.node_display_name || station.node_id" in game_admin
+    assert "health.edge_display_name || health.edge_node_id" in game_admin
+    assert "state.stations.unassigned_node_display_names" in game_admin
+
+    assert "st.node_display_name || st.node_id" in signup
+
+
 def test_system_admin_uses_friendly_stream_labels_and_filters_stale_edge_ids():
     source = client.get("/static/systemAdmin.html").text
 

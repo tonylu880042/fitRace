@@ -764,7 +764,7 @@
           // Display specific station label with equipment info
           const st = stations[station] || {};
           const eqType = st.equipment_type ? t(equipmentNames[st.equipment_type] || st.equipment_type) : null;
-          const nodeInfo = st.node_id ? ` (${t('signup.device_bound', { node: st.node_id })})` : ` (${t('signup.device_unbound')})`;
+          const nodeInfo = st.node_id ? ` (${t('signup.device_bound', { node: st.node_display_name || st.node_id })})` : ` (${t('signup.device_unbound')})`;
 
           stationLbl.innerText = `Station ${station}${eqType ? ' - ' + eqType : ''}${nodeInfo}`;
 
@@ -801,7 +801,7 @@
               opt.value = sn;
 
               const eqType = st.equipment_type ? t(equipmentNames[st.equipment_type] || st.equipment_type) : t('signup.station_unassigned');
-              const nodeInfo = st.node_id ? ` (${st.node_id})` : "";
+              const nodeInfo = st.node_id ? ` (${st.node_display_name || st.node_id})` : "";
               const athInfo = st.athlete_name ? ` [${t('signup.station_registered', { name: st.athlete_name })}]` : "";
 
               opt.innerText = `Station ${sn} - ${eqType}${nodeInfo}${athInfo}`;

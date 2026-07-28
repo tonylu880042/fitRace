@@ -42,11 +42,15 @@ class FakeWebSocketManager:
 
 
 class FakeNodeRegistry:
-    def __init__(self):
+    def __init__(self, nodes=None):
         self.telemetry_payloads = []
+        self.nodes = nodes or []
 
     def update_telemetry(self, payload):
         self.telemetry_payloads.append(payload)
+
+    def list_nodes(self):
+        return self.nodes
 
 
 @pytest.mark.asyncio
@@ -109,6 +113,49 @@ async def test_mqtt_subscriber_normalizes_valid_telemetry_payload():
     ]
     assert node_registry.telemetry_payloads == race_manager.payloads
     assert ws_manager.broadcasts == [{}]
+
+
+@pytest.mark.asyncio
+async def test_mqtt_subscriber_broadcasts_operator_node_labels():
+    node_id = "fitrace-edge-01-01"
+    race_manager = FakeRaceManager(
+        progress={node_id: {"node_id": node_id, "progress_percent": 25}}
+    )
+    ws_manager = FakeWebSocketManager()
+    node_registry = FakeNodeRegistry(
+        nodes=[
+            {
+                "edge_node_id": "fitrace-edge-01",
+                "display_name": "Node130",
+                "equipment_streams": [
+                    {
+                        "node_id": node_id,
+                        "equipment_id": "Vmax_1183",
+                        "display_name": "Node130+Vmax_1183",
+                    }
+                ],
+            }
+        ]
+    )
+    subscriber = MqttSubscriber(
+        async_mqtt_client=None,
+        race_manager=race_manager,
+        ws_manager=ws_manager,
+        node_registry=node_registry,
+    )
+
+    await subscriber._handle_telemetry(
+        {
+            "node_id": node_id,
+            "edge_node_id": "fitrace-edge-01",
+            "equipment_id": "Vmax_1183",
+        }
+    )
+
+    assert ws_manager.broadcasts[0][node_id]["node_display_name"] == (
+        "Node130+Vmax_1183"
+    )
+    assert ws_manager.broadcasts[0][node_id]["node_id"] == node_id
 
 
 @pytest.mark.asyncio

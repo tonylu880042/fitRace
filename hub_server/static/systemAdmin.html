@@ -1672,9 +1672,6 @@
         const endpoint = node.ip || node.hostname || "";
         const localLink = node.ip ? `http://${node.ip}:8001/` : "";
         const nodeName = node.display_name || node.edge_node_id || "unknown-edge";
-        const technicalName = node.edge_node_id && node.edge_node_id !== nodeName
-          ? `${node.edge_node_id} · `
-          : "";
         const streams = node.equipment_streams || [];
         const streamRows = streams.map((stream) => {
           const last = stream.last_telemetry_epoch_ms;
@@ -1705,7 +1702,7 @@
             <div class="row-main">
               <div>
                 <div class="row-name"><span class="dot ${node.status === "online" ? "online" : ""}" style="display:inline-block;margin-right:8px;"></span>${escapeHtml(nodeName)}</div>
-                <div class="row-meta">${escapeHtml(technicalName)}${escapeHtml(endpoint || "--")} · ${escapeHtml(node.software_version || "version --")} · last ${formatAge(node.last_seen_epoch_ms)}</div>
+                <div class="row-meta">${escapeHtml(endpoint || "--")} · ${escapeHtml(node.software_version || "version --")} · last ${formatAge(node.last_seen_epoch_ms)}</div>
               </div>
               ${localLink ? `<button type="button" onclick="window.open('${escapeHtml(localLink)}','_blank','noopener')" title="${escapeHtml(t("text.open_device_page"))}">${escapeHtml(t("text.open_device_page"))}</button>` : ""}
             </div>

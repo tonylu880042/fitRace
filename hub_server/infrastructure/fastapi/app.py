@@ -15,6 +15,11 @@ from pydantic import BaseModel, Field
 from hub_server.domain.models import RaceState, RaceConfig
 from hub_server.usecases.race_manager import RaceManager
 from hub_server.usecases.node_registry import NodeRegistry
+from hub_server.usecases.node_display_names import (
+    enrich_progress_display_names,
+    enrich_race_state_display_names,
+    enrich_station_display_names,
+)
 from hub_server.usecases.race_event_engine import RaceEventEngine
 from hub_server.usecases.race_result_store import RaceResultStore
 from hub_server.usecases.race_results_query import RaceResultsQuery
@@ -304,7 +309,17 @@ def decode_avatar_webp(avatar_base64: str) -> bytes:
 
 
 async def get_race_state_data() -> dict:
-    return race_manager.get_state_snapshot()
+    return enrich_race_state_display_names(
+        race_manager.get_state_snapshot(),
+        node_registry.list_nodes(),
+    )
+
+
+def get_stations_status_data() -> dict:
+    return enrich_station_display_names(
+        race_manager.get_stations_status(),
+        node_registry.list_nodes(),
+    )
 
 
 async def broadcast_race_state():
@@ -322,7 +337,9 @@ def station_stream_health(node_id: str | None) -> dict:
             "health": "missing",
             "reason": "unassigned",
             "label": "No telemetry stream",
+            "node_display_name": None,
             "edge_node_id": None,
+            "edge_display_name": None,
             "last_telemetry_epoch_ms": None,
         }
 
@@ -331,12 +348,18 @@ def station_stream_health(node_id: str | None) -> dict:
             if stream.get("node_id") != node_id:
                 continue
 
+            display_fields = {
+                "node_display_name": stream.get("display_name") or node_id,
+                "edge_node_id": edge_node.get("edge_node_id"),
+                "edge_display_name": edge_node.get("display_name")
+                or edge_node.get("edge_node_id"),
+            }
             if edge_node.get("status") != "online":
                 return {
                     "health": "missing",
                     "reason": "edge_offline",
                     "label": "Edge offline",
-                    "edge_node_id": edge_node.get("edge_node_id"),
+                    **display_fields,
                     "last_telemetry_epoch_ms": stream.get("last_telemetry_epoch_ms"),
                 }
 
@@ -346,7 +369,7 @@ def station_stream_health(node_id: str | None) -> dict:
                     "health": "missing",
                     "reason": "no_data",
                     "label": "No telemetry received",
-                    "edge_node_id": edge_node.get("edge_node_id"),
+                    **display_fields,
                     "last_telemetry_epoch_ms": None,
                 }
 
@@ -356,7 +379,7 @@ def station_stream_health(node_id: str | None) -> dict:
                     "health": "stale",
                     "reason": "stale",
                     "label": "Telemetry stale",
-                    "edge_node_id": edge_node.get("edge_node_id"),
+                    **display_fields,
                     "last_telemetry_epoch_ms": last_telemetry_ms,
                 }
 
@@ -364,7 +387,7 @@ def station_stream_health(node_id: str | None) -> dict:
                 "health": "online",
                 "reason": "online",
                 "label": "Online",
-                "edge_node_id": edge_node.get("edge_node_id"),
+                **display_fields,
                 "last_telemetry_epoch_ms": last_telemetry_ms,
             }
 
@@ -372,7 +395,9 @@ def station_stream_health(node_id: str | None) -> dict:
         "health": "missing",
         "reason": "device_missing",
         "label": "Device missing",
+        "node_display_name": node_id,
         "edge_node_id": None,
+        "edge_display_name": None,
         "last_telemetry_epoch_ms": None,
     }
 
@@ -810,13 +835,17 @@ async def run_diagnostic_telemetry(
     if diagnostic_manager.get_state() == RaceState.RUNNING:
         diagnostic_manager.stop_race()
 
-    await ws_manager.broadcast(progress)
+    display_progress = enrich_progress_display_names(
+        progress,
+        node_registry.list_nodes(),
+    )
+    await ws_manager.broadcast(display_progress)
     diagnostic_event = {
         "type": "diagnostic_telemetry",
         "status": "passed",
         "diagnostic": True,
         "node_id": payload.node_id,
-        "progress": progress,
+        "progress": display_progress,
         "checks": {
             "api": "ok",
             "race_manager": "ok",
@@ -945,7 +974,7 @@ async def reset_race(request: Request):
 
 @app.get("/api/stations")
 def get_stations():
-    return race_manager.get_stations_status()
+    return get_stations_status_data()
 
 
 @app.post("/api/stations/assign")
@@ -955,7 +984,7 @@ async def assign_station(payload: AssignStationPayload, request: Request):
         race_manager.assign_station(payload.station_number, payload.node_id)
         # Broadcast the updated race state and leaderboard progress to all WebSocket clients
         await broadcast_race_state()
-        return race_manager.get_stations_status()
+        return get_stations_status_data()
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
     except Exception as e:
@@ -1019,7 +1048,7 @@ async def register_athlete(payload: RegisterAthletePayload):
             }
         )
 
-        return race_manager.get_stations_status()
+        return get_stations_status_data()
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -1036,7 +1065,11 @@ async def post_test_telemetry(payload: Dict[str, Any]):
 
         progress = race_manager.ingest_telemetry(payload)
         if progress is not None:
-            await ws_manager.broadcast(progress)
+            display_progress = enrich_progress_display_names(
+                progress,
+                node_registry.list_nodes(),
+            )
+            await ws_manager.broadcast(display_progress)
 
             # Check for race events
             events = race_event_engine.evaluate(race_manager, progress)
@@ -1050,10 +1083,10 @@ async def post_test_telemetry(payload: Dict[str, Any]):
 
             # If the race state just transitioned to STOPPED, broadcast state change
             if race_manager.get_state() == RaceState.STOPPED:
-                state_change = race_manager.get_state_snapshot()
+                state_change = await get_race_state_data()
                 state_change["type"] = "state_change"
                 await ws_manager.broadcast(state_change)
-            return progress
+            return display_progress
 
         # Broadcast empty progress to trigger frontend fetchStations() refresh
         await ws_manager.broadcast({})

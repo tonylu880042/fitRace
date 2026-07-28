@@ -6,6 +6,10 @@ from typing import Any
 from pydantic import BaseModel, Field, ValidationError
 
 from hub_server.domain.models import RaceState
+from hub_server.usecases.node_display_names import (
+    enrich_progress_display_names,
+    enrich_race_state_display_names,
+)
 
 logger = logging.getLogger("hub_server.mqtt_subscriber")
 
@@ -59,6 +63,10 @@ class MqttSubscriber:
         self._race_event_engine = race_event_engine
         self._race_result_store = race_result_store
         self._loop = asyncio.get_event_loop()
+
+    def _registered_nodes(self) -> list[dict]:
+        list_nodes = getattr(self._node_registry, "list_nodes", None)
+        return list_nodes() if callable(list_nodes) else []
 
     def start_listening(self):
         """
@@ -117,7 +125,11 @@ class MqttSubscriber:
 
         progress = self._race_manager.ingest_telemetry(telemetry_payload)
         if progress is not None:
-            await self._ws_manager.broadcast(progress)
+            display_progress = enrich_progress_display_names(
+                progress,
+                self._registered_nodes(),
+            )
+            await self._ws_manager.broadcast(display_progress)
             logger.debug(f"Broadcasted telemetry update for node: {node_id}")
 
             # Check and broadcast race events
@@ -133,7 +145,10 @@ class MqttSubscriber:
 
             # If the race state just transitioned to STOPPED, broadcast state change
             if self._race_manager.get_state() == RaceState.STOPPED:
-                state_change = self._race_manager.get_state_snapshot()
+                state_change = enrich_race_state_display_names(
+                    self._race_manager.get_state_snapshot(),
+                    self._registered_nodes(),
+                )
                 if self._race_result_store:
                     self._race_result_store.save_finished_snapshot(state_change)
                 state_change["type"] = "state_change"

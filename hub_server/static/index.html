@@ -2643,6 +2643,10 @@
         .replace(/'/g, "&#039;");
     }
 
+    function nodeDisplayName(node) {
+      return node?.node_display_name || node?.display_name || node?.node_id || "--";
+    }
+
     function metricNumber(value, fallback = 0) {
       const number = Number(value);
       return Number.isFinite(number) ? number : fallback;
@@ -2711,8 +2715,8 @@
           ? streams.map((stream) => {
               const channel = stream.antenna_channel ? ` · ${escapeHtml(stream.antenna_channel)}` : "";
               return `
-                <span class="stream-pill" title="${escapeHtml(stream.node_id || "")}">
-                  <strong>${escapeHtml(stream.equipment_id || stream.node_id || "UNBOUND")}</strong>
+                <span class="stream-pill" title="${escapeHtml(stream.display_name || stream.equipment_id || stream.node_id || "")}">
+                  <strong>${escapeHtml(stream.display_name || stream.equipment_id || stream.node_id || "UNBOUND")}</strong>
                   <span>${escapeHtml(stream.status || "unknown")}${channel}</span>
                 </span>`;
             }).join("")
@@ -2724,7 +2728,7 @@
               <div class="edge-node-title">
                 <span class="node-status-dot ${isOnline ? "online" : ""}" aria-label="${isOnline ? "online" : "offline"}"></span>
                 <div>
-                  <div class="edge-node-name">${escapeHtml(node.edge_node_id || "unknown-edge")}</div>
+                  <div class="edge-node-name">${escapeHtml(node.display_name || node.edge_node_id || "unknown-edge")}</div>
                   <div class="edge-node-meta">${escapeHtml(endpoint)} · ${channelText} · last ${formatRelativeAge(node.last_seen_epoch_ms)}</div>
                 </div>
               </div>
@@ -2803,7 +2807,7 @@
             </div>
             <div class="podium-name">${escapeHtml(node.athlete_name || "Athlete")}${teamSuffix}</div>
             <div class="podium-score">${score.value}</div>
-            <div class="podium-sub">${score.label} · ${escapeHtml(node.node_id || "")}</div>
+            <div class="podium-sub">${score.label} · ${escapeHtml(nodeDisplayName(node))}</div>
           </div>
         `;
       }).join("");
@@ -2907,6 +2911,7 @@
         }
         team.members.push({
           node_id: node.node_id,
+          node_display_name: node.node_display_name,
           athlete_name: node.athlete_name,
           station_number: node.station_number,
           distance_m: distanceM,
@@ -3548,7 +3553,7 @@
           })
         : individualRows.map((node) => {
             const score = formatResultScore(node, raceType);
-            const station = node.station_number ? `Station ${node.station_number}` : node.node_id;
+            const station = node.station_number ? `Station ${node.station_number}` : nodeDisplayName(node);
             const teamSuffix = node.team_name ? ` · ${node.team_name}` : "";
             return {
               id: node.node_id,
@@ -3746,7 +3751,7 @@
             id: node.node_id,
             kind: "individual",
             name: node.athlete_name || "Athlete",
-            meta: `${node.station_number ? `Station ${node.station_number}` : node.node_id}${node.team_name ? ` · ${node.team_name}` : ""}`,
+            meta: `${node.station_number ? `Station ${node.station_number}` : nodeDisplayName(node)}${node.team_name ? ` · ${node.team_name}` : ""}`,
             progress: metricNumber(node.progress_percent),
             score: formatResultScore(node, raceType),
             raw: node,
@@ -3783,7 +3788,7 @@
         const progress = Math.max(0, Math.min(100, smoothMetricNumber(`${row.id}:progress`, row.progress)));
         const policyOrNode = row.kind === "team"
           ? String(row.raw.completion_policy || "aggregate").replace(/_/g, " ")
-          : row.raw.node_id || "";
+          : nodeDisplayName(row.raw);
 
         html += `
           <div class="sprint-board-card ${rankClass}" data-node-id="${escapeHtml(row.id)}">
@@ -4092,7 +4097,7 @@
               ${avatarHtml}
               <div style="display: flex; flex-direction: column;">
                 <div class="athlete-name">${stationBadge}${displayName}</div>
-                <div class="equipment-tag">${escapeHtml(node.node_id)}</div>
+                <div class="equipment-tag">${escapeHtml(nodeDisplayName(node))}</div>
               </div>
             </div>
             ${metricCols}
@@ -4163,9 +4168,10 @@
       if (data.unassigned_nodes.length > 0) {
         html += `<div style="font-size: 0.75rem; color: var(--hazard-amber); font-weight: 700;">${escapeHtml(t("stations.unassigned"))}:</div>`;
         data.unassigned_nodes.forEach(node => {
+          const nodeLabel = data.unassigned_node_display_names?.[node] || node;
           html += `
             <div style="background: rgba(245, 158, 11, 0.05); border: 1px dashed var(--hazard-amber); padding: 0.4rem; border-radius: 4px; display: flex; justify-content: space-between; align-items: center;">
-              <span>🔌 ${escapeHtml(node)}</span>
+              <span>🔌 ${escapeHtml(nodeLabel)}</span>
               <span style="font-size: 0.7rem; color: var(--text-muted);">${escapeHtml(t("stations.unassigned"))}</span>
             </div>
           `;
@@ -4186,7 +4192,7 @@
                   <button onclick="directUnassign(${sn})" style="background: none; border: 1px solid #ef4444; color: #ef4444; font-size: 0.65rem; padding: 0.05rem 0.25rem; border-radius: 2px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='#ef4444'; this.style.color='#fff';" onmouseout="this.style.background='none'; this.style.color='#ef4444';">${escapeHtml(t("stations.unassign"))}</button>
                 </div>
               </div>
-              <div style="font-size: 0.75rem; color: var(--text-muted);">${escapeHtml(t("stations.equipment_id"))}: ${escapeHtml(info.node_id || "--")}</div>
+              <div style="font-size: 0.75rem; color: var(--text-muted);">${escapeHtml(t("stations.equipment_id"))}: ${escapeHtml(info.node_display_name || info.node_id || "--")}</div>
               <div style="font-size: 0.8rem; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 0.3rem; margin-top: 0.2rem;">
                 ${escapeHtml(t("stations.athlete"))}: <strong style="color: var(--text-main);">${escapeHtml(info.athlete_name || t("stations.not_registered"))}${info.team_name ? ` (${escapeHtml(info.team_name)})` : ''}</strong>
               </div>
