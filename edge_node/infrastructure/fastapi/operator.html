@@ -696,6 +696,7 @@
     let pairingActive = false;
     let selectedCandidate = null;
     let selectedType = null;
+    let wifiNetworks = [];
 
     function bindingTargetCount(target) {
       const normalized = normalizeMac(target);
@@ -748,15 +749,132 @@
         dot.className = `chip-dot ${connected ? "ok" : "bad"}`;
         const signal = status.quality_percent != null ? `${status.quality_percent}%` : "--";
         text.textContent = connected ? `${status.ssid || "?"} · ${signal}` : t("wifi.disconnected");
+        const currentNetwork = document.getElementById("wifi-current-network");
+        if (currentNetwork) {
+          currentNetwork.textContent = connected ? (status.ssid || "?") : t("wifi.disconnected");
+        }
       } catch (_error) {
         dot.className = "chip-dot bad";
         text.textContent = t("wifi.disconnected");
+        const currentNetwork = document.getElementById("wifi-current-network");
+        if (currentNetwork) currentNetwork.textContent = t("wifi.disconnected");
       }
     }
 
     function refreshHubChip() {
       const text = document.getElementById("hub-chip-text");
       text.textContent = (edgeConfig && edgeConfig.mqtt_host) || "--";
+    }
+
+    function renderWifiNetworks() {
+      const list = document.getElementById("wifi-networks");
+      const message = document.getElementById("wifi-scan-message");
+      if (!wifiNetworks.length) {
+        list.innerHTML = "";
+        message.textContent = t("wifi.none_found");
+        return;
+      }
+
+      message.textContent = "";
+      list.innerHTML = wifiNetworks.map((net, index) => `
+        <div class="wifi-network-row">
+          <div>
+            <div class="wifi-network-name">${escapeHtml(net.ssid)}${net.active ? " ✓" : ""}</div>
+            <div class="wifi-network-meta">${escapeHtml(String(net.signal ?? 0))}%${net.secured ? " · 🔒" : ""}${net.saved ? ` · ${escapeHtml(t("wifi.saved"))}` : ""}</div>
+          </div>
+          <button
+            type="button"
+            class="btn-secondary"
+            data-wifi-index="${index}"
+            aria-label="${escapeHtml(`${t("wifi.connect")} ${net.ssid}`)}"
+            ${net.active ? "disabled" : ""}
+          >${escapeHtml(net.active ? t("wifi.connected") : t("wifi.connect"))}</button>
+        </div>
+      `).join("");
+
+      list.querySelectorAll("[data-wifi-index]").forEach((button) => {
+        button.addEventListener("click", () => {
+          renderWifiConnect(wifiNetworks[Number(button.dataset.wifiIndex)]);
+        });
+      });
+    }
+
+    async function scanWifiNetworks() {
+      const list = document.getElementById("wifi-networks");
+      const message = document.getElementById("wifi-scan-message");
+      const rescanBtn = document.getElementById("wifi-rescan-btn");
+      list.innerHTML = "";
+      message.textContent = t("wifi.scanning");
+      message.className = "message";
+      rescanBtn.disabled = true;
+      try {
+        const response = await adminFetch("/api/wifi/networks");
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.detail || t("wifi.scan_failed"));
+        wifiNetworks = payload.networks || [];
+        renderWifiNetworks();
+      } catch (error) {
+        wifiNetworks = [];
+        message.textContent = error.message || t("wifi.scan_failed");
+        message.className = "message error";
+      } finally {
+        rescanBtn.disabled = false;
+      }
+    }
+
+    async function openWifiSettings() {
+      showView("wifi");
+      await refreshWifiChip();
+      await scanWifiNetworks();
+    }
+
+    function renderWifiConnect(net) {
+      const list = document.getElementById("wifi-networks");
+      const message = document.getElementById("wifi-scan-message");
+      const needsPassword = net.secured && !net.saved;
+      list.innerHTML = `
+        <div class="banner warn">${escapeHtml(t("wifi.switch_warning"))}</div>
+        <div class="field" ${needsPassword ? "" : "hidden"}>
+          <label for="wifi-password">${escapeHtml(t("wifi.password"))}</label>
+          <input id="wifi-password" type="password" autocomplete="new-password">
+        </div>
+        <div class="wizard-actions">
+          <button type="button" class="btn-secondary" id="wifi-network-back">${escapeHtml(t("wizard.back"))}</button>
+          <button type="button" class="btn-secondary" id="wifi-connect-confirm">${escapeHtml(t("wifi.connect"))}</button>
+        </div>
+      `;
+      message.textContent = "";
+      message.className = "message";
+      document.getElementById("wifi-network-back").addEventListener("click", renderWifiNetworks);
+      const confirmBtn = document.getElementById("wifi-connect-confirm");
+      confirmBtn.addEventListener("click", async () => {
+        const password = document.getElementById("wifi-password")?.value || null;
+        if (needsPassword && !password) {
+          message.textContent = t("wifi.password_required");
+          message.className = "message error";
+          return;
+        }
+        confirmBtn.disabled = true;
+        message.textContent = t("wifi.connecting");
+        message.className = "message";
+        try {
+          const response = await adminFetch("/api/wifi/connect", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ssid: net.ssid, password }),
+          });
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.detail || t("wifi.connect_failed"));
+          message.textContent = t("wifi.connect_ok", { ssid: net.ssid, ip: result.ip || "?" });
+          message.className = "message ok";
+          await refreshWifiChip();
+        } catch (error) {
+          message.textContent = error.message || t("wifi.connection_interrupted");
+          message.className = "message error";
+          confirmBtn.disabled = false;
+        }
+      });
+      (document.getElementById("wifi-password") || confirmBtn).focus();
     }
 
     async function checkPowerDryRunMode() {
@@ -875,6 +993,7 @@
     function showView(name) {
       currentView = name;
       document.getElementById("view-home").hidden = name !== "home";
+      document.getElementById("view-wifi").hidden = name !== "wifi";
       document.getElementById("view-pairing").hidden = name !== "pairing";
       document.getElementById("view-confirm").hidden = name !== "confirm";
     }
@@ -1171,6 +1290,9 @@
     // -- wiring ---------------------------------------------------------
 
     document.getElementById("add-device-btn").addEventListener("click", startPairing);
+    document.getElementById("wifi-settings-btn").addEventListener("click", openWifiSettings);
+    document.getElementById("wifi-rescan-btn").addEventListener("click", scanWifiNetworks);
+    document.getElementById("wifi-back-btn").addEventListener("click", goHome);
     document.getElementById("pairing-rescan-btn").addEventListener("click", rescan);
     document.getElementById("pairing-cancel-btn").addEventListener("click", async () => {
       await cancelPairing();

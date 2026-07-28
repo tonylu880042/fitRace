@@ -63,6 +63,21 @@ def test_edge_operator_page_can_scan_and_connect_wifi_without_maintenance_page()
     assert 'aria-live="polite"' in source
 
 
+def test_edge_operator_wifi_view_uses_existing_scan_and_connect_apis():
+    client = TestClient(edge_app_module.app)
+
+    source = client.get("/").text
+
+    assert "/api/wifi/networks" in source
+    assert "/api/wifi/connect" in source
+    assert "async function openWifiSettings()" in source
+    assert "async function scanWifiNetworks()" in source
+    assert "function renderWifiConnect(net)" in source
+    assert "showView(\"wifi\")" in source
+    assert 'body: JSON.stringify({ ssid: net.ssid, password })' in source
+    assert 'id="wifi-password"' in source
+
+
 def test_edge_maintenance_page_serves_old_setup_page():
     client = TestClient(edge_app_module.app)
 
