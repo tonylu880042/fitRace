@@ -1,3 +1,4 @@
+import ipaddress
 import json
 import os
 import socket
@@ -246,9 +247,22 @@ def local_ip_address() -> str:
         return ""
 
 
+def edge_node_label(ip: str) -> str:
+    try:
+        address = ipaddress.ip_address(ip)
+    except ValueError:
+        return "Node"
+    if address.version != 4:
+        return "Node"
+    return f"Node{address.packed[-1]}"
+
+
 @app.get("/", response_class=HTMLResponse)
 def operator_page():
-    return HTMLResponse(OPERATOR_HTML_RENDERED)
+    node_label = edge_node_label(local_ip_address())
+    html = OPERATOR_HTML_RENDERED.replace("__EDGE_NODE_LABEL__", node_label)
+    html = html.replace("__EDGE_NODE_TITLE__", f"{node_label}-Edge Node Setup")
+    return HTMLResponse(html)
 
 
 @app.get("/maintenance", response_class=HTMLResponse)
@@ -271,6 +285,73 @@ def update_edge_config(payload: EdgeConfigPayload, request: Request):
     require_admin(request)
     save_edge_config(payload)
     return {"status": "saved", "config": payload.model_dump()}
+
+
+@app.delete("/api/equipment-bindings")
+def clear_equipment_bindings(request: Request):
+    """Clear persistent bindings, clear every antenna board, then restart.
+
+    Saving the empty binding list first prevents the running Edge process from
+    reconnecting a stale MAC while the UART commands are being sent.
+    """
+    require_admin(request)
+    config = load_edge_config()
+    cleared_count = len(config.equipment_bindings)
+    cleared_config = config.model_copy(
+        update={"equipment_bindings": []},
+        deep=True,
+    )
+    save_edge_config(cleared_config)
+
+    channels = []
+    warnings = []
+    for channel in cleared_config.antenna_channels:
+        try:
+            result = antenna_command_runner.run(
+                AntennaCommandRequest(
+                    port=channel.port,
+                    baudrate=channel.baudrate,
+                    rtscts=channel.rtscts,
+                    command="disconnect_all",
+                    timeout_sec=5.0,
+                )
+            )
+            channels.append(
+                {
+                    "channel_id": channel.id,
+                    "port": channel.port,
+                    "disconnected": True,
+                    "result": result,
+                }
+            )
+        except (ValueError, RuntimeError) as exc:
+            warning = f"{channel.id}: {exc}"
+            warnings.append(warning)
+            channels.append(
+                {
+                    "channel_id": channel.id,
+                    "port": channel.port,
+                    "disconnected": False,
+                    "error": str(exc),
+                }
+            )
+
+    restart = None
+    try:
+        restart = _pairing_restart_service()
+        if restart.get("dry_run"):
+            warnings.append("runtime restart is not enabled")
+    except (PowerActionError, RuntimeError, OSError) as exc:
+        warnings.append(f"runtime restart: {exc}")
+
+    return {
+        "status": "cleared" if not warnings else "cleared_with_warnings",
+        "cleared_count": cleared_count,
+        "config": cleared_config.model_dump(),
+        "channels": channels,
+        "restart": restart,
+        "warnings": warnings,
+    }
 
 
 @app.get("/api/ble/scan")

@@ -49,15 +49,34 @@ def test_edge_operator_page_served_at_root():
     assert "新增設備" in response.text
 
 
-def test_edge_operator_page_uses_edge_node_setup_title():
+def test_edge_operator_page_uses_ip_node_number_in_setup_title(monkeypatch):
+    monkeypatch.setattr(edge_app_module, "local_ip_address", lambda: "192.168.0.130")
     client = TestClient(edge_app_module.app)
 
     source = client.get("/").text
 
-    assert "<title>Edge Node Setup</title>" in source
+    assert "<title>Node130-Edge Node Setup</title>" in source
+    assert '<h1 id="operator-title">Node130-Edge Node Setup</h1>' in source
+    assert 'const edgeNodeLabel = "Node130";' in source
     assert '"operator.title": "Edge Node Setup"' in source
     assert '"operator.title": "Edge Node 設定"' in source
-    assert 'document.title = t("operator.title")' in source
+    assert 'const title = `${edgeNodeLabel}-${t("operator.title")}`' in source
+    assert "document.title = title" in source
+
+
+def test_edge_operator_page_exposes_disconnect_all_and_clear_bindings_action():
+    client = TestClient(edge_app_module.app)
+
+    source = client.get("/").text
+
+    assert 'id="disconnect-all-btn"' in source
+    assert 'id="disconnect-all-message"' in source
+    assert 'data-i18n="operator.disconnect_all"\n          disabled' in source
+    assert '"operator.disconnect_all": "Disconnect all & clear bindings"' in source
+    assert '"operator.disconnect_all": "全部斷線並清除綁定"' in source
+    assert 'adminFetch("/api/equipment-bindings", {' in source
+    assert 'method: "DELETE"' in source
+    assert "async function disconnectAllAndClearBindings()" in source
 
 
 def test_edge_operator_page_can_scan_and_connect_wifi_without_maintenance_page():
@@ -300,6 +319,109 @@ def test_edge_config_endpoint_rejects_duplicate_binding_macs(monkeypatch, tmp_pa
 
     assert response.status_code == 422
     assert json.loads(config_path.read_text(encoding="utf-8")) == original
+
+
+def test_clear_equipment_bindings_disconnects_every_channel_and_restarts_runtime(
+    monkeypatch, tmp_path
+):
+    from fitrace_common.power_manager import PowerActionResult
+
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "node_id": "fitrace-edge-test",
+                "mqtt_host": "192.168.0.130",
+                "max_ftms_connections": 2,
+                "antenna_channels": [
+                    {"id": "uart-1", "port": "/dev/ttyAMA0"},
+                    {"id": "uart-2", "port": "/dev/ttyAMA4"},
+                ],
+                "equipment_bindings": [
+                    {
+                        "node_id": "fitrace-edge-test-01",
+                        "equipment_id": "BIKE_01",
+                        "equipment_type": "fan_bike",
+                        "ble_target": "AA:BB:CC:DD:EE:01",
+                        "antenna_channel": "uart-1",
+                    },
+                    {
+                        "node_id": "fitrace-edge-test-02",
+                        "equipment_id": "BIKE_02",
+                        "equipment_type": "fan_bike",
+                        "ble_target": "AA:BB:CC:DD:EE:02",
+                        "antenna_channel": "uart-2",
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    call_order = []
+
+    class FakeAntennaCommandRunner:
+        def run(self, request):
+            call_order.append(("disconnect", request.port, request.command))
+            return {
+                "port": request.port,
+                "command": request.command,
+                "rx": ["OK:DISCONNECT"],
+            }
+
+    class FakeServiceRestartManager:
+        def restart_service(self):
+            call_order.append(("restart",))
+            return PowerActionResult(
+                action="restart-service",
+                target="edge",
+                dry_run=False,
+                command=[
+                    "sudo",
+                    "systemctl",
+                    "restart",
+                    "fitracestudio-edge.service",
+                ],
+                executed=True,
+            )
+
+    monkeypatch.setattr(edge_app_module, "CONFIG_PATH", config_path)
+    monkeypatch.setattr(
+        edge_app_module, "antenna_command_runner", FakeAntennaCommandRunner()
+    )
+    monkeypatch.setattr(
+        edge_app_module, "service_restart_manager", FakeServiceRestartManager()
+    )
+    client = TestClient(edge_app_module.app)
+
+    response = client.delete("/api/equipment-bindings")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "cleared"
+    assert payload["cleared_count"] == 2
+    assert payload["config"]["equipment_bindings"] == []
+    assert payload["config"]["max_ftms_connections"] == 2
+    assert [channel["channel_id"] for channel in payload["channels"]] == [
+        "uart-1",
+        "uart-2",
+    ]
+    assert call_order == [
+        ("disconnect", "/dev/ttyAMA0", "disconnect_all"),
+        ("disconnect", "/dev/ttyAMA4", "disconnect_all"),
+        ("restart",),
+    ]
+    saved = json.loads(config_path.read_text(encoding="utf-8"))
+    assert saved["equipment_bindings"] == []
+    assert saved["max_ftms_connections"] == 2
+
+
+def test_clear_equipment_bindings_requires_admin_token(monkeypatch):
+    monkeypatch.setenv("FITRACE_ADMIN_TOKEN", "admin-secret")
+    client = TestClient(edge_app_module.app)
+
+    response = client.delete("/api/equipment-bindings")
+
+    assert response.status_code == 401
 
 
 def test_reconnect_configured_antenna_devices_groups_targets_by_channel(
