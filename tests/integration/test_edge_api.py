@@ -64,6 +64,18 @@ def test_edge_operator_page_uses_ip_node_number_in_setup_title(monkeypatch):
     assert "document.title = title" in source
 
 
+def test_edge_operator_device_cards_show_the_current_uart_channel():
+    client = TestClient(edge_app_module.app)
+
+    source = client.get("/").text
+
+    assert 'class="binding-card-channel" data-field="channel"' in source
+    assert "function formatAntennaChannel(value)" in source
+    leaves_start = source.index("function updateBindingCardLeaves()")
+    leaves_fn = source[leaves_start : leaves_start + 1400]
+    assert "payload?.antenna_channel || binding.antenna_channel" in leaves_fn
+
+
 def test_edge_operator_page_exposes_disconnect_all_and_clear_bindings_action():
     client = TestClient(edge_app_module.app)
 

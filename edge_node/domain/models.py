@@ -39,6 +39,10 @@ class TelemetryData(BaseModel):
     mac_address: str | None = Field(
         None, description="BLE MAC address for the physical equipment"
     )
+    antenna_channel: str | None = Field(
+        None,
+        description="UART antenna channel that emitted this telemetry sample",
+    )
     equipment_id: str = Field(..., description="Identity of the bound equipment")
     equipment_type: str = Field(
         ...,

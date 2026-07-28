@@ -812,6 +812,7 @@ class AntennaFtmsManager:
             ),
             edge_node_id=self._edge_config.node_id,
             mac_address=mac,
+            antenna_channel=channel_id,
             equipment_id=binding.equipment_id if binding else mac,
             equipment_type=binding.equipment_type if binding else equipment_type,
             ftms_type=parsed.get("ftms_type") or parsed.get("device_type"),

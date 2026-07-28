@@ -93,6 +93,31 @@ def test_antenna_manager_emits_raw_totals_and_deltas_by_mac():
     assert second.delta_energy_kcal == 2.0
 
 
+def test_antenna_manager_identifies_the_uart_channel_that_emitted_telemetry():
+    config = EdgeNodeConfig(
+        node_id="fitrace-edge-01",
+        antenna_channels=[
+            AntennaChannelConfig(id="uart-1", port="/dev/ttyAMA0"),
+            AntennaChannelConfig(id="uart-2", port="/dev/ttyAMA4"),
+        ],
+    )
+
+    async def on_telemetry(_telemetry):
+        pass
+
+    manager = AntennaFtmsManager(edge_config=config, on_telemetry=on_telemetry)
+
+    telemetry = manager._to_telemetry(
+        "uart-2",
+        {
+            "address": "AA:BB:CC:DD:EE:01",
+            "equipment_type": "fan_bike",
+        },
+    )
+
+    assert telemetry.antenna_channel == "uart-2"
+
+
 def test_bind_assignments_prefers_configured_mac_targets():
     assignments = {
         "uart-1": ["AA:BB:CC:DD:EE:02", "AA:BB:CC:DD:EE:01"],

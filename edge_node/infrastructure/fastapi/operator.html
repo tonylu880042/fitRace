@@ -269,9 +269,22 @@
     }
 
     .binding-card-type {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 6px;
       margin-top: 2px;
       color: var(--muted);
       font-size: 12px;
+    }
+
+    .binding-card-channel {
+      padding: 1px 6px;
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.04em;
     }
 
     .binding-card-metrics {
@@ -1076,6 +1089,11 @@
       return `${number.toFixed(digits)}${suffix}`;
     }
 
+    function formatAntennaChannel(value) {
+      const channel = String(value || "").trim();
+      return channel ? channel.toUpperCase() : "--";
+    }
+
     // -- Wi-Fi / Hub status -------------------------------------------------
 
     async function refreshWifiStatus() {
@@ -1327,7 +1345,10 @@
           <div class="binding-card" data-node-id="${escapeHtml(binding.node_id)}">
             <div>
               <div class="binding-card-name">${escapeHtml(binding.equipment_id || binding.node_id)}</div>
-              <div class="binding-card-type">${escapeHtml(binding.equipment_type ? typeLabel(binding.equipment_type) : "--")}</div>
+              <div class="binding-card-type">
+                <span>${escapeHtml(binding.equipment_type ? typeLabel(binding.equipment_type) : "--")}</span>
+                <span class="binding-card-channel" data-field="channel">${escapeHtml(formatAntennaChannel(binding.antenna_channel))}</span>
+              </div>
             </div>
             <div class="pill" data-role="pill"></div>
             <div class="binding-card-metrics">
@@ -1355,9 +1376,11 @@
         if (!card) return;
         const payload = telemetryForBinding(binding);
         const live = payload && telemetryAgeMs(payload) <= MONITOR_LIVE_WINDOW_MS;
+        const channel = payload?.antenna_channel || binding.antenna_channel;
         const pill = card.querySelector('[data-role="pill"]');
         pill.className = `pill ${live ? "live" : ""}`;
         pill.textContent = live ? t("monitor.live") : t("monitor.waiting");
+        card.querySelector('[data-field="channel"]').textContent = formatAntennaChannel(channel);
         card.querySelector('[data-field="speed"]').textContent = formatMetric(payload?.instantaneous_speed_kph, " kph", 1);
         card.querySelector('[data-field="power"]').textContent = formatMetric(payload?.power_watts, " W", 0);
         card.querySelector('[data-field="rssi"]').textContent = formatMetric(payload?.rssi, " dBm", 0);
