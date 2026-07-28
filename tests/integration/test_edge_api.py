@@ -171,6 +171,17 @@ def test_edge_operator_page_shows_live_uart_rx_tx_monitor_below_wifi():
     assert '"uartmonitor.tx": "TX Send"' in source
 
 
+def test_edge_operator_uart_monitor_is_three_times_taller():
+    client = TestClient(edge_app_module.app)
+
+    source = client.get("/").text
+
+    assert ".uart-monitor-log {\n      height: 840px;" in source
+    mobile_start = source.index("@media (max-width: 820px)")
+    mobile_source = source[mobile_start:]
+    assert ".uart-monitor-log {\n        height: 720px;" in mobile_source
+
+
 def test_edge_operator_uart_monitor_reuses_telemetry_poll_and_keeps_latest_events():
     client = TestClient(edge_app_module.app)
 
