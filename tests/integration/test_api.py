@@ -339,6 +339,28 @@ def test_nodes_endpoint_returns_registered_edge_nodes():
     response = client.get("/api/nodes")
     assert response.status_code == 200
     assert response.json()["nodes"][0]["edge_node_id"] == "fitrace-edge-01"
+    assert response.json()["nodes"][0]["display_name"] == "Node101"
+    assert (
+        response.json()["nodes"][0]["equipment_streams"][0]["display_name"]
+        == "Node101+BIKE_01"
+    )
+
+
+def test_system_admin_uses_friendly_stream_labels_and_filters_stale_edge_ids():
+    source = client.get("/static/systemAdmin.html").text
+
+    assert "function getCurrentStreamCatalog()" in source
+    assert "node.display_name || node.edge_node_id" in source
+    assert "stream.display_name" in source
+    assert "function staleStreamLabel(nodeId, catalog)" in source
+    assert "if (staleStreamLabel(nodeId, catalog)) return;" in source
+    assert "streamDisplayLabel(station.node_id" in source
+    assert (
+        "const staleAssigned = Boolean(staleStreamLabel(station.node_id, catalog));"
+        in source
+    )
+    assert '"text.stale_stream": "stale stream"' in source
+    assert '"text.stale_stream": "舊資料流"' in source
 
 
 def test_power_status_endpoint_defaults_to_dry_run():

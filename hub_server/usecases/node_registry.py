@@ -1,3 +1,5 @@
+import ipaddress
+import re
 import time
 
 from hub_server.domain.models import EdgeNodeStatus
@@ -12,6 +14,31 @@ class NodeRegistry:
     # Live per-stream fields come from telemetry, not the heartbeat, so a
     # heartbeat's config-only stream list must not clobber them.
     _LIVE_STREAM_FIELDS = ("last_telemetry_epoch_ms", "rssi", "ftms_type")
+
+    @staticmethod
+    def _edge_display_name(data: dict) -> str:
+        ip_value = data.get("ip")
+        if ip_value:
+            try:
+                address = ipaddress.ip_address(ip_value)
+                if address.version == 4:
+                    return f"Node{str(address).rsplit('.', 1)[-1]}"
+            except ValueError:
+                pass
+
+        edge_node_id = str(data.get("edge_node_id") or "")
+        suffix = re.search(r"(\d+)$", edge_node_id)
+        return f"Node{suffix.group(1)}" if suffix else edge_node_id or "Node"
+
+    @classmethod
+    def _add_display_names(cls, data: dict) -> None:
+        edge_name = cls._edge_display_name(data)
+        data["display_name"] = edge_name
+        for stream in data.get("equipment_streams") or []:
+            if not isinstance(stream, dict):
+                continue
+            equipment_name = stream.get("equipment_id") or stream.get("node_id") or "Device"
+            stream["display_name"] = f"{edge_name}+{equipment_name}"
 
     def update_status(
         self, payload: dict, edge_node_id: str | None = None
@@ -107,6 +134,7 @@ class NodeRegistry:
             data = status.model_dump()
             if now_ms - status.last_seen_epoch_ms > self._offline_timeout_ms:
                 data["status"] = "offline"
+            self._add_display_names(data)
             nodes.append(data)
         return nodes
 

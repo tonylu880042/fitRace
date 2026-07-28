@@ -1280,6 +1280,7 @@
         "text.assigned": "Assigned",
         "text.empty": "Empty",
         "text.stream_available": "Stream available",
+        "text.stale_stream": "stale stream",
         "text.connected": "connected",
         "text.idle": "idle",
         "text.no_data": "no data",
@@ -1395,6 +1396,7 @@
       "text.assigned": "已指派",
       "text.empty": "空位",
       "text.stream_available": "可用資料流",
+      "text.stale_stream": "舊資料流",
       "text.connected": "已連線",
       "text.idle": "閒置",
       "text.no_data": "無資料",
@@ -1615,6 +1617,45 @@
 
 
 
+    function getCurrentStreamCatalog() {
+      const streams = new Map();
+      const edges = [];
+      (state.nodes || []).forEach((edge) => {
+        const edgeId = edge.edge_node_id || "";
+        const edgeLabel = edge.display_name || edgeId || "Node";
+        edges.push({
+          prefix: edgeId ? `${edgeId}-` : "",
+          label: edgeLabel,
+        });
+        (edge.equipment_streams || []).forEach((stream) => {
+          if (!stream.node_id) return;
+          streams.set(stream.node_id, {
+            node_id: stream.node_id,
+            label: stream.display_name || `${edgeLabel}+${stream.equipment_id || stream.node_id}`,
+            equipment_type: stream.equipment_type || stream.status || "configured",
+            source: edgeId || "edge",
+          });
+        });
+      });
+      return { streams, edges };
+    }
+
+    function staleStreamLabel(nodeId, catalog) {
+      if (!nodeId || catalog.streams.has(nodeId)) return "";
+      const edge = catalog.edges.find((item) => item.prefix && nodeId.startsWith(item.prefix));
+      if (!edge) return "";
+      const suffix = nodeId.slice(edge.prefix.length);
+      return `${edge.label}+${t("text.stale_stream")}${suffix ? `-${suffix}` : ""}`;
+    }
+
+    function streamDisplayLabel(nodeId, equipmentType = "", catalog = getCurrentStreamCatalog()) {
+      const current = catalog.streams.get(nodeId);
+      if (current) return current.label;
+      const stale = staleStreamLabel(nodeId, catalog);
+      if (stale) return stale;
+      return `${nodeId || "--"}${equipmentType ? ` (${equipmentType})` : ""}`;
+    }
+
     function renderEdges() {
       const nodes = state.nodes || [];
       const online = nodes.filter((node) => node.status === "online").length;
@@ -1630,6 +1671,10 @@
       list.innerHTML = [...nodes].sort((a, b) => String(a.edge_node_id || "").localeCompare(String(b.edge_node_id || ""))).map((node) => {
         const endpoint = node.ip || node.hostname || "";
         const localLink = node.ip ? `http://${node.ip}:8001/` : "";
+        const nodeName = node.display_name || node.edge_node_id || "unknown-edge";
+        const technicalName = node.edge_node_id && node.edge_node_id !== nodeName
+          ? `${node.edge_node_id} · `
+          : "";
         const streams = node.equipment_streams || [];
         const streamRows = streams.map((stream) => {
           const last = stream.last_telemetry_epoch_ms;
@@ -1641,7 +1686,7 @@
               : `<span class="link-badge none"><span class="dot"></span>${escapeHtml(t("text.no_data"))}</span>`;
           return `
             <tr>
-              <td><strong>${escapeHtml(stream.equipment_id || stream.node_id || "stream")}</strong></td>
+              <td><strong>${escapeHtml(stream.display_name || stream.equipment_id || stream.node_id || "stream")}</strong></td>
               <td class="mono">${escapeHtml(stream.antenna_channel || "--")}</td>
               <td class="mono">${escapeHtml(stream.mac_address || stream.ble_target || "--")}</td>
               <td>${link}</td>
@@ -1659,8 +1704,8 @@
           <div class="row-card">
             <div class="row-main">
               <div>
-                <div class="row-name"><span class="dot ${node.status === "online" ? "online" : ""}" style="display:inline-block;margin-right:8px;"></span>${escapeHtml(node.edge_node_id || "unknown-edge")}</div>
-                <div class="row-meta">${escapeHtml(endpoint || "--")} · ${escapeHtml(node.software_version || "version --")} · last ${formatAge(node.last_seen_epoch_ms)}</div>
+                <div class="row-name"><span class="dot ${node.status === "online" ? "online" : ""}" style="display:inline-block;margin-right:8px;"></span>${escapeHtml(nodeName)}</div>
+                <div class="row-meta">${escapeHtml(technicalName)}${escapeHtml(endpoint || "--")} · ${escapeHtml(node.software_version || "version --")} · last ${formatAge(node.last_seen_epoch_ms)}</div>
               </div>
               ${localLink ? `<button type="button" onclick="window.open('${escapeHtml(localLink)}','_blank','noopener')" title="${escapeHtml(t("text.open_device_page"))}">${escapeHtml(t("text.open_device_page"))}</button>` : ""}
             </div>
@@ -1672,31 +1717,28 @@
 
     function getKnownStreams() {
       const streams = new Map();
+      const catalog = getCurrentStreamCatalog();
       (state.stations.unassigned_nodes || []).forEach((nodeId) => {
-        streams.set(nodeId, { node_id: nodeId, label: nodeId, source: "active" });
+        if (staleStreamLabel(nodeId, catalog)) return;
+        const current = catalog.streams.get(nodeId);
+        streams.set(nodeId, current || { node_id: nodeId, label: nodeId, source: "active" });
       });
       Object.values(state.stations.stations || {}).forEach((station) => {
         if (station.node_id) {
+          const nodeId = station.node_id;
+          if (staleStreamLabel(nodeId, catalog)) return;
+          const current = catalog.streams.get(nodeId);
           streams.set(station.node_id, {
-            node_id: station.node_id,
-            label: `${station.node_id} (${station.equipment_type || "unknown"})`,
+            node_id: nodeId,
+            label: current?.label || `${nodeId} (${station.equipment_type || "unknown"})`,
             source: "station",
           });
         }
       });
-      (state.nodes || []).forEach((edge) => {
-        (edge.equipment_streams || []).forEach((stream) => {
-          const id = stream.node_id;
-          if (id) {
-            streams.set(id, {
-              node_id: id,
-              label: `${id} (${stream.equipment_type || stream.status || "configured"})`,
-              source: edge.edge_node_id || "edge",
-            });
-          }
-        });
+      catalog.streams.forEach((stream, nodeId) => {
+        streams.set(nodeId, stream);
       });
-      return [...streams.values()].sort((a, b) => a.node_id.localeCompare(b.node_id));
+      return [...streams.values()].sort((a, b) => a.label.localeCompare(b.label));
     }
 
     function renderNodeOptions() {
@@ -1722,25 +1764,35 @@
     function renderStations() {
       const stations = state.stations.stations || {};
       const keys = Object.keys(stations).sort((a, b) => Number(a) - Number(b));
+      const catalog = getCurrentStreamCatalog();
+      const availableNodeIds = (state.stations.unassigned_nodes || []).filter(
+        (nodeId) => !staleStreamLabel(nodeId, catalog)
+      );
       updateSignupLink();
 
       const list = $("station-list");
-      if (!keys.length && !(state.stations.unassigned_nodes || []).length) {
+      if (!keys.length && !availableNodeIds.length) {
         list.innerHTML = `<div class="empty">${escapeHtml(t("text.no_station_or_stream"))}</div>`;
         return;
       }
 
       const assignedRows = keys.map((key) => {
         const station = stations[key] || {};
-        const bound = Boolean(station.node_id);
+        const staleAssigned = Boolean(staleStreamLabel(station.node_id, catalog));
+        const bound = Boolean(station.node_id) && !staleAssigned;
+        const assignmentStatus = staleAssigned
+          ? t("text.stale_stream")
+          : bound
+            ? t("text.assigned")
+            : t("text.empty");
         const who = station.athlete_name
           ? ` · ${escapeHtml(station.athlete_name)}${station.team_name ? ` (${escapeHtml(station.team_name)})` : ""}`
           : "";
         return `
           <tr>
             <td class="mono">${escapeHtml(String(key).padStart(2, "0"))}</td>
-            <td><span class="dot ${bound ? "online" : ""}"></span>${bound ? escapeHtml(t("text.assigned")) : escapeHtml(t("text.empty"))}${who}</td>
-            <td class="mono">${escapeHtml(station.node_id || "--")}${station.equipment_type ? ` (${escapeHtml(station.equipment_type)})` : ""}</td>
+            <td><span class="dot ${bound ? "online" : ""}"></span>${escapeHtml(assignmentStatus)}${who}</td>
+            <td class="mono">${escapeHtml(streamDisplayLabel(station.node_id, station.equipment_type, catalog))}</td>
             <td>
               <button type="button" class="icon-btn" title="Edit in form above" onclick="selectStation(${Number(key)}, '${escapeHtml(station.node_id || "")}')">✎</button>
               <button type="button" class="icon-btn" title="${escapeHtml(t("text.unassign_title"))}" onclick="unassignStation(${Number(key)})">✕</button>
@@ -1749,11 +1801,11 @@
         `;
       }).join("");
 
-      const unassignedRows = (state.stations.unassigned_nodes || []).map((nodeId) => `
+      const unassignedRows = availableNodeIds.map((nodeId) => `
         <tr>
           <td class="mono">--</td>
           <td><span class="dot"></span>${escapeHtml(t("text.stream_available"))}</td>
-          <td class="mono">${escapeHtml(nodeId)}</td>
+          <td class="mono">${escapeHtml(streamDisplayLabel(nodeId, "", catalog))}</td>
           <td><button type="button" class="icon-btn" title="Use in form above" onclick="selectNode('${escapeHtml(nodeId)}')">➜</button></td>
         </tr>
       `).join("");
@@ -1796,6 +1848,7 @@
     async function assignSelectedStation() {
       const stationNumber = parseInt($("station-number").value, 10);
       const nodeId = $("node-select").value;
+      const nodeLabel = streamDisplayLabel(nodeId);
       if (!Number.isFinite(stationNumber) || stationNumber <= 0 || !nodeId) {
         setMessage("station-message", t("message.select_station_and_stream"), "error");
         return;
@@ -1804,7 +1857,7 @@
         state.stations = await assignStation(stationNumber, nodeId);
         renderStations();
         renderNodeOptions();
-        setMessage("station-message", t("message.station_assigned", { stationNumber, nodeId }), "ok");
+        setMessage("station-message", t("message.station_assigned", { stationNumber, nodeId: nodeLabel }), "ok");
       } catch (error) {
         setMessage("station-message", error.message, "error");
       }
@@ -2082,6 +2135,7 @@
         if (payload.type === "node_status") {
           state.nodes = payload.nodes || (payload.node ? [payload.node] : []);
           renderEdges();
+          renderStations();
           renderNodeOptions();
           return;
         }

@@ -1,6 +1,51 @@
 from hub_server.usecases.node_registry import NodeRegistry
 
 
+def test_node_registry_builds_operator_labels_from_ip_and_ble_name():
+    registry = NodeRegistry(now_ms=lambda: 1_000_000)
+    registry.update_status(
+        {
+            "edge_node_id": "fitrace-edge-01",
+            "ip": "192.168.0.130",
+            "status": "online",
+            "equipment_streams": [
+                {
+                    "node_id": "fitrace-edge-01-01",
+                    "equipment_id": "Vmax_1183",
+                    "equipment_type": "spin_bike",
+                }
+            ],
+        }
+    )
+
+    node = registry.list_nodes()[0]
+
+    assert node["display_name"] == "Node130"
+    assert node["equipment_streams"][0]["display_name"] == "Node130+Vmax_1183"
+    assert node["equipment_streams"][0]["node_id"] == "fitrace-edge-01-01"
+
+
+def test_node_registry_display_label_falls_back_to_edge_number_when_ip_missing():
+    registry = NodeRegistry(now_ms=lambda: 1_000_000)
+    registry.update_status(
+        {
+            "edge_node_id": "fitrace-edge-07",
+            "status": "online",
+            "equipment_streams": [
+                {
+                    "node_id": "fitrace-edge-07-01",
+                    "equipment_id": "Bike_A",
+                }
+            ],
+        }
+    )
+
+    node = registry.list_nodes()[0]
+
+    assert node["display_name"] == "Node07"
+    assert node["equipment_streams"][0]["display_name"] == "Node07+Bike_A"
+
+
 def test_node_registry_updates_edge_status_and_marks_offline_after_timeout():
     now_ms = 1_000_000
     registry = NodeRegistry(now_ms=lambda: now_ms, offline_timeout_ms=10_000)
