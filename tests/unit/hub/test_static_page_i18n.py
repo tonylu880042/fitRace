@@ -164,6 +164,13 @@ def test_game_admin_uses_one_button_for_separate_save_and_start_steps():
     assert "if (config && !state.raceConfigDirty)" in source
 
 
+def test_game_admin_labels_individual_race_as_anonymous_optional():
+    source = _read("gameAdmin.html")
+
+    assert '"option.individual": "Individual Race (Anonymous Allowed)"' in source
+    assert '"option.individual": "個人賽（可匿名參加）"' in source
+
+
 def test_game_admin_and_system_admin_inline_dictionaries_stay_symmetric():
     for name in ("gameAdmin.html", "systemAdmin.html"):
         source = _read(name)
