@@ -49,6 +49,20 @@ def test_edge_operator_page_served_at_root():
     assert "新增設備" in response.text
 
 
+def test_edge_operator_page_can_scan_and_connect_wifi_without_maintenance_page():
+    client = TestClient(edge_app_module.app)
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    source = response.text
+    assert 'id="wifi-settings-btn"' in source
+    assert 'id="view-wifi"' in source
+    assert 'id="wifi-networks"' in source
+    assert 'id="wifi-scan-message"' in source
+    assert 'aria-live="polite"' in source
+
+
 def test_edge_maintenance_page_serves_old_setup_page():
     client = TestClient(edge_app_module.app)
 
