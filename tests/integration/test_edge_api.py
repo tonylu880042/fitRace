@@ -73,6 +73,7 @@ def test_edge_operator_workspace_is_two_columns_and_stacks_on_narrow_screens():
     source = client.get("/").text
 
     assert "grid-template-columns: minmax(300px, 360px) minmax(0, 1fr)" in source
+    assert "max-height: calc(100vh - 144px)" in source
     assert "@media (max-width: 820px)" in source
     assert "grid-template-columns: 1fr" in source
 
