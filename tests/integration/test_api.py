@@ -649,6 +649,42 @@ def test_race_readiness_reports_blocking_issues_before_start():
     assert "Register at least one athlete" in blocked.json()["detail"]
 
 
+def test_individual_race_can_start_anonymously_with_an_online_station():
+    from hub_server.infrastructure.fastapi.app import node_registry
+
+    client.post("/api/race/reset")
+    node_registry.clear()
+    set_online_station(1, "node-01")
+    client.post(
+        "/api/race/configure",
+        json={
+            "race_type": "distance",
+            "target_value": 100,
+            "duration_sec": 0,
+            "competition_mode": "individual",
+        },
+    )
+
+    readiness = client.get("/api/race/readiness")
+
+    assert readiness.status_code == 200
+    payload = readiness.json()
+    assert payload["ready"] is True
+    assert payload["blocking_issues"] == []
+    assert payload["checks"]["registrations"] == {
+        "status": "info",
+        "message": "Individual race allows anonymous participation.",
+    }
+    assert payload["checks"]["stations"]["status"] == "ok"
+    assert payload["station_health"][0]["station_number"] == 1
+    assert payload["station_health"][0]["athlete_name"] is None
+
+    started = client.post("/api/race/start")
+    assert started.status_code == 200
+    assert started.json()["state"] == "RUNNING"
+    client.post("/api/race/reset")
+
+
 def test_race_readiness_passes_for_online_registered_team_race():
     from hub_server.infrastructure.fastapi.app import node_registry
 

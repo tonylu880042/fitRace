@@ -423,7 +423,7 @@ def get_race_readiness_status() -> dict:
         "target": build_check("ok", "Race target is valid."),
         "registrations": build_check("ok", "Athletes are registered."),
         "teams": build_check("ok", "Team setup is valid."),
-        "stations": build_check("ok", "Registered stations are online."),
+        "stations": build_check("ok", "Participant stations are online."),
         "sound": build_check("ok", "Start sound is enabled."),
     }
 
@@ -441,6 +441,12 @@ def get_race_readiness_status() -> dict:
         blocking_issues.append("Challenge duration must be greater than 0.")
         checks["target"] = build_check("block", "Challenge duration must be greater than 0.")
 
+    assigned_stations = [
+        (int(station_number), station)
+        for station_number, station in stations.items()
+        if station.get("node_id")
+    ]
+    assigned_stations.sort(key=lambda item: item[0])
     registered_stations = [
         (int(station_number), station)
         for station_number, station in stations.items()
@@ -448,16 +454,31 @@ def get_race_readiness_status() -> dict:
     ]
     registered_stations.sort(key=lambda item: item[0])
 
-    if not registered_stations:
-        blocking_issues.append("Register at least one athlete before starting.")
-        checks["registrations"] = build_check("block", "No athletes are registered.")
+    is_team_race = bool(config and config.competition_mode == "team")
+    if is_team_race:
+        participant_stations = registered_stations
+        if not registered_stations:
+            blocking_issues.append("Register at least one athlete before starting.")
+            checks["registrations"] = build_check(
+                "block", "No athletes are registered."
+            )
+        else:
+            checks["registrations"] = build_check(
+                "ok", f"{len(registered_stations)} athlete(s) registered."
+            )
     else:
+        participant_stations = assigned_stations
         checks["registrations"] = build_check(
-            "ok", f"{len(registered_stations)} athlete(s) registered."
+            "info", "Individual race allows anonymous participation."
         )
+        if not assigned_stations:
+            blocking_issues.append("Assign at least one station before starting.")
+            checks["stations"] = build_check(
+                "block", "No participant station is assigned."
+            )
 
     station_health = []
-    for station_number, station in registered_stations:
+    for station_number, station in participant_stations:
         health = station_stream_health(station.get("node_id"))
         health_item = {
             "station_number": station_number,
@@ -480,7 +501,7 @@ def get_race_readiness_status() -> dict:
             f"{len(unhealthy)} station(s) need attention (Station {station_list}).",
         )
 
-    if config and config.competition_mode == "team":
+    if is_team_race:
         team_names = {
             (station.get("team_name") or "").strip()
             for _, station in registered_stations
