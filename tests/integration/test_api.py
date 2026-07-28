@@ -303,6 +303,8 @@ def test_management_controls_are_split_by_admin_role():
     assert "Unassign station" in response_system_admin.text
     assert "Software" in response_system_admin.text
     assert "Power Controls" in response_system_admin.text
+    assert '"sidebar.system_override": "Power Controls"' in response_system_admin.text
+    assert '"sidebar.system_override": "電源與重啟"' in response_system_admin.text
     assert "Maintenance Unlock" in response_system_admin.text
     assert "Access Code" in response_system_admin.text
     assert "Admin Token" not in response_system_admin.text
