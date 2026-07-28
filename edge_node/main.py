@@ -35,26 +35,15 @@ def _broker_reachable(host, port, timeout=1.5):
 
 
 def resolve_mqtt_host(configured, port, probe=_broker_reachable):
-    """Pick the MQTT broker host, tolerant of a stale/wrong config value.
+    """Resolve the configured MQTT broker without changing its identity.
 
     - ""/"auto" -> localhost. On the all-in-one Pi the broker is always local,
       so this is correct and survives any IP/network change (zero config).
-    - An explicit host that is reachable is used as-is (distributed setups;
-      prefer a .local hostname over an IP so it survives IP changes).
-    - An explicit host that is NOT reachable, when a local broker IS up, falls
-      back to localhost. This self-heals the exact failure where config was
-      pinned to an old hub IP and the network moved, stranding the edge.
+    - An explicit host is authoritative, including while it is unreachable.
+      Silently selecting a local broker would publish to the wrong Central Hub.
     """
     if not configured or configured == "auto":
         return "localhost"
-    if configured not in ("localhost", "127.0.0.1") and not probe(configured, port):
-        if probe("localhost", port):
-            logger.warning(
-                "Configured MQTT broker '%s' is unreachable but a local broker "
-                "is up; using localhost.",
-                configured,
-            )
-            return "localhost"
     return configured
 
 

@@ -105,6 +105,43 @@ def test_edge_operator_page_can_scan_and_connect_wifi_without_maintenance_page()
     assert 'id="view-wifi"' not in source
 
 
+def test_edge_operator_page_requires_verified_central_hub_before_pairing():
+    client = TestClient(edge_app_module.app)
+
+    source = client.get("/").text
+
+    assert 'id="central-hub-title"' in source
+    assert 'id="central-hub-host"' in source
+    assert 'id="central-hub-port"' in source
+    assert 'id="central-hub-save-btn"' in source
+    assert 'id="central-hub-message"' in source
+    assert 'adminFetch("/api/central-hub")' in source
+    assert "let centralHubReady = false;" in source
+    assert "full || !centralHubReady" in source
+    assert (
+        '"hub.required": "Connect to the Central Hub before adding equipment."'
+        in source
+    )
+    assert '"hub.required": "請先連線 Central Hub，才能新增設備。"' in source
+
+
+def test_edge_operator_page_exposes_ping_and_status_field_diagnostics():
+    client = TestClient(edge_app_module.app)
+
+    source = client.get("/").text
+
+    assert 'id="field-diagnostics-title"' in source
+    assert 'id="diagnostic-ping-btn"' in source
+    assert 'id="diagnostic-status-btn"' in source
+    assert 'id="diagnostic-results"' in source
+    assert 'runAntennaDiagnostic("ping")' in source
+    assert 'runAntennaDiagnostic("status")' in source
+    assert 'adminFetch("/api/antenna/command", {' in source
+    assert '"diagnostics.ping": "PING"' in source
+    assert '"diagnostics.status": "STATUS"' in source
+    assert '"diagnostics.title": "現場診斷"' in source
+
+
 def test_edge_operator_workspace_is_two_columns_and_stacks_on_narrow_screens():
     client = TestClient(edge_app_module.app)
 
@@ -142,12 +179,11 @@ def test_edge_operator_wifi_view_uses_existing_scan_and_connect_apis():
     assert "async function toggleWifiPicker()" in source
     assert "function renderWifiConnect(net)" in source
     assert "async function openWifiSettings()" not in source
-    assert "showView(\"wifi\")" not in source
-    assert 'body: JSON.stringify({ ssid: net.ssid, password })' in source
+    assert 'showView("wifi")' not in source
+    assert "body: JSON.stringify({ ssid: net.ssid, password })" in source
     assert 'id="wifi-password"' in source
     assert (
-        '${net.active ? t("wifi.connected") : t("wifi.connect")} ${net.ssid}'
-        in source
+        '${net.active ? t("wifi.connected") : t("wifi.connect")} ${net.ssid}' in source
     )
     assert 't("wifi.back_to_list")' in source
     assert "if (expanded && !wifiNetworksLoaded)" in source
@@ -201,8 +237,8 @@ def test_edge_operator_uart_monitor_shows_latest_first_and_keeps_only_200_messag
     assert 'event.source === "uart"' in render_source
     assert 'event.direction === "rx" || event.direction === "tx"' in render_source
     assert ".slice(-UART_MONITOR_MAX).reverse()" in render_source
-    assert 'event.parsed && event.parsed.raw != null' in render_source
-    assert "parsed.type === \"telemetry\"" not in render_source
+    assert "event.parsed && event.parsed.raw != null" in render_source
+    assert 'parsed.type === "telemetry"' not in render_source
     assert "const wasAtTop = log.scrollTop < 24;" in render_source
     assert "if (firstRender || wasAtTop)" in render_source
     assert "log.scrollTop = 0;" in render_source
@@ -595,14 +631,28 @@ def test_edge_setup_sensitive_endpoints_require_admin_token(monkeypatch):
             )
 
     monkeypatch.setattr(edge_app_module, "wifi_status_reader", FakeWifiStatusReader())
+    monkeypatch.setattr(
+        edge_app_module,
+        "central_hub_reachable",
+        lambda host, port, timeout_sec=2.0: True,
+    )
     client = TestClient(edge_app_module.app)
 
     assert client.get("/api/ble/scan").status_code == 401
     assert client.get("/api/wifi/status").status_code == 401
+    assert client.get("/api/central-hub").status_code == 401
+    assert (
+        client.post(
+            "/api/central-hub",
+            json={"host": "localhost", "port": 1883},
+        ).status_code
+        == 401
+    )
 
     headers = {"X-FitRace-Admin-Token": "admin-secret"}
     assert client.get("/api/ble/scan", headers=headers).status_code == 200
     assert client.get("/api/wifi/status", headers=headers).status_code == 200
+    assert client.get("/api/central-hub", headers=headers).status_code == 200
 
 
 def test_edge_power_shutdown_requires_confirmation_and_defaults_to_dry_run():
@@ -707,6 +757,133 @@ def test_edge_ble_scan_endpoint_can_include_all_devices(monkeypatch):
 
     assert response.status_code == 200
     assert len(response.json()["devices"]) == 2
+
+
+def test_central_hub_status_reports_configured_host_and_reachability(
+    monkeypatch, tmp_path
+):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "node_id": "fitrace-edge-test",
+                "mqtt_host": "fitrace-hub.local",
+                "mqtt_port": 1883,
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(edge_app_module, "CONFIG_PATH", config_path)
+    monkeypatch.setattr(
+        edge_app_module,
+        "central_hub_reachable",
+        lambda host, port, timeout_sec=2.0: host == "fitrace-hub.local"
+        and port == 1883,
+    )
+    client = TestClient(edge_app_module.app)
+
+    response = client.get("/api/central-hub")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "host": "fitrace-hub.local",
+        "port": 1883,
+        "status": "connected",
+        "reachable": True,
+    }
+
+
+def test_configure_central_hub_verifies_then_saves_and_restarts_runtime(
+    monkeypatch, tmp_path
+):
+    from fitrace_common.power_manager import PowerActionResult
+
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "node_id": "fitrace-edge-test",
+                "mqtt_host": "localhost",
+                "mqtt_port": 1883,
+                "equipment_bindings": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    calls = []
+
+    monkeypatch.setattr(edge_app_module, "CONFIG_PATH", config_path)
+    monkeypatch.setattr(
+        edge_app_module,
+        "central_hub_reachable",
+        lambda host, port, timeout_sec=2.0: calls.append(("probe", host, port)) or True,
+    )
+
+    class FakeServiceRestartManager:
+        def restart_service(self):
+            calls.append(("restart",))
+            return PowerActionResult(
+                action="restart-service",
+                target="edge",
+                dry_run=False,
+                command=[
+                    "sudo",
+                    "systemctl",
+                    "restart",
+                    "fitracestudio-edge.service",
+                ],
+                executed=True,
+            )
+
+    monkeypatch.setattr(
+        edge_app_module, "service_restart_manager", FakeServiceRestartManager()
+    )
+    client = TestClient(edge_app_module.app)
+
+    response = client.post(
+        "/api/central-hub",
+        json={"host": "192.168.0.10", "port": 1883},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "saved"
+    assert payload["reachable"] is True
+    assert payload["config"]["mqtt_host"] == "192.168.0.10"
+    assert payload["config"]["mqtt_port"] == 1883
+    assert payload["restart"]["executed"] is True
+    assert calls == [("probe", "192.168.0.10", 1883), ("restart",)]
+    saved = json.loads(config_path.read_text(encoding="utf-8"))
+    assert saved["mqtt_host"] == "192.168.0.10"
+    assert saved["mqtt_port"] == 1883
+
+
+def test_configure_central_hub_rejects_unreachable_address_without_saving(
+    monkeypatch, tmp_path
+):
+    config_path = tmp_path / "config.json"
+    original = {
+        "node_id": "fitrace-edge-test",
+        "mqtt_host": "localhost",
+        "mqtt_port": 1883,
+    }
+    config_path.write_text(json.dumps(original), encoding="utf-8")
+    monkeypatch.setattr(edge_app_module, "CONFIG_PATH", config_path)
+    monkeypatch.setattr(
+        edge_app_module,
+        "central_hub_reachable",
+        lambda host, port, timeout_sec=2.0: False,
+    )
+    client = TestClient(edge_app_module.app)
+
+    response = client.post(
+        "/api/central-hub",
+        json={"host": "192.168.0.99", "port": 1883},
+    )
+
+    assert response.status_code == 503
+    assert "192.168.0.99:1883" in response.json()["detail"]
+    assert json.loads(config_path.read_text(encoding="utf-8")) == original
 
 
 def test_edge_antenna_command_endpoint_uses_runner(monkeypatch):

@@ -7,7 +7,7 @@ import time
 from dataclasses import asdict
 from pathlib import Path
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 
@@ -81,6 +81,24 @@ class WifiConnectPayload(BaseModel):
     ssid: str = Field(..., min_length=1, max_length=32)
     password: str | None = Field(None, max_length=64)
     interface: str = "wlan0"
+
+
+class CentralHubPayload(BaseModel):
+    host: str = Field(..., min_length=1, max_length=253)
+    port: int = Field(1883, ge=1, le=65535)
+
+    @field_validator("host")
+    @classmethod
+    def validate_host(cls, value: str) -> str:
+        host = value.strip()
+        if (
+            not host
+            or "://" in host
+            or "/" in host
+            or any(character.isspace() for character in host)
+        ):
+            raise ValueError("enter a host name or IP address without a URL path")
+        return host
 
 
 class EdgeConfigPayload(EdgeNodeConfig):
@@ -163,6 +181,18 @@ def default_antenna_port() -> str:
     if config.antenna_channels:
         return config.antenna_channels[0].port
     return FALLBACK_ANTENNA_PORT
+
+
+def central_hub_reachable(
+    host: str,
+    port: int,
+    timeout_sec: float = 2.0,
+) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=timeout_sec):
+            return True
+    except OSError:
+        return False
 
 
 def _pairing_restore_configured_devices(config: EdgeNodeConfig) -> dict:
@@ -419,6 +449,55 @@ def connect_wifi(payload: WifiConnectPayload, request: Request):
     except wifi_manager.WifiError as e:
         raise HTTPException(status_code=e.status_code, detail=str(e))
     return {"status": "connected", "detail": detail, "ip": local_ip_address()}
+
+
+@app.get("/api/central-hub")
+def get_central_hub(request: Request):
+    require_admin(request)
+    config = load_edge_config()
+    reachable = central_hub_reachable(config.mqtt_host, config.mqtt_port)
+    return {
+        "host": config.mqtt_host,
+        "port": config.mqtt_port,
+        "status": "connected" if reachable else "unreachable",
+        "reachable": reachable,
+    }
+
+
+@app.post("/api/central-hub")
+def configure_central_hub(payload: CentralHubPayload, request: Request):
+    require_admin(request)
+    if not central_hub_reachable(payload.host, payload.port):
+        raise HTTPException(
+            status_code=503,
+            detail=f"Central Hub is not reachable at {payload.host}:{payload.port}",
+        )
+
+    config = load_edge_config()
+    changed = config.mqtt_host != payload.host or config.mqtt_port != payload.port
+    updated_config = config.model_copy(
+        update={"mqtt_host": payload.host, "mqtt_port": payload.port},
+        deep=True,
+    )
+    save_edge_config(updated_config)
+
+    restart = None
+    warnings = []
+    if changed:
+        try:
+            restart = _pairing_restart_service()
+            if restart.get("dry_run"):
+                warnings.append("runtime restart is not enabled")
+        except (PowerActionError, RuntimeError, OSError) as exc:
+            warnings.append(f"runtime restart: {exc}")
+
+    return {
+        "status": "saved" if not warnings else "saved_with_warnings",
+        "reachable": True,
+        "config": updated_config.model_dump(),
+        "restart": restart,
+        "warnings": warnings,
+    }
 
 
 @app.get("/api/antenna/config")

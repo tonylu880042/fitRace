@@ -191,6 +191,63 @@
       margin-bottom: 12px;
     }
 
+    .panel + .panel {
+      margin-top: 14px;
+    }
+
+    .connection-form {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 92px;
+      gap: 8px;
+    }
+
+    .connection-form .field {
+      margin-top: 0;
+    }
+
+    .connection-form .field:first-child {
+      grid-column: 1;
+    }
+
+    .connection-form .field:nth-child(2) {
+      grid-column: 2;
+    }
+
+    .connection-form button,
+    .connection-form .message {
+      grid-column: 1 / -1;
+    }
+
+    .connection-form button {
+      width: 100%;
+    }
+
+    .connection-help {
+      margin: 0 0 12px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .diagnostic-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .diagnostic-results {
+      min-height: 38px;
+      margin-top: 10px;
+      padding: 10px;
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 11px;
+      line-height: 1.55;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
     .card-grid {
       display: grid;
       gap: 10px;
@@ -488,7 +545,8 @@
     }
 
     input[type="text"],
-    input[type="password"] {
+    input[type="password"],
+    input[type="number"] {
       width: 100%;
       height: 42px;
       padding: 0 12px;
@@ -694,6 +752,7 @@
       <h1 id="operator-title">__EDGE_NODE_TITLE__</h1>
       <div class="chip-row">
         <div class="chip" id="hub-chip">
+          <span class="chip-dot" id="hub-chip-dot"></span>
           <span data-i18n="operator.hub_label">Hub</span>
           <span id="hub-chip-text">--</span>
         </div>
@@ -764,6 +823,22 @@
             <button type="button" id="wifi-rescan-btn" class="btn-secondary" data-i18n="wifi.rescan">Rescan</button>
           </div>
         </section>
+        <section class="panel" aria-labelledby="central-hub-title">
+          <h2 id="central-hub-title" data-i18n="hub.setup_title">Central Hub</h2>
+          <p class="connection-help" data-i18n="hub.setup_help">Verify the Central Hub before pairing equipment.</p>
+          <div class="connection-form">
+            <div class="field">
+              <label for="central-hub-host" data-i18n="hub.host_label">Host name or IP</label>
+              <input id="central-hub-host" type="text" autocomplete="off" placeholder="192.168.0.10">
+            </div>
+            <div class="field">
+              <label for="central-hub-port" data-i18n="hub.port_label">MQTT port</label>
+              <input id="central-hub-port" type="number" min="1" max="65535" inputmode="numeric" value="1883">
+            </div>
+            <button type="button" id="central-hub-save-btn" class="btn-secondary" data-i18n="hub.verify_save">Verify &amp; save</button>
+            <div id="central-hub-message" class="message" aria-live="polite"></div>
+          </div>
+        </section>
         <section class="panel uart-monitor-panel" aria-labelledby="uart-monitor-title">
           <h2 id="uart-monitor-title" data-i18n="uartmonitor.title">UART RX/TX Monitor</h2>
           <div class="uart-monitor-legend" id="uart-monitor-legend">
@@ -781,6 +856,15 @@
 
       <div id="edge-column" class="edge-column">
         <main id="view-home" class="view">
+          <section class="panel" aria-labelledby="field-diagnostics-title">
+            <h2 id="field-diagnostics-title" data-i18n="diagnostics.title">Field diagnostics</h2>
+            <p class="connection-help" data-i18n="diagnostics.help">Send a read-only command to every configured antenna channel.</p>
+            <div class="diagnostic-actions">
+              <button type="button" id="diagnostic-ping-btn" class="btn-secondary" data-i18n="diagnostics.ping">PING</button>
+              <button type="button" id="diagnostic-status-btn" class="btn-secondary" data-i18n="diagnostics.status">STATUS</button>
+            </div>
+            <div id="diagnostic-results" class="diagnostic-results" aria-live="polite" data-i18n="diagnostics.ready">Ready.</div>
+          </section>
           <section class="panel">
             <h2 id="bindings-count-title"></h2>
             <div id="binding-cards" class="card-grid"></div>
@@ -952,6 +1036,7 @@
     let wifiNetworks = [];
     let wifiNetworksLoaded = false;
     let uartMonitorSignature = null;
+    let centralHubReady = false;
 
     function bindingTargetCount(target) {
       const normalized = normalizeMac(target);
@@ -1013,9 +1098,81 @@
       }
     }
 
-    function refreshHubChip() {
+    function refreshHubChip(status = null) {
       const text = document.getElementById("hub-chip-text");
-      text.textContent = (edgeConfig && edgeConfig.mqtt_host) || "--";
+      const dot = document.getElementById("hub-chip-dot");
+      const host = (edgeConfig && edgeConfig.mqtt_host) || "--";
+      text.textContent = status
+        ? `${host} · ${t(status === "connected" ? "hub.connected_short" : "hub.unreachable_short")}`
+        : host;
+      dot.className = `chip-dot ${status === "connected" ? "ok" : "bad"}`;
+    }
+
+    async function refreshCentralHubStatus({ populateFields = false } = {}) {
+      const message = document.getElementById("central-hub-message");
+      try {
+        const response = await adminFetch("/api/central-hub");
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || t("hub.verify_failed"));
+        if (populateFields) {
+          document.getElementById("central-hub-host").value = result.host || "";
+          document.getElementById("central-hub-port").value = result.port || 1883;
+        }
+        centralHubReady = Boolean(result.reachable);
+        refreshHubChip(result.status);
+        message.textContent = centralHubReady
+          ? t("hub.connected", { host: result.host, port: result.port })
+          : t("hub.unreachable", { host: result.host, port: result.port });
+        message.className = `message ${centralHubReady ? "ok" : "error"}`;
+      } catch (error) {
+        centralHubReady = false;
+        refreshHubChip("unreachable");
+        message.textContent = error.message || t("hub.verify_failed");
+        message.className = "message error";
+      }
+      if (currentView === "home" && edgeConfig) renderBindingCards();
+    }
+
+    async function saveCentralHub() {
+      const button = document.getElementById("central-hub-save-btn");
+      const message = document.getElementById("central-hub-message");
+      const host = document.getElementById("central-hub-host").value.trim();
+      const port = Number(document.getElementById("central-hub-port").value);
+      if (!host || !Number.isInteger(port) || port < 1 || port > 65535) {
+        message.textContent = t("hub.invalid");
+        message.className = "message error";
+        return;
+      }
+
+      button.disabled = true;
+      centralHubReady = false;
+      message.textContent = t("hub.verifying");
+      message.className = "message";
+      if (currentView === "home" && edgeConfig) renderBindingCards();
+      try {
+        const response = await adminFetch("/api/central-hub", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ host, port }),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || t("hub.verify_failed"));
+        edgeConfig = result.config;
+        centralHubReady = true;
+        refreshHubChip("connected");
+        const warnings = Array.isArray(result.warnings) ? result.warnings : [];
+        message.textContent = warnings.length
+          ? t("hub.saved_restart_warning")
+          : t("hub.saved", { host, port });
+        message.className = `message ${warnings.length ? "error" : "ok"}`;
+      } catch (error) {
+        message.textContent = error.message || t("hub.verify_failed");
+        message.className = "message error";
+        await refreshCentralHubStatus();
+      } finally {
+        button.disabled = false;
+        if (currentView === "home" && edgeConfig) renderBindingCards();
+      }
     }
 
     function renderWifiNetworks() {
@@ -1185,8 +1342,10 @@
 
       const addBtn = document.getElementById("add-device-btn");
       const full = bindings.length >= total;
-      addBtn.disabled = full;
-      document.getElementById("add-device-message").textContent = full ? t("operator.add_device_full") : "";
+      addBtn.disabled = full || !centralHubReady;
+      document.getElementById("add-device-message").textContent = !centralHubReady
+        ? t("hub.required")
+        : (full ? t("operator.add_device_full") : "");
     }
 
     function updateBindingCardLeaves() {
@@ -1264,10 +1423,54 @@
         edgeConfig = payload;
         refreshHubChip();
         document.getElementById("disconnect-all-btn").disabled = false;
+        await refreshCentralHubStatus({ populateFields: true });
         if (currentView === "home") renderBindingCards();
       } catch (_error) {
         // best-effort; next poll retries
       }
+    }
+
+    async function runAntennaDiagnostic(command) {
+      const pingButton = document.getElementById("diagnostic-ping-btn");
+      const statusButton = document.getElementById("diagnostic-status-btn");
+      const output = document.getElementById("diagnostic-results");
+      const configuredChannels = Array.isArray(edgeConfig?.antenna_channels)
+        ? edgeConfig.antenna_channels
+        : [];
+      const channels = configuredChannels.length
+        ? configuredChannels
+        : [{ id: "UART", port: null, baudrate: 115200, rtscts: false }];
+
+      pingButton.disabled = true;
+      statusButton.disabled = true;
+      output.textContent = t("diagnostics.running", { command: command.toUpperCase() });
+      const lines = [];
+      for (const channel of channels) {
+        try {
+          const response = await adminFetch("/api/antenna/command", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              port: channel.port || null,
+              baudrate: channel.baudrate || 115200,
+              rtscts: Boolean(channel.rtscts),
+              command,
+              timeout_sec: 1.5,
+            }),
+          });
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.detail || t("diagnostics.failed"));
+          const replies = Array.isArray(result.rx) && result.rx.length
+            ? result.rx.join(" | ")
+            : t("diagnostics.no_response");
+          lines.push(`${channel.id}: ${replies}`);
+        } catch (error) {
+          lines.push(`${channel.id}: ${t("diagnostics.error", { error: error.message || t("diagnostics.failed") })}`);
+        }
+        output.textContent = lines.join("\n");
+      }
+      pingButton.disabled = false;
+      statusButton.disabled = false;
     }
 
     async function disconnectAllAndClearBindings() {
@@ -1449,6 +1652,10 @@
 
     async function startPairing() {
       const addBtn = document.getElementById("add-device-btn");
+      if (!centralHubReady) {
+        document.getElementById("add-device-message").textContent = t("hub.required");
+        return;
+      }
       addBtn.disabled = true;
       try {
         const response = await adminFetch("/api/pairing/start", {
@@ -1640,6 +1847,9 @@
 
     document.getElementById("add-device-btn").addEventListener("click", startPairing);
     document.getElementById("disconnect-all-btn").addEventListener("click", disconnectAllAndClearBindings);
+    document.getElementById("central-hub-save-btn").addEventListener("click", saveCentralHub);
+    document.getElementById("diagnostic-ping-btn").addEventListener("click", () => runAntennaDiagnostic("ping"));
+    document.getElementById("diagnostic-status-btn").addEventListener("click", () => runAntennaDiagnostic("status"));
     document.getElementById("wifi-toggle-btn").addEventListener("click", toggleWifiPicker);
     document.getElementById("wifi-rescan-btn").addEventListener("click", scanWifiNetworks);
     document.getElementById("pairing-rescan-btn").addEventListener("click", rescan);
