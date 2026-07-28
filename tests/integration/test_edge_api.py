@@ -142,6 +142,23 @@ def test_edge_operator_page_exposes_ping_and_status_field_diagnostics():
     assert '"diagnostics.title": "現場診斷"' in source
 
 
+def test_edge_operator_diagnostics_hide_unrelated_live_telemetry_from_results():
+    client = TestClient(edge_app_module.app)
+
+    source = client.get("/").text
+    helper_start = source.index("function diagnosticReplies(")
+    helper_end = source.index("async function runAntennaDiagnostic(", helper_start)
+    helper_source = source[helper_start:helper_end]
+
+    assert 'command === "status"' in helper_source
+    assert 'new Set(["status", "error"])' in helper_source
+    assert 'new Set(["boot", "ok", "error"])' in helper_source
+    assert "result.parsed" in helper_source
+    assert 'entry.type !== "telemetry"' not in helper_source
+    assert ".slice(0, 3)" in helper_source
+    assert "diagnosticReplies(result, command)" in source
+
+
 def test_edge_operator_workspace_is_two_columns_and_stacks_on_narrow_screens():
     client = TestClient(edge_app_module.app)
 

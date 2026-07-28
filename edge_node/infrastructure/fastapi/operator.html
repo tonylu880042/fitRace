@@ -1430,6 +1430,18 @@
       }
     }
 
+    function diagnosticReplies(result, command) {
+      const expectedTypes = command === "status"
+        ? new Set(["status", "error"])
+        : new Set(["boot", "ok", "error"]);
+      const parsed = Array.isArray(result?.parsed) ? result.parsed : [];
+      return parsed
+        .filter((entry) => expectedTypes.has(entry?.type))
+        .map((entry) => String(entry.raw || ""))
+        .filter(Boolean)
+        .slice(0, 3);
+    }
+
     async function runAntennaDiagnostic(command) {
       const pingButton = document.getElementById("diagnostic-ping-btn");
       const statusButton = document.getElementById("diagnostic-status-btn");
@@ -1460,10 +1472,8 @@
           });
           const result = await response.json();
           if (!response.ok) throw new Error(result.detail || t("diagnostics.failed"));
-          const replies = Array.isArray(result.rx) && result.rx.length
-            ? result.rx.join(" | ")
-            : t("diagnostics.no_response");
-          lines.push(`${channel.id}: ${replies}`);
+          const replies = diagnosticReplies(result, command);
+          lines.push(`${channel.id}: ${replies.length ? replies.join(" | ") : t("diagnostics.no_response")}`);
         } catch (error) {
           lines.push(`${channel.id}: ${t("diagnostics.error", { error: error.message || t("diagnostics.failed") })}`);
         }
