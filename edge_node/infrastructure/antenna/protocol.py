@@ -150,6 +150,9 @@ def parse_line(line: str) -> dict[str, Any]:
     if value.startswith("VERSION:"):
         return {"type": "version", "version": value[8:].strip(), "raw": raw}
 
+    if value.upper() == "PONG":
+        return {"type": "pong", "raw": raw}
+
     if ":OK" in value:
         return {"type": "ok", "command": value.split(":", 1)[0].strip(), "raw": raw}
 

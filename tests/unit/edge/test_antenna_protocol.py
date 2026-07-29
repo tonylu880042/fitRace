@@ -137,6 +137,13 @@ def test_parse_legacy_key_value_status_line():
     assert status["target"] == 3
 
 
+def test_parse_pong_diagnostic_reply():
+    assert protocol.parse_line("PONG;\r\n") == {
+        "type": "pong",
+        "raw": "PONG;",
+    }
+
+
 def test_parse_ble_device_line_with_manufacturer_data_keeps_type_unknown():
     device = protocol.parse_line("BLE_DEVICE:AA:BB:CC:DD:EE:04,-70,VMAX TREAD 7,0102AAFF;")
 
