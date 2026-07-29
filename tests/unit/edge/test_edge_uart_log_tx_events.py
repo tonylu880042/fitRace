@@ -8,7 +8,7 @@ from edge_node.usecases.event_log import EdgeEventLog
 
 
 class FakeSerial:
-    """Minimal fake serial.Serial: answers PING with a single OK line."""
+    """Minimal fake serial.Serial: answers PING with a single BOOT line."""
 
     def __init__(self, **kwargs):
         self.kwargs = kwargs
@@ -21,7 +21,7 @@ class FakeSerial:
     def read(self, size):
         if not self._delivered:
             self._delivered = True
-            return b"PING:OK;\r\n"
+            return b"BOOT:NO_LIST;\r\n"
         return b""
 
     def close(self):

@@ -43,7 +43,7 @@ class RecordingSerial:
     def read(self, size):
         if not self._delivered:
             self._delivered = True
-            return b"PING:OK;\r\n"
+            return b"BOOT:NO_LIST;\r\n"
         return b""
 
     def close(self):

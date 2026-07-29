@@ -112,9 +112,10 @@ ports/baudrate matching config.
 curl -H "$AUTH" -H "Content-Type: application/json" \
   -d '{"port":"/dev/ttyAMA0","command":"ping"}' $EDGE/api/antenna/command
 ```
-→ 200 with raw UART lines and a parsed response (`PONG`/`BOOT:*`). Repeat for
-`/dev/ttyAMA4`. If this fails on a Pi 5, check the UART0 console gotcha in
-DEPLOYMENT.md before marking FAIL.
+→ 200 with raw UART lines and a parsed response (`BOOT:HAS_LIST,count=N;` or
+`BOOT:NO_LIST;` -- there is no `PONG`/`PING:OK` reply in this protocol).
+Repeat for `/dev/ttyAMA4`. If this fails on a Pi 5, check the UART0 console
+gotcha in DEPLOYMENT.md before marking FAIL.
 
 **P2.6 Antenna VERSION and STATUS.**
 Same call with `"command":"version"` and `"command":"status"` → parsed firmware

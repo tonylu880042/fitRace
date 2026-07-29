@@ -166,7 +166,10 @@ def test_edge_operator_hub_status_polls_without_flashing_red_or_overwriting_mess
     assert ".chip-dot.pending" in source
     assert "updateMessage = true" in status_fn
     assert "if (updateMessage)" in status_fn
-    assert "setInterval(() => refreshCentralHubStatus({ updateMessage: false }), 5000);" in source
+    assert (
+        "setInterval(() => refreshCentralHubStatus({ updateMessage: false }), 5000);"
+        in source
+    )
 
 
 def test_edge_operator_page_exposes_ping_and_status_field_diagnostics():
@@ -198,7 +201,9 @@ def test_edge_operator_diagnostics_hide_unrelated_live_telemetry_from_results():
     assert 'new Set(["status", "error"])' in helper_source
     assert 'new Set(["boot", "pong", "ok", "error"])' in helper_source
     assert "result.parsed" in helper_source
-    assert 'entry.command === "PING"' in helper_source
+    # the board never sends PING:OK (see docs/Dual_Central_Board_Manager_設計文件.md);
+    # that dead branch must stay removed.
+    assert 'entry.command === "PING"' not in helper_source
     assert 'entry.type !== "telemetry"' not in helper_source
     assert ".slice(0, 3)" in helper_source
     assert "diagnosticReplies(result, command)" in source
