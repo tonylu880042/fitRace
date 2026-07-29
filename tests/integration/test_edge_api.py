@@ -377,6 +377,34 @@ def test_edge_setup_page_includes_uart_antenna_controls_without_ble_scan_panel()
     assert "setInterval(refreshMonitorEvents, MONITOR_REFRESH_MS)" in response.text
 
 
+def test_monkeypatched_config_path_still_takes_effect_after_config_store_move(
+    monkeypatch, tmp_path
+):
+    """Regression for the config_store extraction: save_edge_config/
+    load_edge_config now delegate to infrastructure/config_store.py, whose
+    own CONFIG_PATH must NOT be what gets used here. If app.py's wrapper
+    functions captured a copied path binding instead of re-reading the
+    module attribute each call, monkeypatching edge_app_module.CONFIG_PATH
+    would silently become a no-op and this test would write to the real
+    edge_node/config.json instead of tmp_path.
+    """
+    config_path = tmp_path / "config.json"
+    monkeypatch.setattr(edge_app_module, "CONFIG_PATH", config_path)
+
+    config = edge_app_module.load_edge_config()
+    assert not config_path.exists()
+
+    updated = config.model_copy(update={"node_id": "monkeypatch-check"}, deep=True)
+    edge_app_module.save_edge_config(updated)
+
+    assert config_path.exists()
+    saved = json.loads(config_path.read_text(encoding="utf-8"))
+    assert saved["node_id"] == "monkeypatch-check"
+
+    reloaded = edge_app_module.load_edge_config()
+    assert reloaded.node_id == "monkeypatch-check"
+
+
 def test_edge_config_endpoint_reads_and_writes_equipment_bindings(
     monkeypatch, tmp_path
 ):

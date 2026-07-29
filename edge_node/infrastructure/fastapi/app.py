@@ -2,7 +2,6 @@ import ipaddress
 import json
 import os
 import socket
-import tempfile
 import time
 from dataclasses import asdict
 from pathlib import Path
@@ -12,6 +11,7 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 
 from edge_node.domain.models import EdgeNodeConfig
+from edge_node.infrastructure import config_store as _config_store
 from edge_node.infrastructure.antenna.command_runner import (
     AntennaCommandRequest,
     AntennaCommandRunner,
@@ -51,7 +51,7 @@ service_restart_manager = PowerManager(
     service_name="fitracestudio-edge.service",
     dry_run=not _edge_service_restart_enabled(),
 )
-CONFIG_PATH = Path(__file__).resolve().parents[2] / "config.json"
+CONFIG_PATH = _config_store.CONFIG_PATH
 FALLBACK_ANTENNA_PORT = "/dev/serial0"
 
 
@@ -153,42 +153,18 @@ def require_admin(request: Request):
 
 
 def load_edge_config() -> EdgeNodeConfig:
+    # Reads the module-level CONFIG_PATH by name (not a value captured at
+    # def-time) so tests that monkeypatch this module's CONFIG_PATH attribute
+    # still take effect -- see infrastructure/config_store.py for the actual
+    # atomic load/save implementation shared with the runtime.
     try:
-        with open(CONFIG_PATH, encoding="utf-8") as f:
-            return EdgeNodeConfig.model_validate(json.load(f))
-    except FileNotFoundError:
-        return EdgeNodeConfig(
-            node_id="fitrace-edge", antenna_protocol_version="unknown"
-        )
+        return _config_store.load_edge_config(CONFIG_PATH)
     except (json.JSONDecodeError, ValueError) as e:
         raise HTTPException(status_code=500, detail=f"Invalid Edge Node config: {e}")
 
 
 def save_edge_config(config: EdgeNodeConfig):
-    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    temp_path = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=CONFIG_PATH.parent,
-            prefix=f".{CONFIG_PATH.name}.",
-            delete=False,
-        ) as config_file:
-            temp_path = Path(config_file.name)
-            json.dump(
-                config.model_dump(),
-                config_file,
-                indent=2,
-                ensure_ascii=False,
-            )
-            config_file.write("\n")
-            config_file.flush()
-            os.fsync(config_file.fileno())
-        os.replace(temp_path, CONFIG_PATH)
-    finally:
-        if temp_path is not None:
-            temp_path.unlink(missing_ok=True)
+    _config_store.save_edge_config(config, CONFIG_PATH)
 
 
 def default_antenna_port() -> str:
