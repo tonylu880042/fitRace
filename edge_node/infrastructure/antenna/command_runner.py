@@ -140,8 +140,16 @@ def _build_commands(request: AntennaCommandRequest) -> list[str]:
         return [protocol.build_scan_start(), protocol.build_scan_stop()]
     if command == "connect":
         return [protocol.build_connect(request.macs)]
+    if command == "connect_add":
+        if len(request.macs) != 1:
+            raise ValueError("connect_add requires exactly one entry in macs")
+        return [protocol.build_connect_add(request.macs[0])]
     if command == "disconnect_all":
         return [protocol.build_disconnect_all()]
+    if command == "disconnect":
+        if len(request.macs) != 1:
+            raise ValueError("disconnect requires exactly one entry in macs")
+        return [protocol.build_disconnect(request.macs[0])]
     if command == "report":
         if request.report_interval_ms is None:
             raise ValueError("report_interval_ms is required for report command")

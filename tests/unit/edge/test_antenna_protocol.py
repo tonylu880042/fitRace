@@ -6,7 +6,10 @@ def test_build_antenna_commands_match_uart_protocol():
     assert protocol.build_ping() == "PING;\r\n"
     assert protocol.build_scan_start() == "SCAN:START;\r\n"
     assert protocol.build_scan_stop() == "SCAN:STOP;\r\n"
-    assert protocol.build_connect(["AA:BB:CC:DD:EE:01"]) == "CONNECT:AA:BB:CC:DD:EE:01;\r\n"
+    assert (
+        protocol.build_connect(["AA:BB:CC:DD:EE:01"])
+        == "CONNECT:AA:BB:CC:DD:EE:01;\r\n"
+    )
     assert protocol.build_disconnect_all() == "DISCONNECT:ALL;\r\n"
     assert protocol.build_report_interval(1000) == "REPORT:1000;\r\n"
     assert protocol.build_status() == "STATUS;\r\n"
@@ -30,6 +33,69 @@ def test_build_connect_allows_more_than_three_devices():
 def test_build_connect_rejects_empty_device_list():
     with pytest.raises(ValueError, match="at least one"):
         protocol.build_connect([])
+
+
+def test_build_connect_add_matches_uart_protocol():
+    assert (
+        protocol.build_connect_add("AA:BB:CC:DD:EE:01")
+        == "CONNECT_ADD:AA:BB:CC:DD:EE:01;\r\n"
+    )
+
+
+def test_build_connect_add_rejects_blank_mac():
+    with pytest.raises(ValueError):
+        protocol.build_connect_add("")
+    with pytest.raises(ValueError):
+        protocol.build_connect_add("   ")
+
+
+def test_build_disconnect_matches_uart_protocol():
+    assert (
+        protocol.build_disconnect("AA:BB:CC:DD:EE:01")
+        == "DISCONNECT:AA:BB:CC:DD:EE:01;\r\n"
+    )
+
+
+def test_build_disconnect_rejects_blank_mac():
+    with pytest.raises(ValueError):
+        protocol.build_disconnect("")
+    with pytest.raises(ValueError):
+        protocol.build_disconnect("   ")
+
+
+def test_parse_connect_add_ok_reply():
+    assert protocol.parse_line("CONNECT_ADD:OK;\r\n") == {
+        "type": "ok",
+        "command": "CONNECT_ADD",
+        "raw": "CONNECT_ADD:OK;",
+    }
+
+
+def test_parse_connect_add_error_full_reply():
+    parsed = protocol.parse_line("CONNECT_ADD:ERROR:FULL;\r\n")
+    assert parsed["type"] == "error"
+    assert "FULL" in parsed["message"]
+
+
+def test_parse_connect_add_error_already_exists_reply():
+    parsed = protocol.parse_line("CONNECT_ADD:ERROR:ALREADY_EXISTS;\r\n")
+    assert parsed["type"] == "error"
+    assert "ALREADY_EXISTS" in parsed["message"]
+
+
+def test_parse_connect_add_unknown_cmd_reply_from_pre_v1_3_0_board():
+    parsed = protocol.parse_line("ERROR:UNKNOWN_CMD:CONNECT_ADD;\r\n")
+    assert parsed["type"] == "error"
+    assert "UNKNOWN_CMD" in parsed["message"]
+    assert "CONNECT_ADD" in parsed["message"]
+
+
+def test_parse_disconnect_ok_reply():
+    assert protocol.parse_line("DISCONNECT:OK;\r\n") == {
+        "type": "ok",
+        "command": "DISCONNECT",
+        "raw": "DISCONNECT:OK;",
+    }
 
 
 def test_parse_speed_based_telemetry_line_maps_firmware_payload():
@@ -91,7 +157,7 @@ def test_parse_rower_telemetry_line_uses_stroke_rate_not_speed():
 
 
 def test_parse_unknown_telemetry_line_keeps_rssi_only():
-    parsed = protocol.parse_line("FTMS:AA:BB:CC:DD:EE:99,UNKNOWN,{\"rssi\":-70};")
+    parsed = protocol.parse_line('FTMS:AA:BB:CC:DD:EE:99,UNKNOWN,{"rssi":-70};')
 
     assert parsed["type"] == "telemetry"
     assert parsed["device_type"] == "UNKNOWN"
@@ -104,7 +170,7 @@ def test_parse_unknown_telemetry_line_keeps_rssi_only():
 
 
 def test_parse_malformed_telemetry_line_returns_invalid():
-    parsed = protocol.parse_line("FTMS:AA:BB:CC:DD:EE:01,BIKE,{\"rssi\":-62")
+    parsed = protocol.parse_line('FTMS:AA:BB:CC:DD:EE:01,BIKE,{"rssi":-62')
 
     assert parsed["type"] == "invalid"
     assert parsed["message_type"] == "telemetry"
@@ -145,7 +211,9 @@ def test_parse_pong_diagnostic_reply():
 
 
 def test_parse_ble_device_line_with_manufacturer_data_keeps_type_unknown():
-    device = protocol.parse_line("BLE_DEVICE:AA:BB:CC:DD:EE:04,-70,VMAX TREAD 7,0102AAFF;")
+    device = protocol.parse_line(
+        "BLE_DEVICE:AA:BB:CC:DD:EE:04,-70,VMAX TREAD 7,0102AAFF;"
+    )
 
     assert device == {
         "type": "device",

@@ -30,8 +30,20 @@ def build_connect(macs: list[str]) -> str:
     return f"CONNECT:{','.join(macs)};\r\n"
 
 
+def build_connect_add(mac: str) -> str:
+    if not mac or not mac.strip():
+        raise ValueError("connect_add requires a device identifier")
+    return f"CONNECT_ADD:{mac};\r\n"
+
+
 def build_disconnect_all() -> str:
     return "DISCONNECT:ALL;\r\n"
+
+
+def build_disconnect(mac: str) -> str:
+    if not mac or not mac.strip():
+        raise ValueError("disconnect requires a device identifier")
+    return f"DISCONNECT:{mac};\r\n"
 
 
 def build_report_interval(ms: int) -> str:
@@ -177,7 +189,9 @@ def _parse_json_object(value: str) -> dict[str, Any] | None:
     return parsed if isinstance(parsed, dict) else None
 
 
-def _normalize_ftms_payload(device_type: str, payload: dict[str, Any]) -> dict[str, Any]:
+def _normalize_ftms_payload(
+    device_type: str, payload: dict[str, Any]
+) -> dict[str, Any]:
     normalized = {
         "equipment_type": FTMS_EQUIPMENT_TYPES.get(device_type, "unknown"),
         "ftms_type": device_type,
