@@ -160,7 +160,27 @@ class AntennaFtmsManager:
             else:
                 # only scan the boards that lost their list; HAS_LIST boards
                 # keep their links undisturbed and the retry loop patches gaps
-                scan_targets = no_list_channels or set(self._serials)
+                candidate_scan_targets = no_list_channels or set(self._serials)
+                # A scan of a channel that owns no configured bindings can
+                # never produce a usable result: pin_assignments_to_configured_channels
+                # pins every heard MAC to the channel its binding names, so a
+                # device heard here but configured for another channel gets
+                # dropped later anyway. Skip those channels outright instead
+                # of burning UART time on a scan that is guaranteed to find
+                # nothing keepable.
+                channels_with_bindings = {
+                    binding.antenna_channel
+                    for binding in self._edge_config.equipment_bindings
+                    if binding.ble_target
+                    and MAC_ADDRESS_PATTERN.match(binding.ble_target)
+                }
+                scan_targets = candidate_scan_targets & channels_with_bindings
+                for channel_id in sorted(candidate_scan_targets - scan_targets):
+                    logger.info(
+                        "[%s] antenna channel owns no configured bindings; "
+                        "skipping scan",
+                        channel_id,
+                    )
                 scan_results = self._scan_channels(scan_targets)
                 assignments = assign_devices_by_rssi(
                     scan_results,
@@ -193,10 +213,14 @@ class AntennaFtmsManager:
                     self._connect_assignments(assignments)
                 else:
                     logger.warning("Antenna scan found no configured targets")
-                has_list_channels = set(self._serials) - scan_targets
+                # HAS_LIST boards skipped CONNECT, but still need the report
+                # interval re-applied after their reboot. Computed from the
+                # boards that actually reported HAS_LIST rather than
+                # set(self._serials) - scan_targets: with scan_targets now
+                # excluding no-binding channels too, that subtraction would
+                # otherwise hand a REPORT to a channel that owns nothing.
+                has_list_channels = self._saved_list_channels - scan_targets
                 if has_list_channels:
-                    # HAS_LIST boards skipped CONNECT, but still need the
-                    # report interval re-applied after their reboot
                     self._set_report_interval_all(has_list_channels)
             self._read_telemetry_loop()
         finally:

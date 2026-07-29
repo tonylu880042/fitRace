@@ -353,6 +353,8 @@ async def test_antenna_manager_reconnects_when_status_reports_missing_links():
                 "PING;\r\n": ["BOOT:NO_LIST;\r\n"],
                 "SCAN:STOP;\r\n": ["SCAN:OK;\r\n"],
             },
+            # owns no configured bindings, so the startup scan must skip it
+            # entirely -- this batch is never consumed
             scan_batches=[["SCAN:OK;\r\n"]],
         ),
     }
@@ -396,11 +398,12 @@ async def test_antenna_manager_reconnects_when_status_reports_missing_links():
     assert any(
         write == "CONNECT:AA:BB:CC:DD:EE:01;\r\n" for write in serials["uart-1"].writes
     )
-    # recovery must not disturb the channel with no configured targets
+    # recovery must not disturb the channel with no configured targets, and
+    # it owns nothing so the startup scan must have skipped it too
     assert not any(
         write.startswith("CONNECT:") for write in serials["uart-2"].writes
     )
-    assert serials["uart-2"].writes.count("SCAN:START;\r\n") == 1
+    assert serials["uart-2"].writes.count("SCAN:START;\r\n") == 0
     assert received[0].node_id == "fitrace-edge-01-tread-01"
     assert received[0].mac_address == "AA:BB:CC:DD:EE:01"
 
@@ -623,3 +626,73 @@ async def test_antenna_manager_scans_only_no_list_channels():
     assert any(write == "SCAN:START;\r\n" for write in serials["uart-2"].writes)
     assert any(write == "CONNECT:AA:BB:CC:DD:EE:02;\r\n" for write in serials["uart-2"].writes)
     assert not any("AA:BB:CC:DD:EE:01" in write for write in serials["uart-2"].writes if write.startswith("CONNECT:"))
+
+
+@pytest.mark.asyncio
+async def test_antenna_manager_skips_no_list_channel_that_owns_no_bindings():
+    # Live-evidence regression: both configured bindings live on uart-1.
+    # uart-1 reports HAS_LIST (board auto-reconnects on its own), uart-2
+    # reports NO_LIST but owns nothing -- a scan there can never match a
+    # configured target, so it must be left completely alone.
+    channels = make_channels()
+    serials = {
+        "uart-1": FakeSerial(
+            {
+                "PING;\r\n": ["BOOT:HAS_LIST,count=2;\r\n"],
+                "REPORT:250;\r\n": ["REPORT:OK;\r\n"],
+            }
+        ),
+        "uart-2": FakeSerial(
+            {
+                "PING;\r\n": ["BOOT:NO_LIST;\r\n"],
+                "SCAN:START;\r\n": [
+                    "SCAN:OK;\r\n",
+                    "DEVICE:AA:BB:CC:DD:EE:01,-50,Tread 1,TREADMILL;\r\n",
+                ],
+                "SCAN:STOP;\r\n": ["SCAN:OK;\r\n"],
+            }
+        ),
+    }
+    config = EdgeNodeConfig(
+        node_id="fitrace-edge-01",
+        antenna_channels=channels,
+        equipment_bindings=[
+            EquipmentBinding(
+                node_id="fitrace-edge-01-01",
+                equipment_id="TREAD_01",
+                equipment_type="treadmill",
+                ble_target="AA:BB:CC:DD:EE:01",
+                antenna_channel="uart-1",
+            ),
+            EquipmentBinding(
+                node_id="fitrace-edge-01-02",
+                equipment_id="TREAD_02",
+                equipment_type="treadmill",
+                ble_target="AA:BB:CC:DD:EE:02",
+                antenna_channel="uart-1",
+            ),
+        ],
+    )
+
+    async def on_telemetry(_telemetry):
+        pass
+
+    manager = AntennaFtmsManager(
+        edge_config=config,
+        on_telemetry=on_telemetry,
+        serial_factory=lambda channel: serials[channel.id],
+        scan_duration_sec=0.1,
+        command_timeout_sec=0.1,
+    )
+
+    await manager.start()
+    await asyncio.sleep(0.3)
+    await manager.stop()
+
+    # uart-2 owns nothing: after the PING handshake it must be left
+    # completely alone -- no SCAN, and no stray REPORT either.
+    assert serials["uart-2"].writes == ["PING;\r\n"]
+    # uart-1 (HAS_LIST, owns both bindings) is undisturbed but still gets
+    # its report interval re-applied after reboot.
+    assert not any(write.startswith("SCAN:") for write in serials["uart-1"].writes)
+    assert any(write == "REPORT:250;\r\n" for write in serials["uart-1"].writes)
