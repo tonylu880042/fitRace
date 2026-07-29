@@ -120,12 +120,27 @@ class EdgeConfigPayload(EdgeNodeConfig):
 
 class PairingStartPayload(BaseModel):
     scan_duration_sec: float | None = None
+    temp_connect: bool = True
 
 
 class PairingConfirmPayload(BaseModel):
     mac: str
     equipment_type: str
     display_name: str | None = None
+
+
+class PairingBindPayload(BaseModel):
+    mac: str
+    equipment_type: str
+    display_name: str | None = None
+
+
+class PairingConnectPayload(BaseModel):
+    mac: str
+
+
+class PairingFinishPayload(BaseModel):
+    restart: bool = True
 
 
 def require_admin(request: Request):
@@ -588,8 +603,46 @@ def reconnect_configured_antenna_devices(
 def start_pairing_session(payload: PairingStartPayload, request: Request):
     require_admin(request)
     try:
-        return pairing_session.start(scan_duration_sec=payload.scan_duration_sec)
+        return pairing_session.start(
+            scan_duration_sec=payload.scan_duration_sec,
+            temp_connect=payload.temp_connect,
+        )
     except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+
+@app.post("/api/pairing/bind")
+def bind_pairing_session(payload: PairingBindPayload, request: Request):
+    require_admin(request)
+    try:
+        return pairing_session.bind(
+            payload.mac, payload.equipment_type, payload.display_name
+        )
+    except PairingSessionError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+
+@app.post("/api/pairing/connect")
+def connect_pairing_session(payload: PairingConnectPayload, request: Request):
+    require_admin(request)
+    try:
+        return pairing_session.connect(payload.mac)
+    except PairingSessionError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+
+@app.post("/api/pairing/finish")
+def finish_pairing_session(payload: PairingFinishPayload, request: Request):
+    require_admin(request)
+    try:
+        return pairing_session.finish(payload.restart)
+    except PairingSessionError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))

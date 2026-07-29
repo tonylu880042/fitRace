@@ -122,8 +122,14 @@ class PairingCandidate:
     # MAX_CONNECTIONS_PER_CHANNEL of that batch. Candidates that were never
     # attempted (beyond capacity) or stopped early (ERROR:FULL) are still
     # listed (by RSSI) but were never connected, so they can never show
-    # motion.
+    # motion. Also set by the scan-first connect() flow when its one-shot
+    # CONNECT_ADD for this candidate succeeds.
     connected: bool
+    # True once bind() has persisted a binding for this candidate in this
+    # session -- guards against binding the same scanned MAC twice without
+    # a fresh scan. Unused by the legacy temp-connect flow (start() with the
+    # default temp_connect=True + confirm()), which never sets it.
+    bound: bool = False
 
 
 def _normalize_mac(value: str | None) -> str:
@@ -170,6 +176,26 @@ def _classify_connect_add_reply(parsed_entries: list[dict]) -> str:
             if "FULL" in message:
                 return "full"
     return "unrecognized"
+
+
+def _channel_capacity(config: EdgeNodeConfig) -> dict[str, int]:
+    """Free configured-binding slots per antenna channel: `max(0,
+    MAX_CONNECTIONS_PER_CHANNEL - configured_count)`. Shared by start() and
+    bind() so both report capacity the same way -- bind()'s call reflects
+    the config *after* that bind's save, so a caller polling it sees
+    remaining slots shrink live as bindings land."""
+    configured_counts: dict[str, int] = {}
+    for binding in config.equipment_bindings:
+        if binding.antenna_channel:
+            configured_counts[binding.antenna_channel] = (
+                configured_counts.get(binding.antenna_channel, 0) + 1
+            )
+    return {
+        channel.id: max(
+            0, MAX_CONNECTIONS_PER_CHANNEL - configured_counts.get(channel.id, 0)
+        )
+        for channel in config.antenna_channels
+    }
 
 
 def _next_node_id(config: EdgeNodeConfig) -> str:
@@ -260,18 +286,32 @@ class PairingSession:
 
     # -- public API ---------------------------------------------------
 
-    def start(self, scan_duration_sec: float | None = None) -> dict:
+    def start(
+        self,
+        scan_duration_sec: float | None = None,
+        *,
+        temp_connect: bool = True,
+    ) -> dict:
         """Scan every configured antenna channel, exclude already-bound
         MACs, merge repeated sightings per MAC (strongest RSSI wins, first
-        useful name kept -- mirrors the setup page's scan wizard merge), and
-        temp-CONNECT_ADD up to that channel's free capacity
+        useful name kept -- mirrors the setup page's scan wizard merge).
+
+        When `temp_connect` is True (the default -- unchanged legacy
+        behaviour), also temp-CONNECT_ADD up to that channel's free capacity
         (MAX_CONNECTIONS_PER_CHANNEL minus its already-bound equipment)
         strongest candidates per channel, one non-destructive CONNECT_ADD at
         a time. A channel whose firmware doesn't understand CONNECT_ADD
         (pre-v1.3.0) falls back to the old destructive batch CONNECT with
-        the top MAX_CONNECTIONS_PER_CHANNEL candidates instead. Returns (or,
-        if a session is already active, re-returns) `{session_id, candidates,
-        capacity}`.
+        the top MAX_CONNECTIONS_PER_CHANNEL candidates instead.
+
+        When `temp_connect` is False (the scan-first flow: bind()/connect()/
+        finish() below), only `scan` commands are issued -- no CONNECT_ADD,
+        no batch CONNECT, no REPORT. Every candidate comes back with
+        connected=False; the operator connects each one individually via
+        connect() only after choosing to bind it.
+
+        Returns (or, if a session is already active, re-returns)
+        `{session_id, candidates, capacity}`.
         """
         if self._state in (self.STATE_SCANNING, self.STATE_OBSERVING):
             return self._start_result
@@ -285,12 +325,6 @@ class PairingSession:
             for binding in config.equipment_bindings
             if binding.ble_target
         }
-        configured_counts: dict[str, int] = {}
-        for binding in config.equipment_bindings:
-            if binding.antenna_channel:
-                configured_counts[binding.antenna_channel] = (
-                    configured_counts.get(binding.antenna_channel, 0) + 1
-                )
 
         raw_candidates: dict[str, dict] = {}
         for channel in config.antenna_channels:
@@ -333,16 +367,10 @@ class PairingSession:
                 if not existing["name"] and name:
                     existing["name"] = name
 
+        per_channel_capacity = _channel_capacity(config)
         accepts_new = {
-            channel.id: configured_counts.get(channel.id, 0)
-            < MAX_CONNECTIONS_PER_CHANNEL
-            for channel in config.antenna_channels
-        }
-        per_channel_capacity = {
-            channel.id: max(
-                0, MAX_CONNECTIONS_PER_CHANNEL - configured_counts.get(channel.id, 0)
-            )
-            for channel in config.antenna_channels
+            channel_id: capacity > 0
+            for channel_id, capacity in per_channel_capacity.items()
         }
 
         by_channel: dict[str, list[dict]] = {}
@@ -362,55 +390,69 @@ class PairingSession:
             incremental_pool = entries[:free_slots] if free_slots > 0 else []
 
             connected_macs: set[str] = set()
-            temp_added: list[str] = []
-            used_fallback = False
 
-            for candidate in incremental_pool:
-                mac = candidate["mac"]
-                reply = self._command_runner.run(
-                    AntennaCommandRequest(
-                        port=channel.port,
-                        baudrate=channel.baudrate,
-                        rtscts=channel.rtscts,
-                        command="connect_add",
-                        macs=[mac],
-                        timeout_sec=self._command_timeout_sec,
-                    )
-                )
-                outcome = _classify_connect_add_reply(reply.get("parsed") or [])
-                if outcome == "unknown_cmd":
-                    used_fallback = True
-                    break
-                if outcome in ("ok", "already_exists"):
-                    connected_macs.add(mac)
-                    temp_added.append(mac)
-                    continue
-                # "full" (channel just hit capacity) or "unrecognized" (no
-                # reply we understand): stop adding more to this channel
-                # rather than guessing at board state.
-                break
+            if temp_connect:
+                temp_added: list[str] = []
+                used_fallback = False
 
-            if used_fallback:
-                # Pre-v1.3.0 firmware doesn't know CONNECT_ADD at all -- fall
-                # back to the old destructive batch CONNECT for this channel,
-                # using the same top-N selection start() used before this
-                # change (independent of free_slots, exactly like today).
-                top = entries[:MAX_CONNECTIONS_PER_CHANNEL]
-                top_macs = {c["mac"] for c in top}
-                connected_macs = top_macs
-                temp_added = []
-                self._fallback_channels.add(channel.id)
-                if top_macs:
-                    self._command_runner.run(
+                for candidate in incremental_pool:
+                    mac = candidate["mac"]
+                    reply = self._command_runner.run(
                         AntennaCommandRequest(
                             port=channel.port,
                             baudrate=channel.baudrate,
                             rtscts=channel.rtscts,
-                            command="connect",
-                            macs=[c["mac"] for c in top],
+                            command="connect_add",
+                            macs=[mac],
                             timeout_sec=self._command_timeout_sec,
                         )
                     )
+                    outcome = _classify_connect_add_reply(reply.get("parsed") or [])
+                    if outcome == "unknown_cmd":
+                        used_fallback = True
+                        break
+                    if outcome in ("ok", "already_exists"):
+                        connected_macs.add(mac)
+                        temp_added.append(mac)
+                        continue
+                    # "full" (channel just hit capacity) or "unrecognized"
+                    # (no reply we understand): stop adding more to this
+                    # channel rather than guessing at board state.
+                    break
+
+                if used_fallback:
+                    # Pre-v1.3.0 firmware doesn't know CONNECT_ADD at all --
+                    # fall back to the old destructive batch CONNECT for this
+                    # channel, using the same top-N selection start() used
+                    # before this change (independent of free_slots, exactly
+                    # like today).
+                    top = entries[:MAX_CONNECTIONS_PER_CHANNEL]
+                    top_macs = {c["mac"] for c in top}
+                    connected_macs = top_macs
+                    temp_added = []
+                    self._fallback_channels.add(channel.id)
+                    if top_macs:
+                        self._command_runner.run(
+                            AntennaCommandRequest(
+                                port=channel.port,
+                                baudrate=channel.baudrate,
+                                rtscts=channel.rtscts,
+                                command="connect",
+                                macs=[c["mac"] for c in top],
+                                timeout_sec=self._command_timeout_sec,
+                            )
+                        )
+                        self._command_runner.run(
+                            AntennaCommandRequest(
+                                port=channel.port,
+                                baudrate=channel.baudrate,
+                                rtscts=channel.rtscts,
+                                command="report",
+                                report_interval_ms=self._report_interval_ms,
+                                timeout_sec=self._command_timeout_sec,
+                            )
+                        )
+                elif temp_added:
                     self._command_runner.run(
                         AntennaCommandRequest(
                             port=channel.port,
@@ -421,19 +463,13 @@ class PairingSession:
                             timeout_sec=self._command_timeout_sec,
                         )
                     )
-            elif temp_added:
-                self._command_runner.run(
-                    AntennaCommandRequest(
-                        port=channel.port,
-                        baudrate=channel.baudrate,
-                        rtscts=channel.rtscts,
-                        command="report",
-                        report_interval_ms=self._report_interval_ms,
-                        timeout_sec=self._command_timeout_sec,
-                    )
-                )
 
-            self._temp_added_by_channel[channel.id] = temp_added
+                self._temp_added_by_channel[channel.id] = temp_added
+
+            # temp_connect=False (scan-first flow): no CONNECT_ADD/CONNECT/
+            # REPORT at all -- connected_macs stays empty and
+            # self._temp_added_by_channel is never touched for this channel,
+            # so every candidate below comes back connected=False.
 
             for candidate in entries:
                 self._candidates.append(
@@ -576,54 +612,9 @@ class PairingSession:
                 )
             new_config = self._pending_config or self._load_config()
         else:
-            config = self._load_config()
-            duplicate = next(
-                (
-                    binding
-                    for binding in config.equipment_bindings
-                    if _normalize_mac(binding.ble_target) == normalized_mac
-                ),
-                None,
+            binding, new_config = self._build_and_save_binding(
+                candidate, equipment_type, display_name
             )
-            if duplicate is not None:
-                raise PairingSessionError(
-                    f"{candidate.mac} is already bound to {duplicate.equipment_id!r}"
-                )
-
-            name = display_name or candidate.name or candidate.mac
-            existing_equipment_ids = {
-                binding.equipment_id for binding in config.equipment_bindings
-            }
-            if name in existing_equipment_ids:
-                mac_suffix = candidate.mac.replace(":", "")[-4:]
-                name = f"{name}-{mac_suffix}"
-
-            node_id = _next_node_id(config)
-            binding = EquipmentBinding(
-                node_id=node_id,
-                equipment_id=name,
-                equipment_type=equipment_type,
-                ble_target=candidate.mac,
-                antenna_channel=candidate.channel_id,
-            )
-
-            payload = config.model_dump()
-            payload["equipment_bindings"] = [
-                *payload["equipment_bindings"],
-                binding.model_dump(),
-            ]
-            if len(payload["equipment_bindings"]) > payload["max_ftms_connections"]:
-                payload["max_ftms_connections"] = len(payload["equipment_bindings"])
-            try:
-                # EdgeNodeConfig's own validators (in particular the per-channel
-                # <=3 connections limit) are the real enforcement point here --
-                # our accepts_new check above is only a cheap pre-check for a
-                # friendlier error message.
-                new_config = EdgeNodeConfig.model_validate(payload)
-            except ValidationError as exc:
-                raise PairingSessionError(str(exc)) from exc
-
-            self._save_config(new_config)
             # Persistence succeeded, but UART restoration and service restart
             # below may still fail. Keep this exact result so an operator retry
             # finalizes the same binding instead of appending the MAC again.
@@ -668,7 +659,204 @@ class PairingSession:
         self._reset()
         return {"status": "cancelled", "reconnect": reconnect_result}
 
+    # -- scan-first pairing flow (start(temp_connect=False) + these) --------
+    #
+    # CONNECT_ADD persists the MAC into the board's NVS target list on its
+    # own (confirmed with the hardware owner), so unlike confirm() above,
+    # nothing here ever needs an authoritative batch CONNECT to make the
+    # binding durable -- and CONNECT/DISCONNECT:ALL are never issued by this
+    # flow at all, so equipment already bound and streaming is never
+    # disturbed while the operator keeps adding more.
+
+    def bind(
+        self, mac: str, equipment_type: str, display_name: str | None = None
+    ) -> dict:
+        """Persist one binding and keep the session alive: state stays
+        OBSERVING (no reset, no restart, no UART command of any kind) so the
+        operator can bind more candidates from the same scan. Raises
+        PairingSessionError if `mac` isn't a candidate in this session, was
+        already bound in this session, its channel has no free configured
+        slot, `equipment_type` is unknown, or the MAC is already bound in
+        the persisted config. Returns `{binding, capacity}`, with capacity
+        recomputed from the config as it stands right after this save."""
+        if self._state not in (self.STATE_SCANNING, self.STATE_OBSERVING):
+            raise PairingSessionError("No active pairing session")
+
+        normalized_mac = _normalize_mac(mac)
+        candidate = next((c for c in self._candidates if c.mac == normalized_mac), None)
+        if candidate is None:
+            raise PairingSessionError(
+                f"{mac} is not a candidate in the current pairing session"
+            )
+        if candidate.bound:
+            raise PairingSessionError(
+                f"{candidate.mac} was already bound in this pairing session"
+            )
+        if not candidate.channel_accepts_new:
+            raise PairingSessionError(
+                f"channel {candidate.channel_id!r} has no free configured "
+                "binding slot"
+            )
+        if equipment_type not in EQUIPMENT_TYPES:
+            raise PairingSessionError(f"unknown equipment_type: {equipment_type!r}")
+
+        binding, new_config = self._build_and_save_binding(
+            candidate, equipment_type, display_name
+        )
+        candidate.bound = True
+        self._touch_flag()
+
+        per_channel_capacity = _channel_capacity(new_config)
+        return {
+            "binding": binding.model_dump(),
+            "capacity": {
+                "per_channel": per_channel_capacity,
+                "total_free": sum(per_channel_capacity.values()),
+            },
+        }
+
+    def connect(self, mac: str) -> dict:
+        """Issue exactly one CONNECT_ADD for `mac` on its candidate's
+        channel and classify the reply. Never falls back to a batch
+        CONNECT: on `unknown_cmd` this channel's firmware simply cannot
+        support the scan-first flow, and the caller (operator page) is
+        expected to surface that rather than this method guessing at a
+        destructive workaround. Sends REPORT for the channel only the first
+        time a connect() on it succeeds this session, not for every device.
+        Returns `{mac, channel_id, outcome, connected}`."""
+        if self._state not in (self.STATE_SCANNING, self.STATE_OBSERVING):
+            raise PairingSessionError("No active pairing session")
+
+        normalized_mac = _normalize_mac(mac)
+        candidate = next((c for c in self._candidates if c.mac == normalized_mac), None)
+        if candidate is None:
+            raise PairingSessionError(
+                f"{mac} is not a candidate in the current pairing session"
+            )
+
+        config = self._load_config()
+        channel = next(
+            (ch for ch in config.antenna_channels if ch.id == candidate.channel_id),
+            None,
+        )
+        if channel is None:
+            raise PairingSessionError(
+                f"channel {candidate.channel_id!r} is not configured"
+            )
+
+        reply = self._command_runner.run(
+            AntennaCommandRequest(
+                port=channel.port,
+                baudrate=channel.baudrate,
+                rtscts=channel.rtscts,
+                command="connect_add",
+                macs=[normalized_mac],
+                timeout_sec=self._command_timeout_sec,
+            )
+        )
+        outcome = _classify_connect_add_reply(reply.get("parsed") or [])
+        connected = outcome in ("ok", "already_exists")
+        if connected:
+            candidate.connected = True
+            if candidate.channel_id not in self._reported_channels:
+                self._command_runner.run(
+                    AntennaCommandRequest(
+                        port=channel.port,
+                        baudrate=channel.baudrate,
+                        rtscts=channel.rtscts,
+                        command="report",
+                        report_interval_ms=self._report_interval_ms,
+                        timeout_sec=self._command_timeout_sec,
+                    )
+                )
+                self._reported_channels.add(candidate.channel_id)
+
+        return {
+            "mac": normalized_mac,
+            "channel_id": candidate.channel_id,
+            "outcome": outcome,
+            "connected": connected,
+        }
+
+    def finish(self, restart: bool = True) -> dict:
+        """End a scan-first session: every binding this session made was
+        already persisted to the board's NVS by its own connect() call, so
+        there is nothing left to reconnect or restore -- just delete the
+        flag, reset to idle, and (when `restart` is True) restart the
+        runtime service so it re-reads config.json and the new equipment
+        gets its configured name instead of the MAC fallback. Issues no
+        UART commands. Returns `{status, restart}`."""
+        if self._state == self.STATE_IDLE:
+            raise PairingSessionError("No active pairing session")
+
+        self._delete_flag()
+        self._reset()
+        restart_result = self._restart_service() if restart else None
+        return {"status": "finished", "restart": restart_result}
+
     # -- internals ------------------------------------------------------
+
+    def _build_and_save_binding(
+        self,
+        candidate: PairingCandidate,
+        equipment_type: str,
+        display_name: str | None,
+    ) -> tuple[EquipmentBinding, EdgeNodeConfig]:
+        """Shared by confirm() and bind(): load the current config, reject a
+        MAC already bound in it, compute the binding's name (existing
+        name-collision suffix included) and node_id, build+validate the new
+        config through EdgeNodeConfig.model_validate -- its per-channel
+        MAX_CONNECTIONS_PER_CHANNEL validator is the real enforcement point,
+        not the caller's cheap channel_accepts_new pre-check -- persist it,
+        and return (binding, new_config). Callers own their own
+        session-state bookkeeping afterwards (confirm()'s pending-binding
+        retry fields; bind()'s per-candidate `bound` flag)."""
+        config = self._load_config()
+        normalized_mac = _normalize_mac(candidate.mac)
+        duplicate = next(
+            (
+                binding
+                for binding in config.equipment_bindings
+                if _normalize_mac(binding.ble_target) == normalized_mac
+            ),
+            None,
+        )
+        if duplicate is not None:
+            raise PairingSessionError(
+                f"{candidate.mac} is already bound to {duplicate.equipment_id!r}"
+            )
+
+        name = display_name or candidate.name or candidate.mac
+        existing_equipment_ids = {
+            binding.equipment_id for binding in config.equipment_bindings
+        }
+        if name in existing_equipment_ids:
+            mac_suffix = candidate.mac.replace(":", "")[-4:]
+            name = f"{name}-{mac_suffix}"
+
+        node_id = _next_node_id(config)
+        binding = EquipmentBinding(
+            node_id=node_id,
+            equipment_id=name,
+            equipment_type=equipment_type,
+            ble_target=candidate.mac,
+            antenna_channel=candidate.channel_id,
+        )
+
+        payload = config.model_dump()
+        payload["equipment_bindings"] = [
+            *payload["equipment_bindings"],
+            binding.model_dump(),
+        ]
+        if len(payload["equipment_bindings"]) > payload["max_ftms_connections"]:
+            payload["max_ftms_connections"] = len(payload["equipment_bindings"])
+        try:
+            new_config = EdgeNodeConfig.model_validate(payload)
+        except ValidationError as exc:
+            raise PairingSessionError(str(exc)) from exc
+
+        self._save_config(new_config)
+        return binding, new_config
 
     def _teardown_temp_connections(self, config: EdgeNodeConfig) -> dict:
         """Undo this session's temp connections. Only called from cancel() --
@@ -734,6 +922,10 @@ class PairingSession:
         self._pending_config: EdgeNodeConfig | None = None
         self._temp_added_by_channel: dict[str, list[str]] = {}
         self._fallback_channels: set[str] = set()
+        # Channels that connect() has already sent a REPORT for this
+        # session (scan-first flow only) -- keeps REPORT to once per
+        # channel across many connect() calls instead of once per device.
+        self._reported_channels: set[str] = set()
 
     def _current_flag_path(self) -> Path:
         return self._explicit_flag_path or pairing_flag_path()

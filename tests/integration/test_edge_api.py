@@ -1536,3 +1536,161 @@ def test_pairing_confirm_surfaces_dry_run_power_manager_result(monkeypatch, tmp_
     payload = confirm_response.json()
     assert payload["restart"]["dry_run"] is True
     assert payload["restart"]["executed"] is False
+
+
+def test_pairing_scan_first_flow_start_bind_connect_finish_happy_path(
+    monkeypatch, tmp_path
+):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "node_id": "fitrace-edge-test",
+                "antenna_channels": [
+                    {"id": "uart-1", "port": "/dev/ttyAMA0"},
+                    {"id": "uart-2", "port": "/dev/ttyAMA4"},
+                ],
+                "equipment_bindings": [],
+                "max_ftms_connections": 10,
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(edge_app_module, "CONFIG_PATH", config_path)
+    runner = FakePairingAntennaRunner(
+        scan_results_by_port={
+            "/dev/ttyAMA0": [
+                {
+                    "type": "device",
+                    "address": "AA:BB:CC:DD:EE:05",
+                    "rssi": -40,
+                    "name": "Bike A",
+                }
+            ],
+        }
+    )
+    _install_fresh_pairing_session(monkeypatch, tmp_path, runner)
+    client = TestClient(edge_app_module.app)
+
+    start_response = client.post("/api/pairing/start", json={"temp_connect": False})
+    assert start_response.status_code == 200
+    start_payload = start_response.json()
+    assert start_payload["candidates"][0]["mac"] == "AA:BB:CC:DD:EE:05"
+
+    # scan-first flow never issues a batch CONNECT or DISCONNECT:ALL
+    assert all(c.command != "connect" for c in runner.calls)
+    assert all(c.command != "disconnect_all" for c in runner.calls)
+
+    bind_response = client.post(
+        "/api/pairing/bind",
+        json={
+            "mac": "AA:BB:CC:DD:EE:05",
+            "equipment_type": "fan_bike",
+            "display_name": "Bike One",
+        },
+    )
+    assert bind_response.status_code == 200
+    bind_payload = bind_response.json()
+    assert bind_payload["binding"]["equipment_id"] == "Bike One"
+    assert bind_payload["binding"]["antenna_channel"] == "uart-1"
+    assert "capacity" in bind_payload
+
+    # session must still be observing after bind() -- not reset
+    status_after_bind = client.get("/api/pairing/status").json()
+    assert status_after_bind["state"] == "observing"
+
+    connect_response = client.post(
+        "/api/pairing/connect", json={"mac": "AA:BB:CC:DD:EE:05"}
+    )
+    assert connect_response.status_code == 200
+    connect_payload = connect_response.json()
+    assert connect_payload["outcome"] == "ok"
+    assert connect_payload["connected"] is True
+
+    finish_response = client.post("/api/pairing/finish", json={})
+    assert finish_response.status_code == 200
+    finish_payload = finish_response.json()
+    assert finish_payload["status"] == "finished"
+    assert "dry_run" in finish_payload["restart"]
+
+    assert all(c.command != "connect" for c in runner.calls)
+    assert all(c.command != "disconnect_all" for c in runner.calls)
+
+    saved = json.loads(config_path.read_text(encoding="utf-8"))
+    assert any(
+        binding["equipment_id"] == "Bike One" for binding in saved["equipment_bindings"]
+    )
+    assert client.get("/api/pairing/status").json() == {"state": "idle"}
+
+
+def test_pairing_scan_first_endpoints_require_admin_token(monkeypatch, tmp_path):
+    monkeypatch.setenv("FITRACE_ADMIN_TOKEN", "admin-secret")
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "node_id": "fitrace-edge-test",
+                "antenna_channels": [{"id": "uart-1", "port": "/dev/ttyAMA0"}],
+                "equipment_bindings": [],
+                "max_ftms_connections": 10,
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(edge_app_module, "CONFIG_PATH", config_path)
+    runner = FakePairingAntennaRunner(
+        scan_results_by_port={
+            "/dev/ttyAMA0": [
+                {
+                    "type": "device",
+                    "address": "AA:BB:CC:DD:EE:09",
+                    "rssi": -40,
+                    "name": "Bike A",
+                }
+            ],
+        }
+    )
+    _install_fresh_pairing_session(monkeypatch, tmp_path, runner)
+    client = TestClient(edge_app_module.app)
+
+    assert (
+        client.post("/api/pairing/start", json={"temp_connect": False}).status_code
+        == 401
+    )
+    assert (
+        client.post(
+            "/api/pairing/bind",
+            json={"mac": "AA:BB:CC:DD:EE:09", "equipment_type": "fan_bike"},
+        ).status_code
+        == 401
+    )
+    assert (
+        client.post(
+            "/api/pairing/connect", json={"mac": "AA:BB:CC:DD:EE:09"}
+        ).status_code
+        == 401
+    )
+    assert client.post("/api/pairing/finish", json={}).status_code == 401
+
+    headers = {"X-FitRace-Admin-Token": "admin-secret"}
+    start_response = client.post(
+        "/api/pairing/start", json={"temp_connect": False}, headers=headers
+    )
+    assert start_response.status_code == 200
+
+    bind_response = client.post(
+        "/api/pairing/bind",
+        json={"mac": "AA:BB:CC:DD:EE:09", "equipment_type": "fan_bike"},
+        headers=headers,
+    )
+    assert bind_response.status_code == 200
+
+    connect_response = client.post(
+        "/api/pairing/connect",
+        json={"mac": "AA:BB:CC:DD:EE:09"},
+        headers=headers,
+    )
+    assert connect_response.status_code == 200
+
+    finish_response = client.post("/api/pairing/finish", json={}, headers=headers)
+    assert finish_response.status_code == 200

@@ -961,3 +961,387 @@ def test_cancel_with_no_active_session_raises():
 
     with pytest.raises(PairingSessionError):
         harness.session.cancel()
+
+
+# --------------------------------------------------------------------------
+# start(temp_connect=False) -- scan-first flow
+# --------------------------------------------------------------------------
+
+
+def test_start_temp_connect_false_issues_only_scan_commands(tmp_path):
+    config = make_config()
+    scan_results_by_port = {
+        "/dev/ttyAMA0": [
+            device("AA:BB:CC:DD:EE:01", -30, "Bike A"),
+            device("AA:BB:CC:DD:EE:02", -40, "Bike B"),
+        ],
+        "/dev/ttyAMA4": [device("AA:BB:CC:DD:EE:03", -50, "Rower X")],
+    }
+    harness = make_harness(
+        config,
+        scan_results_by_port=scan_results_by_port,
+        flag_path=tmp_path / "pairing.flag",
+    )
+
+    result = harness.session.start(temp_connect=False)
+
+    commands = {c.command for c in harness.runner.calls}
+    assert commands == {"scan"}
+    assert harness.connect_add_calls() == []
+    assert harness.connect_calls() == []
+    assert harness.disconnect_all_calls() == []
+    assert [c for c in harness.runner.calls if c.command == "report"] == []
+
+    macs = {c["mac"] for c in result["candidates"]}
+    assert macs == {
+        "AA:BB:CC:DD:EE:01",
+        "AA:BB:CC:DD:EE:02",
+        "AA:BB:CC:DD:EE:03",
+    }
+    status_by_mac = {c["mac"]: c for c in harness.session.status()["candidates"]}
+    for mac in macs:
+        assert status_by_mac[mac]["connected"] is False
+    assert harness.session._temp_added_by_channel == {}
+
+
+# --------------------------------------------------------------------------
+# bind()
+# --------------------------------------------------------------------------
+
+
+def _harness_ready_to_bind(tmp_path, bindings=None):
+    config = make_config(bindings=bindings)
+    scan_results_by_port = {
+        "/dev/ttyAMA0": [device("AA:BB:CC:DD:EE:05", -40, "Bike A")],
+        "/dev/ttyAMA4": [device("AA:BB:CC:DD:EE:06", -40, "Rower X")],
+    }
+    harness = make_harness(
+        config,
+        scan_results_by_port=scan_results_by_port,
+        flag_path=tmp_path / "pairing.flag",
+    )
+    harness.session.start(temp_connect=False)
+    return harness
+
+
+def test_bind_persists_binding_without_uart_or_restart(tmp_path):
+    harness = _harness_ready_to_bind(tmp_path)
+    calls_after_start = len(harness.runner.calls)
+
+    result = harness.session.bind(
+        "AA:BB:CC:DD:EE:05", "fan_bike", display_name="My Bike"
+    )
+
+    assert result["binding"]["equipment_id"] == "My Bike"
+    assert result["binding"]["ble_target"] == "AA:BB:CC:DD:EE:05"
+    assert result["binding"]["antenna_channel"] == "uart-1"
+    assert result["binding"]["node_id"] == "fitrace-edge-01-01"
+    assert "capacity" in result
+    assert harness.session.state == PairingSession.STATE_OBSERVING
+    # bind() issues no UART command at all
+    assert len(harness.runner.calls) == calls_after_start
+    assert harness.restart_calls == []
+    assert harness.restore_calls == []
+    saved_config = harness.config_holder["config"]
+    assert any(b.equipment_id == "My Bike" for b in saved_config.equipment_bindings)
+
+
+def test_bind_twice_in_one_session_persists_two_bindings_without_rescan(tmp_path):
+    config = make_config()
+    scan_results_by_port = {
+        "/dev/ttyAMA0": [
+            device("AA:BB:CC:DD:EE:01", -30, "Bike A"),
+            device("AA:BB:CC:DD:EE:02", -40, "Bike B"),
+        ],
+        "/dev/ttyAMA4": [],
+    }
+    harness = make_harness(
+        config,
+        scan_results_by_port=scan_results_by_port,
+        flag_path=tmp_path / "pairing.flag",
+    )
+    harness.session.start(temp_connect=False)
+    scan_call_count = len([c for c in harness.runner.calls if c.command == "scan"])
+
+    first = harness.session.bind("AA:BB:CC:DD:EE:01", "fan_bike")
+    second = harness.session.bind("AA:BB:CC:DD:EE:02", "rowing_machine")
+
+    assert (
+        len([c for c in harness.runner.calls if c.command == "scan"]) == scan_call_count
+    )
+    assert first["binding"]["node_id"] == "fitrace-edge-01-01"
+    assert second["binding"]["node_id"] == "fitrace-edge-01-02"
+    saved_config = harness.config_holder["config"]
+    assert {b.ble_target for b in saved_config.equipment_bindings} == {
+        "AA:BB:CC:DD:EE:01",
+        "AA:BB:CC:DD:EE:02",
+    }
+
+
+def test_bind_rejects_unknown_mac(tmp_path):
+    harness = _harness_ready_to_bind(tmp_path)
+
+    with pytest.raises(PairingSessionError):
+        harness.session.bind("AA:BB:CC:DD:EE:99", "fan_bike")
+
+
+def test_bind_rejects_unknown_equipment_type(tmp_path):
+    harness = _harness_ready_to_bind(tmp_path)
+
+    with pytest.raises(PairingSessionError):
+        harness.session.bind("AA:BB:CC:DD:EE:05", "jet_ski")
+
+
+def test_bind_rejects_mac_already_bound_in_config(tmp_path):
+    existing = [
+        EquipmentBinding(
+            node_id="fitrace-edge-01-01",
+            equipment_id="Existing",
+            equipment_type="fan_bike",
+            ble_target="AA:BB:CC:DD:EE:05",
+            antenna_channel="uart-1",
+        )
+    ]
+    harness = _harness_ready_to_bind(tmp_path, bindings=existing)
+
+    with pytest.raises(PairingSessionError):
+        harness.session.bind("AA:BB:CC:DD:EE:05", "fan_bike")
+
+
+def test_bind_rejects_rebinding_same_mac_twice_in_a_session(tmp_path):
+    harness = _harness_ready_to_bind(tmp_path)
+    harness.session.bind("AA:BB:CC:DD:EE:05", "fan_bike")
+
+    with pytest.raises(PairingSessionError):
+        harness.session.bind("AA:BB:CC:DD:EE:05", "rowing_machine")
+
+
+def test_bind_rejects_channel_already_at_max_connections(tmp_path):
+    full_bindings = [
+        EquipmentBinding(
+            node_id=f"fitrace-edge-01-0{i}",
+            equipment_id=f"ROW_{i}",
+            equipment_type="rowing_machine",
+            ble_target=f"AA:BB:CC:DD:EE:1{i}",
+            antenna_channel="uart-2",
+        )
+        for i in range(3)
+    ]
+    harness = _harness_ready_to_bind(tmp_path, bindings=full_bindings)
+
+    with pytest.raises(PairingSessionError):
+        harness.session.bind("AA:BB:CC:DD:EE:06", "rowing_machine")  # uart-2 is full
+
+
+def test_bind_with_no_active_session_raises():
+    harness = make_harness(_single_channel_config())
+
+    with pytest.raises(PairingSessionError):
+        harness.session.bind("AA:BB:CC:DD:EE:05", "fan_bike")
+
+
+# --------------------------------------------------------------------------
+# connect()
+# --------------------------------------------------------------------------
+
+
+def test_connect_issues_one_connect_add_and_report_once_per_channel(tmp_path):
+    config = make_config()
+    scan_results_by_port = {
+        "/dev/ttyAMA0": [
+            device("AA:BB:CC:DD:EE:01", -30, "Bike A"),
+            device("AA:BB:CC:DD:EE:02", -40, "Bike B"),
+        ],
+        "/dev/ttyAMA4": [],
+    }
+    harness = make_harness(
+        config,
+        scan_results_by_port=scan_results_by_port,
+        flag_path=tmp_path / "pairing.flag",
+    )
+    harness.session.start(temp_connect=False)
+
+    first = harness.session.connect("AA:BB:CC:DD:EE:01")
+    assert first == {
+        "mac": "AA:BB:CC:DD:EE:01",
+        "channel_id": "uart-1",
+        "outcome": "ok",
+        "connected": True,
+    }
+    assert len(harness.connect_add_calls("/dev/ttyAMA0")) == 1
+    report_calls = [c for c in harness.runner.calls if c.command == "report"]
+    assert len(report_calls) == 1
+
+    second = harness.session.connect("AA:BB:CC:DD:EE:02")
+    assert second["connected"] is True
+    assert len(harness.connect_add_calls("/dev/ttyAMA0")) == 2
+    # still just one REPORT for uart-1 -- once per channel, not per device
+    report_calls = [c for c in harness.runner.calls if c.command == "report"]
+    assert len(report_calls) == 1
+
+    assert harness.connect_calls() == []
+    assert harness.disconnect_all_calls() == []
+
+    status_by_mac = {c["mac"]: c for c in harness.session.status()["candidates"]}
+    assert status_by_mac["AA:BB:CC:DD:EE:01"]["connected"] is True
+    assert status_by_mac["AA:BB:CC:DD:EE:02"]["connected"] is True
+
+
+def test_connect_maps_replies_to_outcomes(tmp_path):
+    config = make_config()
+    scan_results_by_port = {
+        "/dev/ttyAMA0": [
+            device("AA:BB:CC:DD:EE:01", -30, "Bike A"),
+            device("AA:BB:CC:DD:EE:02", -40, "Bike B"),
+            device("AA:BB:CC:DD:EE:03", -50, "Bike C"),
+            device("AA:BB:CC:DD:EE:04", -60, "Bike D"),
+        ],
+        "/dev/ttyAMA4": [],
+    }
+    harness = make_harness(
+        config,
+        scan_results_by_port=scan_results_by_port,
+        connect_add_replies_by_port={
+            "/dev/ttyAMA0": [
+                [{"type": "ok", "command": "CONNECT_ADD"}],
+                [{"type": "error", "message": "CONNECT_ADD:ERROR:ALREADY_EXISTS"}],
+                [{"type": "error", "message": "CONNECT_ADD:ERROR:FULL"}],
+                [{"type": "error", "message": "ERROR:UNKNOWN_CMD:CONNECT_ADD"}],
+            ],
+        },
+        flag_path=tmp_path / "pairing.flag",
+    )
+    harness.session.start(temp_connect=False)
+
+    ok = harness.session.connect("AA:BB:CC:DD:EE:01")
+    assert ok["outcome"] == "ok"
+    assert ok["connected"] is True
+
+    already = harness.session.connect("AA:BB:CC:DD:EE:02")
+    assert already["outcome"] == "already_exists"
+    assert already["connected"] is True
+
+    full = harness.session.connect("AA:BB:CC:DD:EE:03")
+    assert full["outcome"] == "full"
+    assert full["connected"] is False
+
+    unknown = harness.session.connect("AA:BB:CC:DD:EE:04")
+    assert unknown["outcome"] == "unknown_cmd"
+    assert unknown["connected"] is False
+
+    # never falls back to a batch connect or touches other channels
+    assert harness.connect_calls() == []
+    assert harness.disconnect_all_calls() == []
+
+
+def test_connect_rejects_unknown_mac(tmp_path):
+    harness = _harness_ready_to_bind(tmp_path)
+
+    with pytest.raises(PairingSessionError):
+        harness.session.connect("AA:BB:CC:DD:EE:99")
+
+
+def test_connect_with_no_active_session_raises():
+    harness = make_harness(_single_channel_config())
+
+    with pytest.raises(PairingSessionError):
+        harness.session.connect("AA:BB:CC:DD:EE:05")
+
+
+# --------------------------------------------------------------------------
+# finish()
+# --------------------------------------------------------------------------
+
+
+def test_finish_restarts_by_default_and_resets_session(tmp_path):
+    flag_path = tmp_path / "pairing.flag"
+    harness = make_harness(
+        make_config(),
+        scan_results_by_port={"/dev/ttyAMA0": [], "/dev/ttyAMA4": []},
+        flag_path=flag_path,
+    )
+    harness.session.start(temp_connect=False)
+    assert flag_path.exists()
+    calls_before = len(harness.runner.calls)
+
+    result = harness.session.finish()
+
+    assert result["status"] == "finished"
+    assert result["restart"] == {"dry_run": True, "executed": False}
+    assert len(harness.restart_calls) == 1
+    assert not flag_path.exists()
+    assert harness.session.state == PairingSession.STATE_IDLE
+    # finish() issues no UART commands
+    assert len(harness.runner.calls) == calls_before
+
+
+def test_finish_skips_restart_when_requested(tmp_path):
+    flag_path = tmp_path / "pairing.flag"
+    harness = make_harness(
+        make_config(),
+        scan_results_by_port={"/dev/ttyAMA0": [], "/dev/ttyAMA4": []},
+        flag_path=flag_path,
+    )
+    harness.session.start(temp_connect=False)
+
+    result = harness.session.finish(restart=False)
+
+    assert result["restart"] is None
+    assert harness.restart_calls == []
+    assert harness.session.state == PairingSession.STATE_IDLE
+    assert not flag_path.exists()
+
+
+def test_finish_with_no_active_session_raises():
+    harness = make_harness(_single_channel_config())
+
+    with pytest.raises(PairingSessionError):
+        harness.session.finish()
+
+
+# --------------------------------------------------------------------------
+# Regression lock: full scan-first session never goes destructive
+# --------------------------------------------------------------------------
+
+
+def test_full_scan_first_session_never_issues_batch_connect_or_disconnect_all(
+    tmp_path,
+):
+    config = make_config()
+    scan_results_by_port = {
+        "/dev/ttyAMA0": [
+            device("AA:BB:CC:DD:EE:01", -30, "Bike A"),
+            device("AA:BB:CC:DD:EE:02", -40, "Bike B"),
+        ],
+        "/dev/ttyAMA4": [],
+    }
+    flag_path = tmp_path / "pairing.flag"
+    harness = make_harness(
+        config, scan_results_by_port=scan_results_by_port, flag_path=flag_path
+    )
+
+    harness.session.start(temp_connect=False)
+    harness.session.bind("AA:BB:CC:DD:EE:01", "fan_bike")
+    harness.session.connect("AA:BB:CC:DD:EE:01")
+    harness.session.bind("AA:BB:CC:DD:EE:02", "rowing_machine")
+    harness.session.connect("AA:BB:CC:DD:EE:02")
+    result = harness.session.finish()
+
+    commands_issued = [c.command for c in harness.runner.calls]
+    # the whole point of this flow: never a batch CONNECT, never a
+    # DISCONNECT:ALL, on any channel, at any point in the session
+    assert "connect" not in commands_issued
+    assert "disconnect_all" not in commands_issued
+    assert "disconnect" not in commands_issued
+    assert commands_issued.count("scan") == 2  # one per configured channel
+    assert commands_issued.count("connect_add") == 2
+    assert commands_issued.count("report") == 1  # both devices share uart-1
+
+    assert result["status"] == "finished"
+    assert not flag_path.exists()
+    assert harness.session.state == PairingSession.STATE_IDLE
+    saved_config = harness.config_holder["config"]
+    assert {b.ble_target for b in saved_config.equipment_bindings} == {
+        "AA:BB:CC:DD:EE:01",
+        "AA:BB:CC:DD:EE:02",
+    }
