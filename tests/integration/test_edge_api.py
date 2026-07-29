@@ -1717,7 +1717,11 @@ def test_edge_pairing_start_uses_scan_only_and_shows_progress_message():
     start_fn = source[start_fn_start:start_fn_end]
 
     assert 'adminFetch("/api/pairing/start"' in start_fn
-    assert "temp_connect: false" in start_fn
+    # Assert on the request body itself, not the bare "temp_connect: false"
+    # substring -- a nearby comment carries that same text, so the loose
+    # form stays green even if the flag is dropped from the POST and the
+    # scan silently reverts to the temp-connecting legacy behaviour.
+    assert "body: JSON.stringify({ temp_connect: false })" in start_fn
     assert "showPairingScanning(true)" in start_fn
     assert "showPairingScanning(false)" in start_fn
     scanning_show_index = start_fn.index("showPairingScanning(true)")
