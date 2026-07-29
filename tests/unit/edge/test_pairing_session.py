@@ -19,11 +19,21 @@ from edge_node.usecases.pairing_session import PairingSession, PairingSessionErr
 
 class FakeCommandRunner:
     """Records every AntennaCommandRequest and answers "scan" with canned
-    parsed device sightings per port; "connect"/"report"/"disconnect_all"
-    just ack."""
+    parsed device sightings per port; "connect"/"report"/"disconnect_all"/
+    "disconnect" just ack.
 
-    def __init__(self, scan_results_by_port=None):
+    "connect_add" replies are queued per-port via `connect_add_replies_by_port`
+    (a dict of port -> list of canned `parsed` lists, consumed in call order
+    for that port). Once a port's queue is exhausted -- or if the port was
+    never given one -- every further connect_add on it defaults to a canned
+    `CONNECT_ADD:OK;` success, so tests that don't care about the ok/full/
+    already-exists/unknown-cmd branches can ignore this entirely.
+    """
+
+    def __init__(self, scan_results_by_port=None, connect_add_replies_by_port=None):
         self.scan_results_by_port = scan_results_by_port or {}
+        self.connect_add_replies_by_port = connect_add_replies_by_port or {}
+        self._connect_add_call_index: dict[str, int] = {}
         self.calls = []
 
     def run(self, request):
@@ -31,6 +41,15 @@ class FakeCommandRunner:
         if request.command == "scan":
             parsed = self.scan_results_by_port.get(request.port, [])
             return {"port": request.port, "command": "scan", "parsed": parsed}
+        if request.command == "connect_add":
+            queue = self.connect_add_replies_by_port.get(request.port)
+            index = self._connect_add_call_index.get(request.port, 0)
+            self._connect_add_call_index[request.port] = index + 1
+            if queue is not None and index < len(queue):
+                parsed = queue[index]
+            else:
+                parsed = [{"type": "ok", "command": "CONNECT_ADD"}]
+            return {"port": request.port, "command": "connect_add", "parsed": parsed}
         return {
             "port": request.port,
             "command": request.command,
@@ -64,18 +83,40 @@ class Harness:
             if c.command == "connect" and (port is None or c.port == port)
         ]
 
+    def connect_add_calls(self, port=None):
+        return [
+            c
+            for c in self.runner.calls
+            if c.command == "connect_add" and (port is None or c.port == port)
+        ]
+
+    def disconnect_calls(self, port=None):
+        return [
+            c
+            for c in self.runner.calls
+            if c.command == "disconnect" and (port is None or c.port == port)
+        ]
+
+    def disconnect_all_calls(self, port=None):
+        return [
+            c
+            for c in self.runner.calls
+            if c.command == "disconnect_all" and (port is None or c.port == port)
+        ]
+
 
 def make_harness(
     config,
     *,
     scan_results_by_port=None,
+    connect_add_replies_by_port=None,
     events=None,
     clock=None,
     flag_path=None,
     restore_result=None,
     restart_result=None,
 ):
-    runner = FakeCommandRunner(scan_results_by_port)
+    runner = FakeCommandRunner(scan_results_by_port, connect_add_replies_by_port)
     event_log = FakeEventLog(events)
     config_holder = {"config": config}
     restore_calls = []
@@ -170,10 +211,12 @@ def test_start_excludes_bound_macs_merges_sightings_and_flags_full_channel(tmp_p
             device("AA:BB:CC:DD:EE:02", -60, ""),  # weaker sighting, no name
             device("AA:BB:CC:DD:EE:02", -50, "Bike A"),  # stronger + a name
             device("AA:BB:CC:DD:EE:03", -55, "Bike B"),
-            device("AA:BB:CC:DD:EE:04", -70, "Bike C"),
+            device(
+                "AA:BB:CC:DD:EE:04", -70, "Bike C"
+            ),  # beyond the 2 free slots: not temp-connected
             device(
                 "AA:BB:CC:DD:EE:05", -80, "Bike D"
-            ),  # 4th strongest: not temp-connected
+            ),  # beyond the 2 free slots: not temp-connected
         ],
         "/dev/ttyAMA4": [
             device(
@@ -207,15 +250,34 @@ def test_start_excludes_bound_macs_merges_sightings_and_flags_full_channel(tmp_p
     # channel is already at the 3-connection limit -> no free configured slot
     assert candidates_by_mac["AA:BB:CC:DD:EE:06"]["channel_accepts_new"] is False
 
-    # only the 3 strongest per channel actually got a temp CONNECT
-    uart1_connect = harness.connect_calls("/dev/ttyAMA0")
-    assert len(uart1_connect) == 1
-    assert sorted(uart1_connect[0].macs) == sorted(
-        ["AA:BB:CC:DD:EE:02", "AA:BB:CC:DD:EE:03", "AA:BB:CC:DD:EE:04"]
-    )
-    uart2_connect = harness.connect_calls("/dev/ttyAMA4")
-    assert len(uart2_connect) == 1
-    assert uart2_connect[0].macs == ["AA:BB:CC:DD:EE:06"]
+    # only the 2 free slots on uart-1 actually got an incremental CONNECT_ADD;
+    # uart-2 has zero free slots, so its one candidate never gets a command at
+    # all. Nothing here is destructive: no batch "connect" and no
+    # "disconnect_all" is ever issued, and the already-bound MACs (uart-1's
+    # AA:...:01 and uart-2's ...:10/:11/:12) never appear in any command.
+    uart1_connect_add = harness.connect_add_calls("/dev/ttyAMA0")
+    assert [c.macs for c in uart1_connect_add] == [
+        ["AA:BB:CC:DD:EE:02"],
+        ["AA:BB:CC:DD:EE:03"],
+    ]
+    assert harness.connect_add_calls("/dev/ttyAMA4") == []
+    assert harness.connect_calls() == []
+    assert harness.disconnect_all_calls() == []
+    bound_macs = {
+        "AA:BB:CC:DD:EE:01",
+        "AA:BB:CC:DD:EE:10",
+        "AA:BB:CC:DD:EE:11",
+        "AA:BB:CC:DD:EE:12",
+    }
+    for call in harness.runner.calls:
+        assert not (bound_macs & set(call.macs))
+
+    status_by_mac = {c["mac"]: c for c in harness.session.status()["candidates"]}
+    assert status_by_mac["AA:BB:CC:DD:EE:02"]["connected"] is True
+    assert status_by_mac["AA:BB:CC:DD:EE:03"]["connected"] is True
+    assert status_by_mac["AA:BB:CC:DD:EE:04"]["connected"] is False
+    assert status_by_mac["AA:BB:CC:DD:EE:05"]["connected"] is False
+    assert status_by_mac["AA:BB:CC:DD:EE:06"]["connected"] is False
 
     # flag file written with enough state to report staleness after a restart
     flag_payload = json.loads(flag_path.read_text(encoding="utf-8"))
@@ -242,6 +304,120 @@ def test_start_called_again_while_active_returns_existing_session(tmp_path):
     assert second == first
     # no additional scan/connect was issued -- SCAN/CONNECT are destructive
     assert len(harness.runner.calls) == calls_after_first
+
+
+# --------------------------------------------------------------------------
+# start() -- CONNECT_ADD reply branches
+# --------------------------------------------------------------------------
+
+
+def test_start_error_full_stops_further_adds_on_that_channel(tmp_path):
+    config = make_config()  # no bindings -> uart-1 has all 3 slots free
+    scan_results_by_port = {
+        "/dev/ttyAMA0": [
+            device("AA:BB:CC:DD:EE:01", -30, "Bike A"),
+            device("AA:BB:CC:DD:EE:02", -40, "Bike B"),
+            device("AA:BB:CC:DD:EE:03", -50, "Bike C"),
+        ],
+        "/dev/ttyAMA4": [],
+    }
+    harness = make_harness(
+        config,
+        scan_results_by_port=scan_results_by_port,
+        connect_add_replies_by_port={
+            "/dev/ttyAMA0": [
+                [{"type": "ok", "command": "CONNECT_ADD"}],
+                [{"type": "error", "message": "CONNECT_ADD:ERROR:FULL"}],
+            ],
+        },
+        flag_path=tmp_path / "pairing.flag",
+    )
+
+    harness.session.start()
+
+    # only the first two candidates were ever attempted -- the loop stopped
+    # on FULL instead of trying the third
+    uart1_connect_add = harness.connect_add_calls("/dev/ttyAMA0")
+    assert [c.macs for c in uart1_connect_add] == [
+        ["AA:BB:CC:DD:EE:01"],
+        ["AA:BB:CC:DD:EE:02"],
+    ]
+    status_by_mac = {c["mac"]: c for c in harness.session.status()["candidates"]}
+    assert status_by_mac["AA:BB:CC:DD:EE:01"]["connected"] is True
+    assert status_by_mac["AA:BB:CC:DD:EE:02"]["connected"] is False
+    assert status_by_mac["AA:BB:CC:DD:EE:03"]["connected"] is False
+    assert harness.connect_calls() == []
+
+
+def test_start_error_already_exists_counts_as_connected(tmp_path):
+    config = make_config()
+    scan_results_by_port = {
+        "/dev/ttyAMA0": [device("AA:BB:CC:DD:EE:01", -30, "Bike A")],
+        "/dev/ttyAMA4": [],
+    }
+    harness = make_harness(
+        config,
+        scan_results_by_port=scan_results_by_port,
+        connect_add_replies_by_port={
+            "/dev/ttyAMA0": [
+                [{"type": "error", "message": "CONNECT_ADD:ERROR:ALREADY_EXISTS"}],
+            ],
+        },
+        flag_path=tmp_path / "pairing.flag",
+    )
+
+    harness.session.start()
+
+    status_by_mac = {c["mac"]: c for c in harness.session.status()["candidates"]}
+    assert status_by_mac["AA:BB:CC:DD:EE:01"]["connected"] is True
+    assert harness.connect_calls() == []
+
+
+def test_start_error_unknown_cmd_falls_back_to_destructive_connect(tmp_path):
+    config = make_config()
+    scan_results_by_port = {
+        "/dev/ttyAMA0": [
+            device("AA:BB:CC:DD:EE:01", -30, "Bike A"),
+            device("AA:BB:CC:DD:EE:02", -40, "Bike B"),
+        ],
+        "/dev/ttyAMA4": [],
+    }
+    harness = make_harness(
+        config,
+        scan_results_by_port=scan_results_by_port,
+        connect_add_replies_by_port={
+            "/dev/ttyAMA0": [
+                [{"type": "error", "message": "ERROR:UNKNOWN_CMD:CONNECT_ADD"}],
+            ],
+        },
+        flag_path=tmp_path / "pairing.flag",
+    )
+
+    harness.session.start()
+
+    # exactly one CONNECT_ADD was tried (that's how the firmware version is
+    # discovered), then the channel fell back to a single destructive batch
+    # CONNECT with the top candidates, followed by REPORT
+    assert len(harness.connect_add_calls("/dev/ttyAMA0")) == 1
+    uart1_connect = harness.connect_calls("/dev/ttyAMA0")
+    assert len(uart1_connect) == 1
+    assert sorted(uart1_connect[0].macs) == [
+        "AA:BB:CC:DD:EE:01",
+        "AA:BB:CC:DD:EE:02",
+    ]
+    report_calls = [c for c in harness.runner.calls if c.command == "report"]
+    assert len(report_calls) == 1
+
+    status_by_mac = {c["mac"]: c for c in harness.session.status()["candidates"]}
+    assert status_by_mac["AA:BB:CC:DD:EE:01"]["connected"] is True
+    assert status_by_mac["AA:BB:CC:DD:EE:02"]["connected"] is True
+
+    # cancel() must restore-configured-devices for this channel, since the
+    # destructive CONNECT already disconnected its real bound equipment
+    result = harness.session.cancel()
+
+    assert len(harness.restore_calls) == 1
+    assert result["reconnect"]["status"] == "restored"
 
 
 # --------------------------------------------------------------------------
@@ -451,7 +627,9 @@ def test_status_refreshes_flag_mtime(tmp_path):
 # --------------------------------------------------------------------------
 
 
-def _harness_ready_to_confirm(tmp_path, bindings=None):
+def _harness_ready_to_confirm(
+    tmp_path, bindings=None, connect_add_replies_by_port=None
+):
     config = make_config(bindings=bindings)
     scan_results_by_port = {
         "/dev/ttyAMA0": [device("AA:BB:CC:DD:EE:05", -40, "Bike A")],
@@ -460,6 +638,7 @@ def _harness_ready_to_confirm(tmp_path, bindings=None):
     harness = make_harness(
         config,
         scan_results_by_port=scan_results_by_port,
+        connect_add_replies_by_port=connect_add_replies_by_port,
         flag_path=tmp_path / "pairing.flag",
     )
     harness.session.start()
@@ -540,7 +719,9 @@ def test_confirm_node_id_gets_next_free_numeric_suffix(tmp_path):
     assert result["binding"]["node_id"] == "fitrace-edge-01-03"
 
 
-def test_confirm_persists_config_restores_devices_restarts_and_clears_flag(tmp_path):
+def test_confirm_persists_config_disconnects_temp_extras_restarts_and_clears_flag(
+    tmp_path,
+):
     flag_path = tmp_path / "pairing.flag"
     harness = _harness_ready_to_confirm(tmp_path)
     # _harness_ready_to_confirm builds its own flag_path fixture already, so
@@ -564,22 +745,61 @@ def test_confirm_persists_config_restores_devices_restarts_and_clears_flag(tmp_p
     assert result["binding"]["ble_target"] == "AA:BB:CC:DD:EE:05"
     assert result["binding"]["antenna_channel"] == "uart-1"
     assert result["restart"] == {"dry_run": True, "executed": False}
-    assert result["reconnect"] == {"status": "reconnected", "channels": []}
+    # the only temp-added MAC is the one just confirmed, so nothing needed
+    # disconnecting and restore-configured-devices was never called (its
+    # channel used incremental CONNECT_ADD, never CONNECT).
+    assert result["reconnect"] == {"status": "disconnected", "channels": []}
 
     # config was persisted through save_config with the new binding present
     saved_config = harness.config_holder["config"]
     assert any(b.equipment_id == "My Bike" for b in saved_config.equipment_bindings)
-    # restore-configured-devices was called with that same persisted config
-    assert len(harness.restore_calls) == 1
-    assert harness.restore_calls[0] is saved_config
+    assert harness.restore_calls == []
     assert len(harness.restart_calls) == 1
 
     assert not flag_path.exists()
     assert harness.session.state == PairingSession.STATE_IDLE
 
 
+def test_confirm_disconnects_every_temp_mac_except_the_confirmed_one(tmp_path):
+    config = make_config()  # no bindings -> uart-1 has all 3 slots free
+    scan_results_by_port = {
+        "/dev/ttyAMA0": [
+            device("AA:BB:CC:DD:EE:01", -30, "Bike A"),
+            device("AA:BB:CC:DD:EE:02", -40, "Bike B"),
+            device("AA:BB:CC:DD:EE:03", -50, "Bike C"),
+        ],
+        "/dev/ttyAMA4": [],
+    }
+    flag_path = tmp_path / "pairing.flag"
+    harness = make_harness(
+        config, scan_results_by_port=scan_results_by_port, flag_path=flag_path
+    )
+    harness.session.start()
+
+    result = harness.session.confirm("AA:BB:CC:DD:EE:02", "fan_bike")
+
+    assert result["binding"]["ble_target"] == "AA:BB:CC:DD:EE:02"
+    disconnects = harness.disconnect_calls("/dev/ttyAMA0")
+    assert sorted(c.macs[0] for c in disconnects) == [
+        "AA:BB:CC:DD:EE:01",
+        "AA:BB:CC:DD:EE:03",
+    ]
+    assert harness.restore_calls == []
+
+
 def test_confirm_retry_after_restore_failure_does_not_duplicate_binding(tmp_path):
-    harness = _harness_ready_to_confirm(tmp_path)
+    # Force uart-1 through the destructive-fallback path (pre-v1.3.0
+    # firmware) so confirm()'s teardown actually calls
+    # restore_configured_devices and the flaky/retry behaviour below is
+    # meaningful -- the plain incremental CONNECT_ADD path never calls it.
+    harness = _harness_ready_to_confirm(
+        tmp_path,
+        connect_add_replies_by_port={
+            "/dev/ttyAMA0": [
+                [{"type": "error", "message": "ERROR:UNKNOWN_CMD:CONNECT_ADD"}]
+            ],
+        },
+    )
     restore_attempts = 0
 
     def flaky_restore(_config):
@@ -649,16 +869,41 @@ def test_confirm_config_validation_is_the_real_enforcement_point(tmp_path):
 # --------------------------------------------------------------------------
 
 
-def test_cancel_restores_configured_devices_and_clears_session(tmp_path):
+def test_cancel_on_happy_path_disconnects_temp_macs_without_restoring(tmp_path):
+    # Two bound devices already occupy uart-1 (leaving 1 free slot); the
+    # scan turns up two more candidates than that channel has room for, plus
+    # one candidate on uart-2 (2 free slots there). cancel() should tear down
+    # exactly the MACs this session temp-added -- one per DISCONNECT call --
+    # and never touch restore_configured_devices, since neither channel's
+    # real bound equipment was ever disturbed.
+    bindings = [
+        EquipmentBinding(
+            node_id="fitrace-edge-01-01",
+            equipment_id="BOUND_A",
+            equipment_type="fan_bike",
+            ble_target="AA:BB:CC:DD:EE:01",
+            antenna_channel="uart-1",
+        ),
+        EquipmentBinding(
+            node_id="fitrace-edge-01-02",
+            equipment_id="BOUND_B",
+            equipment_type="fan_bike",
+            ble_target="AA:BB:CC:DD:EE:02",
+            antenna_channel="uart-1",
+        ),
+    ]
+    config = make_config(bindings=bindings)
     flag_path = tmp_path / "pairing.flag"
-    harness = _harness_ready_to_confirm(tmp_path)
-    config = harness.config_holder["config"]
-    # rebuild with a known flag path to assert deletion
     harness = make_harness(
         config,
         scan_results_by_port={
-            "/dev/ttyAMA0": [device("AA:BB:CC:DD:EE:05", -40, "Bike A")],
-            "/dev/ttyAMA4": [],
+            "/dev/ttyAMA0": [
+                device("AA:BB:CC:DD:EE:10", -40, "Bike C"),
+                device("AA:BB:CC:DD:EE:11", -50, "Bike D"),
+            ],
+            "/dev/ttyAMA4": [
+                device("AA:BB:CC:DD:EE:20", -40, "Rower X"),
+            ],
         },
         flag_path=flag_path,
     )
@@ -668,7 +913,12 @@ def test_cancel_restores_configured_devices_and_clears_session(tmp_path):
     result = harness.session.cancel()
 
     assert result["status"] == "cancelled"
-    assert len(harness.restore_calls) == 1
+    assert harness.restore_calls == []
+    uart1_disconnects = harness.disconnect_calls("/dev/ttyAMA0")
+    assert [c.macs for c in uart1_disconnects] == [["AA:BB:CC:DD:EE:10"]]
+    uart2_disconnects = harness.disconnect_calls("/dev/ttyAMA4")
+    assert [c.macs for c in uart2_disconnects] == [["AA:BB:CC:DD:EE:20"]]
+    assert harness.disconnect_all_calls() == []
     assert not flag_path.exists()
     assert harness.session.state == PairingSession.STATE_IDLE
     assert harness.session.status() == {"state": "idle"}

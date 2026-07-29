@@ -1,19 +1,26 @@
 """Backend state machine for the "Add device" pairing flow.
 
 Operator story: tap "Add device" -> backend scans every configured antenna
-channel -> temp-CONNECTs the strongest unbound candidates it heard
-(respecting the nRF52832's 3-links-per-board limit) -> operator pedals the
-physical machine so the frontend can tell candidates apart by motion ->
-operator picks the one that moved and chooses its equipment type -> backend
-writes the binding and restores/reapplies the real configured target lists.
+channel -> temp-CONNECTs the strongest unbound candidates it heard, up to
+whatever free capacity each channel has left (respecting the nRF52832's
+3-links-per-board limit) -> operator pedals the physical machine so the
+frontend can tell candidates apart by motion -> operator picks the one that
+moved and chooses its equipment type -> backend writes the binding and tears
+down the temp connections it made.
 
-CONNECT is DESTRUCTIVE on the nRF52832 antenna board (see
-antenna_ftms_manager.py's module docstring): it always disconnect-alls, then
-reconnects the given MAC list from scratch. That means while a pairing
-session is temp-connected to candidate MACs, any *other* equipment already
-bound on that same channel is bumped offline for the duration of the
-session -- this is accepted as a setup-time cost, not a live-race concern.
-confirm()/cancel() both restore the real configured lists afterwards.
+Temp-connecting a candidate uses CONNECT_ADD (v1.3.0+ firmware): a single-MAC,
+non-destructive incremental add that does not disturb any other GATT session
+already open on that channel. That means equipment already bound on the same
+channel keeps streaming telemetry uninterrupted for the whole pairing
+session -- CONNECT_ADD only touches the one slot it's adding. If a board
+answers CONNECT_ADD with `ERROR:UNKNOWN_CMD:CONNECT_ADD;` its firmware
+predates v1.3.0; for that one channel only, start() falls back to the old
+destructive behaviour (one batch CONNECT with the top
+MAX_CONNECTIONS_PER_CHANNEL candidates, which disconnect-alls the channel
+first). confirm()/cancel() mirror that split: channels that used CONNECT_ADD
+get a per-MAC DISCONNECT for each temp-added candidate (nothing else on that
+channel was ever touched), while channels that fell back to CONNECT get the
+old restore-configured-devices treatment.
 
 Honest scope note: motion detection here is FTMS-telemetry-only (speed/
 distance deltas from REPORT frames on an already-CONNECTed device). Detecting
@@ -101,10 +108,14 @@ class PairingCandidate:
     rssi: int | None
     channel_id: str
     channel_accepts_new: bool
-    # True if this candidate was among the top MAX_CONNECTIONS_PER_CHANNEL
-    # strongest sightings on its channel and therefore actually got a temp
-    # CONNECT issued for it. Candidates beyond that cutoff are still listed
-    # (by RSSI) but were never connected, so they can never show motion.
+    # True if this candidate actually ended up temp-connected: either it was
+    # among the strongest sightings within its channel's free capacity and
+    # got a successful CONNECT_ADD (or ERROR:ALREADY_EXISTS), or its channel
+    # fell back to a destructive batch CONNECT and it was in the top
+    # MAX_CONNECTIONS_PER_CHANNEL of that batch. Candidates that were never
+    # attempted (beyond capacity) or stopped early (ERROR:FULL) are still
+    # listed (by RSSI) but were never connected, so they can never show
+    # motion.
     connected: bool
 
 
@@ -122,6 +133,36 @@ def _status_sort_key(candidate: dict):
     moving_rank = 0 if moving is True else (1 if moving is False else 2)
     rssi = candidate["rssi"]
     return (moving_rank, -(rssi if rssi is not None else -999))
+
+
+def _classify_connect_add_reply(parsed_entries: list[dict]) -> str:
+    """Classify a CONNECT_ADD command_runner reply's `parsed` entries into one
+    of: "ok" (added), "already_exists" (treated as added -- the MAC was
+    already in the board's target list), "full" (channel is at capacity,
+    stop adding more on it), "unknown_cmd" (pre-v1.3.0 firmware doesn't know
+    CONNECT_ADD at all -- caller should fall back to destructive CONNECT for
+    the whole channel), or "unrecognized" (no matching reply seen; caller
+    should stop rather than guess at board state).
+
+    `ERROR:UNKNOWN_CMD:...` is checked first and independently of the other
+    branches since it's a protocol-level reply, not a CONNECT_ADD-specific
+    one -- see docs/Dual_Central_Board_Manager_設計文件.md.
+    """
+    for entry in parsed_entries:
+        if entry.get("type") == "error" and "UNKNOWN_CMD" in (
+            entry.get("message") or ""
+        ):
+            return "unknown_cmd"
+    for entry in parsed_entries:
+        if entry.get("type") == "ok" and entry.get("command") == "CONNECT_ADD":
+            return "ok"
+        if entry.get("type") == "error":
+            message = entry.get("message") or ""
+            if "ALREADY_EXISTS" in message:
+                return "already_exists"
+            if "FULL" in message:
+                return "full"
+    return "unrecognized"
 
 
 def _next_node_id(config: EdgeNodeConfig) -> str:
@@ -216,9 +257,14 @@ class PairingSession:
         """Scan every configured antenna channel, exclude already-bound
         MACs, merge repeated sightings per MAC (strongest RSSI wins, first
         useful name kept -- mirrors the setup page's scan wizard merge), and
-        temp-CONNECT up to MAX_CONNECTIONS_PER_CHANNEL strongest candidates
-        per channel. Returns (or, if a session is already active, re-returns)
-        `{session_id, candidates, capacity}`.
+        temp-CONNECT_ADD up to that channel's free capacity
+        (MAX_CONNECTIONS_PER_CHANNEL minus its already-bound equipment)
+        strongest candidates per channel, one non-destructive CONNECT_ADD at
+        a time. A channel whose firmware doesn't understand CONNECT_ADD
+        (pre-v1.3.0) falls back to the old destructive batch CONNECT with
+        the top MAX_CONNECTIONS_PER_CHANNEL candidates instead. Returns (or,
+        if a session is already active, re-returns) `{session_id, candidates,
+        capacity}`.
         """
         if self._state in (self.STATE_SCANNING, self.STATE_OBSERVING):
             return self._start_result
@@ -285,24 +331,103 @@ class PairingSession:
             < MAX_CONNECTIONS_PER_CHANNEL
             for channel in config.antenna_channels
         }
+        per_channel_capacity = {
+            channel.id: max(
+                0, MAX_CONNECTIONS_PER_CHANNEL - configured_counts.get(channel.id, 0)
+            )
+            for channel in config.antenna_channels
+        }
 
         by_channel: dict[str, list[dict]] = {}
         for candidate in raw_candidates.values():
             by_channel.setdefault(candidate["channel_id"], []).append(candidate)
 
         self._candidates = []
-        macs_to_connect: dict[str, list[str]] = {}
-        channels_by_id = {channel.id: channel for channel in config.antenna_channels}
+        self._temp_added_by_channel = {}
+        self._fallback_channels = set()
         for channel in config.antenna_channels:
             entries = sorted(
                 by_channel.get(channel.id, []),
                 key=lambda c: c["rssi"] if c["rssi"] is not None else -999,
                 reverse=True,
             )
-            top = entries[:MAX_CONNECTIONS_PER_CHANNEL]
-            top_macs = {c["mac"] for c in top}
-            if top_macs:
-                macs_to_connect[channel.id] = [c["mac"] for c in top]
+            free_slots = per_channel_capacity[channel.id]
+            incremental_pool = entries[:free_slots] if free_slots > 0 else []
+
+            connected_macs: set[str] = set()
+            temp_added: list[str] = []
+            used_fallback = False
+
+            for candidate in incremental_pool:
+                mac = candidate["mac"]
+                reply = self._command_runner.run(
+                    AntennaCommandRequest(
+                        port=channel.port,
+                        baudrate=channel.baudrate,
+                        rtscts=channel.rtscts,
+                        command="connect_add",
+                        macs=[mac],
+                        timeout_sec=self._command_timeout_sec,
+                    )
+                )
+                outcome = _classify_connect_add_reply(reply.get("parsed") or [])
+                if outcome == "unknown_cmd":
+                    used_fallback = True
+                    break
+                if outcome in ("ok", "already_exists"):
+                    connected_macs.add(mac)
+                    temp_added.append(mac)
+                    continue
+                # "full" (channel just hit capacity) or "unrecognized" (no
+                # reply we understand): stop adding more to this channel
+                # rather than guessing at board state.
+                break
+
+            if used_fallback:
+                # Pre-v1.3.0 firmware doesn't know CONNECT_ADD at all -- fall
+                # back to the old destructive batch CONNECT for this channel,
+                # using the same top-N selection start() used before this
+                # change (independent of free_slots, exactly like today).
+                top = entries[:MAX_CONNECTIONS_PER_CHANNEL]
+                top_macs = {c["mac"] for c in top}
+                connected_macs = top_macs
+                temp_added = []
+                self._fallback_channels.add(channel.id)
+                if top_macs:
+                    self._command_runner.run(
+                        AntennaCommandRequest(
+                            port=channel.port,
+                            baudrate=channel.baudrate,
+                            rtscts=channel.rtscts,
+                            command="connect",
+                            macs=[c["mac"] for c in top],
+                            timeout_sec=self._command_timeout_sec,
+                        )
+                    )
+                    self._command_runner.run(
+                        AntennaCommandRequest(
+                            port=channel.port,
+                            baudrate=channel.baudrate,
+                            rtscts=channel.rtscts,
+                            command="report",
+                            report_interval_ms=self._report_interval_ms,
+                            timeout_sec=self._command_timeout_sec,
+                        )
+                    )
+            elif temp_added:
+                self._command_runner.run(
+                    AntennaCommandRequest(
+                        port=channel.port,
+                        baudrate=channel.baudrate,
+                        rtscts=channel.rtscts,
+                        command="report",
+                        report_interval_ms=self._report_interval_ms,
+                        timeout_sec=self._command_timeout_sec,
+                    )
+                )
+
+            self._temp_added_by_channel[channel.id] = temp_added
+
             for candidate in entries:
                 self._candidates.append(
                     PairingCandidate(
@@ -311,44 +436,15 @@ class PairingSession:
                         rssi=candidate["rssi"],
                         channel_id=channel.id,
                         channel_accepts_new=accepts_new[channel.id],
-                        connected=candidate["mac"] in top_macs,
+                        connected=candidate["mac"] in connected_macs,
                     )
                 )
-
-        for channel_id, macs in macs_to_connect.items():
-            channel = channels_by_id[channel_id]
-            self._command_runner.run(
-                AntennaCommandRequest(
-                    port=channel.port,
-                    baudrate=channel.baudrate,
-                    rtscts=channel.rtscts,
-                    command="connect",
-                    macs=macs,
-                    timeout_sec=self._command_timeout_sec,
-                )
-            )
-            self._command_runner.run(
-                AntennaCommandRequest(
-                    port=channel.port,
-                    baudrate=channel.baudrate,
-                    rtscts=channel.rtscts,
-                    command="report",
-                    report_interval_ms=self._report_interval_ms,
-                    timeout_sec=self._command_timeout_sec,
-                )
-            )
 
         self._session_id = uuid.uuid4().hex
         self._started_at = int(self._clock() * 1000)
         self._write_flag()
         self._state = self.STATE_OBSERVING
 
-        per_channel_capacity = {
-            channel.id: max(
-                0, MAX_CONNECTIONS_PER_CHANNEL - configured_counts.get(channel.id, 0)
-            )
-            for channel in config.antenna_channels
-        }
         self._start_result = {
             "session_id": self._session_id,
             "candidates": [
@@ -524,7 +620,11 @@ class PairingSession:
             # finalizes the same binding instead of appending the MAC again.
             self._pending_binding = binding
             self._pending_config = new_config
-        reconnect_result = self._restore_configured_devices(new_config)
+        # The confirmed MAC is now a real binding, not a temp connection --
+        # never disconnect it here.
+        reconnect_result = self._teardown_temp_connections(
+            new_config, exclude_mac=candidate.mac
+        )
         restart_result = self._restart_service()
         self._delete_flag()
         self._reset()
@@ -536,18 +636,68 @@ class PairingSession:
         }
 
     def cancel(self) -> dict:
-        """Abandon the session: restore every channel's real configured
-        target list, delete the flag, and reset to idle."""
+        """Abandon the session: tear down whatever this session temp-
+        connected, delete the flag, and reset to idle."""
         if self._state == self.STATE_IDLE:
             raise PairingSessionError("No active pairing session")
 
         config = self._load_config()
-        reconnect_result = self._restore_configured_devices(config)
+        reconnect_result = self._teardown_temp_connections(config)
         self._delete_flag()
         self._reset()
         return {"status": "cancelled", "reconnect": reconnect_result}
 
     # -- internals ------------------------------------------------------
+
+    def _teardown_temp_connections(
+        self, config: EdgeNodeConfig, *, exclude_mac: str | None = None
+    ) -> dict:
+        """Undo this session's temp connections.
+
+        Channels that used incremental CONNECT_ADD during start() never had
+        their real bound equipment disturbed, so they just get a per-MAC
+        DISCONNECT for each temp-added candidate (skipping `exclude_mac`,
+        used by confirm() to keep the just-confirmed candidate connected).
+        Channels that fell back to the destructive batch CONNECT path (see
+        start()) get the old restore-configured-devices treatment instead,
+        since the real bound list on that channel was already disconnected
+        and needs reconnecting.
+        """
+        exclude = _normalize_mac(exclude_mac) if exclude_mac else None
+        channels_by_id = {channel.id: channel for channel in config.antenna_channels}
+        disconnected: list[dict] = []
+        for channel_id, macs in self._temp_added_by_channel.items():
+            if channel_id in self._fallback_channels:
+                continue
+            channel = channels_by_id.get(channel_id)
+            if channel is None:
+                continue
+            for mac in macs:
+                if exclude is not None and _normalize_mac(mac) == exclude:
+                    continue
+                result = self._command_runner.run(
+                    AntennaCommandRequest(
+                        port=channel.port,
+                        baudrate=channel.baudrate,
+                        rtscts=channel.rtscts,
+                        command="disconnect",
+                        macs=[mac],
+                        timeout_sec=self._command_timeout_sec,
+                    )
+                )
+                disconnected.append(
+                    {"channel_id": channel_id, "mac": mac, "result": result}
+                )
+
+        if not self._fallback_channels:
+            return {"status": "disconnected", "channels": disconnected}
+
+        restore_result = self._restore_configured_devices(config)
+        return {
+            "status": "restored",
+            "disconnected": disconnected,
+            "restore": restore_result,
+        }
 
     def _reset(self):
         self._state = self.STATE_IDLE
@@ -557,6 +707,8 @@ class PairingSession:
         self._start_result: dict | None = None
         self._pending_binding: EquipmentBinding | None = None
         self._pending_config: EdgeNodeConfig | None = None
+        self._temp_added_by_channel: dict[str, list[str]] = {}
+        self._fallback_channels: set[str] = set()
 
     def _current_flag_path(self) -> Path:
         return self._explicit_flag_path or pairing_flag_path()
