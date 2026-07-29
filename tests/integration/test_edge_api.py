@@ -1694,3 +1694,263 @@ def test_pairing_scan_first_endpoints_require_admin_token(monkeypatch, tmp_path)
 
     finish_response = client.post("/api/pairing/finish", json={}, headers=headers)
     assert finish_response.status_code == 200
+
+
+# -- scan-once operator worklist (frontend) ---------------------------------
+#
+# commit 216717b added the scan-first bind()/connect()/finish() backend;
+# these tests cover operator.html's rebuild on top of it: one scan, then a
+# worklist of every candidate that scan found, each bound and connected
+# independently instead of the old one-scan-per-device wizard.
+
+
+def test_edge_pairing_start_uses_scan_only_and_shows_progress_message():
+    # The scan itself takes 20-40s on real hardware and used to leave the
+    # page showing nothing but a greyed button -- start() must now request a
+    # connectionless scan (temp_connect: false) and show a progress message
+    # for the whole time the request is in flight.
+    client = TestClient(edge_app_module.app)
+
+    source = client.get("/").text
+    start_fn_start = source.index("async function startPairing()")
+    start_fn_end = source.index("async function cancelPairing()", start_fn_start)
+    start_fn = source[start_fn_start:start_fn_end]
+
+    assert 'adminFetch("/api/pairing/start"' in start_fn
+    assert "temp_connect: false" in start_fn
+    assert "showPairingScanning(true)" in start_fn
+    assert "showPairingScanning(false)" in start_fn
+    scanning_show_index = start_fn.index("showPairingScanning(true)")
+    fetch_index = start_fn.index('adminFetch("/api/pairing/start"')
+    assert scanning_show_index < fetch_index  # message shown before the request fires
+
+    assert 'id="pairing-scanning"' in source
+    assert 'data-i18n="pairing.scanning"' in source
+    assert '"pairing.scanning": "Scanning every antenna channel' in source
+    assert '"pairing.scanning": "正在掃描所有天線通道' in source
+
+
+def test_edge_pairing_worklist_keeps_every_scanned_candidate_with_per_row_controls():
+    # The old page forced one SCAN per device (each confirm() ended the
+    # session) and dropped "unranked" (never-connected) candidates into a
+    # dimmed, separate group. The scan-once worklist must render every
+    # candidate start() returned, each with its own type picker, name input,
+    # save&connect, and "which one is this?" control.
+    client = TestClient(edge_app_module.app)
+
+    source = client.get("/").text
+    assert 'id="pairing-worklist"' in source
+    assert "unranked" not in source
+    assert "candidate-moving" not in source
+
+    init_start = source.index("function initPairingWorklist(candidates)")
+    init_end = source.index("async function bindCandidate(", init_start)
+    init_fn = source[init_start:init_end]
+    assert "(candidates || []).forEach((candidate) => {" in init_fn
+
+    type_grid_start = source.index("function typeGridHtml(meta)")
+    row_end = source.index("function renderPairingWorklist()", type_grid_start)
+    row_and_type_grid_fn = source[type_grid_start:row_end]
+    assert 'data-role="type-chip"' in row_and_type_grid_fn
+    assert 'data-role="display-name"' in row_and_type_grid_fn
+    assert 'data-role="save-connect"' in row_and_type_grid_fn
+    assert 'data-role="probe"' in row_and_type_grid_fn
+    assert 't("pairing.save_connect")' in row_and_type_grid_fn
+    assert 't("pairing.which_one")' in row_and_type_grid_fn
+    assert "typeGridHtml(meta)" in row_and_type_grid_fn
+
+
+def test_edge_pairing_save_and_connect_binds_then_connects_and_retry_never_rebinds():
+    # bind() persists the MAC into the board's NVS on its own -- a retry that
+    # only failed to connect must call connect() again, never bind() again
+    # (which would 400 as an already-bound MAC per pairing_session.bind()).
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    save_start = source.index("async function saveAndConnect(mac)")
+    save_end = source.index("async function probeCandidate(", save_start)
+    save_fn = source[save_start:save_end]
+    assert "bindCandidate(mac, meta.equipmentType, meta.displayName)" in save_fn
+    assert "await retryConnect(mac);" in save_fn
+    bind_call_index = save_fn.index("bindCandidate(")
+    retry_call_index = save_fn.index("await retryConnect(mac);")
+    assert bind_call_index < retry_call_index
+
+    bind_fn_start = source.index(
+        "async function bindCandidate(mac, equipmentType, displayName)"
+    )
+    bind_fn_end = source.index("async function connectCandidateOnly(", bind_fn_start)
+    bind_fn = source[bind_fn_start:bind_fn_end]
+    assert 'adminFetch("/api/pairing/bind"' in bind_fn
+    assert "/api/pairing/connect" not in bind_fn
+
+    retry_fn_start = source.index("async function retryConnect(mac)")
+    retry_fn_end = source.index("async function saveAndConnect(", retry_fn_start)
+    retry_fn = source[retry_fn_start:retry_fn_end]
+    assert "connectCandidateOnly(mac)" in retry_fn
+    assert "bindCandidate" not in retry_fn
+    assert "/api/pairing/bind" not in retry_fn
+
+    connect_only_start = source.index("async function connectCandidateOnly(mac)")
+    connect_only_end = source.index("async function retryConnect(", connect_only_start)
+    connect_only_fn = source[connect_only_start:connect_only_end]
+    assert 'adminFetch("/api/pairing/connect"' in connect_only_fn
+    assert "/api/pairing/bind" not in connect_only_fn
+
+    # "which one is this?" must connect only -- it must never bind either.
+    probe_start = source.index("async function probeCandidate(mac)")
+    probe_end = source.index("function handlePairingWorklistClick(", probe_start)
+    probe_fn = source[probe_start:probe_end]
+    assert "connectCandidateOnly(mac)" in probe_fn
+    assert "bindCandidate" not in probe_fn
+
+    # the retry-connect button (shown after a failed connect) must dispatch
+    # to retryConnect only, never back through saveAndConnect/bindCandidate.
+    click_start = source.index("function handlePairingWorklistClick(event)")
+    click_end = source.index("function handlePairingWorklistInput(event)", click_start)
+    click_fn = source[click_start:click_end]
+    assert 'role === "retry-connect"' in click_fn
+    retry_branch = click_fn[click_fn.index('role === "retry-connect"') :]
+    assert "retryConnect(mac)" in retry_branch
+    assert "bindCandidate" not in click_fn
+
+
+def test_edge_pairing_worklist_renders_distinct_outcomes_for_every_connect_result():
+    # ok/already_exists (connected), full (board at its 3-link limit),
+    # unknown_cmd (firmware too old), and unrecognized/HTTP error (failed)
+    # must each render distinctly so the operator knows what to do next.
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    outcome_start = source.index("function outcomeMessageHtml(outcome)")
+    outcome_end = source.index("function worklistRowHtml(meta)", outcome_start)
+    outcome_fn = source[outcome_start:outcome_end]
+    assert 'ok: ["ok", "pairing.outcome_ok"]' in outcome_fn
+    assert 'already_exists: ["ok", "pairing.outcome_already_exists"]' in outcome_fn
+    assert 'full: ["error", "pairing.outcome_full"]' in outcome_fn
+    assert 'unknown_cmd: ["error", "pairing.outcome_unknown_cmd"]' in outcome_fn
+    assert 'unrecognized: ["error", "pairing.outcome_failed"]' in outcome_fn
+    assert 'error: ["error", "pairing.outcome_failed"]' in outcome_fn
+
+    row_start = source.index("function worklistRowHtml(meta)")
+    row_end = source.index("function renderPairingWorklist()", row_start)
+    row_fn = source[row_start:row_end]
+    assert "outcomeMessageHtml(meta.connectOutcome)" in row_fn
+    # a bind()-level failure (e.g. HTTP error before connect() ever runs)
+    # renders separately from a connect() outcome, so the operator can tell
+    # "never saved" apart from "saved but couldn't connect".
+    assert "meta.bindError" in row_fn
+    assert '"pairing.bind_failed"' in row_fn
+
+    locales_dir = Path(edge_app_module.__file__).resolve().parent.parent / "locales"
+    en = json.loads((locales_dir / "en.json").read_text(encoding="utf-8"))
+    distinct_outcome_keys = {
+        "pairing.outcome_ok",
+        "pairing.outcome_already_exists",
+        "pairing.outcome_full",
+        "pairing.outcome_unknown_cmd",
+        "pairing.outcome_failed",
+    }
+    strings = {en[key] for key in distinct_outcome_keys}
+    assert len(strings) == len(distinct_outcome_keys)
+    assert en["pairing.bind_failed"] not in strings
+
+
+def test_edge_pairing_capacity_comes_from_bind_response_not_channel_accepts_new():
+    # channel_accepts_new is computed once at scan time and goes stale as
+    # bindings land during the session; bind()'s returned capacity is
+    # recomputed after every save, so it -- not the candidate flag -- must
+    # drive the per-channel "full" state shown to the operator.
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    assert "channel_accepts_new" not in source
+
+    apply_start = source.index("function applyPairingCapacity(capacity)")
+    apply_end = source.index("function channelFreeSlots(channelId)", apply_start)
+    apply_fn = source[apply_start:apply_end]
+    assert "pairingCapacity = capacity;" in apply_fn
+
+    slots_start = source.index("function channelFreeSlots(channelId)")
+    slots_end = source.index("function ftmsHintsForMac(", slots_start)
+    slots_fn = source[slots_start:slots_end]
+    assert "pairingCapacity && pairingCapacity.per_channel" in slots_fn
+
+    row_start = source.index("function worklistRowHtml(meta)")
+    row_end = source.index("function renderPairingWorklist()", row_start)
+    row_fn = source[row_start:row_end]
+    assert "channelFreeSlots(meta.channelId)" in row_fn
+
+    start_fn_start = source.index("async function startPairing()")
+    start_fn_end = source.index("async function cancelPairing()", start_fn_start)
+    start_fn = source[start_fn_start:start_fn_end]
+    assert "applyPairingCapacity(payload.capacity)" in start_fn
+
+    save_start = source.index("async function saveAndConnect(mac)")
+    save_end = source.index("async function probeCandidate(", save_start)
+    save_fn = source[save_start:save_end]
+    assert "applyPairingCapacity(bindResult.capacity)" in save_fn
+
+
+def test_edge_pairing_done_button_posts_finish_and_returns_home():
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    assert 'id="pairing-done-btn"' in source
+    assert (
+        'document.getElementById("pairing-done-btn").addEventListener("click", finishPairing);'
+        in source
+    )
+
+    finish_start = source.index("async function finishPairing()")
+    finish_end = source.index(
+        "// -- best-effort session cleanup on navigate-away", finish_start
+    )
+    finish_fn = source[finish_start:finish_end]
+    assert 'adminFetch("/api/pairing/finish"' in finish_fn
+    assert "restart: true" in finish_fn
+    assert "await goHome();" in finish_fn
+
+
+def test_edge_pairing_view_confirm_and_its_js_are_gone():
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    assert "view-confirm" not in source
+    assert "confirmPairing" not in source
+    assert "selectCandidate(" not in source
+    assert "renderConfirmView" not in source
+    assert "updateConfirmHeroMetric" not in source
+    assert "ftmsHintsForCandidate" not in source
+    assert "renderTypeGrid()" not in source
+    assert "updateConfirmSubmitState" not in source
+    assert 'id="confirm-submit-btn"' not in source
+    assert 'id="confirm-name-input"' not in source
+
+
+def test_edge_pairing_worklist_i18n_keys_present_in_both_locales():
+    locales_dir = Path(edge_app_module.__file__).resolve().parent.parent / "locales"
+    en = json.loads((locales_dir / "en.json").read_text(encoding="utf-8"))
+    zh_tw = json.loads((locales_dir / "zh_tw.json").read_text(encoding="utf-8"))
+
+    new_keys = {
+        "pairing.scanning",
+        "pairing.save_connect",
+        "pairing.saving",
+        "pairing.connecting",
+        "pairing.which_one",
+        "pairing.probing",
+        "pairing.retry_connect",
+        "pairing.bind_failed",
+        "pairing.outcome_ok",
+        "pairing.outcome_already_exists",
+        "pairing.outcome_full",
+        "pairing.outcome_unknown_cmd",
+        "pairing.outcome_failed",
+        "pairing.done",
+        "pairing.finish_failed",
+    }
+    for key in new_keys:
+        assert key in en, key
+        assert key in zh_tw, key
+    assert set(en.keys()) == set(zh_tw.keys())

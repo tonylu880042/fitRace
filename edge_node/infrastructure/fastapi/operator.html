@@ -391,98 +391,73 @@
       color: var(--muted);
     }
 
-    .group-label {
-      margin-top: 18px;
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: var(--muted);
-    }
-
-    .candidate-moving {
-      margin-top: 12px;
-      padding: 18px;
-      border: 2px solid var(--accent);
-      background: var(--surface);
-      box-shadow: 0 0 18px rgba(212, 243, 38, 0.18);
-      cursor: pointer;
-    }
-
-    .candidate-moving .candidate-name {
-      font-family: var(--mono);
-      font-size: 22px;
-      font-weight: 800;
-      color: var(--accent);
-    }
-
-    .candidate-moving .candidate-speed {
-      margin-top: 6px;
-      font-family: var(--mono);
-      font-size: 15px;
-      color: var(--text);
-    }
-
-    .candidate-row {
-      margin-top: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      padding: 10px 12px;
+    .worklist-row {
+      margin-top: 10px;
+      padding: 12px;
       border: 1px solid var(--border);
       background: var(--surface);
-      cursor: pointer;
-    }
-
-    .candidate-row.unranked {
-      opacity: 0.55;
-    }
-
-    .candidate-row .candidate-meta {
-      font-family: var(--mono);
-      font-size: 11px;
-      color: var(--muted);
+      max-width: 100%;
       overflow-wrap: anywhere;
     }
 
-    .candidate-row .candidate-rssi {
-      font-family: var(--mono);
-      font-size: 13px;
-      color: var(--accent);
+    .worklist-row.moving {
+      border-color: var(--accent);
+      box-shadow: 0 0 14px rgba(212, 243, 38, 0.18);
     }
+
+    .worklist-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px 12px;
+    }
+
+    .worklist-name {
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .worklist-meta {
+      margin-top: 2px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .worklist-rssi {
+      flex: none;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--accent);
+      white-space: nowrap;
+    }
+
+    .worklist-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .worklist-actions button {
+      flex: 1 1 140px;
+      margin-top: 0;
+    }
+
+    .worklist-outcome {
+      margin-top: 8px;
+      font-size: 12px;
+    }
+
+    .worklist-outcome.ok { color: var(--ok); }
+    .worklist-outcome.error { color: var(--danger); }
+    .worklist-outcome.warn { color: var(--warn); }
 
     .wizard-actions {
       display: flex;
       gap: 8px;
       margin-top: 18px;
-    }
-
-    .confirm-hero {
-      padding: 22px;
-      border: 1px solid var(--border);
-      background: var(--surface);
-      text-align: center;
-    }
-
-    .confirm-name {
-      font-family: var(--mono);
-      font-size: 30px;
-      font-weight: 800;
-      word-break: break-word;
-    }
-
-    .confirm-tag {
-      margin-top: 6px;
-      color: var(--muted);
-      font-size: 12px;
-    }
-
-    .confirm-metric {
-      margin-top: 10px;
-      font-family: var(--mono);
-      font-size: 16px;
-      color: var(--accent);
-      min-height: 20px;
     }
 
     .field { margin-top: 16px; }
@@ -532,30 +507,6 @@
       font-size: 9px;
       text-transform: uppercase;
       font-weight: 700;
-    }
-
-    .readonly-rows {
-      margin-top: 16px;
-      display: grid;
-      gap: 8px;
-    }
-
-    .status-line {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      font-family: var(--mono);
-      font-size: 13px;
-      color: var(--muted);
-    }
-
-    .status-line strong { color: var(--text); }
-
-    #confirm-advanced-toggle {
-      display: inline-block;
-      margin-top: 14px;
-      font-size: 13px;
-      cursor: pointer;
     }
 
     input[type="text"],
@@ -892,43 +843,15 @@
 
         <main id="view-pairing" class="view" hidden>
           <div class="banner" data-i18n="pairing.instruction"></div>
+          <div class="message" id="pairing-scanning" data-i18n="pairing.scanning" hidden></div>
           <div class="capacity-strip" id="pairing-capacity"></div>
-          <div id="pairing-moving"></div>
-          <div id="pairing-idle"></div>
-          <div class="group-label" id="pairing-unranked-label" data-i18n="pairing.unranked_group" hidden></div>
-          <div id="pairing-unranked"></div>
+          <div id="pairing-worklist" class="card-grid"></div>
           <div class="message" id="pairing-message"></div>
           <div class="wizard-actions">
             <button type="button" id="pairing-rescan-btn" class="btn-secondary" data-i18n="pairing.rescan">Rescan</button>
             <button type="button" id="pairing-cancel-btn" class="btn-secondary" data-i18n="pairing.cancel">Cancel</button>
           </div>
-        </main>
-
-        <main id="view-confirm" class="view" hidden>
-          <div class="confirm-hero">
-            <div class="confirm-name" id="confirm-name"></div>
-            <div class="confirm-tag" data-i18n="confirm.hero_tag">Matches the display on the equipment console</div>
-            <div class="confirm-metric" id="confirm-metric"></div>
-          </div>
-          <div class="field">
-            <label data-i18n="bindings.type">Equipment type</label>
-            <div class="type-grid" id="type-grid"></div>
-            <div class="message" id="confirm-type-hint" data-i18n="confirm.select_type_hint">Choose the equipment type to continue</div>
-          </div>
-          <div class="readonly-rows">
-            <div class="status-line"><span data-i18n="confirm.channel_label">Channel</span><strong id="confirm-channel">--</strong></div>
-            <div class="status-line"><span data-i18n="monitor.mac">MAC</span><strong id="confirm-mac">--</strong></div>
-          </div>
-          <a href="#" id="confirm-advanced-toggle" data-i18n="confirm.custom_name_toggle">Advanced: custom display name</a>
-          <div class="field" id="confirm-name-field" hidden>
-            <label data-i18n="bindings.name">Display name</label>
-            <input id="confirm-name-input" type="text" autocomplete="off">
-          </div>
-          <button type="button" id="confirm-submit-btn" class="btn-primary" disabled data-i18n="confirm.submit">Confirm &amp; add</button>
-          <div class="message" id="confirm-message"></div>
-          <div class="wizard-actions">
-            <button type="button" id="confirm-back-btn" class="btn-secondary" data-i18n="wizard.back">Back</button>
-          </div>
+          <button type="button" id="pairing-done-btn" class="btn-primary" data-i18n="pairing.done">Done — return home</button>
         </main>
       </div>
     </div>
@@ -1042,11 +965,16 @@
     let telemetryByMac = new Map(); // normalized MAC -> latest telemetry payload
     let telemetryByNodeId = new Map(); // node_id -> latest telemetry payload (fallback)
     let currentView = "home";
-    let pairingCapacity = null; // {per_channel, total_free} from the start() response
-    let pairingCandidates = [];
+    let pairingCapacity = null; // {per_channel, total_free} -- from start(), refreshed by every successful bind()
     let pairingActive = false;
-    let selectedCandidate = null;
-    let selectedType = null;
+    // pairingRowMeta: mac -> operator-entered/derived worklist state (equipment
+    // type, display name, bind/connect progress and outcome). Survives across
+    // status polls -- only pairingCandidateStatus below is replaced by polling.
+    let pairingRowMeta = new Map();
+    // pairingCandidateStatus: mac -> latest /api/pairing/status candidate
+    // snapshot (rssi, connected, moving, latest telemetry). Seeded from
+    // start()'s candidate list, then refreshed every poll tick.
+    let pairingCandidateStatus = new Map();
     let wifiNetworks = [];
     let wifiNetworksLoaded = false;
     let uartMonitorSignature = null;
@@ -1585,7 +1513,7 @@
       }
     }
 
-    // -- global telemetry poller (drives Home cards + the confirm hint) ----
+    // -- global telemetry poller (drives Home cards + the pairing type hints) --
 
     async function refreshTelemetry() {
       try {
@@ -1614,7 +1542,7 @@
         // best-effort; next poll retries
       }
       if (currentView === "home") updateBindingCardLeaves();
-      if (currentView === "confirm" && selectedCandidate) updateConfirmHeroMetric();
+      if (currentView === "pairing") renderPairingWorklist();
     }
 
     // -- view switching -----------------------------------------------------
@@ -1623,7 +1551,6 @@
       currentView = name;
       document.getElementById("view-home").hidden = name !== "home";
       document.getElementById("view-pairing").hidden = name !== "pairing";
-      document.getElementById("view-confirm").hidden = name !== "confirm";
     }
 
     async function goHome() {
@@ -1631,7 +1558,7 @@
       await loadConfig();
     }
 
-    // -- pairing scan (View 2) ----------------------------------------------
+    // -- pairing worklist (scan once, bind/connect every candidate from it) --
 
     function renderCapacityStrip() {
       const el = document.getElementById("pairing-capacity");
@@ -1649,47 +1576,276 @@
       el.textContent = text;
     }
 
-    function candidateRowHtml(candidate, extraClass = "") {
-      const speed = formatMetric(candidate.latest?.speed_kph, "", 1);
+    // capacity always comes from bind()'s response (recomputed after that
+    // bind's save lands), never from a candidate's per-channel "accepts new"
+    // scan-time flag -- that flag is a one-time snapshot and goes stale as
+    // other rows get bound during the same session.
+    function applyPairingCapacity(capacity) {
+      if (!capacity) return;
+      pairingCapacity = capacity;
+      renderCapacityStrip();
+    }
+
+    function channelFreeSlots(channelId) {
+      const perChannel = (pairingCapacity && pairingCapacity.per_channel) || {};
+      return perChannel[channelId];
+    }
+
+    function ftmsHintsForMac(mac) {
+      const telemetry = telemetryByMac.get(normalizeMac(mac));
+      const ftmsType = (telemetry?.ftms_type || "").toUpperCase();
+      return FTMS_HINT_MAP[ftmsType] || [];
+    }
+
+    function typeGridHtml(meta) {
+      const hints = ftmsHintsForMac(meta.mac);
+      if (!meta.equipmentType && hints.length === 1) meta.equipmentType = hints[0];
       return `
-        <div class="candidate-row ${extraClass}" data-mac="${escapeHtml(candidate.mac)}">
-          <div>
-            <div>${escapeHtml(candidate.name || candidate.mac)}</div>
-            <div class="candidate-meta">${escapeHtml(candidate.mac)}</div>
-          </div>
-          <div class="candidate-rssi">${escapeHtml(String(candidate.rssi ?? "--"))} dBm · ${escapeHtml(speed)}</div>
+        <div class="type-grid">
+          ${EQUIPMENT_TYPE_CHIPS.map((type) => {
+            const hinted = hints.includes(type);
+            const selected = meta.equipmentType === type;
+            return `
+              <button type="button" class="type-chip ${hinted ? "hinted" : ""} ${selected ? "selected" : ""}" data-mac="${escapeHtml(meta.mac)}" data-role="type-chip" data-type="${escapeHtml(type)}">
+                ${hinted ? `<span class="suggested-tag">${escapeHtml(t("confirm.suggested_tag"))}</span>` : ""}
+                ${escapeHtml(typeLabel(type))}
+              </button>
+            `;
+          }).join("")}
         </div>
       `;
     }
 
-    function renderPairingCandidates() {
-      const moving = pairingCandidates.filter((c) => c.moving === true);
-      const idle = pairingCandidates.filter((c) => c.moving === false);
-      const unranked = pairingCandidates.filter((c) => c.moving === null || c.moving === undefined);
+    function outcomeMessageHtml(outcome) {
+      const byOutcome = {
+        ok: ["ok", "pairing.outcome_ok"],
+        already_exists: ["ok", "pairing.outcome_already_exists"],
+        full: ["error", "pairing.outcome_full"],
+        unknown_cmd: ["error", "pairing.outcome_unknown_cmd"],
+        unrecognized: ["error", "pairing.outcome_failed"],
+        error: ["error", "pairing.outcome_failed"],
+      };
+      const [cls, key] = byOutcome[outcome] || ["error", "pairing.outcome_failed"];
+      return `<div class="worklist-outcome ${cls}" data-role="outcome">${escapeHtml(t(key))}</div>`;
+    }
 
-      document.getElementById("pairing-moving").innerHTML = moving.map((candidate) => `
-        <div class="candidate-moving" data-mac="${escapeHtml(candidate.mac)}">
-          <div class="candidate-name">${escapeHtml(candidate.name || candidate.mac)}</div>
-          <div class="candidate-speed">${escapeHtml(formatMetric(candidate.latest?.speed_kph, " kph", 1))}</div>
+    function worklistRowHtml(meta) {
+      const status = pairingCandidateStatus.get(meta.mac) || {};
+      const moving = status.moving === true;
+      const speedText = formatMetric(status.latest?.speed_kph, " kph", 1);
+      const bound = meta.bound;
+      const typeGridMarkup = bound ? "" : typeGridHtml(meta);
+      const freeSlots = channelFreeSlots(meta.channelId);
+      const channelFull = freeSlots === 0;
+      const disableSave = meta.binding || meta.connecting || !meta.equipmentType || channelFull;
+      const showRetryConnect = bound
+        && meta.connectOutcome
+        && meta.connectOutcome !== "ok"
+        && meta.connectOutcome !== "already_exists";
+
+      let outcomeHtml = "";
+      if (meta.bindError) {
+        outcomeHtml = `<div class="worklist-outcome error" data-role="outcome">${escapeHtml(`${t("pairing.bind_failed")}: ${meta.bindError}`)}</div>`;
+      } else if (bound && meta.connectOutcome) {
+        outcomeHtml = outcomeMessageHtml(meta.connectOutcome);
+      } else if (!bound && channelFull) {
+        outcomeHtml = `<div class="worklist-outcome warn" data-role="outcome">${escapeHtml(t("pairing.channel_full", { channel: meta.channelId }))}</div>`;
+      }
+
+      const formMarkup = bound ? "" : `
+        <div class="field">
+          <label data-i18n="bindings.type">${escapeHtml(t("bindings.type"))}</label>
+          ${typeGridMarkup}
         </div>
-      `).join("");
+        <div class="field">
+          <label data-i18n="bindings.name">${escapeHtml(t("bindings.name"))}</label>
+          <input type="text" data-mac="${escapeHtml(meta.mac)}" data-role="display-name" value="${escapeHtml(meta.displayName)}" autocomplete="off">
+        </div>
+      `;
 
-      document.getElementById("pairing-idle").innerHTML = idle.map((candidate) => candidateRowHtml(candidate)).join("");
+      const actionsMarkup = bound
+        ? (showRetryConnect ? `
+          <div class="worklist-actions">
+            <button type="button" class="btn-secondary" data-mac="${escapeHtml(meta.mac)}" data-role="retry-connect" ${meta.connecting ? "disabled" : ""}>${escapeHtml(meta.connecting ? t("pairing.connecting") : t("pairing.retry_connect"))}</button>
+          </div>
+        ` : "")
+        : `
+          <div class="worklist-actions">
+            <button type="button" class="btn-primary" data-mac="${escapeHtml(meta.mac)}" data-role="save-connect" ${disableSave ? "disabled" : ""}>${escapeHtml(meta.binding ? t("pairing.saving") : (meta.connecting ? t("pairing.connecting") : t("pairing.save_connect")))}</button>
+            <button type="button" class="btn-secondary" data-mac="${escapeHtml(meta.mac)}" data-role="probe" ${meta.probing ? "disabled" : ""}>${escapeHtml(meta.probing ? t("pairing.probing") : t("pairing.which_one"))}</button>
+          </div>
+        `;
 
-      const unrankedLabel = document.getElementById("pairing-unranked-label");
-      unrankedLabel.hidden = unranked.length === 0;
-      document.getElementById("pairing-unranked").innerHTML = unranked
-        .slice()
-        .sort((a, b) => (b.rssi ?? -999) - (a.rssi ?? -999))
-        .map((candidate) => candidateRowHtml(candidate, "unranked"))
-        .join("");
+      return `
+        <div class="worklist-row ${moving ? "moving" : ""}" data-mac="${escapeHtml(meta.mac)}">
+          <div class="worklist-head">
+            <div>
+              <div class="worklist-name">${escapeHtml(meta.name || meta.mac)}</div>
+              <div class="worklist-meta">${escapeHtml(meta.mac)} · <span class="binding-card-channel">${escapeHtml(formatAntennaChannel(meta.channelId))}</span></div>
+            </div>
+            <div class="worklist-rssi">${escapeHtml(String(status.rssi ?? meta.rssi ?? "--"))} dBm${moving ? ` · ${escapeHtml(speedText)}` : ""}</div>
+          </div>
+          ${formMarkup}
+          ${actionsMarkup}
+          ${outcomeHtml}
+        </div>
+      `;
+    }
 
-      const message = document.getElementById("pairing-message");
-      message.textContent = pairingCandidates.length ? "" : t("pairing.no_candidates");
+    function renderPairingWorklist() {
+      const container = document.getElementById("pairing-worklist");
+      if (!container) return;
 
-      document.querySelectorAll("#pairing-moving [data-mac], #pairing-idle [data-mac], #pairing-unranked [data-mac]").forEach((el) => {
-        el.addEventListener("click", () => selectCandidate(el.dataset.mac));
+      // Rebuilding every row's innerHTML on each status poll would otherwise
+      // steal focus/caret out from under an operator mid-type in a display
+      // name field -- restore it after the rebuild.
+      const active = document.activeElement;
+      const activeMac = active && active.dataset ? active.dataset.mac : null;
+      const activeRole = active && active.dataset ? active.dataset.role : null;
+      const selectionStart = active && "selectionStart" in active ? active.selectionStart : null;
+
+      const rows = [...pairingRowMeta.values()].sort((a, b) => {
+        const statusA = pairingCandidateStatus.get(a.mac) || {};
+        const statusB = pairingCandidateStatus.get(b.mac) || {};
+        const movingRank = (s) => (s.moving === true ? 0 : 1);
+        const rankDiff = movingRank(statusA) - movingRank(statusB);
+        if (rankDiff !== 0) return rankDiff;
+        return (statusB.rssi ?? -999) - (statusA.rssi ?? -999);
       });
+
+      container.innerHTML = rows.map((meta) => worklistRowHtml(meta)).join("");
+      document.getElementById("pairing-message").textContent = rows.length ? "" : t("pairing.no_candidates");
+
+      if (activeMac && activeRole) {
+        const restored = container.querySelector(`[data-mac="${CSS.escape(activeMac)}"][data-role="${activeRole}"]`);
+        if (restored) {
+          restored.focus();
+          if (selectionStart != null && typeof restored.setSelectionRange === "function") {
+            restored.setSelectionRange(selectionStart, selectionStart);
+          }
+        }
+      }
+    }
+
+    function initPairingWorklist(candidates) {
+      pairingRowMeta = new Map();
+      pairingCandidateStatus = new Map();
+      (candidates || []).forEach((candidate) => {
+        pairingRowMeta.set(candidate.mac, {
+          mac: candidate.mac,
+          name: candidate.name,
+          rssi: candidate.rssi,
+          channelId: candidate.channel_id,
+          equipmentType: null,
+          displayName: candidate.name || candidate.mac,
+          binding: false,
+          bound: false,
+          bindError: null,
+          connecting: false,
+          connectOutcome: null,
+          probing: false,
+        });
+        pairingCandidateStatus.set(candidate.mac, { ...candidate, connected: false, moving: null, latest: null });
+      });
+    }
+
+    async function bindCandidate(mac, equipmentType, displayName) {
+      const response = await adminFetch("/api/pairing/bind", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mac, equipment_type: equipmentType, display_name: displayName || null }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail || t("pairing.bind_failed"));
+      return payload;
+    }
+
+    async function connectCandidateOnly(mac) {
+      try {
+        const response = await adminFetch("/api/pairing/connect", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mac }),
+        });
+        const payload = await response.json();
+        if (!response.ok) return { mac, outcome: "error", connected: false };
+        return payload;
+      } catch (_error) {
+        return { mac, outcome: "error", connected: false };
+      }
+    }
+
+    async function retryConnect(mac) {
+      const meta = pairingRowMeta.get(mac);
+      if (!meta || meta.connecting) return;
+      meta.connecting = true;
+      renderPairingWorklist();
+      const result = await connectCandidateOnly(mac);
+      meta.connecting = false;
+      meta.connectOutcome = result.outcome;
+      renderPairingWorklist();
+    }
+
+    async function saveAndConnect(mac) {
+      const meta = pairingRowMeta.get(mac);
+      if (!meta || meta.bound || meta.binding || !meta.equipmentType) return;
+      meta.binding = true;
+      meta.bindError = null;
+      renderPairingWorklist();
+      try {
+        const bindResult = await bindCandidate(mac, meta.equipmentType, meta.displayName);
+        applyPairingCapacity(bindResult.capacity);
+        meta.bound = true;
+      } catch (error) {
+        meta.binding = false;
+        meta.bindError = error.message;
+        renderPairingWorklist();
+        return;
+      }
+      meta.binding = false;
+      // bind() already persisted this MAC -- connect() is the only step left,
+      // and it must never be re-issued through saveAndConnect (which would
+      // re-POST bind and fail as an already-bound MAC).
+      await retryConnect(mac);
+    }
+
+    async function probeCandidate(mac) {
+      const meta = pairingRowMeta.get(mac);
+      if (!meta || meta.probing) return;
+      meta.probing = true;
+      renderPairingWorklist();
+      const result = await connectCandidateOnly(mac);
+      const status = pairingCandidateStatus.get(mac) || {};
+      pairingCandidateStatus.set(mac, { ...status, connected: Boolean(result.connected) });
+      meta.probing = false;
+      renderPairingWorklist();
+    }
+
+    function handlePairingWorklistClick(event) {
+      const target = event.target.closest("[data-role]");
+      if (!target) return;
+      const mac = target.dataset.mac;
+      const role = target.dataset.role;
+      if (role === "type-chip") {
+        const meta = pairingRowMeta.get(mac);
+        if (!meta) return;
+        meta.equipmentType = target.dataset.type;
+        renderPairingWorklist();
+      } else if (role === "save-connect") {
+        saveAndConnect(mac);
+      } else if (role === "probe") {
+        probeCandidate(mac);
+      } else if (role === "retry-connect") {
+        retryConnect(mac);
+      }
+    }
+
+    function handlePairingWorklistInput(event) {
+      const target = event.target;
+      if (target.dataset && target.dataset.role === "display-name") {
+        const meta = pairingRowMeta.get(target.dataset.mac);
+        if (meta) meta.displayName = target.value;
+      }
     }
 
     let pairingPollHandle = null;
@@ -1705,9 +1861,10 @@
           if (currentView !== "home") await goHome();
           return;
         }
-        pairingCandidates = payload.candidates || [];
-        if (currentView === "pairing") renderPairingCandidates();
-        if (currentView === "confirm") updateConfirmHeroMetric();
+        (payload.candidates || []).forEach((candidate) => {
+          pairingCandidateStatus.set(candidate.mac, candidate);
+        });
+        if (currentView === "pairing") renderPairingWorklist();
       } catch (_error) {
         // best-effort; next tick retries
       }
@@ -1726,6 +1883,11 @@
       }
     }
 
+    function showPairingScanning(active) {
+      const el = document.getElementById("pairing-scanning");
+      if (el) el.hidden = !active;
+    }
+
     async function startPairing() {
       const addBtn = document.getElementById("add-device-btn");
       if (!centralHubReady) {
@@ -1733,24 +1895,35 @@
         return;
       }
       addBtn.disabled = true;
+      showView("pairing");
+      pairingCapacity = null;
+      initPairingWorklist([]);
+      renderCapacityStrip();
+      renderPairingWorklist();
+      showPairingScanning(true);
       try {
+        // Scan-only: temp_connect: false means start() issues SCAN commands
+        // and nothing else -- no CONNECT_ADD, no batch CONNECT/DISCONNECT:ALL,
+        // so equipment already bound and streaming is never disturbed while
+        // this scan runs (see docs/Dual_Central_Board_Manager_設計文件.md and
+        // pairing_session.py's start() docstring).
         const response = await adminFetch("/api/pairing/start", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({}),
+          body: JSON.stringify({ temp_connect: false }),
         });
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.detail || t("pairing.start_failed"));
-        pairingCapacity = payload.capacity || null;
-        pairingCandidates = payload.candidates || [];
         pairingActive = true;
-        showView("pairing");
-        renderCapacityStrip();
-        renderPairingCandidates();
+        applyPairingCapacity(payload.capacity);
+        initPairingWorklist(payload.candidates || []);
+        renderPairingWorklist();
         startPairingPoll();
       } catch (error) {
+        showView("home");
         document.getElementById("add-device-message").textContent = error.message;
       } finally {
+        showPairingScanning(false);
         addBtn.disabled = false;
       }
     }
@@ -1774,123 +1947,23 @@
       await startPairing();
     }
 
-    // -- confirm view (View 3) ----------------------------------------------
-
-    function selectCandidate(mac) {
-      const candidate = pairingCandidates.find((c) => c.mac === mac);
-      if (!candidate) return;
-      selectedCandidate = candidate;
-      selectedType = null;
-      renderConfirmView();
-      showView("confirm");
-    }
-
-    function ftmsHintsForCandidate() {
-      const telemetry = telemetryByMac.get(normalizeMac(selectedCandidate.mac));
-      const ftmsType = (telemetry?.ftms_type || "").toUpperCase();
-      return FTMS_HINT_MAP[ftmsType] || [];
-    }
-
-    function renderTypeGrid() {
-      const hints = ftmsHintsForCandidate();
-      const preselect = hints.length === 1 ? hints[0] : null;
-      if (preselect) selectedType = preselect;
-
-      const grid = document.getElementById("type-grid");
-      grid.innerHTML = EQUIPMENT_TYPE_CHIPS.map((type) => {
-        const hinted = hints.includes(type);
-        const selected = selectedType === type;
-        return `
-          <button type="button" class="type-chip ${hinted ? "hinted" : ""} ${selected ? "selected" : ""}" data-type="${escapeHtml(type)}">
-            ${hinted ? `<span class="suggested-tag">${escapeHtml(t("confirm.suggested_tag"))}</span>` : ""}
-            ${escapeHtml(typeLabel(type))}
-          </button>
-        `;
-      }).join("");
-
-      grid.querySelectorAll(".type-chip").forEach((chip) => {
-        chip.addEventListener("click", () => {
-          selectedType = chip.dataset.type;
-          renderTypeGrid();
-          updateConfirmSubmitState();
-        });
-      });
-      updateConfirmSubmitState();
-    }
-
-    function updateConfirmSubmitState() {
-      const submitBtn = document.getElementById("confirm-submit-btn");
-      submitBtn.disabled = !selectedType;
-      document.getElementById("confirm-type-hint").hidden = Boolean(selectedType);
-    }
-
-    function updateConfirmHeroMetric() {
-      if (!selectedCandidate) return;
-      const live = pairingCandidates.find((c) => c.mac === selectedCandidate.mac);
-      if (!live) return;
-      selectedCandidate = live;
-      const metricEl = document.getElementById("confirm-metric");
-      metricEl.textContent = live.moving ? formatMetric(live.latest?.speed_kph, " kph", 1) : "";
-    }
-
-    function renderConfirmView() {
-      document.getElementById("confirm-name").textContent = selectedCandidate.name || selectedCandidate.mac;
-      document.getElementById("confirm-channel").textContent = selectedCandidate.channel_id || "--";
-      document.getElementById("confirm-mac").textContent = selectedCandidate.mac;
-      const nameInput = document.getElementById("confirm-name-input");
-      nameInput.value = selectedCandidate.name || selectedCandidate.mac;
-      document.getElementById("confirm-name-field").hidden = true;
-      document.getElementById("confirm-message").textContent = "";
-      document.getElementById("confirm-message").className = "message";
-      updateConfirmHeroMetric();
-      renderTypeGrid();
-    }
-
-    document.getElementById("confirm-advanced-toggle").addEventListener("click", (event) => {
-      event.preventDefault();
-      const field = document.getElementById("confirm-name-field");
-      field.hidden = !field.hidden;
-    });
-
-    async function confirmPairing() {
-      if (!selectedCandidate || !selectedType) return;
-      const submitBtn = document.getElementById("confirm-submit-btn");
-      const messageEl = document.getElementById("confirm-message");
-      submitBtn.disabled = true;
-      const nameInput = document.getElementById("confirm-name-input");
-      const displayName = (nameInput.value || "").trim() || null;
+    async function finishPairing() {
+      const doneBtn = document.getElementById("pairing-done-btn");
+      doneBtn.disabled = true;
+      pairingActive = false;
+      stopPairingPoll();
       try {
-        const response = await adminFetch("/api/pairing/confirm", {
+        await adminFetch("/api/pairing/finish", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            mac: selectedCandidate.mac,
-            equipment_type: selectedType,
-            display_name: displayName,
-          }),
+          body: JSON.stringify({ restart: true }),
         });
-        const result = await response.json();
-        if (!response.ok) {
-          throw new Error(result.detail ? `${t("bindings.failed")}: ${result.detail}` : t("bindings.failed"));
-        }
-        pairingActive = false;
-        stopPairingPoll();
-        if (result.restart && result.restart.dry_run) {
-          messageEl.textContent = t("power.dry_run_warning");
-          messageEl.className = "message error";
-        } else {
-          messageEl.textContent = t("confirm.success");
-          messageEl.className = "message ok";
-        }
-        selectedCandidate = null;
-        selectedType = null;
-        window.setTimeout(goHome, 800);
-      } catch (error) {
-        messageEl.textContent = error.message;
-        messageEl.className = "message error";
+      } catch (_error) {
+        // best-effort; goHome()'s loadConfig() below is the source of truth
       } finally {
-        submitBtn.disabled = !selectedType;
+        doneBtn.disabled = false;
       }
+      await goHome();
     }
 
     // -- best-effort session cleanup on navigate-away -----------------------
@@ -1935,8 +2008,9 @@
       await cancelPairing();
       await goHome();
     });
-    document.getElementById("confirm-submit-btn").addEventListener("click", confirmPairing);
-    document.getElementById("confirm-back-btn").addEventListener("click", () => showView("pairing"));
+    document.getElementById("pairing-done-btn").addEventListener("click", finishPairing);
+    document.getElementById("pairing-worklist").addEventListener("click", handlePairingWorklistClick);
+    document.getElementById("pairing-worklist").addEventListener("input", handlePairingWorklistInput);
 
     applyTranslations();
     loadConfig({ populateHubFields: true });
