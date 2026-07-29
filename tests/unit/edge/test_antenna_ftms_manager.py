@@ -277,6 +277,40 @@ async def test_antenna_manager_scans_connects_and_emits_telemetry():
     assert received[0].raw_payload["total_energy"] == 3
 
 
+@pytest.mark.asyncio
+async def test_antenna_manager_stays_idle_at_startup_with_no_bindings():
+    channels = make_channels()
+    serials = {
+        "uart-1": FakeSerial({"PING;\r\n": ["BOOT:NO_LIST;\r\n"]}),
+        "uart-2": FakeSerial({"PING;\r\n": ["BOOT:NO_LIST;\r\n"]}),
+    }
+    config = EdgeNodeConfig(
+        node_id="fitrace-edge-01",
+        antenna_channels=channels,
+        equipment_bindings=[],
+    )
+
+    async def on_telemetry(_telemetry):
+        pass
+
+    manager = AntennaFtmsManager(
+        edge_config=config,
+        on_telemetry=on_telemetry,
+        serial_factory=lambda channel: serials[channel.id],
+        scan_duration_sec=0.1,
+        command_timeout_sec=0.1,
+    )
+
+    await manager.start()
+    await asyncio.sleep(0.3)
+    await manager.stop()
+
+    # With no configured bindings there is nothing a scan could ever match:
+    # only the PING handshake is allowed, no SCAN/CONNECT/REPORT commands.
+    assert serials["uart-1"].writes == ["PING;\r\n"]
+    assert serials["uart-2"].writes == ["PING;\r\n"]
+
+
 class SequencedScanSerial(FakeSerial):
     """FakeSerial whose SCAN:START responses differ per call."""
 

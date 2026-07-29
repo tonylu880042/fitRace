@@ -142,7 +142,15 @@ class AntennaFtmsManager:
                 for channel_id, has_list in boot_has_list.items()
                 if not has_list
             }
-            if boot_has_list and not no_list_channels:
+            if not self._edge_config.equipment_bindings:
+                # nothing configured for a scan to ever match, regardless of
+                # whether boards report HAS_LIST or NO_LIST -- stay idle
+                # until the operator starts a pairing scan themselves
+                logger.info(
+                    "No equipment bindings configured; staying idle until an "
+                    "operator starts a pairing scan"
+                )
+            elif boot_has_list and not no_list_channels:
                 # spec: HAS_LIST boards auto-reconnect their saved targets;
                 # don't tear them down, let the retry loop patch any gaps
                 logger.info(
