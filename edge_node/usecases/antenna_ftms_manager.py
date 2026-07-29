@@ -828,19 +828,23 @@ class AntennaFtmsManager:
             )
             return
 
-        removed_bindings = [
-            binding
-            for binding in self._edge_config.equipment_bindings
-            if binding.antenna_channel in no_list_channels
-        ]
+        # One partition, not two independent comprehensions: "what gets
+        # deleted" and "what gets written back" must be exact complements,
+        # and this is the only path that deletes a venue's setup. Two
+        # predicates can drift apart under a later edit -- narrowing the
+        # kept side by mistake silently wipes a HAS_LIST channel's bindings.
+        removed_bindings: list[EquipmentBinding] = []
+        kept_bindings: list[EquipmentBinding] = []
+        for binding in self._edge_config.equipment_bindings:
+            target = (
+                removed_bindings
+                if binding.antenna_channel in no_list_channels
+                else kept_bindings
+            )
+            target.append(binding)
         if not removed_bindings:
             return
 
-        kept_bindings = [
-            binding
-            for binding in self._edge_config.equipment_bindings
-            if binding.antenna_channel not in no_list_channels
-        ]
         for binding in removed_bindings:
             logger.warning(
                 "[%s] antenna board reports no saved target list; dropping "
