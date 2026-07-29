@@ -203,9 +203,11 @@ def test_parse_legacy_key_value_status_line():
     assert status["target"] == 3
 
 
-def test_parse_pong_diagnostic_reply():
+def test_parse_treats_pong_as_an_unrecognised_line():
+    # The protocol has no PONG reply (see docs/Dual_Central_Board_Manager_
+    # 設計文件.md); PING is answered with BOOT:HAS_LIST/NO_LIST.
     assert protocol.parse_line("PONG;\r\n") == {
-        "type": "pong",
+        "type": "raw",
         "raw": "PONG;",
     }
 

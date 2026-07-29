@@ -199,7 +199,7 @@ def test_edge_operator_diagnostics_hide_unrelated_live_telemetry_from_results():
 
     assert 'command === "status"' in helper_source
     assert 'new Set(["status", "error"])' in helper_source
-    assert 'new Set(["boot", "pong", "ok", "error"])' in helper_source
+    assert 'new Set(["boot", "ok", "error"])' in helper_source
     assert "result.parsed" in helper_source
     # the board never sends PING:OK (see docs/Dual_Central_Board_Manager_設計文件.md);
     # that dead branch must stay removed.

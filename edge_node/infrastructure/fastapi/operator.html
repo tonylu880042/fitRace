@@ -1499,7 +1499,7 @@
     function diagnosticReplies(result, command) {
       const expectedTypes = command === "status"
         ? new Set(["status", "error"])
-        : new Set(["boot", "pong", "ok", "error"]);
+        : new Set(["boot", "ok", "error"]);
       const parsed = Array.isArray(result?.parsed) ? result.parsed : [];
       return parsed
         .filter((entry) => expectedTypes.has(entry?.type))
