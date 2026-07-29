@@ -17,10 +17,17 @@ answers CONNECT_ADD with `ERROR:UNKNOWN_CMD:CONNECT_ADD;` its firmware
 predates v1.3.0; for that one channel only, start() falls back to the old
 destructive behaviour (one batch CONNECT with the top
 MAX_CONNECTIONS_PER_CHANNEL candidates, which disconnect-alls the channel
-first). confirm()/cancel() mirror that split: channels that used CONNECT_ADD
-get a per-MAC DISCONNECT for each temp-added candidate (nothing else on that
-channel was ever touched), while channels that fell back to CONNECT get the
-old restore-configured-devices treatment.
+first).
+
+confirm() and cancel() do NOT mirror each other. cancel() abandons the
+session -- nothing was persisted, so a cheap per-MAC DISCONNECT of whatever
+this session temp-added is enough (channels that fell back to destructive
+CONNECT still get the old restore-configured-devices treatment, since their
+real bound list was already disconnected and needs reconnecting). confirm()
+commits a new binding, so it always calls restore_configured_devices with the
+full updated config -- see the comment at that call site for why an
+authoritative batch CONNECT is required there and a per-MAC DISCONNECT is not
+enough, even on channels that only ever used CONNECT_ADD.
 
 Honest scope note: motion detection here is FTMS-telemetry-only (speed/
 distance deltas from REPORT frames on an already-CONNECTed device). Detecting
@@ -537,8 +544,10 @@ class PairingSession:
         """Bind `mac` (must be a candidate on a channel with a free
         configured slot) as `equipment_type`, persist it through the same
         config path POST /api/config uses, restore every channel's real
-        configured target list, restart the runtime service, and clear the
-        session/flag. Returns `{binding, reconnect, restart}`."""
+        configured target list (making the antenna board's NVS-persisted
+        target list authoritative again -- see the comment at the restore
+        call below), restart the runtime service, and clear the session/
+        flag. Returns `{binding, reconnect, restart}`."""
         if self._state not in (self.STATE_SCANNING, self.STATE_OBSERVING):
             raise PairingSessionError("No active pairing session")
 
@@ -620,11 +629,23 @@ class PairingSession:
             # finalizes the same binding instead of appending the MAC again.
             self._pending_binding = binding
             self._pending_config = new_config
-        # The confirmed MAC is now a real binding, not a temp connection --
-        # never disconnect it here.
-        reconnect_result = self._teardown_temp_connections(
-            new_config, exclude_mac=candidate.mac
-        )
+        # Must restore, not just per-MAC-disconnect the other temp candidates:
+        # the antenna board's target list is only durable in NVS via a batch
+        # CONNECT (DISCONNECT:ALL clears it, CONNECT:<list> rewrites it --
+        # docs/Dual_Central_Board_Manager_設計文件.md). Whether CONNECT_ADD
+        # itself persists to NVS is unverified, so treat it as RAM-only: if
+        # confirm() only disconnected the losing candidates and never issued
+        # a batch CONNECT, the newly bound MAC would still be missing from
+        # NVS. After a board power-cycle it would boot with the old target
+        # count (BOOT:HAS_LIST,count=<old>), the runtime would see STATUS
+        # connected == target and consider the channel fully healthy, and the
+        # new equipment would silently vanish from the race with no self-heal
+        # path. restore_configured_devices's batch CONNECT rewrites NVS from
+        # `new_config` (which already includes this binding), so it is both
+        # the authoritative fix and -- being destructive -- also clears every
+        # unchosen temp CONNECT_ADD candidate; no separate per-MAC DISCONNECT
+        # is needed here.
+        reconnect_result = self._restore_configured_devices(new_config)
         restart_result = self._restart_service()
         self._delete_flag()
         self._reset()
@@ -649,21 +670,27 @@ class PairingSession:
 
     # -- internals ------------------------------------------------------
 
-    def _teardown_temp_connections(
-        self, config: EdgeNodeConfig, *, exclude_mac: str | None = None
-    ) -> dict:
-        """Undo this session's temp connections.
+    def _teardown_temp_connections(self, config: EdgeNodeConfig) -> dict:
+        """Undo this session's temp connections. Only called from cancel() --
+        confirm() restores via `_restore_configured_devices` instead (see the
+        comment at that call site), since it needs an authoritative NVS
+        rewrite rather than a cheap per-MAC teardown.
 
         Channels that used incremental CONNECT_ADD during start() never had
         their real bound equipment disturbed, so they just get a per-MAC
-        DISCONNECT for each temp-added candidate (skipping `exclude_mac`,
-        used by confirm() to keep the just-confirmed candidate connected).
-        Channels that fell back to the destructive batch CONNECT path (see
-        start()) get the old restore-configured-devices treatment instead,
-        since the real bound list on that channel was already disconnected
-        and needs reconnecting.
+        DISCONNECT for each temp-added candidate. Channels that fell back to
+        the destructive batch CONNECT path (see start()) get the old
+        restore-configured-devices treatment instead, since the real bound
+        list on that channel was already disconnected and needs reconnecting.
+
+        ponytail: if one channel used CONNECT_ADD and another fell back to
+        the destructive CONNECT path, the branch below still calls
+        restore_configured_devices(config) once for the whole config, which
+        issues DISCONNECT:ALL + CONNECT even for the channel that never
+        needed it -- momentarily bouncing an otherwise-untouched good
+        channel. This is a limitation of reconnect_configured_devices being
+        a whole-config operation, not a per-channel one; not fixing it here.
         """
-        exclude = _normalize_mac(exclude_mac) if exclude_mac else None
         channels_by_id = {channel.id: channel for channel in config.antenna_channels}
         disconnected: list[dict] = []
         for channel_id, macs in self._temp_added_by_channel.items():
@@ -673,8 +700,6 @@ class PairingSession:
             if channel is None:
                 continue
             for mac in macs:
-                if exclude is not None and _normalize_mac(mac) == exclude:
-                    continue
                 result = self._command_runner.run(
                     AntennaCommandRequest(
                         port=channel.port,

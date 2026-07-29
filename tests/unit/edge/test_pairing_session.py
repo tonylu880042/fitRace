@@ -719,7 +719,7 @@ def test_confirm_node_id_gets_next_free_numeric_suffix(tmp_path):
     assert result["binding"]["node_id"] == "fitrace-edge-01-03"
 
 
-def test_confirm_persists_config_disconnects_temp_extras_restarts_and_clears_flag(
+def test_confirm_persists_config_restores_configured_devices_restarts_and_clears_flag(
     tmp_path,
 ):
     flag_path = tmp_path / "pairing.flag"
@@ -745,22 +745,30 @@ def test_confirm_persists_config_disconnects_temp_extras_restarts_and_clears_fla
     assert result["binding"]["ble_target"] == "AA:BB:CC:DD:EE:05"
     assert result["binding"]["antenna_channel"] == "uart-1"
     assert result["restart"] == {"dry_run": True, "executed": False}
-    # the only temp-added MAC is the one just confirmed, so nothing needed
-    # disconnecting and restore-configured-devices was never called (its
-    # channel used incremental CONNECT_ADD, never CONNECT).
-    assert result["reconnect"] == {"status": "disconnected", "channels": []}
+    # confirm() must always make the board's NVS target list authoritative
+    # again by restoring the full configured device list -- even though this
+    # channel only ever used the non-destructive CONNECT_ADD path -- rather
+    # than issuing a per-MAC disconnect of the losing candidates.
+    assert result["reconnect"] == {"status": "reconnected", "channels": []}
+    assert harness.restore_calls == [harness.config_holder["config"]]
 
     # config was persisted through save_config with the new binding present
     saved_config = harness.config_holder["config"]
     assert any(b.equipment_id == "My Bike" for b in saved_config.equipment_bindings)
-    assert harness.restore_calls == []
+    assert len(harness.restore_calls) == 1
     assert len(harness.restart_calls) == 1
+
+    # no per-MAC disconnect command was issued for the losing candidate --
+    # restore_configured_devices's own batch CONNECT is what clears it
+    assert harness.disconnect_calls() == []
 
     assert not flag_path.exists()
     assert harness.session.state == PairingSession.STATE_IDLE
 
 
-def test_confirm_disconnects_every_temp_mac_except_the_confirmed_one(tmp_path):
+def test_confirm_calls_restore_configured_devices_once_and_issues_no_disconnects(
+    tmp_path,
+):
     config = make_config()  # no bindings -> uart-1 has all 3 slots free
     scan_results_by_port = {
         "/dev/ttyAMA0": [
@@ -779,27 +787,51 @@ def test_confirm_disconnects_every_temp_mac_except_the_confirmed_one(tmp_path):
     result = harness.session.confirm("AA:BB:CC:DD:EE:02", "fan_bike")
 
     assert result["binding"]["ble_target"] == "AA:BB:CC:DD:EE:02"
-    disconnects = harness.disconnect_calls("/dev/ttyAMA0")
-    assert sorted(c.macs[0] for c in disconnects) == [
-        "AA:BB:CC:DD:EE:01",
-        "AA:BB:CC:DD:EE:03",
-    ]
-    assert harness.restore_calls == []
+    # restore_configured_devices was called exactly once, with the new
+    # config (i.e. the one including the just-confirmed binding) -- and no
+    # per-MAC disconnect commands were issued at all, on either channel.
+    assert len(harness.restore_calls) == 1
+    restored_config = harness.restore_calls[0]
+    assert any(
+        b.ble_target == "AA:BB:CC:DD:EE:02" for b in restored_config.equipment_bindings
+    )
+    assert harness.disconnect_calls() == []
+
+
+def test_confirm_restores_the_newly_bound_mac_into_the_configured_device_list(
+    tmp_path,
+):
+    # Regression lock: the batch CONNECT that restore_configured_devices
+    # issues must be driven by a config whose MAC list now includes the
+    # newly bound candidate -- that's what rewrites the antenna board's NVS
+    # target list to include it. Our fake restore_configured_devices is a
+    # stub that just records the config it was called with rather than
+    # driving a real command runner, so this test asserts on that recorded
+    # config's bindings rather than on an actual "connect" command's macs.
+    config = make_config()
+    scan_results_by_port = {
+        "/dev/ttyAMA0": [device("AA:BB:CC:DD:EE:07", -40, "Bike A")],
+        "/dev/ttyAMA4": [],
+    }
+    flag_path = tmp_path / "pairing.flag"
+    harness = make_harness(
+        config, scan_results_by_port=scan_results_by_port, flag_path=flag_path
+    )
+    harness.session.start()
+
+    harness.session.confirm("AA:BB:CC:DD:EE:07", "fan_bike")
+
+    assert len(harness.restore_calls) == 1
+    restored_macs = {b.ble_target for b in harness.restore_calls[0].equipment_bindings}
+    assert "AA:BB:CC:DD:EE:07" in restored_macs
 
 
 def test_confirm_retry_after_restore_failure_does_not_duplicate_binding(tmp_path):
-    # Force uart-1 through the destructive-fallback path (pre-v1.3.0
-    # firmware) so confirm()'s teardown actually calls
-    # restore_configured_devices and the flaky/retry behaviour below is
-    # meaningful -- the plain incremental CONNECT_ADD path never calls it.
-    harness = _harness_ready_to_confirm(
-        tmp_path,
-        connect_add_replies_by_port={
-            "/dev/ttyAMA0": [
-                [{"type": "error", "message": "ERROR:UNKNOWN_CMD:CONNECT_ADD"}]
-            ],
-        },
-    )
+    # confirm() now always calls restore_configured_devices directly (see
+    # the comment at that call site in confirm()), so no fallback-path
+    # rigging is needed to exercise it here -- the plain incremental
+    # CONNECT_ADD path calls it too.
+    harness = _harness_ready_to_confirm(tmp_path)
     restore_attempts = 0
 
     def flaky_restore(_config):
