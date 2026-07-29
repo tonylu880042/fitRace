@@ -26,15 +26,7 @@ NODE_STATUS_INTERVAL_SEC = 5.0
 MAC_ADDRESS_PATTERN = re.compile(r"^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$")
 
 
-def _broker_reachable(host, port, timeout=1.5):
-    try:
-        with socket.create_connection((host, port), timeout=timeout):
-            return True
-    except OSError:
-        return False
-
-
-def resolve_mqtt_host(configured, port, probe=_broker_reachable):
+def resolve_mqtt_host(configured):
     """Resolve the configured MQTT broker without changing its identity.
 
     - ""/"auto" -> localhost. On the all-in-one Pi the broker is always local,
@@ -93,7 +85,7 @@ def main():
     edge_config = _build_edge_config(config)
     node_id = edge_config.node_id
     mqtt_port = edge_config.mqtt_port
-    mqtt_host = resolve_mqtt_host(edge_config.mqtt_host, mqtt_port)
+    mqtt_host = resolve_mqtt_host(edge_config.mqtt_host)
 
     logger.info(
         "Starting Edge Node: %s with %s FTMS binding(s)",
