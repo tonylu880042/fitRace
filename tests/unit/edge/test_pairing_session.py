@@ -1333,6 +1333,11 @@ def test_full_scan_first_session_never_issues_batch_connect_or_disconnect_all(
     assert "connect" not in commands_issued
     assert "disconnect_all" not in commands_issued
     assert "disconnect" not in commands_issued
+    # restore_configured_devices is the OTHER way a destructive
+    # DISCONNECT:ALL + batch CONNECT can reach the boards -- it goes through
+    # the injected collaborator, not command_runner, so the command-list
+    # assertions above cannot see it. This flow must never call it.
+    assert harness.restore_calls == []
     assert commands_issued.count("scan") == 2  # one per configured channel
     assert commands_issued.count("connect_add") == 2
     assert commands_issued.count("report") == 1  # both devices share uart-1
