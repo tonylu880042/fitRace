@@ -519,16 +519,36 @@ def get_antenna_config(request: Request):
     }
 
 
+def _is_telemetry_event(event: dict) -> bool:
+    # A pairing scan can flood the raw event log with dozens of device-
+    # discovery "uart"/"rx" lines in a burst (a real scan on this hardware
+    # produced 40 devices). Without this filter applied server-side, before
+    # the trailing `limit` window is filled, that noise alone can evict a
+    # still-connected machine's telemetry event from the window even though
+    # it is recent -- see /api/monitor/events's `kind` parameter below.
+    source = event.get("source")
+    direction = event.get("direction")
+    if source in ("mqtt", "local") and direction == "publish":
+        topic = event.get("topic") or ""
+        return topic.startswith("gym/telemetry/")
+    if source == "uart" and direction == "rx":
+        parsed = event.get("parsed") or {}
+        return isinstance(parsed, dict) and parsed.get("type") == "telemetry"
+    return False
+
+
 @app.get("/api/monitor/events")
 def get_monitor_events(
     request: Request,
     limit: int = Query(100, ge=1, le=500),
+    kind: str | None = Query(None),
 ):
     require_admin(request)
+    predicate = _is_telemetry_event if kind == "telemetry" else None
     return {
         "path": str(edge_event_log.path),
         "server_now_epoch_ms": int(time.time() * 1000),
-        "events": edge_event_log.list_events(limit=limit),
+        "events": edge_event_log.list_events(limit=limit, predicate=predicate),
     }
 
 

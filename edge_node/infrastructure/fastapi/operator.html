@@ -964,6 +964,11 @@
     let edgeConfig = null;
     let telemetryByMac = new Map(); // normalized MAC -> latest telemetry payload
     let telemetryByNodeId = new Map(); // node_id -> latest telemetry payload (fallback)
+    // normalized MAC -> latest UART-sourced telemetry row. Harvested so a
+    // card stays "live" while the web process owns the UART for a pairing
+    // scan/connect (MQTT publishing for that channel pauses, but FTMS
+    // frames keep arriving over UART and get recorded as uart/rx events).
+    let telemetryUartByMac = new Map();
     let currentView = "home";
     let pairingCapacity = null; // {per_channel, total_free} -- from start(), refreshed by every successful bind()
     let pairingActive = false;
@@ -1345,8 +1350,18 @@
       bindings.forEach((binding) => {
         const card = document.querySelector(`.binding-card[data-node-id="${CSS.escape(binding.node_id)}"]`);
         if (!card) return;
-        const payload = telemetryForBinding(binding);
-        const live = payload && telemetryAgeMs(payload) <= MONITOR_LIVE_WINDOW_MS;
+        const mqttPayload = telemetryForBinding(binding);
+        const uartPayload = telemetryUartByMac.get(normalizeMac(binding.ble_target)) || null;
+        const mqttLive = Boolean(mqttPayload && telemetryAgeMs(mqttPayload) <= MONITOR_LIVE_WINDOW_MS);
+        const uartLive = Boolean(uartPayload && telemetryAgeMs(uartPayload) <= MONITOR_LIVE_WINDOW_MS);
+        const live = mqttLive || uartLive;
+        // A pairing scan/connect on this binding's own channel can pause
+        // MQTT publishing for tens of seconds while the machine's FTMS
+        // frames keep arriving over UART. Prefer the fully-processed MQTT
+        // payload when it is fresh, but fall back to the UART-sourced row
+        // so the metrics keep moving instead of freezing on a stale MQTT
+        // snapshot while the pill claims the card is live.
+        const payload = mqttLive ? mqttPayload : (uartLive ? uartPayload : mqttPayload);
         const channel = payload?.antenna_channel || binding.antenna_channel;
         const pill = card.querySelector('[data-role="pill"]');
         pill.className = `pill ${live ? "live" : ""}`;
@@ -1515,18 +1530,19 @@
 
     // -- global telemetry poller (drives Home cards + the pairing type hints) --
 
-    async function refreshTelemetry() {
-      try {
-        const response = await adminFetch("/api/monitor/events?limit=500");
-        const payload = await response.json();
-        if (!response.ok) return;
-        const events = Array.isArray(payload.events) ? payload.events : [];
-        events.forEach((event) => {
-          const data = event.payload || {};
+    // Harvests both telemetry sources into the page's lookup maps: MQTT
+    // publishes (the fully-processed payload) keyed by node_id and MAC, and
+    // UART-sourced telemetry rows (the antenna board's raw FTMS frames,
+    // normalized by the protocol parser) keyed by MAC. Called with events
+    // from the server's kind=telemetry view, which is immune to a pairing
+    // scan's device-discovery flood -- see refreshTelemetry below.
+    function harvestTelemetryEvents(events) {
+      events.forEach((event) => {
+        if (event.source === "mqtt" || event.source === "local") {
+          if (event.direction !== "publish") return;
           const topic = event.topic || "";
-          if ((event.source !== "mqtt" && event.source !== "local") || event.direction !== "publish" || !topic.startsWith("gym/telemetry/")) {
-            return;
-          }
+          if (!topic.startsWith("gym/telemetry/")) return;
+          const data = event.payload || {};
           if (!data.node_id) return;
           const previous = telemetryByNodeId.get(data.node_id);
           if (previous && Number(data.timestamp_epoch_ms || 0) < Number(previous.timestamp_epoch_ms || 0)) {
@@ -1536,8 +1552,50 @@
           if (data.mac_address) {
             telemetryByMac.set(normalizeMac(data.mac_address), data);
           }
-        });
+          return;
+        }
+        if (event.source === "uart" && event.direction === "rx") {
+          const parsed = event.parsed || {};
+          if (parsed.type !== "telemetry" || !parsed.address) return;
+          const mac = normalizeMac(parsed.address);
+          const timestamp = Number(event.timestamp_epoch_ms || 0);
+          const previous = telemetryUartByMac.get(mac);
+          if (previous && timestamp < Number(previous.timestamp_epoch_ms || 0)) return;
+          telemetryUartByMac.set(mac, {
+            timestamp_epoch_ms: timestamp,
+            instantaneous_speed_kph: parsed.instantaneous_speed_kph,
+            power_watts: parsed.power_watts,
+            rssi: parsed.rssi,
+            antenna_channel: event.channel,
+          });
+        }
+      });
+    }
+
+    async function refreshTelemetry() {
+      try {
+        const response = await adminFetch("/api/monitor/events?limit=500");
+        const payload = await response.json();
+        if (!response.ok) return;
+        const events = Array.isArray(payload.events) ? payload.events : [];
         renderUartMonitor(events);
+      } catch (_error) {
+        // best-effort; next poll retries
+      }
+      try {
+        // A pairing scan can flood the raw event log above with dozens of
+        // device-discovery lines (a real scan on this hardware produced 40
+        // devices), which can push a still-connected machine's telemetry
+        // rows out of that log's own trailing window. kind=telemetry asks
+        // the server to keep only telemetry-relevant events in its own
+        // trailing window, so card liveness never has to win a race
+        // against scan noise.
+        const telemetryResponse = await adminFetch("/api/monitor/events?kind=telemetry&limit=200");
+        const telemetryPayload = await telemetryResponse.json();
+        if (telemetryResponse.ok) {
+          const telemetryEvents = Array.isArray(telemetryPayload.events) ? telemetryPayload.events : [];
+          harvestTelemetryEvents(telemetryEvents);
+        }
       } catch (_error) {
         // best-effort; next poll retries
       }

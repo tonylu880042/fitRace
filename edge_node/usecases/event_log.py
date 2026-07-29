@@ -3,8 +3,7 @@ import os
 import time
 from collections import deque
 from pathlib import Path
-from typing import Any
-
+from typing import Any, Callable
 
 DEFAULT_EDGE_MONITOR_PATH = "data/edge_monitor.jsonl"
 
@@ -49,26 +48,41 @@ class EdgeEventLog:
         }
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.path.open("a", encoding="utf-8") as file:
-            file.write(json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n")
+            file.write(
+                json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n"
+            )
         self._trim_if_needed()
 
-    def list_events(self, limit: int = 100) -> list[dict]:
+    def list_events(
+        self,
+        limit: int = 100,
+        predicate: Callable[[dict], bool] | None = None,
+    ) -> list[dict]:
+        """Return the most recent `limit` events, newest last.
+
+        `predicate`, when given, is applied while the log is scanned --
+        before the trailing `limit` window is filled -- so only matching
+        events compete for the window's slots. Without this, a burst of
+        unrelated events (e.g. a pairing scan's device-discovery lines) can
+        push a matching-but-older event out of an unfiltered trailing
+        window even though a caller only cares about matching events.
+        """
         if not self.path.exists():
             return []
         limit = max(1, min(limit, 500))
-        lines: deque[str] = deque(maxlen=limit)
+        events: deque[dict] = deque(maxlen=limit)
         with self.path.open(encoding="utf-8") as file:
             for line in file:
-                if line.strip():
-                    lines.append(line)
-
-        events = []
-        for line in lines:
-            try:
-                events.append(json.loads(line))
-            except json.JSONDecodeError:
-                continue
-        return events
+                if not line.strip():
+                    continue
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if predicate is not None and not predicate(event):
+                    continue
+                events.append(event)
+        return list(events)
 
     def _trim_if_needed(self):
         try:

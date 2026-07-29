@@ -1115,6 +1115,58 @@ def test_edge_monitor_events_endpoint_reads_event_log(monkeypatch, tmp_path):
     assert payload["events"][0]["message"] == "BOOT:NO_LIST;"
 
 
+def test_edge_monitor_events_kind_telemetry_survives_a_scan_noise_flood(
+    monkeypatch, tmp_path
+):
+    # Regression for the scan-flood risk noted while fixing the card-flips-
+    # to-waiting bug: a pairing scan writes many "uart"/"rx" device-
+    # discovery lines in a burst (a real scan on this hardware produced 40
+    # devices). Without server-side filtering, those noise lines alone can
+    # fill the trailing `limit` window and evict a still-connected
+    # machine's telemetry event even though it is recent. kind=telemetry
+    # must keep only telemetry-relevant events (MQTT publishes + UART
+    # telemetry rows) in the window, immune to that flood.
+    event_log = edge_app_module.EdgeEventLog(tmp_path / "edge_monitor.jsonl")
+    event_log.record(
+        "uart",
+        "rx",
+        channel="uart-1",
+        message="FTMS:AA:BB:CC:DD:EE:01,BIKE,{}",
+        parsed={"type": "telemetry", "address": "AA:BB:CC:DD:EE:01"},
+    )
+    event_log.record(
+        "mqtt",
+        "publish",
+        topic="gym/telemetry/node-01",
+        payload={"node_id": "node-01", "mac_address": "AA:BB:CC:DD:EE:02"},
+    )
+    for index in range(10):
+        event_log.record(
+            "uart",
+            "rx",
+            channel="uart-1",
+            message=f"DEVICE:AA:BB:CC:DD:EE:{index:02d},-40,Bike,BIKE",
+            parsed={"type": "device", "address": f"AA:BB:CC:DD:EE:{index:02d}"},
+        )
+    monkeypatch.setattr(edge_app_module, "edge_event_log", event_log)
+    client = TestClient(edge_app_module.app)
+
+    response = client.get("/api/monitor/events?kind=telemetry&limit=1")
+
+    assert response.status_code == 200
+    events = response.json()["events"]
+    assert len(events) == 1
+    assert events[0]["source"] == "mqtt"
+    assert events[0]["topic"] == "gym/telemetry/node-01"
+
+    response_all = client.get("/api/monitor/events?limit=200")
+    kinds = {
+        (event.get("parsed") or {}).get("type")
+        for event in response_all.json()["events"]
+    }
+    assert "device" in kinds
+
+
 def test_edge_antenna_command_defaults_to_configured_first_channel(
     monkeypatch, tmp_path
 ):
@@ -1394,6 +1446,97 @@ def test_edge_setup_page_duplicate_mac_bindings_fall_back_to_node_id():
     assert "bindingTargetCount" in operator_source
     assert "bindingTargetCount(binding.ble_target) === 1" in operator_key_fn
     assert "telemetryByNodeId.get(binding.node_id)" in operator_key_fn
+
+
+def test_edge_operator_refresh_telemetry_harvests_uart_rows_by_mac():
+    # Bug: while the web process runs a UART command (pairing scan,
+    # connect_add, ...), AntennaCommandRunner holds the cross-process UART
+    # lock for the whole session and reads every line, including FTMS
+    # telemetry frames from machines that are already connected. Meanwhile
+    # the runtime's own read loop loses the lock race and publishes nothing
+    # to MQTT for that channel, so the card's MQTT-only liveness check goes
+    # stale even though the telemetry is visibly still arriving (as
+    # uart/rx events with parsed.type === "telemetry"). refreshTelemetry
+    # must harvest those rows too, keyed by normalized MAC, not just MQTT
+    # publishes.
+    client = TestClient(edge_app_module.app)
+
+    source = client.get("/").text
+
+    harvest_start = source.index("function harvestTelemetryEvents(events)")
+    harvest_end = source.index("async function refreshTelemetry()", harvest_start)
+    harvest_fn = source[harvest_start:harvest_end]
+
+    assert 'event.source === "uart" && event.direction === "rx"' in harvest_fn
+    assert 'parsed.type !== "telemetry"' in harvest_fn
+    assert "normalizeMac(parsed.address)" in harvest_fn
+    assert "telemetryUartByMac.set(mac," in harvest_fn
+    assert "instantaneous_speed_kph: parsed.instantaneous_speed_kph," in harvest_fn
+    assert "power_watts: parsed.power_watts," in harvest_fn
+    assert "rssi: parsed.rssi," in harvest_fn
+
+    refresh_start = harvest_end
+    refresh_end = source.index("// -- view switching", refresh_start)
+    refresh_fn = source[refresh_start:refresh_end]
+    assert 'adminFetch("/api/monitor/events?kind=telemetry&limit=200")' in refresh_fn
+    assert "harvestTelemetryEvents(telemetryEvents);" in refresh_fn
+
+
+def test_edge_operator_binding_card_liveness_counts_fresh_uart_row_as_live():
+    # A previous test in this file (test_edge_operator_uart_monitor_shows_
+    # latest_first_and_keeps_only_200_messages) was satisfied by a comment
+    # containing the same substring it asserted on and silently stopped
+    # protecting the behaviour it named. Assert here on the actual live
+    # expression used by updateBindingCardLeaves, which a comment could not
+    # contain verbatim, so a regression that drops the UART source from
+    # liveness fails this test instead of just drifting the docs.
+    client = TestClient(edge_app_module.app)
+
+    source = client.get("/").text
+    leaves_start = source.index("function updateBindingCardLeaves(")
+    leaves_end = source.index("function formatEventTime(", leaves_start)
+    leaves_fn = source[leaves_start:leaves_end]
+
+    assert "telemetryUartByMac.get(normalizeMac(binding.ble_target))" in leaves_fn
+    assert (
+        "const mqttLive = Boolean(mqttPayload && telemetryAgeMs(mqttPayload) <= MONITOR_LIVE_WINDOW_MS);"
+        in leaves_fn
+    )
+    assert (
+        "const uartLive = Boolean(uartPayload && telemetryAgeMs(uartPayload) <= MONITOR_LIVE_WINDOW_MS);"
+        in leaves_fn
+    )
+    assert "const live = mqttLive || uartLive;" in leaves_fn
+
+
+def test_edge_operator_binding_card_prefers_fresh_mqtt_over_fresh_uart():
+    client = TestClient(edge_app_module.app)
+
+    source = client.get("/").text
+    leaves_start = source.index("function updateBindingCardLeaves(")
+    leaves_end = source.index("function formatEventTime(", leaves_start)
+    leaves_fn = source[leaves_start:leaves_end]
+
+    assert (
+        "const payload = mqttLive ? mqttPayload : (uartLive ? uartPayload : mqttPayload);"
+        in leaves_fn
+    )
+
+
+def test_edge_operator_binding_card_metrics_fall_back_to_uart_row_when_mqtt_stale():
+    client = TestClient(edge_app_module.app)
+
+    source = client.get("/").text
+    leaves_start = source.index("function updateBindingCardLeaves(")
+    leaves_end = source.index("function formatEventTime(", leaves_start)
+    leaves_fn = source[leaves_start:leaves_end]
+
+    # The same `payload` variable (mqtt-when-fresh, else uart-when-fresh)
+    # feeds every metric field, so a stale MQTT payload with a fresh UART
+    # row still updates speed/power/rssi from the UART row.
+    assert 'formatMetric(payload?.instantaneous_speed_kph, " kph", 1)' in leaves_fn
+    assert 'formatMetric(payload?.power_watts, " W", 0)' in leaves_fn
+    assert 'formatMetric(payload?.rssi, " dBm", 0)' in leaves_fn
 
 
 class FakePairingAntennaRunner:
