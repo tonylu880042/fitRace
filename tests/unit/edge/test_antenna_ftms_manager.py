@@ -204,29 +204,23 @@ class FakeSerial:
 
 
 @pytest.mark.asyncio
-async def test_antenna_manager_scans_connects_and_emits_telemetry():
-    channels = make_channels()
+async def test_antenna_manager_emits_telemetry_from_has_list_channel_with_no_startup_scan():
+    # spec: the antenna board's NVS target list is the source of truth. A
+    # HAS_LIST board auto-reconnects its saved targets on its own, so
+    # startup must only PING and re-apply the report interval -- never
+    # SCAN/CONNECT. Telemetry must still resolve to the configured node_id
+    # via the exact-MAC match branch in _binding_for_mac, even though
+    # bind_assignments_to_streams (which used to seed _bindings_by_mac at
+    # startup) is no longer called at all.
+    channels = [AntennaChannelConfig(id="uart-1", port="/dev/ttyAMA0")]
     serials = {
         "uart-1": FakeSerial(
             {
-                "PING;\r\n": ["BOOT:NO_LIST;\r\n"],
-                "SCAN:START;\r\n": [
-                    "SCAN:OK;\r\n",
-                    "DEVICE:AA:BB:CC:DD:EE:01,-55,Bike 1,BIKE;\r\n",
-                ],
-                "SCAN:STOP;\r\n": ["SCAN:OK;\r\n"],
-                "CONNECT:AA:BB:CC:DD:EE:01;\r\n": ["CONNECT:OK;\r\n"],
+                "PING;\r\n": ["BOOT:HAS_LIST,count=1;\r\n"],
                 "REPORT:250;\r\n": [
                     "REPORT:OK;\r\n",
                     'FTMS:AA:BB:CC:DD:EE:01,BIKE,{"rssi":-55,"instantaneous_speed":24.5,"total_distance":10,"instantaneous_power":120,"total_energy":3};\r\n',
                 ],
-            }
-        ),
-        "uart-2": FakeSerial(
-            {
-                "PING;\r\n": ["BOOT:NO_LIST;\r\n"],
-                "SCAN:START;\r\n": ["SCAN:OK;\r\n"],
-                "SCAN:STOP;\r\n": ["SCAN:OK;\r\n"],
             }
         ),
     }
@@ -252,7 +246,6 @@ async def test_antenna_manager_scans_connects_and_emits_telemetry():
         edge_config=config,
         on_telemetry=on_telemetry,
         serial_factory=lambda channel: serials[channel.id],
-        scan_duration_sec=0.1,
         command_timeout_sec=0.1,
     )
 
@@ -263,8 +256,8 @@ async def test_antenna_manager_scans_connects_and_emits_telemetry():
         await asyncio.sleep(0.05)
     await manager.stop()
 
-    assert any(write == "SCAN:START;\r\n" for write in serials["uart-1"].writes)
-    assert any(write == "CONNECT:AA:BB:CC:DD:EE:01;\r\n" for write in serials["uart-1"].writes)
+    # HAS_LIST: PING, then only the report interval -- never SCAN/CONNECT.
+    assert serials["uart-1"].writes == ["PING;\r\n", "REPORT:250;\r\n"]
     assert received[0].node_id == "fitrace-edge-01-bike-01"
     assert received[0].mac_address == "AA:BB:CC:DD:EE:01"
     assert received[0].ftms_type == "BIKE"
@@ -311,51 +304,30 @@ async def test_antenna_manager_stays_idle_at_startup_with_no_bindings():
     assert serials["uart-2"].writes == ["PING;\r\n"]
 
 
-class SequencedScanSerial(FakeSerial):
-    """FakeSerial whose SCAN:START responses differ per call."""
-
-    def __init__(self, responses, scan_batches):
-        super().__init__(responses)
-        self.scan_batches = [
-            [line.encode("ascii") for line in batch] for batch in scan_batches
-        ]
-
-    def write(self, data):
-        command = data.decode("ascii")
-        if command == "SCAN:START;\r\n":
-            self.writes.append(command)
-            if self.scan_batches:
-                self.lines.extend(self.scan_batches.pop(0))
-            return
-        super().write(data)
-
-
 @pytest.mark.asyncio
 async def test_antenna_manager_reconnects_when_status_reports_missing_links():
+    # Startup never scans/connects a NO_LIST channel (see
+    # test_antenna_manager_startup_never_scans_or_connects_no_list_channel),
+    # so the configured target here is only ever reconnected by the
+    # background watchdog (_reconnect_missing_targets), once STATUS reports
+    # it missing. This test exercises that watchdog path in isolation.
     channels = make_channels()
     serials = {
-        "uart-1": SequencedScanSerial(
+        "uart-1": FakeSerial(
             {
                 "PING;\r\n": ["BOOT:NO_LIST;\r\n"],
-                "SCAN:STOP;\r\n": ["SCAN:OK;\r\n"],
                 "STATUS;\r\n": ["STATUS:IDLE,0/1;\r\n"],
                 "CONNECT:AA:BB:CC:DD:EE:01;\r\n": ["CONNECT:OK;\r\n"],
                 "REPORT:250;\r\n": [
                     "REPORT:OK;\r\n",
                     'FTMS:AA:BB:CC:DD:EE:01,TMILL,{"rssi":-60,"instantaneous_speed":12.0,"total_distance":5,"instantaneous_power":90,"total_energy":1};\r\n',
                 ],
-            },
-            # startup scan misses the device entirely
-            scan_batches=[["SCAN:OK;\r\n"]],
+            }
         ),
-        "uart-2": SequencedScanSerial(
+        "uart-2": FakeSerial(
             {
                 "PING;\r\n": ["BOOT:NO_LIST;\r\n"],
-                "SCAN:STOP;\r\n": ["SCAN:OK;\r\n"],
-            },
-            # owns no configured bindings, so the startup scan must skip it
-            # entirely -- this batch is never consumed
-            scan_batches=[["SCAN:OK;\r\n"]],
+            }
         ),
     }
     received = []
@@ -393,17 +365,15 @@ async def test_antenna_manager_reconnects_when_status_reports_missing_links():
         await asyncio.sleep(0.05)
     await manager.stop()
 
-    # STATUS said 0/1, so the configured target was reconnected on its channel
+    # startup never CONNECTed (NO_LIST); STATUS said 0/1, so the watchdog
+    # reconnected the configured target on its channel
     assert any(write == "STATUS;\r\n" for write in serials["uart-1"].writes)
     assert any(
         write == "CONNECT:AA:BB:CC:DD:EE:01;\r\n" for write in serials["uart-1"].writes
     )
-    # recovery must not disturb the channel with no configured targets, and
-    # it owns nothing so the startup scan must have skipped it too
-    assert not any(
-        write.startswith("CONNECT:") for write in serials["uart-2"].writes
-    )
-    assert serials["uart-2"].writes.count("SCAN:START;\r\n") == 0
+    # the channel owning no configured targets is never touched, at startup
+    # or by the watchdog
+    assert serials["uart-2"].writes == ["PING;\r\n"]
     assert received[0].node_id == "fitrace-edge-01-tread-01"
     assert received[0].mac_address == "AA:BB:CC:DD:EE:01"
 
@@ -555,7 +525,13 @@ async def test_antenna_manager_assigns_saved_targets_to_channel_bindings():
 
 
 @pytest.mark.asyncio
-async def test_antenna_manager_scans_only_no_list_channels():
+async def test_antenna_manager_startup_never_scans_or_connects_no_list_channel():
+    # spec: NVS on the board is the source of truth. NO_LIST only ever means
+    # an operator just ran DISCONNECT:ALL or the board is fresh/unconfigured
+    # -- either way a human is already present, so startup must wait for
+    # them to run a pairing scan themselves rather than scanning/connecting
+    # on its own (the destructive DISCONNECT:ALL + CONNECT pair this venue
+    # cannot tolerate, since equipment auto-powers-off once disconnected).
     channels = make_channels()
     serials = {
         "uart-1": FakeSerial(
@@ -567,16 +543,6 @@ async def test_antenna_manager_scans_only_no_list_channels():
         "uart-2": FakeSerial(
             {
                 "PING;\r\n": ["BOOT:NO_LIST;\r\n"],
-                "SCAN:START;\r\n": [
-                    "SCAN:OK;\r\n",
-                    # uart-2 also hears uart-1's configured (but idle) device
-                    "DEVICE:AA:BB:CC:DD:EE:01,-50,Tread 1,TREADMILL;\r\n",
-                    "DEVICE:AA:BB:CC:DD:EE:02,-60,Tread 2,TREADMILL;\r\n",
-                ],
-                "SCAN:STOP;\r\n": ["SCAN:OK;\r\n"],
-                "DISCONNECT:ALL;\r\n": ["DISCONNECT:OK;\r\n"],
-                "CONNECT:AA:BB:CC:DD:EE:02;\r\n": ["CONNECT:OK;\r\n"],
-                "REPORT:250;\r\n": ["REPORT:OK;\r\n"],
             }
         ),
     }
@@ -616,24 +582,20 @@ async def test_antenna_manager_scans_only_no_list_channels():
     await asyncio.sleep(0.3)
     await manager.stop()
 
-    # HAS_LIST board is left alone: no scan, no disconnect, no connect
-    assert not any(write.startswith("SCAN:") for write in serials["uart-1"].writes)
-    assert not any(write.startswith("DISCONNECT:") for write in serials["uart-1"].writes)
-    assert not any(write.startswith("CONNECT:") for write in serials["uart-1"].writes)
-    # but it still gets the report interval applied
-    assert any(write == "REPORT:250;\r\n" for write in serials["uart-1"].writes)
-    # NO_LIST board scans and connects only its own configured device
-    assert any(write == "SCAN:START;\r\n" for write in serials["uart-2"].writes)
-    assert any(write == "CONNECT:AA:BB:CC:DD:EE:02;\r\n" for write in serials["uart-2"].writes)
-    assert not any("AA:BB:CC:DD:EE:01" in write for write in serials["uart-2"].writes if write.startswith("CONNECT:"))
+    # HAS_LIST board is left alone except its report interval re-applied.
+    assert serials["uart-1"].writes == ["PING;\r\n", "REPORT:250;\r\n"]
+    # NO_LIST board -- even though it owns a configured binding -- gets no
+    # SCAN, no CONNECT, and no DISCONNECT at all; it waits for an operator.
+    assert serials["uart-2"].writes == ["PING;\r\n"]
 
 
 @pytest.mark.asyncio
 async def test_antenna_manager_skips_no_list_channel_that_owns_no_bindings():
     # Live-evidence regression: both configured bindings live on uart-1.
     # uart-1 reports HAS_LIST (board auto-reconnects on its own), uart-2
-    # reports NO_LIST but owns nothing -- a scan there can never match a
-    # configured target, so it must be left completely alone.
+    # reports NO_LIST and owns nothing -- startup never scans/connects a
+    # NO_LIST channel regardless of binding ownership, so it must be left
+    # completely alone either way.
     channels = make_channels()
     serials = {
         "uart-1": FakeSerial(
@@ -645,11 +607,6 @@ async def test_antenna_manager_skips_no_list_channel_that_owns_no_bindings():
         "uart-2": FakeSerial(
             {
                 "PING;\r\n": ["BOOT:NO_LIST;\r\n"],
-                "SCAN:START;\r\n": [
-                    "SCAN:OK;\r\n",
-                    "DEVICE:AA:BB:CC:DD:EE:01,-50,Tread 1,TREADMILL;\r\n",
-                ],
-                "SCAN:STOP;\r\n": ["SCAN:OK;\r\n"],
             }
         ),
     }
@@ -696,3 +653,193 @@ async def test_antenna_manager_skips_no_list_channel_that_owns_no_bindings():
     # its report interval re-applied after reboot.
     assert not any(write.startswith("SCAN:") for write in serials["uart-1"].writes)
     assert any(write == "REPORT:250;\r\n" for write in serials["uart-1"].writes)
+
+
+@pytest.mark.asyncio
+async def test_antenna_manager_never_clears_config_when_board_gives_no_answer():
+    # Critical safety test. An unplugged or wedged antenna board (no BOOT
+    # reply after 3 PING retries) must NEVER be treated like an explicit
+    # NO_LIST reply -- only an explicit NO_LIST may ever clear a channel's
+    # config.json bindings. FakeSerial has no response mapped for "PING;",
+    # so every retry times out and _ping_channels must classify this as
+    # "no answer", not "no list".
+    channels = [AntennaChannelConfig(id="uart-1", port="/dev/ttyAMA0")]
+    serials = {"uart-1": FakeSerial({})}
+    config = EdgeNodeConfig(
+        node_id="fitrace-edge-01",
+        antenna_channels=channels,
+        equipment_bindings=[
+            EquipmentBinding(
+                node_id="fitrace-edge-01-01",
+                equipment_id="TREAD_01",
+                equipment_type="treadmill",
+                ble_target="AA:BB:CC:DD:EE:01",
+                antenna_channel="uart-1",
+            )
+        ],
+    )
+    saved = []
+
+    async def on_telemetry(_telemetry):
+        pass
+
+    manager = AntennaFtmsManager(
+        edge_config=config,
+        on_telemetry=on_telemetry,
+        serial_factory=lambda channel: serials[channel.id],
+        command_timeout_sec=0.02,
+        config_loader=lambda: config.model_copy(deep=True),
+        config_saver=saved.append,
+    )
+
+    await manager.start()
+    await asyncio.sleep(0.3)
+    await manager.stop()
+
+    # PING is retried up to 3 times per spec and nothing else is ever
+    # written: no REPORT (channel never joined _saved_list_channels) and,
+    # critically, config clearing never even attempted a write.
+    assert serials["uart-1"].writes == ["PING;\r\n"] * 3
+    assert saved == []
+    assert len(manager._edge_config.equipment_bindings) == 1
+
+
+@pytest.mark.asyncio
+async def test_antenna_manager_clears_bindings_only_for_explicit_no_list_channel():
+    channels = make_channels()
+    serials = {
+        "uart-1": FakeSerial({"PING;\r\n": ["BOOT:HAS_LIST,count=1;\r\n"]}),
+        "uart-2": FakeSerial({"PING;\r\n": ["BOOT:NO_LIST;\r\n"]}),
+    }
+    config = EdgeNodeConfig(
+        node_id="fitrace-edge-01",
+        antenna_channels=channels,
+        equipment_bindings=[
+            EquipmentBinding(
+                node_id="fitrace-edge-01-01",
+                equipment_id="TREAD_01",
+                equipment_type="treadmill",
+                ble_target="AA:BB:CC:DD:EE:01",
+                antenna_channel="uart-1",
+            ),
+            EquipmentBinding(
+                node_id="fitrace-edge-01-02",
+                equipment_id="TREAD_02",
+                equipment_type="treadmill",
+                ble_target="AA:BB:CC:DD:EE:02",
+                antenna_channel="uart-2",
+            ),
+        ],
+    )
+    saved = []
+
+    async def on_telemetry(_telemetry):
+        pass
+
+    manager = AntennaFtmsManager(
+        edge_config=config,
+        on_telemetry=on_telemetry,
+        serial_factory=lambda channel: serials[channel.id],
+        command_timeout_sec=0.05,
+        config_loader=lambda: config.model_copy(deep=True),
+        config_saver=saved.append,
+    )
+
+    await manager.start()
+    await asyncio.sleep(0.2)
+    await manager.stop()
+
+    # exactly one save, containing only the uart-1 (HAS_LIST) binding
+    assert len(saved) == 1
+    assert [b.antenna_channel for b in saved[0].equipment_bindings] == ["uart-1"]
+    assert saved[0].equipment_bindings[0].node_id == "fitrace-edge-01-01"
+    # in-memory config matches what was persisted
+    assert [b.antenna_channel for b in manager._edge_config.equipment_bindings] == [
+        "uart-1"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_antenna_manager_skips_config_clearing_while_pairing_is_active(
+    monkeypatch, tmp_path
+):
+    # A pairing session may be writing config.json concurrently -- clearing
+    # here would race it, so an active pairing flag must block clearing
+    # entirely, even for an explicit NO_LIST reply.
+    flag_path = tmp_path / "pairing.flag"
+    flag_path.write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("FITRACE_PAIRING_FLAG_PATH", str(flag_path))
+
+    channels = [AntennaChannelConfig(id="uart-1", port="/dev/ttyAMA0")]
+    serials = {"uart-1": FakeSerial({"PING;\r\n": ["BOOT:NO_LIST;\r\n"]})}
+    config = EdgeNodeConfig(
+        node_id="fitrace-edge-01",
+        antenna_channels=channels,
+        equipment_bindings=[
+            EquipmentBinding(
+                node_id="fitrace-edge-01-01",
+                equipment_id="TREAD_01",
+                equipment_type="treadmill",
+                ble_target="AA:BB:CC:DD:EE:01",
+                antenna_channel="uart-1",
+            )
+        ],
+    )
+    saved = []
+
+    async def on_telemetry(_telemetry):
+        pass
+
+    manager = AntennaFtmsManager(
+        edge_config=config,
+        on_telemetry=on_telemetry,
+        serial_factory=lambda channel: serials[channel.id],
+        command_timeout_sec=0.05,
+        config_loader=lambda: config.model_copy(deep=True),
+        config_saver=saved.append,
+    )
+
+    await manager.start()
+    await asyncio.sleep(0.2)
+    await manager.stop()
+
+    assert saved == []
+    assert len(manager._edge_config.equipment_bindings) == 1
+
+
+@pytest.mark.asyncio
+async def test_antenna_manager_no_crash_when_config_saver_is_none():
+    channels = [AntennaChannelConfig(id="uart-1", port="/dev/ttyAMA0")]
+    serials = {"uart-1": FakeSerial({"PING;\r\n": ["BOOT:NO_LIST;\r\n"]})}
+    config = EdgeNodeConfig(
+        node_id="fitrace-edge-01",
+        antenna_channels=channels,
+        equipment_bindings=[
+            EquipmentBinding(
+                node_id="fitrace-edge-01-01",
+                equipment_id="TREAD_01",
+                equipment_type="treadmill",
+                ble_target="AA:BB:CC:DD:EE:01",
+                antenna_channel="uart-1",
+            )
+        ],
+    )
+
+    async def on_telemetry(_telemetry):
+        pass
+
+    manager = AntennaFtmsManager(
+        edge_config=config,
+        on_telemetry=on_telemetry,
+        serial_factory=lambda channel: serials[channel.id],
+        command_timeout_sec=0.05,
+        # no config_loader/config_saver configured at all
+    )
+
+    await manager.start()
+    await asyncio.sleep(0.2)
+    task = manager._task
+    await manager.stop()
+
+    assert task.exception() is None
+    assert len(manager._edge_config.equipment_bindings) == 1

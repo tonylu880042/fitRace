@@ -7,6 +7,9 @@ import signal
 import socket
 import time
 from edge_node.domain.models import EdgeNodeConfig, EquipmentBinding
+from edge_node.infrastructure.config_store import (
+    save_edge_config as store_save_edge_config,
+)
 from edge_node.infrastructure.mqtt.client import AsyncMqttClient
 from edge_node.adapters.mqtt_publisher import MqttPublisher
 from edge_node.usecases.mock_generator import generate_mock_telemetry
@@ -209,6 +212,7 @@ def main():
                         config_loader=lambda: _build_edge_config(
                             _load_config_file(config_path)
                         ),
+                        config_saver=store_save_edge_config,
                     )
                     try:
                         await antenna_manager.start()

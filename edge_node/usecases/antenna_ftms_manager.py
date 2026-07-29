@@ -23,6 +23,26 @@ MAC_ADDRESS_PATTERN = re.compile(r"^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$")
 # antenna board firmware hard limit: CONNECT silently ignores MACs beyond 3
 MAX_MACS_PER_CHANNEL = 3
 
+# Three-valued PING/BOOT outcome per channel. The antenna board's NVS target
+# list is the source of truth at startup, and the three states drive very
+# different (and differently risky) actions:
+#   HAS_LIST   -- board already holds a saved target list and reconnects it
+#                 on its own; the runtime must not disturb it.
+#   NO_LIST    -- board explicitly has no saved list. NVS survives a board
+#                 power-cycle, so this only ever means an operator just ran
+#                 DISCONNECT:ALL or the board is fresh/unconfigured -- a
+#                 human is already present, so the runtime waits for them to
+#                 start a pairing scan rather than scanning/connecting on
+#                 its own. This is also the only state allowed to drop that
+#                 channel's config.json bindings (see _clear_no_list_channel_bindings).
+#   NO_ANSWER  -- board never answered PING (unplugged, wedged, or a busy
+#                 port after 3 retries). Must NEVER be treated like NO_LIST:
+#                 doing so could wipe a venue's config.json bindings just
+#                 because a board failed to respond in time.
+BOOT_HAS_LIST = "has_list"
+BOOT_NO_LIST = "no_list"
+BOOT_NO_ANSWER = "no_answer"
+
 # CONNECT is destructive on the nRF52832 antenna board: firmware always does
 # a full disconnect-all, then scans and reconnects the given MAC list from
 # scratch -- it is a "reset target list and reconnect everything" command,
@@ -71,6 +91,7 @@ class AntennaFtmsManager:
         event_log=None,
         clock: Callable[[], float] = time.monotonic,
         config_loader: Callable[[], EdgeNodeConfig] | None = None,
+        config_saver: Callable[[EdgeNodeConfig], None] | None = None,
     ):
         if not edge_config.antenna_channels:
             raise ValueError("antenna_channels is required for antenna FTMS manager")
@@ -88,6 +109,7 @@ class AntennaFtmsManager:
         self._data_timeout_sec = data_timeout_sec
         self._clock = clock
         self._config_loader = config_loader
+        self._config_saver = config_saver
         self._last_data_by_mac: dict[str, float] = {}
         self._last_raw_distance_by_mac: dict[str, float] = {}
         self._last_raw_energy_by_mac: dict[str, float] = {}
@@ -133,95 +155,55 @@ class AntennaFtmsManager:
             for channel in self._edge_config.antenna_channels
         }
         try:
-            boot_has_list = self._ping_channels()
+            boot_status = self._ping_channels()
             self._saved_list_channels = {
-                channel_id for channel_id, has_list in boot_has_list.items() if has_list
+                channel_id
+                for channel_id, status in boot_status.items()
+                if status == BOOT_HAS_LIST
             }
             no_list_channels = {
                 channel_id
-                for channel_id, has_list in boot_has_list.items()
-                if not has_list
+                for channel_id, status in boot_status.items()
+                if status == BOOT_NO_LIST
+            }
+            no_answer_channels = {
+                channel_id
+                for channel_id, status in boot_status.items()
+                if status == BOOT_NO_ANSWER
             }
             if not self._edge_config.equipment_bindings:
                 # nothing configured for a scan to ever match, regardless of
-                # whether boards report HAS_LIST or NO_LIST -- stay idle
-                # until the operator starts a pairing scan themselves
+                # what boards report -- stay idle until the operator starts
+                # a pairing scan themselves
                 logger.info(
                     "No equipment bindings configured; staying idle until an "
                     "operator starts a pairing scan"
                 )
-            elif boot_has_list and not no_list_channels:
-                # spec: HAS_LIST boards auto-reconnect their saved targets;
-                # don't tear them down, let the retry loop patch any gaps
-                logger.info(
-                    "All antenna boards report saved target lists; skipping startup scan"
-                )
-                self._set_report_interval_all()
             else:
-                # only scan the boards that lost their list; HAS_LIST boards
-                # keep their links undisturbed and the retry loop patches gaps
-                candidate_scan_targets = no_list_channels or set(self._serials)
-                # A scan of a channel that owns no configured bindings can
-                # never produce a usable result: pin_assignments_to_configured_channels
-                # pins every heard MAC to the channel its binding names, so a
-                # device heard here but configured for another channel gets
-                # dropped later anyway. Skip those channels outright instead
-                # of burning UART time on a scan that is guaranteed to find
-                # nothing keepable.
-                channels_with_bindings = {
-                    binding.antenna_channel
-                    for binding in self._edge_config.equipment_bindings
-                    if binding.ble_target
-                    and MAC_ADDRESS_PATTERN.match(binding.ble_target)
-                }
-                scan_targets = candidate_scan_targets & channels_with_bindings
-                for channel_id in sorted(candidate_scan_targets - scan_targets):
+                # NVS on the board is the source of truth: a HAS_LIST board
+                # auto-reconnects its saved targets on its own, so startup
+                # never scans or connects. NO_LIST means either an operator
+                # just ran DISCONNECT:ALL or the board is fresh/unconfigured
+                # -- either way a human is already present and must start
+                # the pairing scan themselves. NO_ANSWER boards are left
+                # completely alone; unlike NO_LIST they must never have
+                # their config.json bindings cleared (see
+                # _clear_no_list_channel_bindings).
+                for channel_id in sorted(no_list_channels):
                     logger.info(
-                        "[%s] antenna channel owns no configured bindings; "
-                        "skipping scan",
+                        "[%s] antenna board has no saved target list; "
+                        "waiting for an operator to start a pairing scan",
                         channel_id,
                     )
-                scan_results = self._scan_channels(scan_targets)
-                assignments = assign_devices_by_rssi(
-                    scan_results,
-                    self._edge_config.antenna_channels,
-                    tie_threshold_db=self._rssi_tie_threshold_db,
-                )
-                assignments = filter_assignments_to_configured_macs(
-                    assignments,
-                    self._edge_config.equipment_bindings,
-                )
-                assignments = pin_assignments_to_configured_channels(
-                    assignments,
-                    self._edge_config.equipment_bindings,
-                    set(self._serials),
-                )
-                assignments = {
-                    channel_id: macs
-                    for channel_id, macs in assignments.items()
-                    # HAS_LIST channels stay untouched even if a device they
-                    # own was heard here; their board reconnects it via NVS
-                    if macs and channel_id in scan_targets
-                }
-                if assignments:
-                    self._bindings_by_mac = bind_assignments_to_streams(
-                        assignments,
-                        self._edge_config.equipment_bindings,
-                        self._edge_config.node_id,
+                for channel_id in sorted(no_answer_channels):
+                    logger.warning(
+                        "[%s] antenna board did not answer PING; leaving "
+                        "its configuration untouched",
+                        channel_id,
                     )
-                    self._disconnect_all_channels(set(assignments))
-                    self._connect_assignments(assignments)
-                else:
-                    logger.warning("Antenna scan found no configured targets")
-                # HAS_LIST boards skipped CONNECT, but still need the report
-                # interval re-applied after their reboot. Computed from the
-                # boards that actually reported HAS_LIST rather than
-                # set(self._serials) - scan_targets: with scan_targets now
-                # excluding no-binding channels too, that subtraction would
-                # otherwise hand a REPORT to a channel that owns nothing.
-                has_list_channels = self._saved_list_channels - scan_targets
-                if has_list_channels:
-                    self._set_report_interval_all(has_list_channels)
+            if self._saved_list_channels:
+                self._set_report_interval_all(self._saved_list_channels)
+            self._clear_no_list_channel_bindings(no_list_channels)
             self._read_telemetry_loop()
         finally:
             for serial_port in self._serials.values():
@@ -276,8 +258,17 @@ class AntennaFtmsManager:
                 return parsed
         return None
 
-    def _ping_channels(self) -> dict[str, bool]:
-        boot_has_list: dict[str, bool] = {}
+    def _ping_channels(self) -> dict[str, str]:
+        """PING every channel and classify the BOOT reply.
+
+        Returns one of BOOT_HAS_LIST / BOOT_NO_LIST / BOOT_NO_ANSWER per
+        channel in self._serials -- never collapsed into a bool. An
+        unplugged or wedged board (no answer after 3 retries, or a busy
+        port) must be distinguishable from a board that explicitly replied
+        NO_LIST, because only an explicit NO_LIST may ever clear that
+        channel's config.json bindings.
+        """
+        boot_status: dict[str, str] = {}
         for channel_id, serial_port in self._serials.items():
             parsed = None
             try:
@@ -307,8 +298,13 @@ class AntennaFtmsManager:
                 channel_id,
                 parsed and parsed.get("raw"),
             )
-            boot_has_list[channel_id] = bool(parsed and parsed.get("has_list"))
-        return boot_has_list
+            if parsed is None:
+                boot_status[channel_id] = BOOT_NO_ANSWER
+            elif parsed.get("has_list"):
+                boot_status[channel_id] = BOOT_HAS_LIST
+            else:
+                boot_status[channel_id] = BOOT_NO_LIST
+        return boot_status
 
     def _scan_channels(
         self, channel_ids: set[str] | None = None
@@ -403,35 +399,6 @@ class AntennaFtmsManager:
                 )
             logger.info(
                 "[%s] antenna report interval response: %s",
-                channel_id,
-                parsed and parsed.get("raw"),
-            )
-
-    def _disconnect_all_channels(self, channel_ids: set[str] | None = None):
-        for channel_id, serial_port in self._serials.items():
-            if channel_ids is not None and channel_id not in channel_ids:
-                continue
-            parsed = None
-            try:
-                with port_lock(
-                    self._channels_by_id[channel_id].port,
-                    timeout_sec=PORT_LOCK_TIMEOUT_SEC,
-                ):
-                    self._write(
-                        serial_port, protocol.build_disconnect_all(), channel_id
-                    )
-                    parsed = self._await_response(
-                        serial_port,
-                        self._command_timeout_sec,
-                        channel_id,
-                        ok_command="DISCONNECT",
-                    )
-            except PortBusyError as exc:
-                logger.warning(
-                    "[%s] antenna DISCONNECT skipped, port busy: %s", channel_id, exc
-                )
-            logger.info(
-                "[%s] antenna disconnect all response: %s",
                 channel_id,
                 parsed and parsed.get("raw"),
             )
@@ -811,6 +778,92 @@ class AntennaFtmsManager:
             len(self._edge_config.equipment_bindings),
         )
         return True
+
+    def _clear_no_list_channel_bindings(self, no_list_channels: set[str]):
+        """Drop config.json bindings for channels that explicitly answered
+        BOOT:NO_LIST -- the board's NVS target list is the source of truth,
+        so if it says it holds nothing, config.json must not disagree.
+
+        Hard safety rules (this is destructive to a venue's setup, get these
+        exactly right):
+        - Only ever runs for channels that gave an EXPLICIT NO_LIST reply.
+          A channel that gave no answer at all (unplugged/wedged board, or a
+          busy port after 3 retries) must never be treated as NO_LIST -- see
+          _ping_channels/_run, which keep that state distinct for exactly
+          this reason.
+        - Only clears bindings on the channels that actually said NO_LIST;
+          a HAS_LIST channel's bindings in the same config are left intact.
+        - Skipped entirely while a pairing session is active, since it may
+          be writing config.json concurrently.
+        - Skipped when no config_saver is configured -- nothing to persist
+          through, so nothing is changed.
+        - Re-reads the freshest config.json via the existing watchdog
+          refresh helper (fail-closed: if the freshest config cannot be
+          loaded, nothing is cleared) rather than trusting the possibly
+          stale self._edge_config that was built before this runtime even
+          opened the serial ports -- the web setup process may have written
+          config.json since then.
+        """
+        if not no_list_channels:
+            return
+        if self._config_saver is None:
+            logger.info(
+                "No config_saver configured; leaving config.json untouched "
+                "for NO_LIST channel(s) %s",
+                sorted(no_list_channels),
+            )
+            return
+        if is_pairing_active():
+            logger.info(
+                "Pairing session flag is active; skipping board-authoritative "
+                "config clearing for NO_LIST channel(s) %s so its writes "
+                "are not raced",
+                sorted(no_list_channels),
+            )
+            return
+        if self._refresh_configured_bindings() is None:
+            logger.warning(
+                "Unable to refresh Edge config; skipping board-authoritative "
+                "config clearing to avoid acting on stale data"
+            )
+            return
+
+        removed_bindings = [
+            binding
+            for binding in self._edge_config.equipment_bindings
+            if binding.antenna_channel in no_list_channels
+        ]
+        if not removed_bindings:
+            return
+
+        kept_bindings = [
+            binding
+            for binding in self._edge_config.equipment_bindings
+            if binding.antenna_channel not in no_list_channels
+        ]
+        for binding in removed_bindings:
+            logger.warning(
+                "[%s] antenna board reports no saved target list; dropping "
+                "configured binding node_id=%s equipment_id=%s mac=%s to "
+                "match the board",
+                binding.antenna_channel,
+                binding.node_id,
+                binding.equipment_id,
+                binding.ble_target,
+            )
+
+        self._edge_config.equipment_bindings = kept_bindings
+        self._config_saver(self._edge_config)
+
+        removed_macs = {
+            _normalize_device_id(binding.ble_target) for binding in removed_bindings
+        }
+        for mac in [
+            mac
+            for mac in self._bindings_by_mac
+            if _normalize_device_id(mac) in removed_macs
+        ]:
+            del self._bindings_by_mac[mac]
 
     def _to_telemetry(self, channel_id: str, parsed: dict[str, Any]) -> TelemetryData:
         mac = parsed["address"]
