@@ -137,6 +137,38 @@ def test_edge_operator_page_requires_verified_central_hub_before_pairing():
     assert '"hub.required": "請先連線 Central Hub，才能新增設備。"' in source
 
 
+def test_edge_operator_hub_form_preserves_unsaved_values_and_save_errors():
+    client = TestClient(edge_app_module.app)
+
+    source = client.get("/").text
+    save_start = source.index("async function saveCentralHub()")
+    save_fn = source[save_start : save_start + 2600]
+    home_start = source.index("async function goHome()")
+    home_fn = source[home_start : home_start + 180]
+
+    assert "let centralHubFormDirty = false;" in source
+    assert "centralHubFormDirty = true;" in source
+    assert "await refreshCentralHubStatus({ updateMessage: false });" in save_fn
+    assert "centralHubFormDirty = true;" in save_fn
+    assert "full || !centralHubReady || centralHubFormDirty" in source
+    assert "async function loadConfig({ populateHubFields = false } = {})" in source
+    assert "await loadConfig();" in home_fn
+
+
+def test_edge_operator_hub_status_polls_without_flashing_red_or_overwriting_messages():
+    client = TestClient(edge_app_module.app)
+
+    source = client.get("/").text
+    status_start = source.index("async function refreshCentralHubStatus(")
+    status_fn = source[status_start : status_start + 1800]
+
+    assert 'status === "checking"' in source
+    assert ".chip-dot.pending" in source
+    assert "updateMessage = true" in status_fn
+    assert "if (updateMessage)" in status_fn
+    assert "setInterval(() => refreshCentralHubStatus({ updateMessage: false }), 5000);" in source
+
+
 def test_edge_operator_page_exposes_ping_and_status_field_diagnostics():
     client = TestClient(edge_app_module.app)
 
@@ -164,7 +196,7 @@ def test_edge_operator_diagnostics_hide_unrelated_live_telemetry_from_results():
 
     assert 'command === "status"' in helper_source
     assert 'new Set(["status", "error"])' in helper_source
-    assert 'new Set(["boot", "ok", "error"])' in helper_source
+    assert 'new Set(["boot", "pong", "ok", "error"])' in helper_source
     assert "result.parsed" in helper_source
     assert 'entry.command === "PING"' in helper_source
     assert 'entry.type !== "telemetry"' not in helper_source

@@ -94,6 +94,7 @@
 
     .chip-dot.ok { background: var(--ok); box-shadow: 0 0 8px rgba(52, 211, 153, 0.5); }
     .chip-dot.bad { background: var(--danger); box-shadow: 0 0 8px rgba(255, 75, 75, 0.5); }
+    .chip-dot.pending { background: var(--muted); }
 
     .banner {
       margin-top: 14px;
@@ -1050,6 +1051,11 @@
     let wifiNetworksLoaded = false;
     let uartMonitorSignature = null;
     let centralHubReady = false;
+    let centralHubStatus = "checking";
+    let centralHubReachable = false;
+    let centralHubFormDirty = false;
+    let centralHubStatusPollInFlight = false;
+    let centralHubSaveInFlight = false;
 
     function bindingTargetCount(target) {
       const normalized = normalizeMac(target);
@@ -1116,38 +1122,66 @@
       }
     }
 
-    function refreshHubChip(status = null) {
+    function refreshHubChip(status = centralHubStatus || "checking") {
       const text = document.getElementById("hub-chip-text");
       const dot = document.getElementById("hub-chip-dot");
       const host = (edgeConfig && edgeConfig.mqtt_host) || "--";
-      text.textContent = status
-        ? `${host} · ${t(status === "connected" ? "hub.connected_short" : "hub.unreachable_short")}`
-        : host;
-      dot.className = `chip-dot ${status === "connected" ? "ok" : "bad"}`;
+      centralHubStatus = status;
+      const isChecking = status === "checking";
+      const displayStatus = isChecking ? "checking" : status;
+      const labelKey = displayStatus === "connected"
+        ? "hub.connected_short"
+        : displayStatus === "unreachable"
+          ? "hub.unreachable_short"
+          : "hub.checking_short";
+      const stateClass = displayStatus === "connected"
+        ? "ok"
+        : displayStatus === "unreachable"
+          ? "bad"
+          : "pending";
+      text.textContent = `${host} · ${t(labelKey)}`;
+      dot.className = `chip-dot ${stateClass}`;
     }
 
-    async function refreshCentralHubStatus({ populateFields = false } = {}) {
+    async function refreshCentralHubStatus({ populateFields = false, updateMessage = true } = {}) {
+      if (centralHubStatusPollInFlight) return;
+      centralHubStatusPollInFlight = true;
       const message = document.getElementById("central-hub-message");
       try {
         const response = await adminFetch("/api/central-hub");
         const result = await response.json();
         if (!response.ok) throw new Error(result.detail || t("hub.verify_failed"));
-        if (populateFields) {
+        if (populateFields && !centralHubFormDirty) {
           document.getElementById("central-hub-host").value = result.host || "";
           document.getElementById("central-hub-port").value = result.port || 1883;
         }
-        centralHubReady = Boolean(result.reachable);
-        refreshHubChip(result.status);
-        message.textContent = centralHubReady
-          ? t("hub.connected", { host: result.host, port: result.port })
-          : t("hub.unreachable", { host: result.host, port: result.port });
-        message.className = `message ${centralHubReady ? "ok" : "error"}`;
+        centralHubReachable = Boolean(result.reachable);
+        centralHubStatus = centralHubReachable ? "connected" : "unreachable";
+        centralHubReady = centralHubReachable && !centralHubFormDirty && !centralHubSaveInFlight;
+        refreshHubChip(centralHubStatus);
+        if (updateMessage) {
+          message.textContent = centralHubReachable
+            ? t("hub.connected", { host: result.host, port: result.port })
+            : t("hub.unreachable", { host: result.host, port: result.port });
+          message.className = `message ${centralHubReachable ? "ok" : "error"}`;
+        }
       } catch (error) {
+        centralHubReachable = false;
         centralHubReady = false;
         refreshHubChip("unreachable");
-        message.textContent = error.message || t("hub.verify_failed");
-        message.className = "message error";
+        if (updateMessage) {
+          message.textContent = error.message || t("hub.verify_failed");
+          message.className = "message error";
+        }
+      } finally {
+        centralHubStatusPollInFlight = false;
       }
+      if (currentView === "home" && edgeConfig) renderBindingCards();
+    }
+
+    function markCentralHubFormDirty() {
+      centralHubFormDirty = true;
+      centralHubReady = false;
       if (currentView === "home" && edgeConfig) renderBindingCards();
     }
 
@@ -1163,6 +1197,7 @@
       }
 
       button.disabled = true;
+      centralHubSaveInFlight = true;
       centralHubReady = false;
       message.textContent = t("hub.verifying");
       message.className = "message";
@@ -1175,19 +1210,27 @@
         });
         const result = await response.json();
         if (!response.ok) throw new Error(result.detail || t("hub.verify_failed"));
+        const warnings = Array.isArray(result.warnings) ? result.warnings : [];
+        if (result.status !== "saved" || warnings.length) {
+          throw new Error(result.detail || warnings.join("; ") || t("hub.verify_failed"));
+        }
         edgeConfig = result.config;
+        centralHubFormDirty = false;
+        centralHubReachable = true;
+        centralHubStatus = "connected";
         centralHubReady = true;
         refreshHubChip("connected");
-        const warnings = Array.isArray(result.warnings) ? result.warnings : [];
-        message.textContent = warnings.length
-          ? t("hub.saved_restart_warning")
-          : t("hub.saved", { host, port });
-        message.className = `message ${warnings.length ? "error" : "ok"}`;
+        message.textContent = t("hub.saved", { host, port });
+        message.className = "message ok";
       } catch (error) {
+        centralHubFormDirty = true;
+        centralHubReady = false;
         message.textContent = error.message || t("hub.verify_failed");
         message.className = "message error";
-        await refreshCentralHubStatus();
+        await refreshCentralHubStatus({ updateMessage: false });
+        centralHubReady = false;
       } finally {
+        centralHubSaveInFlight = false;
         button.disabled = false;
         if (currentView === "home" && edgeConfig) renderBindingCards();
       }
@@ -1363,10 +1406,10 @@
 
       const addBtn = document.getElementById("add-device-btn");
       const full = bindings.length >= total;
-      addBtn.disabled = full || !centralHubReady;
-      document.getElementById("add-device-message").textContent = !centralHubReady
-        ? t("hub.required")
-        : (full ? t("operator.add_device_full") : "");
+      addBtn.disabled = full || !centralHubReady || centralHubFormDirty;
+      document.getElementById("add-device-message").textContent = centralHubFormDirty
+        ? t("hub.unsaved")
+        : (!centralHubReady ? t("hub.required") : (full ? t("operator.add_device_full") : ""));
     }
 
     function updateBindingCardLeaves() {
@@ -1438,15 +1481,15 @@
       }
     }
 
-    async function loadConfig() {
+    async function loadConfig({ populateHubFields = false } = {}) {
       try {
         const response = await adminFetch("/api/config");
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.detail || "Failed to load config");
         edgeConfig = payload;
-        refreshHubChip();
+        refreshHubChip("checking");
         document.getElementById("disconnect-all-btn").disabled = false;
-        await refreshCentralHubStatus({ populateFields: true });
+        await refreshCentralHubStatus({ populateFields: populateHubFields });
         if (currentView === "home") renderBindingCards();
       } catch (_error) {
         // best-effort; next poll retries
@@ -1456,7 +1499,7 @@
     function diagnosticReplies(result, command) {
       const expectedTypes = command === "status"
         ? new Set(["status", "error"])
-        : new Set(["boot", "ok", "error"]);
+        : new Set(["boot", "pong", "ok", "error"]);
       const parsed = Array.isArray(result?.parsed) ? result.parsed : [];
       return parsed
         .filter((entry) => {
@@ -1887,6 +1930,8 @@
     document.getElementById("add-device-btn").addEventListener("click", startPairing);
     document.getElementById("disconnect-all-btn").addEventListener("click", disconnectAllAndClearBindings);
     document.getElementById("central-hub-save-btn").addEventListener("click", saveCentralHub);
+    document.getElementById("central-hub-host").addEventListener("input", markCentralHubFormDirty);
+    document.getElementById("central-hub-port").addEventListener("input", markCentralHubFormDirty);
     document.getElementById("diagnostic-ping-btn").addEventListener("click", () => runAntennaDiagnostic("ping"));
     document.getElementById("diagnostic-status-btn").addEventListener("click", () => runAntennaDiagnostic("status"));
     document.getElementById("wifi-toggle-btn").addEventListener("click", toggleWifiPicker);
@@ -1900,11 +1945,12 @@
     document.getElementById("confirm-back-btn").addEventListener("click", () => showView("pairing"));
 
     applyTranslations();
-    loadConfig();
+    loadConfig({ populateHubFields: true });
     checkPowerDryRunMode();
     refreshWifiStatus();
     refreshTelemetry();
     setInterval(refreshWifiStatus, 5000);
+    setInterval(() => refreshCentralHubStatus({ updateMessage: false }), 5000);
     setInterval(refreshTelemetry, HOME_MONITOR_POLL_MS);
   </script>
 </body>
