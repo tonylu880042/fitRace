@@ -534,6 +534,55 @@
       font-weight: 700;
     }
 
+    .channel-picker-heading {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .channel-picker-switched {
+      margin-bottom: 8px;
+      color: var(--warn);
+      font-size: 12px;
+    }
+
+    .channel-picker-options {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .channel-chip {
+      flex: 1 1 140px;
+      padding: 10px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 12px;
+      text-align: center;
+    }
+
+    .channel-chip.selected {
+      border-color: var(--accent);
+      background: rgba(212, 243, 38, 0.12);
+      color: var(--accent);
+    }
+
+    .channel-chip.unheard:not(.selected) {
+      color: var(--warn);
+      border-style: dashed;
+    }
+
+    .channel-chip.full {
+      color: var(--muted);
+      border-color: var(--border);
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
     input[type="text"],
     input[type="password"],
     input[type="number"] {
@@ -1729,6 +1778,91 @@
       return perChannel[channelId];
     }
 
+    // -- channel choice ---------------------------------------------------
+    //
+    // start()'s scan is a weak, ~8-second signal about which antenna board
+    // can actually reach a device -- the operator standing in the room
+    // knows better, and the backend (pairing_session.py bind()) only
+    // requires the chosen channel to exist and have a free slot, not to
+    // have heard the candidate during the scan. Every configured channel is
+    // therefore offered here, annotated with what the scan actually saw.
+
+    // Every configured channel for `meta`, annotated with whatever the scan
+    // heard (rssi_by_channel) and current capacity. Channels never heard
+    // during the scan still appear -- heard: false -- since the operator
+    // may deliberately pick one anyway (see module-level comment above).
+    function channelOptionsForMeta(meta) {
+      const channels = Array.isArray(edgeConfig?.antenna_channels) ? edgeConfig.antenna_channels : [];
+      const rssiByChannel = meta.rssiByChannel || {};
+      return channels.map((channel) => {
+        const heard = Object.prototype.hasOwnProperty.call(rssiByChannel, channel.id);
+        return {
+          channelId: channel.id,
+          heard,
+          rssi: heard ? rssiByChannel[channel.id] : null,
+          full: channelFreeSlots(channel.id) === 0,
+        };
+      });
+    }
+
+    // Default channel for a not-yet-bound row: the scan's strongest channel
+    // if it still has room; otherwise the best-RSSI channel that heard the
+    // device and has room; otherwise any other channel with room at all
+    // (never heard, but not stuck); otherwise the strongest channel anyway
+    // (nothing has room -- the row's "all channels full" message takes
+    // over). Never silently prefers a weaker board over a stronger one that
+    // still has room.
+    function preselectChannelId(meta) {
+      const options = channelOptionsForMeta(meta);
+      const byId = new Map(options.map((option) => [option.channelId, option]));
+      const candidateOption = byId.get(meta.candidateChannelId);
+      if (candidateOption && !candidateOption.full) return meta.candidateChannelId;
+
+      const heardWithRoom = options
+        .filter((option) => option.heard && !option.full && option.channelId !== meta.candidateChannelId)
+        .sort((a, b) => (b.rssi ?? -999) - (a.rssi ?? -999));
+      if (heardWithRoom.length) return heardWithRoom[0].channelId;
+
+      const unheardWithRoom = options.find((option) => !option.heard && !option.full);
+      if (unheardWithRoom) return unheardWithRoom.channelId;
+
+      return meta.candidateChannelId;
+    }
+
+    // Resolves (and, like typeGridHtml's auto-select, caches into meta) the
+    // channel this row will bind to. Once set -- by this preselect or by an
+    // explicit operator click (see handlePairingWorklistClick) -- it sticks
+    // across re-renders instead of silently flip-flopping as capacity
+    // changes elsewhere in the worklist.
+    function effectiveChannelId(meta) {
+      if (meta.channelId) return meta.channelId;
+      meta.channelId = preselectChannelId(meta);
+      return meta.channelId;
+    }
+
+    function channelPickerHtml(meta) {
+      const options = channelOptionsForMeta(meta);
+      const selected = meta.channelId;
+      const switched = Boolean(selected) && selected !== meta.candidateChannelId;
+      return `
+        <label class="channel-picker-heading" data-i18n="pairing.channel_picker_heading">${escapeHtml(t("pairing.channel_picker_heading"))}</label>
+        ${switched ? `<div class="channel-picker-switched" data-role="channel-switched">${escapeHtml(t("pairing.channel_switched", { channel: formatAntennaChannel(selected) }))}</div>` : ""}
+        <div class="channel-picker-options">
+          ${options.map((option) => {
+            const isSelected = option.channelId === selected;
+            const statusText = option.full
+              ? t("pairing.channel_full_short")
+              : (option.heard ? `${option.rssi} dBm` : t("pairing.channel_not_heard"));
+            return `
+              <button type="button" class="channel-chip ${isSelected ? "selected" : ""} ${option.full ? "full" : ""} ${!option.heard ? "unheard" : ""}" data-mac="${escapeHtml(meta.mac)}" data-role="channel-chip" data-channel="${escapeHtml(option.channelId)}" ${option.full ? "disabled" : ""}>
+                ${escapeHtml(formatAntennaChannel(option.channelId))} · ${escapeHtml(statusText)}
+              </button>
+            `;
+          }).join("")}
+        </div>
+      `;
+    }
+
     function ftmsHintsForMac(mac) {
       const telemetry = telemetryByMac.get(normalizeMac(mac));
       const ftmsType = (telemetry?.ftms_type || "").toUpperCase();
@@ -1780,19 +1914,42 @@
       const speedText = formatMetric(status.latest?.speed_kph, " kph", 1);
       const bound = meta.bound;
       const typeGridMarkup = bound ? "" : typeGridHtml(meta);
+      // Resolves (and caches into meta, mirroring typeGridHtml's
+      // auto-select) which channel this row targets: the preselected best
+      // available channel until the operator picks a different one, or --
+      // once bound -- whichever channel the binding actually landed on.
+      effectiveChannelId(meta);
+      const channelOptions = channelOptionsForMeta(meta);
       const freeSlots = channelFreeSlots(meta.channelId);
       const channelFull = freeSlots === 0;
+      const allChannelsFull = channelOptions.length > 0 && channelOptions.every((option) => option.full);
       const disableSave = meta.binding || meta.connecting || !meta.equipmentType || channelFull;
       const showRetryConnect = bound
         && meta.connectOutcome
         && meta.connectOutcome !== "ok"
         && meta.connectOutcome !== "already_exists";
+      // CONNECT_ADD only edits the board's target list; it is accepted even
+      // for a channel that can't physically reach the device, and the link
+      // then never establishes. A bind to a channel the scan never heard
+      // this candidate on must render that distinctly from a normal
+      // "Connected" outcome once connect() comes back ok/already_exists, so
+      // this never looks like silent success.
+      const boundChannelHeard = Boolean(
+        meta.rssiByChannel && Object.prototype.hasOwnProperty.call(meta.rssiByChannel, meta.channelId)
+      );
 
       let outcomeHtml = "";
       if (meta.bindError) {
         outcomeHtml = `<div class="worklist-outcome error" data-role="outcome">${escapeHtml(`${t("pairing.bind_failed")}: ${meta.bindError}`)}</div>`;
       } else if (bound && meta.connectOutcome) {
-        outcomeHtml = outcomeMessageHtml(meta.connectOutcome);
+        const connectedOk = meta.connectOutcome === "ok" || meta.connectOutcome === "already_exists";
+        outcomeHtml = (connectedOk && !boundChannelHeard)
+          ? `<div class="worklist-outcome warn" data-role="outcome">${escapeHtml(t("pairing.outcome_added_unheard", { channel: formatAntennaChannel(meta.channelId) }))}</div>`
+          : outcomeMessageHtml(meta.connectOutcome);
+      } else if (!bound && allChannelsFull) {
+        // The harder-still blocker: not just this row's picked channel, but
+        // every configured channel is full -- point straight at the fix.
+        outcomeHtml = `<div class="worklist-outcome error" data-role="outcome">${escapeHtml(t("pairing.all_channels_full"))}</div>`;
       } else if (!bound && channelFull) {
         outcomeHtml = `<div class="worklist-outcome warn" data-role="outcome">${escapeHtml(t("pairing.channel_full", { channel: meta.channelId }))}</div>`;
       } else if (!bound && !meta.equipmentType) {
@@ -1807,6 +1964,9 @@
       const formMarkup = bound ? "" : `
         <div class="field">
           ${typeGridMarkup}
+        </div>
+        <div class="field">
+          ${channelPickerHtml(meta)}
         </div>
         <div class="field">
           <label data-i18n="bindings.name">${escapeHtml(t("bindings.name"))}</label>
@@ -1886,7 +2046,16 @@
           mac: candidate.mac,
           name: candidate.name,
           rssi: candidate.rssi,
-          channelId: candidate.channel_id,
+          // channelId is left unresolved (null) here on purpose: it is
+          // filled in lazily by effectiveChannelId() on first render, once
+          // pairingCapacity is available, so the preselect can see whether
+          // the scan's strongest channel (candidateChannelId, below) still
+          // has room -- start() runs before applyPairingCapacity() in some
+          // callers, so resolving eagerly here could preselect off stale
+          // capacity.
+          channelId: null,
+          candidateChannelId: candidate.channel_id,
+          rssiByChannel: candidate.rssi_by_channel || {},
           equipmentType: null,
           displayName: candidate.name || candidate.mac,
           binding: false,
@@ -1900,11 +2069,11 @@
       });
     }
 
-    async function bindCandidate(mac, equipmentType, displayName) {
+    async function bindCandidate(mac, equipmentType, displayName, channelId) {
       const response = await adminFetch("/api/pairing/bind", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mac, equipment_type: equipmentType, display_name: displayName || null }),
+        body: JSON.stringify({ mac, equipment_type: equipmentType, display_name: displayName || null, channel: channelId || null }),
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.detail || t("pairing.bind_failed"));
@@ -1944,8 +2113,13 @@
       meta.bindError = null;
       renderPairingWorklist();
       try {
-        const bindResult = await bindCandidate(mac, meta.equipmentType, meta.displayName);
+        const bindResult = await bindCandidate(mac, meta.equipmentType, meta.displayName, meta.channelId);
         applyPairingCapacity(bindResult.capacity);
+        // The server persisted whatever channel meta.channelId held --
+        // reflect it back from the response so a bound row shows exactly
+        // where the binding landed even if that ever disagreed with the
+        // client's own state.
+        meta.channelId = bindResult.binding?.antenna_channel || meta.channelId;
         meta.bound = true;
       } catch (error) {
         meta.binding = false;
@@ -1981,6 +2155,12 @@
         const meta = pairingRowMeta.get(mac);
         if (!meta) return;
         meta.equipmentType = target.dataset.type;
+        renderPairingWorklist();
+      } else if (role === "channel-chip") {
+        if (target.disabled) return; // full channels are rendered disabled already
+        const meta = pairingRowMeta.get(mac);
+        if (!meta) return;
+        meta.channelId = target.dataset.channel;
         renderPairingWorklist();
       } else if (role === "save-connect") {
         saveAndConnect(mac);
@@ -2080,6 +2260,7 @@
           rowMeta.bound = true;
           rowMeta.equipmentType = binding.equipment_type;
           rowMeta.displayName = binding.equipment_id || rowMeta.displayName;
+          rowMeta.channelId = binding.antenna_channel || rowMeta.channelId;
         });
 
         pairingActive = true;

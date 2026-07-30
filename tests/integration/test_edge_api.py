@@ -1940,6 +1940,134 @@ def test_pairing_scan_first_flow_start_bind_connect_finish_happy_path(
     assert client.get("/api/pairing/status").json() == {"state": "idle"}
 
 
+def test_pairing_bind_endpoint_forwards_explicit_channel_choice(monkeypatch, tmp_path):
+    # /api/pairing/bind must pass the operator's channel choice through to
+    # PairingSession.bind() -- exercised end to end via the HTTP payload,
+    # not just the usecase directly.
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "node_id": "fitrace-edge-test",
+                "antenna_channels": [
+                    {"id": "uart-1", "port": "/dev/ttyAMA0"},
+                    {"id": "uart-2", "port": "/dev/ttyAMA4"},
+                ],
+                "equipment_bindings": [
+                    {
+                        "node_id": f"fitrace-edge-test-0{i}",
+                        "equipment_id": f"ROW_{i}",
+                        "equipment_type": "rowing_machine",
+                        "ble_target": f"AA:BB:CC:DD:EE:1{i}",
+                        "antenna_channel": "uart-1",
+                    }
+                    for i in range(3)
+                ],
+                "max_ftms_connections": 10,
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(edge_app_module, "CONFIG_PATH", config_path)
+    runner = FakePairingAntennaRunner(
+        scan_results_by_port={
+            "/dev/ttyAMA0": [
+                {
+                    "type": "device",
+                    "address": "AA:BB:CC:DD:EE:05",
+                    "rssi": -40,
+                    "name": "Bike A",
+                }
+            ],
+        }
+    )
+    _install_fresh_pairing_session(monkeypatch, tmp_path, runner)
+    client = TestClient(edge_app_module.app)
+
+    start_response = client.post("/api/pairing/start", json={"temp_connect": False})
+    assert start_response.status_code == 200
+    candidate = start_response.json()["candidates"][0]
+    assert candidate["channel_id"] == "uart-1"  # the only channel that heard it
+    assert candidate["rssi_by_channel"] == {"uart-1": -40}
+
+    # uart-1 (the strongest/only-heard channel) is already full -- the
+    # operator picks uart-2, which never heard this device but has room.
+    bind_response = client.post(
+        "/api/pairing/bind",
+        json={
+            "mac": "AA:BB:CC:DD:EE:05",
+            "equipment_type": "fan_bike",
+            "display_name": "Bike One",
+            "channel": "uart-2",
+        },
+    )
+    assert bind_response.status_code == 200
+    assert bind_response.json()["binding"]["antenna_channel"] == "uart-2"
+
+    connect_response = client.post(
+        "/api/pairing/connect", json={"mac": "AA:BB:CC:DD:EE:05"}
+    )
+    assert connect_response.status_code == 200
+    assert connect_response.json()["channel_id"] == "uart-2"
+    connect_add_calls = [c for c in runner.calls if c.command == "connect_add"]
+    assert [c.port for c in connect_add_calls] == ["/dev/ttyAMA4"]  # uart-2's port
+
+
+def test_pairing_bind_endpoint_rejects_full_channel_choice(monkeypatch, tmp_path):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "node_id": "fitrace-edge-test",
+                "antenna_channels": [
+                    {"id": "uart-1", "port": "/dev/ttyAMA0"},
+                    {"id": "uart-2", "port": "/dev/ttyAMA4"},
+                ],
+                "equipment_bindings": [
+                    {
+                        "node_id": f"fitrace-edge-test-0{i}",
+                        "equipment_id": f"ROW_{i}",
+                        "equipment_type": "rowing_machine",
+                        "ble_target": f"AA:BB:CC:DD:EE:1{i}",
+                        "antenna_channel": "uart-2",
+                    }
+                    for i in range(3)
+                ],
+                "max_ftms_connections": 10,
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(edge_app_module, "CONFIG_PATH", config_path)
+    runner = FakePairingAntennaRunner(
+        scan_results_by_port={
+            "/dev/ttyAMA0": [
+                {
+                    "type": "device",
+                    "address": "AA:BB:CC:DD:EE:05",
+                    "rssi": -40,
+                    "name": "Bike A",
+                }
+            ],
+        }
+    )
+    _install_fresh_pairing_session(monkeypatch, tmp_path, runner)
+    client = TestClient(edge_app_module.app)
+    client.post("/api/pairing/start", json={"temp_connect": False})
+
+    bind_response = client.post(
+        "/api/pairing/bind",
+        json={
+            "mac": "AA:BB:CC:DD:EE:05",
+            "equipment_type": "fan_bike",
+            "channel": "uart-2",
+        },
+    )
+
+    assert bind_response.status_code == 400
+    assert "no free configured binding slot" in bind_response.json()["detail"]
+
+
 def test_pairing_scan_first_endpoints_require_admin_token(monkeypatch, tmp_path):
     monkeypatch.setenv("FITRACE_ADMIN_TOKEN", "admin-secret")
     config_path = tmp_path / "config.json"
@@ -2091,14 +2219,17 @@ def test_edge_pairing_save_and_connect_binds_then_connects_and_retry_never_rebin
     save_start = source.index("async function saveAndConnect(mac)")
     save_end = source.index("async function probeCandidate(", save_start)
     save_fn = source[save_start:save_end]
-    assert "bindCandidate(mac, meta.equipmentType, meta.displayName)" in save_fn
+    assert (
+        "bindCandidate(mac, meta.equipmentType, meta.displayName, meta.channelId)"
+        in save_fn
+    )
     assert "await retryConnect(mac);" in save_fn
     bind_call_index = save_fn.index("bindCandidate(")
     retry_call_index = save_fn.index("await retryConnect(mac);")
     assert bind_call_index < retry_call_index
 
     bind_fn_start = source.index(
-        "async function bindCandidate(mac, equipmentType, displayName)"
+        "async function bindCandidate(mac, equipmentType, displayName, channelId)"
     )
     bind_fn_end = source.index("async function connectCandidateOnly(", bind_fn_start)
     bind_fn = source[bind_fn_start:bind_fn_end]
@@ -2465,6 +2596,177 @@ def test_edge_pairing_worklist_i18n_and_card_remove_keys_present_in_both_locales
         "operator.card_remove_success",
         "operator.card_remove_success_with_warning",
         "operator.card_remove_failed",
+    }
+    for key in new_keys:
+        assert key in en, key
+        assert key in zh_tw, key
+    assert set(en.keys()) == set(zh_tw.keys())
+
+
+def test_edge_pairing_channel_picker_offers_every_configured_channel_with_status():
+    # A device the scan only heard on one full channel used to leave the
+    # operator stuck, even when another configured channel had a free slot
+    # -- channelOptionsForMeta must offer every configured channel, not just
+    # the ones the (weak, ~8s) scan happened to hear the device on.
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    options_start = source.index("function channelOptionsForMeta(meta)")
+    options_end = source.index("function preselectChannelId(meta)", options_start)
+    options_fn = source[options_start:options_end]
+    assert "edgeConfig?.antenna_channels" in options_fn
+    assert "channelFreeSlots(channel.id) === 0" in options_fn
+    # every configured channel is offered regardless of whether the scan
+    # heard the device there -- "heard" is metadata, not a filter.
+    assert "channels.filter" not in options_fn
+    assert "heard," in options_fn
+
+    picker_start = source.index("function channelPickerHtml(meta)")
+    picker_end = source.index("function ftmsHintsForMac(mac)", picker_start)
+    picker_fn = source[picker_start:picker_end]
+    assert 'data-role="channel-chip"' in picker_fn
+    assert 't("pairing.channel_picker_heading")' in picker_fn
+    assert 't("pairing.channel_full_short")' in picker_fn
+    assert 't("pairing.channel_not_heard")' in picker_fn
+    assert '${option.full ? "disabled" : ""}' in picker_fn
+
+
+def test_edge_pairing_channel_preselect_prefers_strongest_then_room_then_any_room():
+    # Never silently prefer a weaker board over a stronger one that still
+    # has room; only fall through to a not-heard channel when nothing heard
+    # has room; the strongest-full case is what leaves "all channels full"
+    # to take over (see the other test below).
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    preselect_start = source.index("function preselectChannelId(meta)")
+    preselect_end = source.index("function effectiveChannelId(meta)", preselect_start)
+    preselect_fn = source[preselect_start:preselect_end]
+
+    assert "candidateOption && !candidateOption.full" in preselect_fn
+    candidate_check_index = preselect_fn.index(
+        "candidateOption && !candidateOption.full"
+    )
+    heard_sort_index = preselect_fn.index(
+        "option.heard && !option.full && option.channelId !== meta.candidateChannelId"
+    )
+    unheard_index = preselect_fn.index("!option.heard && !option.full")
+    assert candidate_check_index < heard_sort_index < unheard_index
+    assert ".sort((a, b) => (b.rssi ?? -999) - (a.rssi ?? -999));" in preselect_fn
+
+    effective_start = source.index("function effectiveChannelId(meta)")
+    effective_end = source.index("function channelPickerHtml(meta)", effective_start)
+    effective_fn = source[effective_start:effective_end]
+    # sticky once resolved -- mirrors typeGridHtml's auto-select, so it does
+    # not flip-flop as capacity elsewhere in the worklist changes.
+    assert "if (meta.channelId) return meta.channelId;" in effective_fn
+    assert "meta.channelId = preselectChannelId(meta);" in effective_fn
+
+
+def test_edge_pairing_worklist_shows_switch_label_and_all_channels_full_message():
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    row_start = source.index("function worklistRowHtml(meta)")
+    row_end = source.index("function renderPairingWorklist()", row_start)
+    row_fn = source[row_start:row_end]
+
+    assert "effectiveChannelId(meta);" in row_fn
+    assert "const channelOptions = channelOptionsForMeta(meta);" in row_fn
+    assert (
+        "const allChannelsFull = channelOptions.length > 0 && channelOptions.every((option) => option.full);"
+        in row_fn
+    )
+    assert "${channelPickerHtml(meta)}" in row_fn
+
+    # all-channels-full must be checked (and therefore win) before the
+    # single-selected-channel-full reason.
+    assert "} else if (!bound && allChannelsFull) {" in row_fn
+    all_full_index = row_fn.index("} else if (!bound && allChannelsFull) {")
+    single_full_index = row_fn.index("} else if (!bound && channelFull) {")
+    assert all_full_index < single_full_index
+    assert (
+        't("pairing.all_channels_full")'
+        in row_fn[all_full_index : all_full_index + 600]
+    )
+
+    picker_start = source.index("function channelPickerHtml(meta)")
+    picker_end = source.index("function ftmsHintsForMac(mac)", picker_start)
+    picker_fn = source[picker_start:picker_end]
+    assert "selected !== meta.candidateChannelId" in picker_fn
+    assert 't("pairing.channel_switched"' in picker_fn
+
+
+def test_edge_pairing_connect_outcome_flags_a_bind_to_an_unheard_channel():
+    # CONNECT_ADD is accepted even for a channel that can't reach the
+    # device, so a plain "Connected" outcome would silently look like
+    # success when it never actually links. A bind to a channel absent from
+    # rssi_by_channel must render distinctly once connect() comes back ok.
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    row_start = source.index("function worklistRowHtml(meta)")
+    row_end = source.index("function renderPairingWorklist()", row_start)
+    row_fn = source[row_start:row_end]
+
+    assert (
+        "Object.prototype.hasOwnProperty.call(meta.rssiByChannel, meta.channelId)"
+        in row_fn
+    )
+    assert "const connectedOk = meta.connectOutcome" in row_fn
+    assert "connectedOk && !boundChannelHeard" in row_fn
+    assert 't("pairing.outcome_added_unheard"' in row_fn
+    # the unheard-channel branch must be checked ahead of the plain outcome
+    # renderer for the SAME bound-with-outcome condition, not a separate
+    # unreachable branch after it.
+    outcome_branch_index = row_fn.index("} else if (bound && meta.connectOutcome) {")
+    unheard_check_index = row_fn.index(
+        "connectedOk && !boundChannelHeard", outcome_branch_index
+    )
+    outcome_message_call_index = row_fn.index(
+        "outcomeMessageHtml(meta.connectOutcome)", outcome_branch_index
+    )
+    assert outcome_branch_index < unheard_check_index < outcome_message_call_index
+
+
+def test_edge_pairing_bind_and_restore_pass_channel_choice_through():
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    bind_fn_start = source.index(
+        "async function bindCandidate(mac, equipmentType, displayName, channelId)"
+    )
+    bind_fn_end = source.index("async function connectCandidateOnly(", bind_fn_start)
+    bind_fn = source[bind_fn_start:bind_fn_end]
+    assert "channel: channelId || null" in bind_fn
+
+    init_start = source.index("function initPairingWorklist(candidates)")
+    init_end = source.index("async function bindCandidate(", init_start)
+    init_fn = source[init_start:init_end]
+    assert "candidateChannelId: candidate.channel_id," in init_fn
+    assert "rssiByChannel: candidate.rssi_by_channel || {}," in init_fn
+
+    restore_start = source.index("async function restorePairingSessionIfActive()")
+    restore_end = source.index("async function startPairing()", restore_start)
+    restore_fn = source[restore_start:restore_end]
+    assert (
+        "rowMeta.channelId = binding.antenna_channel || rowMeta.channelId;"
+        in restore_fn
+    )
+
+
+def test_edge_pairing_channel_choice_i18n_keys_present_in_both_locales():
+    locales_dir = Path(edge_app_module.__file__).resolve().parent.parent / "locales"
+    en = json.loads((locales_dir / "en.json").read_text(encoding="utf-8"))
+    zh_tw = json.loads((locales_dir / "zh_tw.json").read_text(encoding="utf-8"))
+
+    new_keys = {
+        "pairing.channel_picker_heading",
+        "pairing.channel_switched",
+        "pairing.channel_full_short",
+        "pairing.channel_not_heard",
+        "pairing.all_channels_full",
+        "pairing.outcome_added_unheard",
     }
     for key in new_keys:
         assert key in en, key

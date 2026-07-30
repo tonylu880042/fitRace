@@ -133,6 +133,7 @@ class PairingBindPayload(BaseModel):
     mac: str
     equipment_type: str
     display_name: str | None = None
+    channel: str | None = None
 
 
 class PairingConnectPayload(BaseModel):
@@ -703,7 +704,10 @@ def bind_pairing_session(payload: PairingBindPayload, request: Request):
     require_admin(request)
     try:
         return pairing_session.bind(
-            payload.mac, payload.equipment_type, payload.display_name
+            payload.mac,
+            payload.equipment_type,
+            payload.display_name,
+            channel=payload.channel,
         )
     except PairingSessionError as e:
         raise HTTPException(status_code=400, detail=str(e))

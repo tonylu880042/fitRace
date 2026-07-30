@@ -1004,6 +1004,42 @@ def test_start_temp_connect_false_issues_only_scan_commands(tmp_path):
     assert harness.session._temp_added_by_channel == {}
 
 
+def test_start_tracks_rssi_per_channel_for_a_candidate_heard_on_more_than_one(
+    tmp_path,
+):
+    # start()'s merge used to keep only the single strongest channel per
+    # candidate, discarding every other channel that also heard it -- so
+    # nothing downstream could tell whether a channel other than the
+    # strongest one (e.g. one with a free slot) could reach the device too.
+    config = make_config()
+    scan_results_by_port = {
+        # uart-1 hears it strongest (-40); uart-2 hears it too, weaker (-70).
+        "/dev/ttyAMA0": [device("AA:BB:CC:DD:EE:09", -40, "Vmax")],
+        "/dev/ttyAMA4": [device("AA:BB:CC:DD:EE:09", -70, "Vmax")],
+    }
+    harness = make_harness(
+        config,
+        scan_results_by_port=scan_results_by_port,
+        flag_path=tmp_path / "pairing.flag",
+    )
+
+    result = harness.session.start(temp_connect=False)
+
+    candidate = next(c for c in result["candidates"] if c["mac"] == "AA:BB:CC:DD:EE:09")
+    # the existing single-strongest fields are unchanged...
+    assert candidate["channel_id"] == "uart-1"
+    assert candidate["rssi"] == -40
+    # ...and rssi_by_channel now carries every channel that heard it.
+    assert candidate["rssi_by_channel"] == {"uart-1": -40, "uart-2": -70}
+
+    status_candidate = next(
+        c
+        for c in harness.session.status()["candidates"]
+        if c["mac"] == "AA:BB:CC:DD:EE:09"
+    )
+    assert status_candidate["rssi_by_channel"] == {"uart-1": -40, "uart-2": -70}
+
+
 # --------------------------------------------------------------------------
 # bind()
 # --------------------------------------------------------------------------
@@ -1140,6 +1176,101 @@ def test_bind_with_no_active_session_raises():
         harness.session.bind("AA:BB:CC:DD:EE:05", "fan_bike")
 
 
+def test_bind_with_explicit_channel_persists_that_channel_not_the_strongest(
+    tmp_path,
+):
+    # The live-device scenario this exists to fix: a candidate's strongest
+    # (scan-time) channel is full, a different channel has room, and the
+    # operator -- not just start()'s RSSI merge -- gets to choose.
+    full_bindings = [
+        EquipmentBinding(
+            node_id=f"fitrace-edge-01-0{i}",
+            equipment_id=f"ROW_{i}",
+            equipment_type="rowing_machine",
+            ble_target=f"AA:BB:CC:DD:EE:1{i}",
+            antenna_channel="uart-1",
+        )
+        for i in range(3)
+    ]
+    config = make_config(bindings=full_bindings)
+    scan_results_by_port = {
+        "/dev/ttyAMA0": [device("AA:BB:CC:DD:EE:05", -40, "Bike A")],
+        "/dev/ttyAMA4": [],
+    }
+    harness = make_harness(
+        config,
+        scan_results_by_port=scan_results_by_port,
+        flag_path=tmp_path / "pairing.flag",
+    )
+    harness.session.start(temp_connect=False)
+
+    result = harness.session.bind("AA:BB:CC:DD:EE:05", "fan_bike", channel="uart-2")
+
+    assert result["binding"]["antenna_channel"] == "uart-2"
+    saved_config = harness.config_holder["config"]
+    saved_binding = next(
+        b
+        for b in saved_config.equipment_bindings
+        if b.ble_target == "AA:BB:CC:DD:EE:05"
+    )
+    assert saved_binding.antenna_channel == "uart-2"
+    candidate = next(
+        c for c in harness.session._candidates if c.mac == "AA:BB:CC:DD:EE:05"
+    )
+    assert candidate.bound_channel_id == "uart-2"
+
+
+def test_bind_explicit_channel_does_not_need_to_have_heard_the_device(tmp_path):
+    # Amended requirement: the operator may pick ANY configured channel with
+    # a free slot, not only one that actually heard the candidate during the
+    # (weak, 8-second) scan -- refusing an unheard channel would just
+    # relocate the dead end this feature removes.
+    config = make_config()
+    scan_results_by_port = {
+        # only uart-1 ever heard this candidate.
+        "/dev/ttyAMA0": [device("AA:BB:CC:DD:EE:05", -40, "Bike A")],
+        "/dev/ttyAMA4": [],
+    }
+    harness = make_harness(
+        config,
+        scan_results_by_port=scan_results_by_port,
+        flag_path=tmp_path / "pairing.flag",
+    )
+    harness.session.start(temp_connect=False)
+    candidate = next(
+        c for c in harness.session._candidates if c.mac == "AA:BB:CC:DD:EE:05"
+    )
+    assert "uart-2" not in candidate.rssi_by_channel  # confirms the premise
+
+    result = harness.session.bind("AA:BB:CC:DD:EE:05", "fan_bike", channel="uart-2")
+
+    assert result["binding"]["antenna_channel"] == "uart-2"
+
+
+def test_bind_rejects_a_channel_that_is_not_configured(tmp_path):
+    harness = _harness_ready_to_bind(tmp_path)
+
+    with pytest.raises(PairingSessionError, match="not configured"):
+        harness.session.bind("AA:BB:CC:DD:EE:05", "fan_bike", channel="uart-99")
+
+
+def test_bind_rejects_an_explicit_channel_that_is_full(tmp_path):
+    full_bindings = [
+        EquipmentBinding(
+            node_id=f"fitrace-edge-01-0{i}",
+            equipment_id=f"ROW_{i}",
+            equipment_type="rowing_machine",
+            ble_target=f"AA:BB:CC:DD:EE:1{i}",
+            antenna_channel="uart-2",
+        )
+        for i in range(3)
+    ]
+    harness = _harness_ready_to_bind(tmp_path, bindings=full_bindings)
+
+    with pytest.raises(PairingSessionError, match="no free configured binding slot"):
+        harness.session.bind("AA:BB:CC:DD:EE:05", "fan_bike", channel="uart-2")
+
+
 # --------------------------------------------------------------------------
 # connect()
 # --------------------------------------------------------------------------
@@ -1246,6 +1377,46 @@ def test_connect_with_no_active_session_raises():
 
     with pytest.raises(PairingSessionError):
         harness.session.connect("AA:BB:CC:DD:EE:05")
+
+
+def test_connect_targets_the_bound_channel_when_it_differs_from_the_strongest(
+    tmp_path,
+):
+    # bind()'s optional channel argument can now persist a binding on a
+    # channel other than start()'s strongest-RSSI pick -- connect() must
+    # follow the binding, or it would CONNECT_ADD the wrong board (the one
+    # that's still full) instead of the one the operator actually chose.
+    full_bindings = [
+        EquipmentBinding(
+            node_id=f"fitrace-edge-01-0{i}",
+            equipment_id=f"ROW_{i}",
+            equipment_type="rowing_machine",
+            ble_target=f"AA:BB:CC:DD:EE:1{i}",
+            antenna_channel="uart-1",
+        )
+        for i in range(3)
+    ]
+    config = make_config(bindings=full_bindings)
+    scan_results_by_port = {
+        "/dev/ttyAMA0": [device("AA:BB:CC:DD:EE:05", -40, "Bike A")],  # strongest
+        "/dev/ttyAMA4": [],
+    }
+    harness = make_harness(
+        config,
+        scan_results_by_port=scan_results_by_port,
+        flag_path=tmp_path / "pairing.flag",
+    )
+    harness.session.start(temp_connect=False)
+    harness.session.bind("AA:BB:CC:DD:EE:05", "fan_bike", channel="uart-2")
+
+    result = harness.session.connect("AA:BB:CC:DD:EE:05")
+
+    assert result["channel_id"] == "uart-2"
+    # exactly one connect_add, on uart-2's port, never on uart-1's (the
+    # strongest-RSSI channel candidate.channel_id still points at, and
+    # which is full anyway).
+    assert len(harness.connect_add_calls("/dev/ttyAMA4")) == 1
+    assert harness.connect_add_calls("/dev/ttyAMA0") == []
 
 
 # --------------------------------------------------------------------------

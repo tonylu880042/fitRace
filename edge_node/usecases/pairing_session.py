@@ -44,7 +44,7 @@ import os
 import re
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
@@ -130,6 +130,18 @@ class PairingCandidate:
     # a fresh scan. Unused by the legacy temp-connect flow (start() with the
     # default temp_connect=True + confirm()), which never sets it.
     bound: bool = False
+    # Every channel that heard this candidate during the scan and its
+    # strongest RSSI there, e.g. {"uart-1": -60, "uart-2": -75} -- unlike
+    # `rssi`/`channel_id` above (which keep only the single strongest
+    # sighting), this survives the start() merge so bind() and the operator
+    # can tell whether a channel other than the strongest one also heard the
+    # device and has room for it.
+    rssi_by_channel: dict[str, int] = field(default_factory=dict)
+    # Set by bind() only when the operator (or the scan-first flow's
+    # optional `channel` argument) picked a channel other than channel_id.
+    # connect() must target this, not channel_id, once it is set, or it
+    # would CONNECT_ADD the wrong board after an operator-chosen switch.
+    bound_channel_id: str | None = None
 
 
 def _normalize_mac(value: str | None) -> str:
@@ -353,8 +365,21 @@ class PairingSession:
                         "name": name,
                         "rssi": rssi,
                         "channel_id": channel.id,
+                        "rssi_by_channel": (
+                            {channel.id: rssi} if rssi is not None else {}
+                        ),
                     }
                     continue
+                # Keep every channel's own strongest sighting too -- unlike
+                # the single "strongest overall" rssi/channel_id below, this
+                # is never overwritten, so bind() and the operator can later
+                # see whether a channel other than the strongest one also
+                # heard this device (see PairingCandidate.rssi_by_channel).
+                if rssi is not None:
+                    by_channel = existing["rssi_by_channel"]
+                    prior = by_channel.get(channel.id)
+                    if prior is None or rssi > prior:
+                        by_channel[channel.id] = rssi
                 # strongest RSSI wins -- including which channel "owns" the
                 # candidate, since only one board can actually hold the link
                 if rssi is not None and (
@@ -480,6 +505,7 @@ class PairingSession:
                         channel_id=channel.id,
                         channel_accepts_new=accepts_new[channel.id],
                         connected=candidate["mac"] in connected_macs,
+                        rssi_by_channel=dict(candidate.get("rssi_by_channel") or {}),
                     )
                 )
 
@@ -497,6 +523,7 @@ class PairingSession:
                     "rssi": c.rssi,
                     "channel_id": c.channel_id,
                     "channel_accepts_new": c.channel_accepts_new,
+                    "rssi_by_channel": c.rssi_by_channel,
                 }
                 for c in self._candidates
             ],
@@ -564,6 +591,7 @@ class PairingSession:
                     "connected": candidate.connected,
                     "moving": moving,
                     "latest": latest,
+                    "rssi_by_channel": candidate.rssi_by_channel,
                 }
             )
 
@@ -669,16 +697,40 @@ class PairingSession:
     # disturbed while the operator keeps adding more.
 
     def bind(
-        self, mac: str, equipment_type: str, display_name: str | None = None
+        self,
+        mac: str,
+        equipment_type: str,
+        display_name: str | None = None,
+        channel: str | None = None,
     ) -> dict:
         """Persist one binding and keep the session alive: state stays
         OBSERVING (no reset, no restart, no UART command of any kind) so the
         operator can bind more candidates from the same scan. Raises
         PairingSessionError if `mac` isn't a candidate in this session, was
-        already bound in this session, its channel has no free configured
-        slot, `equipment_type` is unknown, or the MAC is already bound in
-        the persisted config. Returns `{binding, capacity}`, with capacity
-        recomputed from the config as it stands right after this save."""
+        already bound in this session, `equipment_type` is unknown, or the
+        MAC is already bound in the persisted config. Returns
+        `{binding, capacity}`, with capacity recomputed from the config as
+        it stands right after this save.
+
+        `channel`, if given, overrides which antenna channel the binding is
+        made on. It only has to exist in the current config and have a free
+        configured slot -- it does NOT have to be one of the channels that
+        actually heard this candidate during the scan (candidate.rssi_by_channel).
+        An 8-second scan is a weak signal about what a board can physically
+        reach; the operator standing in the room knows better, and refusing
+        an "unheard" channel would just relocate the dead end this method
+        exists to remove (a full strongest-channel with a free slot
+        elsewhere the operator can see but not use). If the chosen channel
+        genuinely cannot reach the device, CONNECT_ADD still succeeds (it
+        only edits the board's target list) but the link will never
+        establish -- that must surface as a visible "added, not connected"
+        state to the operator, not silently look like success (see
+        connect()'s caller in app.py / the worklist UI).
+
+        When `channel` is omitted, falls back to today's behaviour: bind to
+        the candidate's scan-time strongest channel (channel_id), rejecting
+        it only via the same free-slot check.
+        """
         if self._state not in (self.STATE_SCANNING, self.STATE_OBSERVING):
             raise PairingSessionError("No active pairing session")
 
@@ -692,18 +744,36 @@ class PairingSession:
             raise PairingSessionError(
                 f"{candidate.mac} was already bound in this pairing session"
             )
-        if not candidate.channel_accepts_new:
-            raise PairingSessionError(
-                f"channel {candidate.channel_id!r} has no free configured "
-                "binding slot"
-            )
+
+        if channel is not None:
+            config = self._load_config()
+            channel_ids = {ch.id for ch in config.antenna_channels}
+            if channel not in channel_ids:
+                raise PairingSessionError(f"channel {channel!r} is not configured")
+            per_channel_capacity = _channel_capacity(config)
+            if per_channel_capacity.get(channel, 0) <= 0:
+                raise PairingSessionError(
+                    f"channel {channel!r} has no free configured binding slot"
+                )
+            target_channel_id = channel
+        else:
+            if not candidate.channel_accepts_new:
+                raise PairingSessionError(
+                    f"channel {candidate.channel_id!r} has no free configured "
+                    "binding slot"
+                )
+            target_channel_id = candidate.channel_id
+
         if equipment_type not in EQUIPMENT_TYPES:
             raise PairingSessionError(f"unknown equipment_type: {equipment_type!r}")
 
         binding, new_config = self._build_and_save_binding(
-            candidate, equipment_type, display_name
+            candidate, equipment_type, display_name, channel_id=target_channel_id
         )
         candidate.bound = True
+        # connect() must target wherever this binding actually landed, not
+        # candidate.channel_id, once the two can diverge.
+        candidate.bound_channel_id = target_channel_id
         self._touch_flag()
 
         per_channel_capacity = _channel_capacity(new_config)
@@ -716,11 +786,11 @@ class PairingSession:
         }
 
     def connect(self, mac: str) -> dict:
-        """Issue exactly one CONNECT_ADD for `mac` on its candidate's
-        channel and classify the reply. Never falls back to a batch
-        CONNECT: on `unknown_cmd` this channel's firmware simply cannot
-        support the scan-first flow, and the caller (operator page) is
-        expected to surface that rather than this method guessing at a
+        """Issue exactly one CONNECT_ADD for `mac` on the channel its
+        binding actually used and classify the reply. Never falls back to a
+        batch CONNECT: on `unknown_cmd` this channel's firmware simply
+        cannot support the scan-first flow, and the caller (operator page)
+        is expected to surface that rather than this method guessing at a
         destructive workaround. Sends REPORT for the channel only the first
         time a connect() on it succeeds this session, not for every device.
         Returns `{mac, channel_id, outcome, connected}`."""
@@ -734,14 +804,21 @@ class PairingSession:
                 f"{mac} is not a candidate in the current pairing session"
             )
 
+        # bind() may have persisted this candidate on a different channel
+        # than the one start()'s strongest-RSSI merge originally picked (its
+        # optional `channel` argument) -- target wherever the binding
+        # actually landed, not candidate.channel_id, or this would
+        # CONNECT_ADD the wrong board entirely.
+        target_channel_id = candidate.bound_channel_id or candidate.channel_id
+
         config = self._load_config()
         channel = next(
-            (ch for ch in config.antenna_channels if ch.id == candidate.channel_id),
+            (ch for ch in config.antenna_channels if ch.id == target_channel_id),
             None,
         )
         if channel is None:
             raise PairingSessionError(
-                f"channel {candidate.channel_id!r} is not configured"
+                f"channel {target_channel_id!r} is not configured"
             )
 
         reply = self._command_runner.run(
@@ -758,7 +835,7 @@ class PairingSession:
         connected = outcome in ("ok", "already_exists")
         if connected:
             candidate.connected = True
-            if candidate.channel_id not in self._reported_channels:
+            if target_channel_id not in self._reported_channels:
                 self._command_runner.run(
                     AntennaCommandRequest(
                         port=channel.port,
@@ -769,11 +846,11 @@ class PairingSession:
                         timeout_sec=self._command_timeout_sec,
                     )
                 )
-                self._reported_channels.add(candidate.channel_id)
+                self._reported_channels.add(target_channel_id)
 
         return {
             "mac": normalized_mac,
-            "channel_id": candidate.channel_id,
+            "channel_id": target_channel_id,
             "outcome": outcome,
             "connected": connected,
         }
@@ -801,6 +878,7 @@ class PairingSession:
         candidate: PairingCandidate,
         equipment_type: str,
         display_name: str | None,
+        channel_id: str | None = None,
     ) -> tuple[EquipmentBinding, EdgeNodeConfig]:
         """Shared by confirm() and bind(): load the current config, reject a
         MAC already bound in it, compute the binding's name (existing
@@ -810,7 +888,11 @@ class PairingSession:
         not the caller's cheap channel_accepts_new pre-check -- persist it,
         and return (binding, new_config). Callers own their own
         session-state bookkeeping afterwards (confirm()'s pending-binding
-        retry fields; bind()'s per-candidate `bound` flag)."""
+        retry fields; bind()'s per-candidate `bound` flag).
+
+        `channel_id` lets bind() persist the binding on an operator-chosen
+        channel instead of the candidate's scan-time strongest channel;
+        confirm() never passes it and keeps using candidate.channel_id."""
         config = self._load_config()
         normalized_mac = _normalize_mac(candidate.mac)
         duplicate = next(
@@ -840,7 +922,7 @@ class PairingSession:
             equipment_id=name,
             equipment_type=equipment_type,
             ble_target=candidate.mac,
-            antenna_channel=candidate.channel_id,
+            antenna_channel=channel_id or candidate.channel_id,
         )
 
         payload = config.model_dump()
