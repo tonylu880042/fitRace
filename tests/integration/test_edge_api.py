@@ -591,6 +591,152 @@ def test_clear_equipment_bindings_requires_admin_token(monkeypatch):
     assert response.status_code == 401
 
 
+def _write_multi_binding_config(config_path):
+    config_path.write_text(
+        json.dumps(
+            {
+                "node_id": "fitrace-edge-test",
+                "mqtt_host": "192.168.0.130",
+                "max_ftms_connections": 3,
+                "antenna_channels": [
+                    {"id": "uart-1", "port": "/dev/ttyAMA0"},
+                    {"id": "uart-2", "port": "/dev/ttyAMA4"},
+                ],
+                "equipment_bindings": [
+                    {
+                        "node_id": "fitrace-edge-test-01",
+                        "equipment_id": "BIKE_01",
+                        "equipment_type": "fan_bike",
+                        "ble_target": "AA:BB:CC:DD:EE:01",
+                        "antenna_channel": "uart-1",
+                    },
+                    {
+                        "node_id": "fitrace-edge-test-02",
+                        "equipment_id": "BIKE_02",
+                        "equipment_type": "fan_bike",
+                        "ble_target": "AA:BB:CC:DD:EE:02",
+                        "antenna_channel": "uart-1",
+                    },
+                    {
+                        "node_id": "fitrace-edge-test-03",
+                        "equipment_id": "ROWER_01",
+                        "equipment_type": "rowing_machine",
+                        "ble_target": "AA:BB:CC:DD:EE:03",
+                        "antenna_channel": "uart-2",
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_remove_single_equipment_binding_disconnects_only_that_mac_on_its_channel(
+    monkeypatch, tmp_path
+):
+    # The operator's only way out of a full antenna board used to be
+    # DELETE /api/equipment-bindings, which wipes every binding on every
+    # channel. This endpoint must free exactly one slot: one disconnect, on
+    # the removed binding's own channel and MAC, touching nothing else --
+    # every other bound device (including the other one on the SAME
+    # channel) keeps its config entry and never gets a command sent to it.
+    config_path = tmp_path / "config.json"
+    _write_multi_binding_config(config_path)
+
+    recorded_commands = []
+
+    class FakeAntennaCommandRunner:
+        def run(self, request):
+            recorded_commands.append(
+                (request.port, request.command, tuple(request.macs))
+            )
+            return {
+                "port": request.port,
+                "command": request.command,
+                "rx": ["OK:DISCONNECT"],
+            }
+
+    monkeypatch.setattr(edge_app_module, "CONFIG_PATH", config_path)
+    monkeypatch.setattr(
+        edge_app_module, "antenna_command_runner", FakeAntennaCommandRunner()
+    )
+    client = TestClient(edge_app_module.app)
+
+    response = client.delete("/api/equipment-bindings/fitrace-edge-test-02")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "removed"
+    assert payload["binding"]["node_id"] == "fitrace-edge-test-02"
+    assert payload["binding"]["ble_target"] == "AA:BB:CC:DD:EE:02"
+    assert payload["warnings"] == []
+
+    # Assert on the complete recorded command list -- exactly one command,
+    # ever: a per-MAC disconnect on the removed binding's own channel. No
+    # disconnect_all, no connect, nothing on uart-2 either.
+    assert recorded_commands == [("/dev/ttyAMA0", "disconnect", ("AA:BB:CC:DD:EE:02",))]
+
+    saved = json.loads(config_path.read_text(encoding="utf-8"))
+    saved_node_ids = [b["node_id"] for b in saved["equipment_bindings"]]
+    assert saved_node_ids == ["fitrace-edge-test-01", "fitrace-edge-test-03"]
+
+
+def test_remove_single_equipment_binding_uart_failure_still_removes_and_warns(
+    monkeypatch, tmp_path
+):
+    # The operator's intent is to free the slot; a board that did not
+    # answer must not leave them stuck re-clicking a control that keeps
+    # failing. The binding is removed from config regardless, and the
+    # failure surfaces as a warning, not an HTTP error.
+    config_path = tmp_path / "config.json"
+    _write_multi_binding_config(config_path)
+
+    class FailingAntennaCommandRunner:
+        def run(self, request):
+            raise RuntimeError("UART port busy")
+
+    monkeypatch.setattr(edge_app_module, "CONFIG_PATH", config_path)
+    monkeypatch.setattr(
+        edge_app_module, "antenna_command_runner", FailingAntennaCommandRunner()
+    )
+    client = TestClient(edge_app_module.app)
+
+    response = client.delete("/api/equipment-bindings/fitrace-edge-test-01")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "removed_with_warnings"
+    assert any("UART port busy" in warning for warning in payload["warnings"])
+    assert payload["binding"]["node_id"] == "fitrace-edge-test-01"
+
+    saved = json.loads(config_path.read_text(encoding="utf-8"))
+    saved_node_ids = [b["node_id"] for b in saved["equipment_bindings"]]
+    assert "fitrace-edge-test-01" not in saved_node_ids
+    assert set(saved_node_ids) == {"fitrace-edge-test-02", "fitrace-edge-test-03"}
+
+
+def test_remove_single_equipment_binding_unknown_node_id_is_404(monkeypatch, tmp_path):
+    config_path = tmp_path / "config.json"
+    _write_multi_binding_config(config_path)
+    monkeypatch.setattr(edge_app_module, "CONFIG_PATH", config_path)
+    client = TestClient(edge_app_module.app)
+
+    response = client.delete("/api/equipment-bindings/does-not-exist")
+
+    assert response.status_code == 404
+    saved = json.loads(config_path.read_text(encoding="utf-8"))
+    assert len(saved["equipment_bindings"]) == 3
+
+
+def test_remove_single_equipment_binding_requires_admin_token(monkeypatch):
+    monkeypatch.setenv("FITRACE_ADMIN_TOKEN", "admin-secret")
+    client = TestClient(edge_app_module.app)
+
+    response = client.delete("/api/equipment-bindings/fitrace-edge-test-01")
+
+    assert response.status_code == 401
+
+
 def test_reconnect_configured_antenna_devices_groups_targets_by_channel(
     monkeypatch, tmp_path
 ):
@@ -2249,3 +2395,78 @@ def test_edge_pairing_page_load_restores_worklist_when_session_active():
     assert "initPairingWorklist(startPayload.candidates || [])" in restore_fn
     assert 'showView("pairing")' in restore_fn
     assert "startPairingPoll()" in restore_fn
+
+
+def test_edge_home_card_remove_control_requires_confirmation_naming_equipment():
+    # A full antenna board used to be recoverable only by wiping every
+    # binding on the node (DELETE /api/equipment-bindings). Each card now
+    # gets its own destructive remove control that must confirm, showing
+    # the equipment name, before it ever fires the request.
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    assert 'data-role="remove-binding"' in source
+
+    remove_start = source.index("async function removeBinding(nodeId)")
+    remove_end = source.index("\n    function ", remove_start)
+    remove_fn = source[remove_start:remove_end]
+
+    assert "window.confirm(t(" in remove_fn
+    confirm_index = remove_fn.index("window.confirm(")
+    fetch_index = remove_fn.index("adminFetch(`/api/equipment-bindings/")
+    assert confirm_index < fetch_index  # confirmation gates the request
+
+    assert 't("operator.card_remove_confirm", { name })' in remove_fn
+    assert (
+        'if (!window.confirm(t("operator.card_remove_confirm", { name }))) return;'
+        in remove_fn
+    )
+
+    # DELETE, not the whole-node clear-all endpoint.
+    assert 'method: "DELETE"' in remove_fn
+    assert '"/api/equipment-bindings"' not in remove_fn
+
+    click_wire_index = source.index(
+        'document.getElementById("binding-cards").addEventListener("click"'
+    )
+    click_wire_end = source.index("\n    });", click_wire_index)
+    click_wire = source[click_wire_index:click_wire_end]
+    assert "closest('[data-role=\"remove-binding\"]')" in click_wire
+    assert "removeBinding(target.dataset.nodeId)" in click_wire
+
+
+def test_edge_home_card_remove_success_and_failure_both_refresh_config():
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    remove_start = source.index("async function removeBinding(nodeId)")
+    remove_end = source.index("\n    function ", remove_start)
+    remove_fn = source[remove_start:remove_end]
+
+    assert "bindingRemoveState.set(nodeId," in remove_fn
+    assert "await loadConfig();" in remove_fn
+    # loadConfig() must run regardless of whether the DELETE succeeded or
+    # threw, so a true request failure still refreshes the UI.
+    try_index = remove_fn.index("try {")
+    catch_index = remove_fn.index("} catch (error) {")
+    load_config_index = remove_fn.rindex("await loadConfig();")
+    assert try_index < catch_index < load_config_index
+
+
+def test_edge_pairing_worklist_i18n_and_card_remove_keys_present_in_both_locales():
+    locales_dir = Path(edge_app_module.__file__).resolve().parent.parent / "locales"
+    en = json.loads((locales_dir / "en.json").read_text(encoding="utf-8"))
+    zh_tw = json.loads((locales_dir / "zh_tw.json").read_text(encoding="utf-8"))
+
+    new_keys = {
+        "operator.card_remove",
+        "operator.card_remove_confirm",
+        "operator.card_remove_working",
+        "operator.card_remove_success",
+        "operator.card_remove_success_with_warning",
+        "operator.card_remove_failed",
+    }
+    for key in new_keys:
+        assert key in en, key
+        assert key in zh_tw, key
+    assert set(en.keys()) == set(zh_tw.keys())

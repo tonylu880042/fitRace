@@ -306,6 +306,31 @@
       font-size: 15px;
     }
 
+    .binding-card-footer {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-top: 8px;
+    }
+
+    .binding-card-remove {
+      width: auto;
+      flex: none;
+      padding: 6px 14px;
+      font-size: 12px;
+    }
+
+    .binding-card-remove-message {
+      flex: 1;
+      min-width: 0;
+      margin: 0;
+      text-align: right;
+      font-size: 12px;
+      overflow-wrap: anywhere;
+    }
+
     .pill {
       align-self: start;
       padding: 3px 8px;
@@ -980,6 +1005,11 @@
     // snapshot (rssi, connected, moving, latest telemetry). Seeded from
     // start()'s candidate list, then refreshed every poll tick.
     let pairingCandidateStatus = new Map();
+    // bindingRemoveState: node_id -> { removing, message, ok } for the home
+    // view's per-card "remove" control. Keyed by node_id (not DOM element)
+    // so a message survives renderBindingCards() rebuilding the whole grid,
+    // which happens right after removeBinding()'s loadConfig() refresh.
+    let bindingRemoveState = new Map();
     let wifiNetworks = [];
     let wifiNetworksLoaded = false;
     let uartMonitorSignature = null;
@@ -1317,7 +1347,13 @@
       if (!bindings.length) {
         grid.innerHTML = `<div class="empty">${escapeHtml(t("monitor.empty"))}</div>`;
       } else {
-        grid.innerHTML = bindings.map((binding) => `
+        grid.innerHTML = bindings.map((binding) => {
+          // bindingRemoveState survives this rebuild (unlike the DOM it's
+          // about to replace) so a failed removal's message stays visible
+          // on the card after the loadConfig() refresh that follows it --
+          // see removeBinding().
+          const removeState = bindingRemoveState.get(binding.node_id) || {};
+          return `
           <div class="binding-card" data-node-id="${escapeHtml(binding.node_id)}">
             <div>
               <div class="binding-card-name">${escapeHtml(binding.equipment_id || binding.node_id)}</div>
@@ -1332,8 +1368,13 @@
               <div>${escapeHtml(t("monitor.power"))}<strong data-field="power">--</strong></div>
               <div>${escapeHtml(t("monitor.rssi"))}<strong data-field="rssi">--</strong></div>
             </div>
+            <div class="binding-card-footer">
+              <button type="button" class="btn-secondary binding-card-remove" data-node-id="${escapeHtml(binding.node_id)}" data-role="remove-binding" ${removeState.removing ? "disabled" : ""}>${escapeHtml(removeState.removing ? t("operator.card_remove_working") : t("operator.card_remove"))}</button>
+              <div class="message binding-card-remove-message ${removeState.ok === false ? "error" : (removeState.ok === true ? "ok" : "")}" data-role="remove-message">${escapeHtml(removeState.message || "")}</div>
+            </div>
           </div>
-        `).join("");
+        `;
+        }).join("");
       }
       updateBindingCardLeaves();
 
@@ -1371,6 +1412,45 @@
         card.querySelector('[data-field="power"]').textContent = formatMetric(payload?.power_watts, " W", 0);
         card.querySelector('[data-field="rssi"]').textContent = formatMetric(payload?.rssi, " dBm", 0);
       });
+    }
+
+    // Removing a single binding is destructive (it disconnects the
+    // equipment), so it requires an explicit confirmation naming the
+    // equipment before it fires -- unlike "disconnect all", this frees just
+    // one antenna slot without touching anything else still connected.
+    async function removeBinding(nodeId) {
+      const binding = (edgeConfig?.equipment_bindings || []).find((b) => b.node_id === nodeId);
+      const name = binding?.equipment_id || nodeId;
+      if (!window.confirm(t("operator.card_remove_confirm", { name }))) return;
+
+      bindingRemoveState.set(nodeId, { removing: true, message: t("operator.card_remove_working"), ok: null });
+      if (currentView === "home") renderBindingCards();
+
+      try {
+        const response = await adminFetch(`/api/equipment-bindings/${encodeURIComponent(nodeId)}`, {
+          method: "DELETE",
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || t("operator.card_remove_failed", { name }));
+        const warnings = Array.isArray(result.warnings) ? result.warnings : [];
+        bindingRemoveState.set(nodeId, {
+          removing: false,
+          message: warnings.length
+            ? t("operator.card_remove_success_with_warning", { name })
+            : t("operator.card_remove_success", { name }),
+          ok: !warnings.length,
+        });
+      } catch (error) {
+        bindingRemoveState.set(nodeId, {
+          removing: false,
+          message: error.message || t("operator.card_remove_failed", { name }),
+          ok: false,
+        });
+      }
+      // Refresh so the card list (the binding is gone on success) and any
+      // capacity display (add-device-btn's "full" state) update -- the
+      // message above survives this via bindingRemoveState.
+      await loadConfig();
     }
 
     function formatEventTime(epochMs) {
@@ -2119,6 +2199,11 @@
 
     document.getElementById("add-device-btn").addEventListener("click", startPairing);
     document.getElementById("disconnect-all-btn").addEventListener("click", disconnectAllAndClearBindings);
+    document.getElementById("binding-cards").addEventListener("click", (event) => {
+      const target = event.target.closest('[data-role="remove-binding"]');
+      if (!target) return;
+      removeBinding(target.dataset.nodeId);
+    });
     document.getElementById("central-hub-save-btn").addEventListener("click", saveCentralHub);
     document.getElementById("central-hub-host").addEventListener("input", markCentralHubFormDirty);
     document.getElementById("central-hub-port").addEventListener("input", markCentralHubFormDirty);

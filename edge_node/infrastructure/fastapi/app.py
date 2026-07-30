@@ -375,6 +375,95 @@ def clear_equipment_bindings(request: Request):
     }
 
 
+@app.delete("/api/equipment-bindings/{node_id}")
+def remove_equipment_binding(node_id: str, request: Request):
+    """Remove exactly ONE binding, identified by its node_id, without
+    touching any other channel.
+
+    Unlike DELETE /api/equipment-bindings (which wipes every binding on
+    every channel with a DISCONNECT:ALL per channel), this sends a single
+    per-MAC DISCONNECT for this binding's own ble_target on its own
+    antenna_channel -- never disconnect_all, never a batch connect, and
+    never any command on a different channel -- so every other bound device
+    keeps streaming the whole time. This is the operator's way out of a
+    full antenna board (ERROR:FULL) that used to require wiping every
+    binding on the node just to free one slot.
+
+    The runtime is deliberately not restarted here: AntennaFtmsManager's
+    reconnect watchdog (_reconnect_missing_targets ->
+    _refresh_configured_bindings) reloads config.json from disk on every
+    pass, so it picks up the removed binding on its own well within one
+    watchdog interval. Restarting the service would tear down and rebuild
+    every other channel's live GATT sessions just to remove one binding,
+    which is exactly the disruption this endpoint exists to avoid.
+
+    If the UART DISCONNECT fails (or the binding's channel is no longer
+    configured at all), the binding is still removed from config and the
+    failure is reported as a warning rather than blocking the removal: the
+    operator's intent is to free the slot, and a board that did not answer
+    must not leave them stuck.
+    """
+    require_admin(request)
+    try:
+        config = load_edge_config()
+        binding = next(
+            (b for b in config.equipment_bindings if b.node_id == node_id), None
+        )
+        if binding is None:
+            raise HTTPException(
+                status_code=404, detail=f"No binding with node_id {node_id!r}"
+            )
+
+        channel = next(
+            (ch for ch in config.antenna_channels if ch.id == binding.antenna_channel),
+            None,
+        )
+
+        warnings = []
+        command_result = None
+        if channel is None:
+            warnings.append(
+                f"antenna channel {binding.antenna_channel!r} is not configured; "
+                "binding removed without sending DISCONNECT"
+            )
+        else:
+            try:
+                command_result = antenna_command_runner.run(
+                    AntennaCommandRequest(
+                        port=channel.port,
+                        baudrate=channel.baudrate,
+                        rtscts=channel.rtscts,
+                        command="disconnect",
+                        macs=[binding.ble_target],
+                        timeout_sec=5.0,
+                    )
+                )
+            except (ValueError, RuntimeError) as exc:
+                warnings.append(f"disconnect failed: {exc}")
+
+        remaining_bindings = [
+            b for b in config.equipment_bindings if b.node_id != node_id
+        ]
+        updated_config = config.model_copy(
+            update={"equipment_bindings": remaining_bindings},
+            deep=True,
+        )
+        save_edge_config(updated_config)
+
+        return {
+            "status": "removed" if not warnings else "removed_with_warnings",
+            "binding": binding.model_dump(),
+            "command": command_result,
+            "warnings": warnings,
+        }
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+
 @app.get("/api/ble/scan")
 async def scan_ble_ftms_devices(
     request: Request,
