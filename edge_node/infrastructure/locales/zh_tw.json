@@ -189,6 +189,7 @@
   "pairing.capacity_strip": "可綁定額度 {free}/{total}",
   "pairing.channel_full": "{channel} 已滿",
   "pairing.no_candidates": "尚未偵測到設備，請確認器材已開機。",
+  "pairing.type_grid_heading": "設備類型 — 必填",
   "pairing.start_failed": "無法啟動配對",
   "pairing.scanning": "正在掃描所有天線通道——可能需要 20-40 秒...",
   "pairing.save_connect": "儲存並連線",

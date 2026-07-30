@@ -1658,7 +1658,14 @@
     function typeGridHtml(meta) {
       const hints = ftmsHintsForMac(meta.mac);
       if (!meta.equipmentType && hints.length === 1) meta.equipmentType = hints[0];
+      // The grid owns its own heading (rather than depending on a caller's
+      // wrapping <label>) so a freshly-scanned row -- which never gets an
+      // auto-selected type, since ftmsHintsForMac only returns a single hint
+      // once a candidate has telemetry, and a freshly scanned candidate has
+      // none -- reads as "waiting for you" instead of a mysteriously dead
+      // button with an unlabelled grid under it.
       return `
+        <label class="type-grid-heading" data-i18n="pairing.type_grid_heading">${escapeHtml(t("pairing.type_grid_heading"))}</label>
         <div class="type-grid">
           ${EQUIPMENT_TYPE_CHIPS.map((type) => {
             const hinted = hints.includes(type);
@@ -1708,11 +1715,17 @@
         outcomeHtml = outcomeMessageHtml(meta.connectOutcome);
       } else if (!bound && channelFull) {
         outcomeHtml = `<div class="worklist-outcome warn" data-role="outcome">${escapeHtml(t("pairing.channel_full", { channel: meta.channelId }))}</div>`;
+      } else if (!bound && !meta.equipmentType) {
+        // The save button is disabled for exactly this reason once the
+        // channel isn't full -- board-full above always wins when both
+        // apply: it is the harder blocker (missing type is fixed with one
+        // tap; board-full needs a device removed first, see
+        // pairing.outcome_full for that path).
+        outcomeHtml = `<div class="worklist-outcome warn" data-role="outcome">${escapeHtml(t("confirm.select_type_hint"))}</div>`;
       }
 
       const formMarkup = bound ? "" : `
         <div class="field">
-          <label data-i18n="bindings.type">${escapeHtml(t("bindings.type"))}</label>
           ${typeGridMarkup}
         </div>
         <div class="field">
@@ -1946,6 +1959,58 @@
       if (el) el.hidden = !active;
     }
 
+    // A page reload or a tablet waking from sleep must never strand the
+    // operator on the home view while a pairing session is still running
+    // server-side (PairingSession keeps state across web-process restarts
+    // via the pairing flag file). Called once after loadConfig() on page
+    // load; if a session is scanning/observing, rejoin it instead of
+    // leaving the operator with no visible way back to it.
+    async function restorePairingSessionIfActive() {
+      try {
+        const statusResponse = await adminFetch("/api/pairing/status");
+        const statusPayload = await statusResponse.json();
+        if (!statusResponse.ok) return;
+        if (statusPayload.state !== "scanning" && statusPayload.state !== "observing") return;
+
+        // start() re-returns its cached _start_result unchanged (no re-scan,
+        // no re-CONNECT_ADD/CONNECT) whenever a session is already active --
+        // see PairingSession.start()'s early return -- so calling it here is
+        // safe purely to re-seed the candidate list and per-channel capacity
+        // the client lost on reload.
+        const startResponse = await adminFetch("/api/pairing/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ temp_connect: false }),
+        });
+        const startPayload = await startResponse.json();
+        if (!startResponse.ok) return;
+
+        applyPairingCapacity(startPayload.capacity);
+        initPairingWorklist(startPayload.candidates || []);
+        (statusPayload.candidates || []).forEach((candidate) => {
+          pairingCandidateStatus.set(candidate.mac, candidate);
+        });
+        // A candidate this session already bound before the reload now
+        // shows up in edgeConfig's bindings -- mark its row bound so it
+        // doesn't re-render an editable type picker that would just 400 as
+        // "already bound in this pairing session" if resubmitted.
+        (edgeConfig?.equipment_bindings || []).forEach((binding) => {
+          const rowMeta = pairingRowMeta.get(normalizeMac(binding.ble_target));
+          if (!rowMeta) return;
+          rowMeta.bound = true;
+          rowMeta.equipmentType = binding.equipment_type;
+          rowMeta.displayName = binding.equipment_id || rowMeta.displayName;
+        });
+
+        pairingActive = true;
+        showView("pairing");
+        renderPairingWorklist();
+        startPairingPoll();
+      } catch (_error) {
+        // best-effort; the operator can still resume manually via "add device"
+      }
+    }
+
     async function startPairing() {
       const addBtn = document.getElementById("add-device-btn");
       if (!centralHubReady) {
@@ -2071,7 +2136,7 @@
     document.getElementById("pairing-worklist").addEventListener("input", handlePairingWorklistInput);
 
     applyTranslations();
-    loadConfig({ populateHubFields: true });
+    loadConfig({ populateHubFields: true }).then(restorePairingSessionIfActive);
     checkPowerDryRunMode();
     refreshWifiStatus();
     refreshTelemetry();

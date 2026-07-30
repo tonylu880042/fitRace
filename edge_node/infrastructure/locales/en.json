@@ -189,6 +189,7 @@
   "pairing.capacity_strip": "{free}/{total} slot(s) free",
   "pairing.channel_full": "{channel} full",
   "pairing.no_candidates": "No equipment detected yet — make sure it's powered on.",
+  "pairing.type_grid_heading": "Equipment type — required",
   "pairing.start_failed": "Could not start pairing",
   "pairing.scanning": "Scanning every antenna channel — this can take 20-40 seconds...",
   "pairing.save_connect": "Save & connect",

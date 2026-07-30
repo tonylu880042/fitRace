@@ -2129,3 +2129,123 @@ def test_edge_pairing_worklist_i18n_keys_present_in_both_locales():
         assert key in en, key
         assert key in zh_tw, key
     assert set(en.keys()) == set(zh_tw.keys())
+
+
+def test_edge_pairing_worklist_row_explains_why_save_is_disabled():
+    # Problem 1 from the field: a candidate with no equipment type tapped yet
+    # rendered a disabled save button with nothing on the row explaining why.
+    # typeGridHtml only ever auto-selects a type when ftmsHintsForMac returns
+    # exactly one hint, and hints come from telemetryByMac -- a freshly
+    # scanned, not-yet-connected candidate has no telemetry, so in practice a
+    # type is never auto-selected and every row needs a manual tap.
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    row_start = source.index("function worklistRowHtml(meta)")
+    row_end = source.index("function renderPairingWorklist()", row_start)
+    row_fn = source[row_start:row_end]
+
+    # Assert on the actual elseif condition and the key it renders, not a
+    # loose substring a nearby comment could also satisfy.
+    assert "} else if (!bound && !meta.equipmentType) {" in row_fn
+    missing_type_branch = row_fn[
+        row_fn.index("} else if (!bound && !meta.equipmentType) {") :
+    ]
+    assert 't("confirm.select_type_hint")' in missing_type_branch[:700]
+
+    # Board-full is the harder blocker (needs a device removed; missing type
+    # is fixed with one tap), so its branch must be reachable first.
+    full_branch_index = row_fn.index("} else if (!bound && channelFull) {")
+    missing_type_branch_index = row_fn.index(
+        "} else if (!bound && !meta.equipmentType) {"
+    )
+    assert full_branch_index < missing_type_branch_index
+
+
+def test_edge_pairing_worklist_full_channel_reason_wins_over_missing_type():
+    # A row on a full channel with no type picked yet must show the
+    # board-full reason, not the pick-a-type reason -- the operator can't act
+    # on the type picker until a slot exists anyway.
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    row_start = source.index("function worklistRowHtml(meta)")
+    row_end = source.index("function renderPairingWorklist()", row_start)
+    row_fn = source[row_start:row_end]
+
+    assert "const channelFull = freeSlots === 0;" in row_fn
+    channel_full_computed_index = row_fn.index("const channelFull = freeSlots === 0;")
+    full_branch_index = row_fn.index("} else if (!bound && channelFull) {")
+    missing_type_branch_index = row_fn.index(
+        "} else if (!bound && !meta.equipmentType) {"
+    )
+    # channelFull must be computed before either branch can consult it, and
+    # the full-channel branch must come first in the elseif chain so it wins
+    # whenever both conditions are true for the same row.
+    assert channel_full_computed_index < full_branch_index < missing_type_branch_index
+
+
+def test_edge_pairing_type_grid_has_its_own_required_heading():
+    # Give the type grid a heading of its own -- via an i18n key, not a
+    # hardcoded string -- so a row with no type selected unmistakably reads
+    # as "waiting for you" rather than broken.
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    type_grid_start = source.index("function typeGridHtml(meta)")
+    type_grid_end = source.index(
+        "function outcomeMessageHtml(outcome)", type_grid_start
+    )
+    type_grid_fn = source[type_grid_start:type_grid_end]
+
+    assert (
+        'class="type-grid-heading" data-i18n="pairing.type_grid_heading"'
+        in type_grid_fn
+    )
+    assert 't("pairing.type_grid_heading")' in type_grid_fn
+
+    locales_dir = Path(edge_app_module.__file__).resolve().parent.parent / "locales"
+    en = json.loads((locales_dir / "en.json").read_text(encoding="utf-8"))
+    zh_tw = json.loads((locales_dir / "zh_tw.json").read_text(encoding="utf-8"))
+    assert "pairing.type_grid_heading" in en
+    assert "pairing.type_grid_heading" in zh_tw
+    assert set(en.keys()) == set(zh_tw.keys())
+
+
+def test_edge_pairing_page_load_restores_worklist_when_session_active():
+    # A page reload or a tablet waking from sleep used to drop the operator
+    # on the home view with an active pairing session still running
+    # server-side and no visible way back. On load, after loadConfig(), the
+    # page must check /api/pairing/status once and, if scanning/observing,
+    # restore the worklist view and resume polling instead.
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    assert (
+        "loadConfig({ populateHubFields: true }).then(restorePairingSessionIfActive);"
+        in source
+    )
+
+    restore_start = source.index("async function restorePairingSessionIfActive()")
+    restore_end = source.index("async function startPairing()", restore_start)
+    restore_fn = source[restore_start:restore_end]
+
+    assert 'adminFetch("/api/pairing/status")' in restore_fn
+    assert (
+        'statusPayload.state !== "scanning" && statusPayload.state !== "observing"'
+        in restore_fn
+    )
+    status_check_index = restore_fn.index(
+        'statusPayload.state !== "scanning" && statusPayload.state !== "observing"'
+    )
+    return_index = restore_fn.index("return;", status_check_index)
+    assert status_check_index < return_index  # bails out before touching the UI
+
+    # Re-seeds capacity/candidates via start(), which pairing_session.py's
+    # start() re-returns unchanged (no re-scan, no re-CONNECT_ADD/CONNECT)
+    # whenever a session is already active.
+    assert 'adminFetch("/api/pairing/start"' in restore_fn
+    assert "body: JSON.stringify({ temp_connect: false })" in restore_fn
+    assert "initPairingWorklist(startPayload.candidates || [])" in restore_fn
+    assert 'showView("pairing")' in restore_fn
+    assert "startPairingPoll()" in restore_fn
