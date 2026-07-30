@@ -370,8 +370,11 @@
     }
 
     .btn-primary:disabled {
-      opacity: 0.4;
+      opacity: 0.5;
       cursor: not-allowed;
+      color: var(--muted);
+      border-color: var(--muted);
+      background: var(--surface);
     }
 
     .btn-secondary {
@@ -478,6 +481,19 @@
     .worklist-outcome.ok { color: var(--ok); }
     .worklist-outcome.error { color: var(--danger); }
     .worklist-outcome.warn { color: var(--warn); }
+
+    .worklist-row-progress {
+      margin: 12px 0;
+      padding: 12px;
+      border: 2px solid var(--accent);
+      border-radius: 4px;
+      background: rgba(212, 243, 38, 0.1);
+      color: var(--accent);
+      font-weight: 700;
+      font-size: 14px;
+      text-align: center;
+      letter-spacing: 0.05em;
+    }
 
     .wizard-actions {
       display: flex;
@@ -933,6 +949,7 @@
           <div class="banner" data-i18n="pairing.instruction"></div>
           <div class="message" id="pairing-scanning" data-i18n="pairing.scanning" hidden></div>
           <div class="capacity-strip" id="pairing-capacity"></div>
+          <div id="pairing-row-progress" class="worklist-row-progress" hidden aria-live="polite" aria-atomic="true"></div>
           <div id="pairing-worklist" class="card-grid"></div>
           <div class="message" id="pairing-message"></div>
           <div class="wizard-actions">
@@ -2114,9 +2131,16 @@
       if (!meta || meta.connecting) return;
       meta.connecting = true;
       renderPairingWorklist();
-      const result = await connectCandidateOnly(mac);
+      const progressEl = document.getElementById("pairing-row-progress");
+      try {
+        progressEl.textContent = t("pairing.connecting_indicator");
+        progressEl.hidden = false;
+        const result = await connectCandidateOnly(mac);
+        meta.connectOutcome = result.outcome;
+      } finally {
+        progressEl.hidden = true;
+      }
       meta.connecting = false;
-      meta.connectOutcome = result.outcome;
       renderPairingWorklist();
     }
 
@@ -2126,7 +2150,10 @@
       meta.binding = true;
       meta.bindError = null;
       renderPairingWorklist();
+      const progressEl = document.getElementById("pairing-row-progress");
       try {
+        progressEl.textContent = t("pairing.saving_indicator");
+        progressEl.hidden = false;
         const bindResult = await bindCandidate(mac, meta.equipmentType, meta.displayName, meta.channelId);
         applyPairingCapacity(bindResult.capacity);
         // The server persisted whatever channel meta.channelId held --
@@ -2135,11 +2162,14 @@
         // client's own state.
         meta.channelId = bindResult.binding?.antenna_channel || meta.channelId;
         meta.bound = true;
+        progressEl.textContent = t("pairing.connecting_indicator");
       } catch (error) {
         meta.binding = false;
         meta.bindError = error.message;
         renderPairingWorklist();
         return;
+      } finally {
+        progressEl.hidden = true;
       }
       meta.binding = false;
       // bind() already persisted this MAC -- connect() is the only step left,

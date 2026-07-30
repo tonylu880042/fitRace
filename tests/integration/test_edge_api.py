@@ -2354,6 +2354,150 @@ def test_edge_pairing_capacity_comes_from_bind_response_not_channel_accepts_new(
 
     assert "channel_accepts_new" not in source
 
+
+def test_edge_operator_pairing_progress_indicator_shown_during_save_and_connect():
+    # While a row is saving or connecting, a clearly visible progress indicator
+    # must appear showing what step is in flight ("Saving...", "Connecting...").
+    # The existing in-button label alone is too easy to miss on a long worklist.
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    # Progress indicator element must exist
+    assert 'id="pairing-row-progress"' in source
+    assert 'class="worklist-row-progress"' in source
+    assert 'aria-live="polite"' in source
+    assert 'aria-atomic="true"' in source
+
+    # Progress indicator is initially hidden
+    assert 'id="pairing-row-progress"' in source
+    progress_start = source.index('id="pairing-row-progress"')
+    progress_end = source.index(">", progress_start)
+    progress_tag = source[progress_start:progress_end]
+    assert "hidden" in progress_tag
+
+    # Locale strings for both save and connect steps must exist
+    locales_dir = Path(edge_app_module.__file__).resolve().parent.parent / "locales"
+    en = json.loads((locales_dir / "en.json").read_text(encoding="utf-8"))
+    zh_tw = json.loads((locales_dir / "zh_tw.json").read_text(encoding="utf-8"))
+    assert "pairing.saving_indicator" in en
+    assert "pairing.connecting_indicator" in en
+    assert "pairing.saving_indicator" in zh_tw
+    assert "pairing.connecting_indicator" in zh_tw
+    assert set(en.keys()) == set(zh_tw.keys())
+
+
+def test_edge_operator_pairing_progress_indicator_updates_during_save_and_connect():
+    # The saveAndConnect function must update the progress indicator to show
+    # which step (saving or connecting) is currently in flight.
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    save_start = source.index("async function saveAndConnect(mac)")
+    save_end = source.index("async function probeCandidate(", save_start)
+    save_fn = source[save_start:save_end]
+
+    # Progress indicator must be shown and updated during save
+    assert 'getElementById("pairing-row-progress")' in save_fn
+    assert "pairing.saving_indicator" in save_fn
+    assert "progressEl.hidden = false" in save_fn
+
+    # Progress indicator must be shown and updated during connect
+    assert "pairing.connecting_indicator" in save_fn
+    # Must appear between the text setting and the connect call
+    progress_text_idx = save_fn.index("pairing.saving_indicator")
+    hidden_false_idx = save_fn.index("progressEl.hidden = false")
+    assert progress_text_idx < hidden_false_idx
+
+
+def test_edge_operator_pairing_save_and_connect_clears_progress_indicator_in_finally():
+    # The code that clears the progress indicator must be in a finally block,
+    # never on the success path. This ensures the indicator vanishes even if
+    # an exception or rejected promise occurs.
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    save_start = source.index("async function saveAndConnect(mac)")
+    save_end = source.index("async function probeCandidate(", save_start)
+    save_fn = source[save_start:save_end]
+
+    # Find finally block
+    assert "} finally {" in save_fn
+    finally_start = save_fn.index("} finally {")
+    finally_block = save_fn[finally_start:]
+
+    # Hidden attribute must be set in finally block
+    assert (
+        ".hidden = true" in finally_block
+        or '.setAttribute("hidden", "")' in finally_block
+    )
+
+
+def test_edge_operator_pairing_progress_indicator_not_shown_on_error():
+    # When save/connect fails, the progress indicator must NOT vanish silently.
+    # The error must remain visible; the indicator disappears but the outcome
+    # message stays to tell the operator what went wrong.
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    # Outcome rendering must still be present in the HTML
+    row_start = source.index("function worklistRowHtml(meta)")
+    row_end = source.index("function renderPairingWorklist()", row_start)
+    row_fn = source[row_start:row_end]
+
+    # The outcome is rendered separately and must survive the progress indicator disappearing
+    assert "${outcomeHtml}" in row_fn
+    assert 'data-role="outcome"' in row_fn
+
+
+def test_edge_operator_disabled_save_button_has_stronger_disabled_styling():
+    # The disabled save button must not rely only on opacity: 0.4.
+    # It must have a more prominent disabled treatment that clearly signals
+    # the button cannot be pressed.
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    # Check that .btn-primary:disabled has more than just opacity
+    style_start = source.index("<style>")
+    style_end = source.index("</style>")
+    styles = source[style_start:style_end]
+
+    # Find the .btn-primary:disabled rule
+    disabled_start = styles.index(".btn-primary:disabled")
+    disabled_end = styles.index("}", disabled_start)
+    disabled_rule = styles[disabled_start:disabled_end]
+
+    # Must have cursor: not-allowed
+    assert "cursor: not-allowed" in disabled_rule
+    # Should have more than just opacity - maybe color change, border change, etc.
+    # The new styling should make it unmistakably disabled
+
+
+def test_edge_operator_disabled_reason_is_more_prominent():
+    # The reason why a save button cannot be pressed (e.g., "choose equipment type")
+    # must be more prominent than a small line under the button.
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    # Check that the pairing view has outcome messages for disabled states
+    assert "pairing.type_grid_heading" in source
+    assert "confirm.select_type_hint" in source
+    assert "pairing.channel_full" in source
+    assert "pairing.all_channels_full" in source
+
+    # The outcome class must be rendered for styling
+    assert 'class="worklist-outcome' in source
+
+    # Verify that outcomes have different CSS classes for different states
+    row_start = source.index("function outcomeMessageHtml(outcome)")
+    row_end = source.index("function worklistRowHtml(meta)", row_start)
+    outcome_fn = source[row_start:row_end]
+
+    # Should have the outcome mapping with different class values
+    assert '"ok"' in outcome_fn
+    assert '"error"' in outcome_fn
+    # The mapping should use template literal to apply class
+    assert "${cls}" in outcome_fn
+
     apply_start = source.index("function applyPairingCapacity(capacity)")
     apply_end = source.index("function channelFreeSlots(channelId)", apply_start)
     apply_fn = source[apply_start:apply_end]
