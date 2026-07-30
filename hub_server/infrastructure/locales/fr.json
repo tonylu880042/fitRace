@@ -120,5 +120,6 @@
   "stage.configure_hint": "Configurez la course depuis Game Admin.",
   "rank.champion": "Champion",
   "rank.second": "Deuxième",
-  "rank.third": "Troisième"
+  "rank.third": "Troisième",
+  "dashboard.stale_notice": "Cette page affiche une version obsolète. Veuillez la recharger."
 }

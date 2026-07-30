@@ -25,6 +25,7 @@ from hub_server.usecases.race_result_store import RaceResultStore
 from hub_server.usecases.race_results_query import RaceResultsQuery
 from hub_server.usecases.race_settings_store import RaceSettingsStore
 from hub_server.adapters.websocket_manager import WebSocketManager
+from hub_server.infrastructure.build_fingerprint import compute_build_fingerprint
 from hub_server.infrastructure.locales import DEFAULT_LOCALE, list_locales, load_locale
 from hub_server.usecases.update_checker import UpdateChecker
 from fitrace_common import wifi_manager
@@ -225,6 +226,14 @@ def get_real_ip() -> Optional[str]:
 def get_system_ip():
     ip = get_real_ip()
     return {"ip": ip or "127.0.0.1"}
+
+
+@app.get("/api/system/version")
+def get_system_version():
+    return {
+        "app_version": APP_VERSION,
+        "build_fingerprint": DASHBOARD_BUILD_FINGERPRINT,
+    }
 
 
 @app.get("/api/wifi/status")
@@ -1114,6 +1123,13 @@ static_dir = os.path.join(
 )
 if os.path.exists(static_dir):
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+# Computed once at startup: changes whenever the served dashboard HTML
+# changes, even between releases that don't bump APP_VERSION. Safe if the
+# file is missing -- see compute_build_fingerprint().
+DASHBOARD_BUILD_FINGERPRINT = compute_build_fingerprint(
+    os.path.join(static_dir, "index.html")
+)
 
 
 @app.get("/")

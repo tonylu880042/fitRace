@@ -120,5 +120,6 @@
   "stage.configure_hint": "請於 Game Admin 設定賽事。",
   "rank.champion": "冠軍",
   "rank.second": "亞軍",
-  "rank.third": "季軍"
+  "rank.third": "季軍",
+  "dashboard.stale_notice": "此頁面顯示的版本已過期，請重新整理頁面。"
 }

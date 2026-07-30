@@ -120,5 +120,6 @@
   "stage.configure_hint": "Configure the race from Game Admin.",
   "rank.champion": "Champion",
   "rank.second": "Runner-up",
-  "rank.third": "Third place"
+  "rank.third": "Third place",
+  "dashboard.stale_notice": "This page is showing an outdated version. Please reload."
 }

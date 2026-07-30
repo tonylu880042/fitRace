@@ -145,6 +145,21 @@ def test_health_check_endpoint():
     assert response.json() == {"status": "ok", "version": "0.1.2"}
 
 
+def test_system_version_endpoint_returns_app_version_and_build_fingerprint():
+    response = client.get("/api/system/version")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["app_version"] == "0.1.2"
+    # The build fingerprint is computed from the real dashboard asset at
+    # startup (see build_fingerprint tests for the differing-content /
+    # missing-file behaviour in isolation); here we just confirm it's a
+    # populated string, since its exact value depends on the checked-out
+    # index.html bytes.
+    assert isinstance(payload["build_fingerprint"], str)
+    assert payload["build_fingerprint"]
+
+
 def test_locales_endpoint_defaults_to_english_and_lists_supported_locales():
     response = client.get("/api/locales")
 

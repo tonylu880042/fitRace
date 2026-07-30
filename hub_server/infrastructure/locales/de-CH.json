@@ -120,5 +120,6 @@
   "stage.configure_hint": "Rennen in Game Admin konfigurieren.",
   "rank.champion": "Sieger",
   "rank.second": "Zweiter Platz",
-  "rank.third": "Dritter Platz"
+  "rank.third": "Dritter Platz",
+  "dashboard.stale_notice": "Diese Seite zeigt eine veraltete Version an. Bitte Seite neu laden."
 }

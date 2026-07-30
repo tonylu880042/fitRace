@@ -176,6 +176,28 @@
       letter-spacing: 0;
     }
 
+    .stale-page-notice {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 9999;
+      background: var(--crimson-red);
+      color: #fff;
+      text-align: center;
+      font-family: 'Oswald', sans-serif;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      font-weight: 700;
+      font-size: 0.95rem;
+      padding: 0.55rem 1rem;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+    }
+
+    .stale-page-notice[hidden] {
+      display: none;
+    }
+
     /* Main Content Area */
     main {
       display: flex;
@@ -2121,6 +2143,14 @@
   </style>
 </head>
 <body>
+
+  <div
+    class="stale-page-notice"
+    id="stale-page-notice"
+    role="alert"
+    hidden
+    data-i18n="dashboard.stale_notice"
+  >This page is showing an outdated version. Please reload.</div>
 
   <div class="app-container">
     
@@ -4144,6 +4174,11 @@
       } catch (err) {
         console.error("Failed to fetch nodes:", err);
       }
+      // fetchNodes() already runs on the dashboard's existing poll cadence
+      // (initial load, websocket reconnect, and the offline fallback
+      // timer), so the staleness check rides along here instead of a
+      // dedicated timer.
+      checkBuildFreshness();
     }
 
     function renderStations(data) {
@@ -4570,16 +4605,50 @@
 
 
 
+    // The build fingerprint this tab loaded with. Set once, on the first
+    // successful /api/system/version response, then compared against every
+    // later response by checkBuildFreshness() to detect a stale tab.
+    let initialBuildFingerprint = null;
+
     async function loadHubVersion() {
       const versionEl = document.getElementById("hub-version");
-      if (!versionEl) return;
       try {
-        const res = await fetch("/health", { cache: "no-store" });
+        const res = await fetch("/api/system/version", { cache: "no-store" });
         const data = await res.json();
-        if (!res.ok || !data.version) return;
-        versionEl.innerText = `v${data.version}`;
+        if (!res.ok || !data.app_version) {
+          if (versionEl) versionEl.innerText = "v--";
+          return;
+        }
+        if (versionEl) versionEl.innerText = `v${data.app_version}`;
+        if (initialBuildFingerprint === null) {
+          initialBuildFingerprint = data.build_fingerprint || null;
+        }
       } catch (err) {
-        versionEl.innerText = "v--";
+        if (versionEl) versionEl.innerText = "v--";
+      }
+    }
+
+    function showStalePageNotice() {
+      const notice = document.getElementById("stale-page-notice");
+      if (notice) notice.hidden = false;
+    }
+
+    // Re-checked on the dashboard's existing poll cadence (see fetchNodes).
+    // This only ever reveals the notice -- it never reloads the page. This
+    // screen is projected during live races, so a surprise reload mid-race
+    // would be worse than a stale label; the viewer must reload it by hand.
+    async function checkBuildFreshness() {
+      if (!initialBuildFingerprint) return;
+      try {
+        const res = await fetch("/api/system/version", { cache: "no-store" });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.build_fingerprint && data.build_fingerprint !== initialBuildFingerprint) {
+          showStalePageNotice();
+        }
+      } catch (err) {
+        // Transient network errors shouldn't flip the notice; the next
+        // poll will try again.
       }
     }
 

@@ -120,5 +120,6 @@
   "stage.configure_hint": "Konfigurera loppet från Game Admin.",
   "rank.champion": "Mästare",
   "rank.second": "Tvåa",
-  "rank.third": "Trea"
+  "rank.third": "Trea",
+  "dashboard.stale_notice": "Den här sidan visar en föråldrad version. Ladda om sidan."
 }
