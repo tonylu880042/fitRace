@@ -767,7 +767,21 @@
         grid-template-columns: 1fr;
       }
 
+      /* On a phone/tablet the operator wants the work area -- diagnostics,
+         the add-device button, equipment cards, the pairing worklist --
+         first, not buried below the Wi-Fi/Central Hub/UART monitor sidebar.
+         wifi-column and edge-column are both direct grid items of
+         .workspace, so a plain `order` swap is enough (no display:contents
+         trick needed here, unlike the two-level-nested reorder on
+         /maintenance). Desktop's two-column layout above 820px is
+         untouched -- source order there still puts the sidebar first,
+         which CSS grid's column placement already overrides visually. */
+      .edge-column {
+        order: 1;
+      }
+
       .wifi-column {
+        order: 2;
         position: static;
       }
 

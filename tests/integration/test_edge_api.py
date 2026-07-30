@@ -220,6 +220,42 @@ def test_edge_operator_workspace_is_two_columns_and_stacks_on_narrow_screens():
     assert "grid-template-columns: 1fr" in source
 
 
+def test_edge_operator_narrow_screens_put_the_work_area_before_the_sidebar():
+    # On a phone/tablet the operator wants diagnostics/add-device/equipment
+    # cards/the pairing worklist first, not buried below the Wi-Fi/Central
+    # Hub/UART monitor sidebar that source order puts first in the DOM.
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    mobile_start = source.index("@media (max-width: 820px)")
+    mobile_end = source.index("</style>", mobile_start)
+    mobile_source = source[mobile_start:mobile_end]
+
+    assert ".edge-column {" in mobile_source
+    assert ".wifi-column {" in mobile_source
+    edge_column_rule_index = mobile_source.index(".edge-column {")
+    wifi_column_rule_index = mobile_source.index(".wifi-column {")
+
+    edge_column_rule = mobile_source[
+        edge_column_rule_index : mobile_source.index("}", edge_column_rule_index)
+    ]
+    wifi_column_rule = mobile_source[
+        wifi_column_rule_index : mobile_source.index("}", wifi_column_rule_index)
+    ]
+    assert "order: 1;" in edge_column_rule
+    assert "order: 2;" in wifi_column_rule
+
+    # wifi-column and edge-column are direct children of #edge-workspace, so
+    # this order swap alone is enough -- confirm that DOM relationship still
+    # holds (a nesting change would silently break the CSS `order` swap).
+    workspace_index = source.index('id="edge-workspace"')
+    wifi_column_dom_index = source.index('id="wifi-column"', workspace_index)
+    edge_column_dom_index = source.index('id="edge-column"', workspace_index)
+    between = source[wifi_column_dom_index:edge_column_dom_index]
+    # no nested "workspace"/other wrapping container id between the two
+    assert 'id="edge-workspace"' not in between
+
+
 def test_edge_operator_disconnect_action_stacks_before_the_main_mobile_breakpoint():
     client = TestClient(edge_app_module.app)
 
