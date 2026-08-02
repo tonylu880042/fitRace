@@ -220,6 +220,13 @@
   "pairing.outcome_failed": "Connect failed",
   "pairing.done": "Done — return home",
   "pairing.finish_failed": "Could not finish pairing",
+  "pairing.save_all_connect": "Save all & connect",
+  "pairing.batch_progress": "Processing devices...",
+  "pairing.batch_stop": "Stop",
+  "pairing.batch_complete": "Complete",
+  "pairing.batch_stopped": "Stopped",
+  "pairing.batch_all_done": "All devices processed successfully",
+  "pairing.batch_failed_count": "{count} device(s) failed",
   "confirm.suggested_tag": "Suggested",
   "confirm.select_type_hint": "Choose the equipment type to continue"
 }

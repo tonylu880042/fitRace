@@ -220,6 +220,13 @@
   "pairing.outcome_failed": "連線失敗",
   "pairing.done": "完成——返回首頁",
   "pairing.finish_failed": "無法完成配對",
+  "pairing.save_all_connect": "全部儲存並連線",
+  "pairing.batch_progress": "處理中...",
+  "pairing.batch_stop": "停止",
+  "pairing.batch_complete": "完成",
+  "pairing.batch_stopped": "已停止",
+  "pairing.batch_all_done": "所有設備已成功處理",
+  "pairing.batch_failed_count": "{count} 台設備失敗",
   "confirm.suggested_tag": "建議",
   "confirm.select_type_hint": "請選擇設備類型"
 }

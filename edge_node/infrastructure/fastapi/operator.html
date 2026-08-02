@@ -495,6 +495,108 @@
       letter-spacing: 0.05em;
     }
 
+    .batch-progress-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+
+    .batch-progress-overlay[hidden] {
+      display: none;
+    }
+
+    .batch-progress-modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 32px;
+      max-width: 500px;
+      width: 90vw;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    }
+
+    .batch-progress-title {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 16px;
+      color: var(--text);
+    }
+
+    .batch-progress-info {
+      margin-bottom: 24px;
+      padding: 16px;
+      background: var(--surface-2);
+      border-left: 3px solid var(--accent);
+      border-radius: 2px;
+    }
+
+    .batch-progress-count {
+      font-size: 14px;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    .batch-progress-device {
+      font-size: 16px;
+      color: var(--text);
+      font-weight: 600;
+      margin-bottom: 8px;
+      word-break: break-all;
+    }
+
+    .batch-progress-step {
+      font-size: 13px;
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .batch-progress-results {
+      margin-top: 20px;
+      padding: 12px;
+      background: var(--surface-2);
+      border-radius: 2px;
+      font-size: 13px;
+      color: var(--text);
+    }
+
+    .batch-progress-results.error {
+      border-left: 3px solid var(--danger);
+    }
+
+    .batch-progress-controls {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+      margin-top: 24px;
+    }
+
+    .batch-progress-controls button {
+      padding: 10px 20px;
+      font-size: 13px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+      border-radius: 2px;
+    }
+
+    .batch-progress-controls button:hover {
+      background: var(--surface-2);
+    }
+
+    .batch-progress-controls button.stop {
+      border-color: var(--danger);
+      color: var(--danger);
+    }
+
+    .batch-progress-controls button.stop:hover {
+      background: rgba(255, 75, 75, 0.1);
+    }
+
     .wizard-actions {
       display: flex;
       gap: 8px;
@@ -953,10 +1055,25 @@
           <div id="pairing-worklist" class="card-grid"></div>
           <div class="message" id="pairing-message"></div>
           <div class="wizard-actions">
+            <button type="button" id="pairing-save-all-btn" class="btn-primary" data-i18n="pairing.save_all_connect">Save all & connect</button>
             <button type="button" id="pairing-rescan-btn" class="btn-secondary" data-i18n="pairing.rescan">Rescan</button>
             <button type="button" id="pairing-cancel-btn" class="btn-secondary" data-i18n="pairing.cancel">Cancel</button>
           </div>
           <button type="button" id="pairing-done-btn" class="btn-primary" data-i18n="pairing.done">Done — return home</button>
+          <div id="batch-progress-overlay" class="batch-progress-overlay" hidden aria-live="polite" aria-atomic="true">
+            <div class="batch-progress-modal">
+              <div class="batch-progress-title" data-i18n="pairing.batch_progress">Processing devices...</div>
+              <div class="batch-progress-info">
+                <div class="batch-progress-count" id="batch-progress-count">0 of 0</div>
+                <div class="batch-progress-device" id="batch-progress-device">—</div>
+                <div class="batch-progress-step" id="batch-progress-step">—</div>
+              </div>
+              <div class="batch-progress-results" id="batch-progress-results" hidden></div>
+              <div class="batch-progress-controls">
+                <button type="button" id="batch-progress-stop-btn" class="stop" data-i18n="pairing.batch_stop">Stop</button>
+              </div>
+            </div>
+          </div>
         </main>
       </div>
     </div>
@@ -2162,7 +2279,6 @@
         // client's own state.
         meta.channelId = bindResult.binding?.antenna_channel || meta.channelId;
         meta.bound = true;
-        progressEl.textContent = t("pairing.connecting_indicator");
       } catch (error) {
         meta.binding = false;
         meta.bindError = error.message;
@@ -2188,6 +2304,103 @@
       pairingCandidateStatus.set(mac, { ...status, connected: Boolean(result.connected) });
       meta.probing = false;
       renderPairingWorklist();
+    }
+
+    let batchProgressStop = false;
+
+    async function saveAndConnectAll() {
+      // Find all unbounded rows with equipment type selected
+      const candidates = [...pairingRowMeta.values()].filter(
+        (meta) => !meta.bound && meta.equipmentType
+      );
+      if (candidates.length === 0) return;
+
+      const overlay = document.getElementById("batch-progress-overlay");
+      const countEl = document.getElementById("batch-progress-count");
+      const deviceEl = document.getElementById("batch-progress-device");
+      const stepEl = document.getElementById("batch-progress-step");
+      const resultsEl = document.getElementById("batch-progress-results");
+      const stopBtn = document.getElementById("batch-progress-stop-btn");
+
+      batchProgressStop = false;
+      let successful = 0;
+      let failed = 0;
+      const failures = [];
+
+      try {
+        overlay.hidden = false;
+        stopBtn.disabled = false;
+
+        for (let i = 0; i < candidates.length; i++) {
+          if (batchProgressStop) break;
+
+          const meta = candidates[i];
+          const total = candidates.length;
+
+          countEl.textContent = `${i} of ${total}`;
+          deviceEl.textContent = meta.displayName || meta.mac;
+          stepEl.textContent = t("pairing.saving_indicator");
+          resultsEl.hidden = true;
+
+          try {
+            // Save (bind)
+            const bindResult = await bindCandidate(
+              meta.mac,
+              meta.equipmentType,
+              meta.displayName,
+              meta.channelId
+            );
+            applyPairingCapacity(bindResult.capacity);
+            meta.channelId = bindResult.binding?.antenna_channel || meta.channelId;
+            meta.bound = true;
+
+            // Connect
+            stepEl.textContent = t("pairing.connecting_indicator");
+            await retryConnect(meta.mac);
+
+            successful++;
+          } catch (error) {
+            failed++;
+            failures.push({
+              name: meta.displayName || meta.mac,
+              error: error.message,
+            });
+            meta.binding = false;
+            meta.bindError = error.message;
+          }
+
+          renderPairingWorklist();
+        }
+
+        // Show results
+        countEl.textContent = `${successful} of ${candidates.length}`;
+        if (failed > 0) {
+          resultsEl.className = "batch-progress-results error";
+          resultsEl.innerHTML = `
+            <strong>${escapeHtml(t("pairing.batch_failed_count", { count: failed }))}</strong>
+            <ul style="margin-top: 8px; margin-left: 16px;">
+              ${failures
+                .map(
+                  (f) =>
+                    `<li style="margin-bottom: 4px;">${escapeHtml(f.name)}: ${escapeHtml(f.error)}</li>`
+                )
+                .join("")}
+            </ul>
+          `;
+        } else {
+          resultsEl.className = "batch-progress-results";
+          resultsEl.innerHTML = `<strong>${escapeHtml(t("pairing.batch_all_done"))}</strong>`;
+        }
+        resultsEl.hidden = false;
+        deviceEl.textContent = batchProgressStop ? t("pairing.batch_stopped") : t("pairing.batch_complete");
+        stepEl.textContent = "";
+      } finally {
+        stopBtn.disabled = true;
+      }
+    }
+
+    function handleBatchProgressStop() {
+      batchProgressStop = true;
     }
 
     function handlePairingWorklistClick(event) {
@@ -2442,6 +2655,8 @@
       await goHome();
     });
     document.getElementById("pairing-done-btn").addEventListener("click", finishPairing);
+    document.getElementById("pairing-save-all-btn").addEventListener("click", saveAndConnectAll);
+    document.getElementById("batch-progress-stop-btn").addEventListener("click", handleBatchProgressStop);
     document.getElementById("pairing-worklist").addEventListener("click", handlePairingWorklistClick);
     document.getElementById("pairing-worklist").addEventListener("input", handlePairingWorklistInput);
 

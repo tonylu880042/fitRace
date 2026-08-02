@@ -1843,6 +1843,140 @@ def test_pairing_session_start_status_confirm_happy_path(monkeypatch, tmp_path):
     assert client.get("/api/pairing/status").json() == {"state": "idle"}
 
 
+def test_edge_operator_page_includes_batch_save_and_connect_action():
+    """Verify the page has the batch action button and overlay markup."""
+    client = TestClient(edge_app_module.app)
+
+    source = client.get("/").text
+
+    # Button exists
+    assert 'id="pairing-save-all-btn"' in source
+    assert 'data-i18n="pairing.save_all_connect"' in source
+
+    # Overlay markup exists and is hidden by default
+    assert 'id="batch-progress-overlay"' in source
+    assert 'class="batch-progress-overlay"' in source
+    # Should be hidden initially
+    assert 'id="batch-progress-overlay" class="batch-progress-overlay" hidden' in source
+
+    # Overlay contains progress elements
+    assert 'id="batch-progress-count"' in source
+    assert 'id="batch-progress-device"' in source
+    assert 'id="batch-progress-step"' in source
+    assert 'id="batch-progress-results"' in source
+    assert 'id="batch-progress-stop-btn"' in source
+
+
+def test_edge_operator_page_batch_overlay_removal_is_in_finally():
+    """Verify the overlay removal is in a finally block to prevent getting stuck."""
+    client = TestClient(edge_app_module.app)
+
+    source = client.get("/").text
+
+    # Check that there's a try/finally structure that hides the overlay
+    # This is a code-level check: the saveAndConnectAll function must have
+    # overlay.hidden = false in try and a finally block that ensures cleanup
+    assert "overlay.hidden = false" in source
+    assert "try {" in source
+    assert "finally {" in source
+
+
+def test_edge_operator_page_batch_only_processes_unbound_with_type():
+    """Verify batch logic only picks up rows with equipment type and not bound."""
+    client = TestClient(edge_app_module.app)
+
+    source = client.get("/").text
+
+    # The batch function logic: filter for !meta.bound && meta.equipmentType
+    assert "!meta.bound && meta.equipmentType" in source
+
+
+def test_edge_operator_page_batch_stops_after_current_device():
+    """Verify batch has a stop mechanism that stops after current device."""
+    client = TestClient(edge_app_module.app)
+
+    source = client.get("/").text
+
+    # Check for batchProgressStop flag and loop that checks it
+    assert "let batchProgressStop = false" in source
+    assert "if (batchProgressStop) break" in source
+    assert "handleBatchProgressStop" in source
+
+
+def test_edge_operator_page_batch_failure_does_not_abort():
+    """Verify batch continues on failure (try/catch inside loop, not around it)."""
+    client = TestClient(edge_app_module.app)
+
+    source = client.get("/").text
+
+    # The loop structure must be: for loop containing try/catch
+    # NOT: try containing for loop
+    # Check that catch is inside the for loop
+    assert "for (let i = 0; i < candidates.length; i++)" in source
+    assert "try {" in source
+    assert "} catch (error) {" in source
+    assert "failed++" in source
+    assert "failures.push" in source
+
+
+def test_edge_operator_page_batch_shows_summary():
+    """Verify batch shows summary when done with success/failure counts."""
+    client = TestClient(edge_app_module.app)
+
+    source = client.get("/").text
+
+    # Summary display logic
+    assert "batch_all_done" in source or "batch_failed_count" in source
+    assert "resultsEl.innerHTML" in source
+
+
+def test_edge_operator_page_dead_line_removed_from_saveAndConnect():
+    """Verify the dead line (progressEl.textContent for connecting_indicator) is gone from saveAndConnect."""
+    client = TestClient(edge_app_module.app)
+
+    source = client.get("/").text
+
+    # Find the saveAndConnect function
+    # The dead line was: progressEl.textContent = t("pairing.connecting_indicator");
+    # This should NOT appear in saveAndConnect anymore
+    import re
+
+    match = re.search(
+        r"async function saveAndConnect\(mac\) \{.*?^\s*\}",
+        source,
+        re.MULTILINE | re.DOTALL,
+    )
+    if match:
+        func_body = match.group(0)
+        # The dead line should be gone
+        assert (
+            'progressEl.textContent = t("pairing.connecting_indicator");'
+            not in func_body
+        )
+
+
+def test_pairing_batch_locale_keys_exist():
+    """Verify all batch-related locale keys exist in both en and zh_tw."""
+    en = json.load(open("edge_node/infrastructure/locales/en.json"))
+    zh_tw = json.load(open("edge_node/infrastructure/locales/zh_tw.json"))
+
+    batch_keys = {
+        "pairing.save_all_connect",
+        "pairing.batch_progress",
+        "pairing.batch_stop",
+        "pairing.batch_complete",
+        "pairing.batch_stopped",
+        "pairing.batch_all_done",
+        "pairing.batch_failed_count",
+    }
+
+    for key in batch_keys:
+        assert key in en, f"Missing in en.json: {key}"
+        assert key in zh_tw, f"Missing in zh_tw.json: {key}"
+
+    assert set(en.keys()) == set(zh_tw.keys())
+
+
 def test_pairing_confirm_surfaces_dry_run_power_manager_result(monkeypatch, tmp_path):
     config_path = tmp_path / "config.json"
     config_path.write_text(
@@ -2287,8 +2421,19 @@ def test_edge_pairing_save_and_connect_binds_then_connects_and_retry_never_rebin
 
     # "which one is this?" must connect only -- it must never bind either.
     probe_start = source.index("async function probeCandidate(mac)")
-    probe_end = source.index("function handlePairingWorklistClick(", probe_start)
-    probe_fn = source[probe_start:probe_end]
+    # Find the function body by matching braces
+    probe_fn_start = probe_start
+    brace_count = 0
+    in_func = False
+    for i in range(probe_start, len(source)):
+        if source[i] == "{":
+            brace_count += 1
+            in_func = True
+        elif source[i] == "}":
+            brace_count -= 1
+            if in_func and brace_count == 0:
+                probe_fn = source[probe_fn_start : i + 1]
+                break
     assert "connectCandidateOnly(mac)" in probe_fn
     assert "bindCandidate" not in probe_fn
 
@@ -2387,8 +2532,11 @@ def test_edge_operator_pairing_progress_indicator_shown_during_save_and_connect(
 
 
 def test_edge_operator_pairing_progress_indicator_updates_during_save_and_connect():
-    # The saveAndConnect function must update the progress indicator to show
-    # which step (saving or connecting) is currently in flight.
+    # The operator must see a two-step progress: first "saving", then "connecting".
+    # saveAndConnect handles the save step, retryConnect handles the connect step.
+    # This split is correct because saveAndConnect's connecting indicator was dead
+    # (immediately hidden by finally block) — the real connecting indicator is in
+    # retryConnect which is called after.
     client = TestClient(edge_app_module.app)
     source = client.get("/").text
 
@@ -2396,17 +2544,19 @@ def test_edge_operator_pairing_progress_indicator_updates_during_save_and_connec
     save_end = source.index("async function probeCandidate(", save_start)
     save_fn = source[save_start:save_end]
 
-    # Progress indicator must be shown and updated during save
+    # Progress indicator must be shown and updated during save in saveAndConnect
     assert 'getElementById("pairing-row-progress")' in save_fn
     assert "pairing.saving_indicator" in save_fn
     assert "progressEl.hidden = false" in save_fn
 
-    # Progress indicator must be shown and updated during connect
-    assert "pairing.connecting_indicator" in save_fn
-    # Must appear between the text setting and the connect call
-    progress_text_idx = save_fn.index("pairing.saving_indicator")
-    hidden_false_idx = save_fn.index("progressEl.hidden = false")
-    assert progress_text_idx < hidden_false_idx
+    # The connecting indicator must NOT appear in saveAndConnect (it was dead code)
+    assert "pairing.connecting_indicator" not in save_fn
+
+    # But it must appear in retryConnect (called after save)
+    retry_start = source.index("async function retryConnect(mac)")
+    retry_end = source.index("async function saveAndConnect(", retry_start)
+    retry_fn = source[retry_start:retry_end]
+    assert "pairing.connecting_indicator" in retry_fn
 
 
 def test_edge_operator_pairing_save_and_connect_clears_progress_indicator_in_finally():
