@@ -86,13 +86,19 @@ MOVING_SPEED_THRESHOLD_KPH = 0.5
 # Shorter timeout for CONNECT_ADD ACK only (docs/Dual_Central_Board_Manager_設計文件.md line 125).
 # The timeout covers only the command ACK itself (CONNECT_ADD:OK;), not the
 # actual BLE link establishment which happens asynchronously with a fixed 3
-# second UCM_BLE_CONNECT_GRACE_MS wait. If the board is slow to ACK,
-# _classify_connect_add_reply sees no matching reply and returns "unrecognized",
-# surfacing as "added but not confirmed connected" to the operator rather than
-# a silent failure. That is an acceptable, visible outcome. A scan command
-# genuinely needs the long timeout window (command_timeout_sec), so this
-# separate constant applies only to connect_add ACKs.
-CONNECT_ADD_ACK_TIMEOUT_SEC = 0.5
+# second UCM_BLE_CONNECT_GRACE_MS wait. CRITICAL: _read_lines in command_runner.py
+# uses a FIXED wait loop (while time.monotonic() < deadline) — no early exit
+# when data arrives. This timeout is not a maximum but a full blocking wait:
+# if the ACK arrives at 1.2s but timeout is 0.5s, it is never seen. The UART
+# carries 250ms-interval FTMS telemetry from up to 3 connected devices on the
+# same port during pairing; board busyness requires headroom. 1.5s saves 3.5s
+# per device vs the 5s command_timeout_sec, still yielding good throughput.
+# If the board is slow to ACK, _classify_connect_add_reply returns "unrecognized",
+# surfacing as "added but not confirmed connected" to the operator — an acceptable,
+# visible outcome. A scan command genuinely needs the full timeout window, so
+# this constant applies only to connect_add ACKs. Future: replace fixed wait
+# with early-exit _read_lines variant to improve responsiveness.
+CONNECT_ADD_ACK_TIMEOUT_SEC = 1.5
 
 
 class PairingSessionError(ValueError):

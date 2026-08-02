@@ -2321,6 +2321,7 @@
       const stepEl = document.getElementById("batch-progress-step");
       const resultsEl = document.getElementById("batch-progress-results");
       const stopBtn = document.getElementById("batch-progress-stop-btn");
+      const messageEl = document.getElementById("pairing-message");
 
       batchProgressStop = false;
       let successful = 0;
@@ -2372,29 +2373,26 @@
           renderPairingWorklist();
         }
 
-        // Show results
-        countEl.textContent = `${successful} of ${candidates.length}`;
+        // Show results in the message area (overlay will close in finally)
         if (failed > 0) {
-          resultsEl.className = "batch-progress-results error";
-          resultsEl.innerHTML = `
-            <strong>${escapeHtml(t("pairing.batch_failed_count", { count: failed }))}</strong>
-            <ul style="margin-top: 8px; margin-left: 16px;">
-              ${failures
-                .map(
-                  (f) =>
-                    `<li style="margin-bottom: 4px;">${escapeHtml(f.name)}: ${escapeHtml(f.error)}</li>`
-                )
-                .join("")}
-            </ul>
+          messageEl.innerHTML = `
+            <div style="color: var(--danger);">
+              <strong>${escapeHtml(t("pairing.batch_failed_count", { count: failed }))}</strong>
+              <ul style="margin-top: 8px; margin-left: 16px;">
+                ${failures
+                  .map(
+                    (f) =>
+                      `<li style="margin-bottom: 4px;">${escapeHtml(f.name)}: ${escapeHtml(f.error)}</li>`
+                  )
+                  .join("")}
+              </ul>
+            </div>
           `;
         } else {
-          resultsEl.className = "batch-progress-results";
-          resultsEl.innerHTML = `<strong>${escapeHtml(t("pairing.batch_all_done"))}</strong>`;
+          messageEl.innerHTML = `<strong style="color: var(--ok);">${escapeHtml(t("pairing.batch_all_done"))}</strong>`;
         }
-        resultsEl.hidden = false;
-        deviceEl.textContent = batchProgressStop ? t("pairing.batch_stopped") : t("pairing.batch_complete");
-        stepEl.textContent = "";
       } finally {
+        overlay.hidden = true;
         stopBtn.disabled = true;
       }
     }

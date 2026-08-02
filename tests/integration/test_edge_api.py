@@ -1868,17 +1868,45 @@ def test_edge_operator_page_includes_batch_save_and_connect_action():
 
 
 def test_edge_operator_page_batch_overlay_removal_is_in_finally():
-    """Verify the overlay removal is in a finally block to prevent getting stuck."""
-    client = TestClient(edge_app_module.app)
+    """Verify the overlay removal is in a finally block to prevent getting stuck.
 
+    Extract the saveAndConnectAll function body and verify:
+    - overlay.hidden = false in the try block (to show)
+    - overlay.hidden = true in the finally block (to dismiss)
+    This ensures the overlay is always dismissed on success, failure, exception, or stop.
+    """
+    client = TestClient(edge_app_module.app)
     source = client.get("/").text
 
-    # Check that there's a try/finally structure that hides the overlay
-    # This is a code-level check: the saveAndConnectAll function must have
-    # overlay.hidden = false in try and a finally block that ensures cleanup
-    assert "overlay.hidden = false" in source
-    assert "try {" in source
-    assert "finally {" in source
+    # Extract saveAndConnectAll function by matching braces
+    func_start = source.index("async function saveAndConnectAll()")
+    brace_count = 0
+    in_func = False
+    func_end = 0
+    for i in range(func_start, len(source)):
+        if source[i] == "{":
+            brace_count += 1
+            in_func = True
+        elif source[i] == "}":
+            brace_count -= 1
+            if in_func and brace_count == 0:
+                func_end = i + 1
+                break
+
+    func_body = source[func_start : func_end]
+
+    # Verify overlay.hidden = false in try block
+    try_block_start = func_body.index("try {")
+    finally_block_start = func_body.index("finally {", try_block_start)
+    try_section = func_body[try_block_start:finally_block_start]
+    assert "overlay.hidden = false" in try_section, "Must show overlay in try block"
+
+    # Verify overlay.hidden = true in finally block (the critical fix)
+    finally_block_end = func_body.index("}", finally_block_start + len("finally {"))
+    finally_section = func_body[finally_block_start : finally_block_end + 1]
+    assert "overlay.hidden = true" in finally_section, (
+        "overlay.hidden = true MUST be in finally block to prevent getting stuck"
+    )
 
 
 def test_edge_operator_page_batch_only_processes_unbound_with_type():
@@ -1920,14 +1948,19 @@ def test_edge_operator_page_batch_failure_does_not_abort():
 
 
 def test_edge_operator_page_batch_shows_summary():
-    """Verify batch shows summary when done with success/failure counts."""
+    """Verify batch shows summary when done with success/failure counts.
+
+    Summary is displayed in the persistent #pairing-message area (not the
+    overlay, which is dismissed in finally block). This allows operator to
+    see results after overlay closes.
+    """
     client = TestClient(edge_app_module.app)
 
     source = client.get("/").text
 
-    # Summary display logic
+    # Summary display logic — now uses messageEl instead of overlay
     assert "batch_all_done" in source or "batch_failed_count" in source
-    assert "resultsEl.innerHTML" in source
+    assert "messageEl.innerHTML" in source
 
 
 def test_edge_operator_page_dead_line_removed_from_saveAndConnect():
