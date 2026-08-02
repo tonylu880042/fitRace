@@ -4638,12 +4638,22 @@
     // screen is projected during live races, so a surprise reload mid-race
     // would be worse than a stale label; the viewer must reload it by hand.
     async function checkBuildFreshness() {
-      if (!initialBuildFingerprint) return;
       try {
         const res = await fetch("/api/system/version", { cache: "no-store" });
         if (!res.ok) return;
         const data = await res.json();
-        if (data.build_fingerprint && data.build_fingerprint !== initialBuildFingerprint) {
+        if (!data.build_fingerprint) return;
+        if (initialBuildFingerprint === null) {
+          // loadHubVersion()'s single startup fetch can fail (a venue
+          // Wi-Fi blip is enough) and never record a baseline -- without
+          // this, staleness detection would stay silently disabled for the
+          // rest of the tab's life, which is exactly what it exists to
+          // catch. Adopt this response as the baseline and skip the
+          // compare on this pass; there is nothing yet to compare it to.
+          initialBuildFingerprint = data.build_fingerprint;
+          return;
+        }
+        if (data.build_fingerprint !== initialBuildFingerprint) {
           showStalePageNotice();
         }
       } catch (err) {

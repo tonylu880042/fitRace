@@ -73,6 +73,48 @@ def test_dashboard_staleness_check_compares_against_the_stored_starting_fingerpr
     assert guard_index < call_index
 
 
+def test_dashboard_freshness_check_self_heals_when_no_baseline_yet_recorded():
+    # If the single loadHubVersion() call at page load fails (a venue Wi-Fi
+    # blip is enough), initialBuildFingerprint is never set, and the old
+    # `if (!initialBuildFingerprint) return;` guard disabled staleness
+    # detection for the rest of the tab's life. checkBuildFreshness() must
+    # instead adopt its own successful response as the baseline instead of
+    # bailing out forever.
+    source = _read("index.html")
+    fn = _extract_function(
+        source,
+        "async function checkBuildFreshness()",
+        "let dashboardInitialized = false;",
+    )
+    fn = _strip_full_line_comments(fn)
+
+    # The permanent bail-out guard must be gone.
+    assert "if (!initialBuildFingerprint) return;" not in fn
+
+    # A good response with no baseline yet recorded must adopt it.
+    assert "initialBuildFingerprint === null" in fn
+    assert "initialBuildFingerprint = data.build_fingerprint;" in fn
+
+
+def test_dashboard_freshness_check_does_not_flag_the_pass_that_seeds_the_baseline():
+    # Adopting a fresh baseline must not immediately compare it against
+    # itself and fire the stale notice on the very same pass -- the seeding
+    # branch must return before reaching the comparison.
+    source = _read("index.html")
+    fn = _extract_function(
+        source,
+        "async function checkBuildFreshness()",
+        "let dashboardInitialized = false;",
+    )
+    fn = _strip_full_line_comments(fn)
+
+    seed_index = fn.index("initialBuildFingerprint = data.build_fingerprint;")
+    seed_return_index = fn.index("return;", seed_index)
+    compare_index = fn.index("data.build_fingerprint !== initialBuildFingerprint")
+    notice_index = fn.index("showStalePageNotice()")
+    assert seed_index < seed_return_index < compare_index < notice_index
+
+
 def test_dashboard_staleness_check_is_wired_into_the_existing_fetchNodes_poll():
     source = _read("index.html")
     fn = _extract_function(
