@@ -1953,6 +1953,25 @@
       });
     }
 
+    // Called after each successful batch bind (see saveAndConnectAll) for
+    // every row not yet processed. A row's own choice -- whether the
+    // operator's explicit pick or the preselect's -- survives as long as it
+    // still has room; only a row whose selected channel just became full
+    // gets moved, and only onto another channel that still has room (never
+    // silently onto a channel that's also full -- that row's own "channel
+    // full"/"all channels full" messaging takes over instead).
+    function relocateFullChannelSelections(rows) {
+      rows.forEach((meta) => {
+        if (channelFreeSlots(meta.channelId) !== 0) return;
+        const withRoom = channelOptionsForMeta(meta).filter((option) => !option.full);
+        if (!withRoom.length) return;
+        const heardWithRoom = withRoom
+          .filter((option) => option.heard)
+          .sort((a, b) => (b.rssi ?? -999) - (a.rssi ?? -999));
+        meta.channelId = (heardWithRoom[0] || withRoom[0]).channelId;
+      });
+    }
+
     // Default channel for a not-yet-bound row: the scan's strongest channel
     // if it still has room; otherwise the best-RSSI channel that heard the
     // device and has room; otherwise any other channel with room at all
@@ -2054,6 +2073,20 @@
       };
       const [cls, key] = byOutcome[outcome] || ["error", "pairing.outcome_failed"];
       return `<div class="worklist-outcome ${cls}" data-role="outcome">${escapeHtml(t(key))}</div>`;
+    }
+
+    // Failure text for the batch summary -- reuses the same outcome ->
+    // locale-key mapping outcomeMessageHtml uses, so "why" a device failed
+    // (board full, no ACK, HTTP error) reads the same word the per-row
+    // outcome badge already shows.
+    function outcomeFailureText(outcome) {
+      const key = {
+        full: "pairing.outcome_full",
+        unknown_cmd: "pairing.outcome_unknown_cmd",
+        unrecognized: "pairing.outcome_failed",
+        error: "pairing.outcome_failed",
+      }[outcome] || "pairing.outcome_failed";
+      return t(key);
     }
 
     function worklistRowHtml(meta) {
@@ -2245,20 +2278,22 @@
 
     async function retryConnect(mac) {
       const meta = pairingRowMeta.get(mac);
-      if (!meta || meta.connecting) return;
+      if (!meta || meta.connecting) return null;
       meta.connecting = true;
       renderPairingWorklist();
       const progressEl = document.getElementById("pairing-row-progress");
+      let result;
       try {
         progressEl.textContent = t("pairing.connecting_indicator");
         progressEl.hidden = false;
-        const result = await connectCandidateOnly(mac);
+        result = await connectCandidateOnly(mac);
         meta.connectOutcome = result.outcome;
       } finally {
         progressEl.hidden = true;
       }
       meta.connecting = false;
       renderPairingWorklist();
+      return result;
     }
 
     async function saveAndConnect(mac) {
@@ -2338,7 +2373,7 @@
           const meta = candidates[i];
           const total = candidates.length;
 
-          countEl.textContent = `${i} of ${total}`;
+          countEl.textContent = t("pairing.batch_progress_count", { done: i + 1, total });
           deviceEl.textContent = meta.displayName || meta.mac;
           stepEl.textContent = t("pairing.saving_indicator");
           resultsEl.hidden = true;
@@ -2355,11 +2390,23 @@
             meta.channelId = bindResult.binding?.antenna_channel || meta.channelId;
             meta.bound = true;
 
+            // A bind just consumed a slot -- re-check every row still ahead
+            // in the queue in case its own selected channel just filled up.
+            relocateFullChannelSelections(candidates.slice(i + 1));
+
             // Connect
             stepEl.textContent = t("pairing.connecting_indicator");
-            await retryConnect(meta.mac);
+            const connectResult = await retryConnect(meta.mac);
 
-            successful++;
+            if (connectResult && connectResult.connected === true) {
+              successful++;
+            } else {
+              failed++;
+              failures.push({
+                name: meta.displayName || meta.mac,
+                error: outcomeFailureText(connectResult ? connectResult.outcome : "error"),
+              });
+            }
           } catch (error) {
             failed++;
             failures.push({

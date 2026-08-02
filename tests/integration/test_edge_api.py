@@ -1893,7 +1893,7 @@ def test_edge_operator_page_batch_overlay_removal_is_in_finally():
                 func_end = i + 1
                 break
 
-    func_body = source[func_start : func_end]
+    func_body = source[func_start:func_end]
 
     # Verify overlay.hidden = false in try block
     try_block_start = func_body.index("try {")
@@ -1904,9 +1904,9 @@ def test_edge_operator_page_batch_overlay_removal_is_in_finally():
     # Verify overlay.hidden = true in finally block (the critical fix)
     finally_block_end = func_body.index("}", finally_block_start + len("finally {"))
     finally_section = func_body[finally_block_start : finally_block_end + 1]
-    assert "overlay.hidden = true" in finally_section, (
-        "overlay.hidden = true MUST be in finally block to prevent getting stuck"
-    )
+    assert (
+        "overlay.hidden = true" in finally_section
+    ), "overlay.hidden = true MUST be in finally block to prevent getting stuck"
 
 
 def test_edge_operator_page_batch_only_processes_unbound_with_type():
@@ -2007,6 +2007,137 @@ def test_pairing_batch_locale_keys_exist():
         assert key in en, f"Missing in en.json: {key}"
         assert key in zh_tw, f"Missing in zh_tw.json: {key}"
 
+    assert set(en.keys()) == set(zh_tw.keys())
+
+
+def test_edge_pairing_batch_retry_connect_returns_its_result_and_batch_trusts_it():
+    # retryConnect() used to return nothing, so saveAndConnectAll's "await
+    # retryConnect(...); successful++;" counted every connect attempt --
+    # even a false connect (outcome full/unknown_cmd/unrecognized/error, or
+    # an HTTP failure) -- as a success. The batch summary must instead
+    # trust the actual `connected` flag connectCandidateOnly() returns.
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    retry_start = source.index("async function retryConnect(mac)")
+    retry_end = source.index("async function saveAndConnect(", retry_start)
+    retry_fn = source[retry_start:retry_end]
+    assert "result = await connectCandidateOnly(mac);" in retry_fn
+    assert "return result;" in retry_fn
+    result_assign_index = retry_fn.index("result = await connectCandidateOnly(mac);")
+    return_index = retry_fn.rindex("return result;")
+    assert result_assign_index < return_index
+
+    all_start = source.index("async function saveAndConnectAll()")
+    all_end = source.index("function handleBatchProgressStop()", all_start)
+    all_fn = source[all_start:all_end]
+
+    assert "const connectResult = await retryConnect(meta.mac);" in all_fn
+    connect_call_index = all_fn.index(
+        "const connectResult = await retryConnect(meta.mac);"
+    )
+    if_index = all_fn.index(
+        "if (connectResult && connectResult.connected === true) {", connect_call_index
+    )
+    successful_index = all_fn.index("successful++;", if_index)
+    else_index = all_fn.index("} else {", if_index)
+    failed_index = all_fn.index("failed++;", else_index)
+    # successful++ must be gated behind the real connected flag, and the
+    # failure path (not a bare "assume success") must record why.
+    assert connect_call_index < if_index < successful_index < else_index < failed_index
+    assert (
+        'error: outcomeFailureText(connectResult ? connectResult.outcome : "error"),'
+        in all_fn
+    )
+
+
+def test_edge_pairing_batch_failure_reason_reuses_outcome_locale_keys():
+    # The failure list must record *why* a device failed (board full, no
+    # ACK, HTTP error) using the same locale keys the per-row outcome badge
+    # already uses, not a generic string.
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    fn_start = source.index("function outcomeFailureText(outcome)")
+    fn_end = source.index("function worklistRowHtml(meta)", fn_start)
+    fn = source[fn_start:fn_end]
+    assert 'full: "pairing.outcome_full"' in fn
+    assert 'unknown_cmd: "pairing.outcome_unknown_cmd"' in fn
+    assert 'unrecognized: "pairing.outcome_failed"' in fn
+    assert 'error: "pairing.outcome_failed"' in fn
+
+
+def test_edge_pairing_batch_relocates_rows_off_a_channel_that_just_filled_up():
+    # Every row is preselected/chosen before the batch starts; as each bind
+    # consumes a slot, a not-yet-processed row still pointed at a channel
+    # that just filled up must move to another channel with room --
+    # otherwise two rows preselected to the same nearly-full channel fail
+    # "no free configured binding slot" even when another channel sat empty
+    # the whole time.
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    relocate_start = source.index("function relocateFullChannelSelections(rows)")
+    relocate_end = source.index("function preselectChannelId(meta)", relocate_start)
+    relocate_fn = source[relocate_start:relocate_end]
+
+    assert "channelFreeSlots(meta.channelId) !== 0" in relocate_fn
+    assert "channelOptionsForMeta(meta)" in relocate_fn
+    assert ".filter((option) => !option.full)" in relocate_fn
+    guard_index = relocate_fn.index("channelFreeSlots(meta.channelId) !== 0")
+    reuse_index = relocate_fn.index("channelOptionsForMeta(meta)")
+    assert guard_index < reuse_index  # never move a row whose channel still has room
+
+    all_start = source.index("async function saveAndConnectAll()")
+    all_end = source.index("function handleBatchProgressStop()", all_start)
+    all_fn = source[all_start:all_end]
+    assert "relocateFullChannelSelections(candidates.slice(i + 1));" in all_fn
+    bound_index = all_fn.index("meta.bound = true;")
+    relocate_call_index = all_fn.index(
+        "relocateFullChannelSelections(candidates.slice(i + 1));"
+    )
+    connect_index = all_fn.index("await retryConnect(meta.mac);")
+    # must run after this row lands (capacity refreshed) and before connect
+    assert bound_index < relocate_call_index < connect_index
+
+
+def test_edge_pairing_batch_progress_counter_is_one_based():
+    # The loop index i is zero-based; the operator-facing counter must show
+    # the device actually being worked on, not "0 of N" for the entire time
+    # the first device is mid-save.
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    all_start = source.index("async function saveAndConnectAll()")
+    all_end = source.index("function handleBatchProgressStop()", all_start)
+    all_fn = source[all_start:all_end]
+
+    assert "done: i + 1" in all_fn
+
+
+def test_edge_pairing_batch_progress_counter_uses_i18n_not_hardcoded_english():
+    # CLAUDE.md forbids hardcoded zh/en strings in static pages -- the
+    # counter must be built through t(), with a locale key present (and
+    # identical) in both dictionaries.
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    all_start = source.index("async function saveAndConnectAll()")
+    all_end = source.index("function handleBatchProgressStop()", all_start)
+    all_fn = source[all_start:all_end]
+
+    assert "`${i} of ${total}`" not in all_fn
+    assert 'countEl.textContent = t("pairing.batch_progress_count"' in all_fn
+
+    locales_dir = Path(edge_app_module.__file__).resolve().parent.parent / "locales"
+    en = json.loads((locales_dir / "en.json").read_text(encoding="utf-8"))
+    zh_tw = json.loads((locales_dir / "zh_tw.json").read_text(encoding="utf-8"))
+    assert "pairing.batch_progress_count" in en
+    assert "pairing.batch_progress_count" in zh_tw
+    assert "{done}" in en["pairing.batch_progress_count"]
+    assert "{total}" in en["pairing.batch_progress_count"]
+    assert "{done}" in zh_tw["pairing.batch_progress_count"]
+    assert "{total}" in zh_tw["pairing.batch_progress_count"]
     assert set(en.keys()) == set(zh_tw.keys())
 
 

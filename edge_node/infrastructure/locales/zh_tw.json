@@ -222,6 +222,7 @@
   "pairing.finish_failed": "無法完成配對",
   "pairing.save_all_connect": "全部儲存並連線",
   "pairing.batch_progress": "處理中...",
+  "pairing.batch_progress_count": "第 {done} / {total} 台",
   "pairing.batch_stop": "停止",
   "pairing.batch_complete": "完成",
   "pairing.batch_stopped": "已停止",
