@@ -83,6 +83,17 @@ LIVE_TELEMETRY_WINDOW_MS = 3000
 
 MOVING_SPEED_THRESHOLD_KPH = 0.5
 
+# Shorter timeout for CONNECT_ADD ACK only (docs/Dual_Central_Board_Manager_設計文件.md line 125).
+# The timeout covers only the command ACK itself (CONNECT_ADD:OK;), not the
+# actual BLE link establishment which happens asynchronously with a fixed 3
+# second UCM_BLE_CONNECT_GRACE_MS wait. If the board is slow to ACK,
+# _classify_connect_add_reply sees no matching reply and returns "unrecognized",
+# surfacing as "added but not confirmed connected" to the operator rather than
+# a silent failure. That is an acceptable, visible outcome. A scan command
+# genuinely needs the long timeout window (command_timeout_sec), so this
+# separate constant applies only to connect_add ACKs.
+CONNECT_ADD_ACK_TIMEOUT_SEC = 0.5
+
 
 class PairingSessionError(ValueError):
     """Raised for invalid pairing operations: unknown mac, full channel,
@@ -828,7 +839,7 @@ class PairingSession:
                 rtscts=channel.rtscts,
                 command="connect_add",
                 macs=[normalized_mac],
-                timeout_sec=self._command_timeout_sec,
+                timeout_sec=CONNECT_ADD_ACK_TIMEOUT_SEC,
             )
         )
         outcome = _classify_connect_add_reply(reply.get("parsed") or [])

@@ -1471,6 +1471,58 @@ def test_finish_with_no_active_session_raises():
 
 
 # --------------------------------------------------------------------------
+# connect_add timeout verification
+# --------------------------------------------------------------------------
+
+
+def test_start_scan_uses_long_command_timeout(tmp_path):
+    """Verify that start()'s scan commands use the full command_timeout_sec."""
+    harness = make_harness(
+        make_config(),
+        scan_results_by_port={
+            "/dev/ttyAMA0": [device("AA:BB:CC:DD:EE:01", -40, "Bike")],
+            "/dev/ttyAMA4": [],
+        },
+        flag_path=tmp_path / "pairing.flag",
+    )
+
+    harness.session.start(temp_connect=False)
+
+    scan_calls = [c for c in harness.runner.calls if c.command == "scan"]
+    assert len(scan_calls) >= 1
+    # All scan calls should use the long command_timeout_sec (5.0 by default)
+    for call in scan_calls:
+        assert call.timeout_sec == 5.0
+
+
+def test_connect_uses_short_connect_add_timeout(tmp_path):
+    """Verify that connect() issues connect_add with the CONNECT_ADD_ACK_TIMEOUT_SEC timeout."""
+    from edge_node.usecases.pairing_session import CONNECT_ADD_ACK_TIMEOUT_SEC
+
+    config = make_config()
+    harness = make_harness(
+        config,
+        scan_results_by_port={
+            "/dev/ttyAMA0": [device("AA:BB:CC:DD:EE:01", -40, "Bike")],
+            "/dev/ttyAMA4": [],
+        },
+        flag_path=tmp_path / "pairing.flag",
+    )
+    harness.session.start(temp_connect=False)
+    harness.session.bind("AA:BB:CC:DD:EE:01", "fan_bike")
+
+    harness.session.connect("AA:BB:CC:DD:EE:01")
+
+    connect_add_calls = [c for c in harness.runner.calls if c.command == "connect_add"]
+    # The connect() call should issue exactly one connect_add
+    assert len(connect_add_calls) >= 1
+    # The connect_add should use the shorter CONNECT_ADD_ACK_TIMEOUT_SEC
+    latest_connect_add = connect_add_calls[-1]
+    assert latest_connect_add.timeout_sec == CONNECT_ADD_ACK_TIMEOUT_SEC
+    assert CONNECT_ADD_ACK_TIMEOUT_SEC < 5.0  # verify it's actually shorter
+
+
+# --------------------------------------------------------------------------
 # Regression lock: full scan-first session never goes destructive
 # --------------------------------------------------------------------------
 
