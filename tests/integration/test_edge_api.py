@@ -351,6 +351,47 @@ def test_edge_operator_uart_monitor_shows_latest_first_and_keeps_only_200_messag
     assert "renderUartMonitor(events);" in refresh_source
 
 
+def test_edge_operator_uart_monitor_log_does_not_reanchor_page_scroll():
+    """Regression: the log's innerHTML is replaced up to twice a second.
+    Without opting the log container out of scroll anchoring, the browser
+    can treat that repeated subtree replacement as cause to shift the
+    page's own scroll position, and a pointer sitting over the log at its
+    scroll boundary must not chain that gesture into the page underneath.
+    """
+    client = TestClient(edge_app_module.app)
+
+    source = client.get("/").text
+    rule_start = source.index(".uart-monitor-log {")
+    rule_end = source.index("}", rule_start) + 1
+    rule = source[rule_start:rule_end]
+
+    assert "overflow-anchor: none;" in rule
+    assert "overscroll-behavior: contain;" in rule
+
+
+def test_edge_operator_pairing_worklist_focus_restore_does_not_scroll_page():
+    """Regression: renderPairingWorklist() rebuilds the worklist's
+    innerHTML on every pairing poll (once a second) and restores focus to
+    whatever row element had it, so a mid-type display-name caret survives
+    the rebuild. HTMLElement.focus() scrolls its target into view by
+    default though, so a type chip or channel chip the operator had just
+    clicked -- buttons take focus on click in Chrome -- got yanked back
+    into view on every poll, dragging the operator's scroll position away
+    from wherever they had scrolled to read something else on the page.
+    The fix must keep the restoration (needed for the caret case) but stop
+    it from moving the viewport.
+    """
+    client = TestClient(edge_app_module.app)
+
+    source = client.get("/").text
+    render_start = source.index("function renderPairingWorklist()")
+    render_end = source.index("function updateSaveAllButtonState()", render_start)
+    render_source = source[render_start:render_end]
+
+    assert "restored.focus({ preventScroll: true });" in render_source
+    assert "restored.focus();" not in render_source
+
+
 def test_edge_maintenance_page_serves_old_setup_page():
     client = TestClient(edge_app_module.app)
 

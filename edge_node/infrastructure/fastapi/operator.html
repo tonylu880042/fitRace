@@ -838,6 +838,13 @@
       font-size: 11px;
       line-height: 1.5;
       scrollbar-gutter: stable;
+      /* The log's innerHTML is replaced up to twice a second; without this
+         the browser's scroll anchoring can treat that churn as a reason to
+         re-anchor and shift the page's own scroll position. */
+      overflow-anchor: none;
+      /* Reaching the top/bottom of the log while the pointer is over it
+         must not chain the scroll gesture into the page underneath. */
+      overscroll-behavior: contain;
     }
 
     .uart-monitor-row {
@@ -2243,7 +2250,12 @@
       if (activeMac && activeRole) {
         const restored = container.querySelector(`[data-mac="${CSS.escape(activeMac)}"][data-role="${activeRole}"]`);
         if (restored) {
-          restored.focus();
+          // preventScroll: focus() defaults to scrolling the target into
+          // view, which yanks the page back to this row on every poll
+          // (once a second) if a chip or the name input inside it is
+          // holding focus -- dragging the operator's own scroll position
+          // out from under them while they read elsewhere on the page.
+          restored.focus({ preventScroll: true });
           if (selectionStart != null && typeof restored.setSelectionRange === "function") {
             restored.setSelectionRange(selectionStart, selectionStart);
           }
