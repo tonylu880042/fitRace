@@ -3553,3 +3553,37 @@ def test_edge_progress_overlay_anchors_near_top_and_stays_scrollable():
     assert "z-index: 1000;" in rule
     assert "position: fixed;" in rule
     assert "inset: 0;" in rule
+
+
+def test_edge_pairing_worklist_restores_caret_position_after_rerender():
+    """Regression: renderPairingWorklist() rebuilds the worklist's
+    innerHTML once a second and restores focus to whatever row element had
+    it, but restoring focus alone still throws the caret in a display-name
+    input to the end of the field on every rebuild -- only
+    setSelectionRange(), fed from the selectionStart captured before the
+    rebuild, puts the caret back where the operator actually left it.
+    Deleting that setSelectionRange restoration is invisible to every
+    other pairing/worklist test in this file (confirmed: the full suite
+    stays green without it), so it needs its own coverage. Extract
+    renderPairingWorklist()'s own body -- not the whole page -- so a
+    comment elsewhere on the page mentioning setSelectionRange can't
+    satisfy this test unconditionally.
+    """
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    render_start = source.index("function renderPairingWorklist()")
+    render_end = source.index("function updateSaveAllButtonState()", render_start)
+    render_source = source[render_start:render_end]
+
+    assert (
+        'const selectionStart = active && "selectionStart" in active '
+        "? active.selectionStart : null;" in render_source
+    )
+    assert (
+        'if (selectionStart != null && typeof restored.setSelectionRange === "function") {'
+        in render_source
+    )
+    assert (
+        "restored.setSelectionRange(selectionStart, selectionStart);" in render_source
+    )
