@@ -1919,6 +1919,61 @@ def test_edge_operator_page_batch_only_processes_unbound_with_type():
     assert "!meta.bound && meta.equipmentType" in source
 
 
+def test_edge_operator_page_batch_button_tracks_remaining_candidates():
+    """The batch button must never sit there as a dead no-op: it has to
+    reflect how many rows saveAndConnectAll() would actually process,
+    disabling and relabeling itself once nothing is left, not just once at
+    page load. This is the exact bug an operator hit after binding all six
+    devices -- the button stayed a full-width, clickable "Save all &
+    connect" that did nothing when pressed.
+    """
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    # updateSaveAllButtonState must exist, use the same candidate rule as
+    # saveAndConnectAll(), and actually flip .disabled off the live count
+    # (not a constant) plus swap in a locale-driven label either way.
+    fn_start = source.index("function updateSaveAllButtonState()")
+    fn_end = source.index("\n    }", fn_start) + len("\n    }")
+    fn_body = source[fn_start:fn_end]
+
+    assert "!meta.bound && meta.equipmentType" in fn_body
+    assert "btn.disabled = count === 0;" in fn_body
+    assert '"pairing.save_all_connect_count"' in fn_body
+    assert '"pairing.save_all_none_left"' in fn_body
+
+    # It must be wired into the single re-render choke point so every path
+    # that changes the count -- a bind landing, a type-chip pick, a fresh
+    # scan replacing the worklist -- keeps the button honest, instead of
+    # only updating on the initial page load.
+    render_start = source.index("function renderPairingWorklist()")
+    render_end = source.index("function updateSaveAllButtonState()", render_start)
+    render_body = source[render_start:render_end]
+    assert "updateSaveAllButtonState();" in render_body
+
+
+def test_edge_operator_page_wizard_actions_wraps_full_width_primary():
+    """Regression: 重新掃描/取消 (Rescan/Cancel) collapsed to one character
+    per line because the full-width primary button and the two flex:1
+    secondary buttons all fought for the same single row. The primary
+    button must claim its own row so the secondary pair always keeps an
+    even, legible row underneath it, regardless of the primary's label
+    length or the screen width.
+    """
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    wizard_start = source.index(".wizard-actions {")
+    wizard_end = source.index("}", wizard_start) + 1
+    wizard_rule = source[wizard_start:wizard_end]
+    assert "flex-wrap: wrap;" in wizard_rule
+
+    primary_start = source.index(".wizard-actions .btn-primary {")
+    primary_end = source.index("}", primary_start) + 1
+    primary_rule = source[primary_start:primary_end]
+    assert "flex: 1 1 100%;" in primary_rule
+
+
 def test_edge_operator_page_batch_stops_after_current_device():
     """Verify batch has a stop mechanism that stops after current device."""
     client = TestClient(edge_app_module.app)
@@ -2001,6 +2056,8 @@ def test_pairing_batch_locale_keys_exist():
         "pairing.batch_stopped",
         "pairing.batch_all_done",
         "pairing.batch_failed_count",
+        "pairing.save_all_connect_count",
+        "pairing.save_all_none_left",
     }
 
     for key in batch_keys:

@@ -223,6 +223,8 @@
   "pairing.done": "Done — return home",
   "pairing.finish_failed": "Could not finish pairing",
   "pairing.save_all_connect": "Save all & connect",
+  "pairing.save_all_connect_count": "Save all & connect ({count})",
+  "pairing.save_all_none_left": "Nothing left to save",
   "pairing.batch_progress": "Processing devices...",
   "pairing.batch_progress_count": "{done} of {total}",
   "pairing.batch_stop": "Stop",

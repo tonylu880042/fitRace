@@ -599,8 +599,18 @@
 
     .wizard-actions {
       display: flex;
+      flex-wrap: wrap;
       gap: 8px;
       margin-top: 18px;
+    }
+
+    /* A full-width primary action (width: 100%) claims the entire row on
+       its own -- wrapping the secondary buttons onto their own row below
+       instead of squeezing them into narrow columns next to it. Two
+       secondary buttons alone (no primary present, e.g. the Wi-Fi confirm
+       row) still split one row evenly since neither has a 100% basis. */
+    .wizard-actions .btn-primary {
+      flex: 1 1 100%;
     }
 
     .field { margin-top: 16px; }
@@ -2239,6 +2249,27 @@
           }
         }
       }
+
+      updateSaveAllButtonState();
+    }
+
+    // The batch button must never sit there doing nothing when pressed --
+    // keep its enabled state and label in step with how many rows it would
+    // actually act on (same candidate rule saveAndConnectAll() uses: not
+    // yet bound, and an equipment type already picked). Called from
+    // renderPairingWorklist() so every path that changes that count --
+    // a bind landing, a type-chip pick, or a fresh scan replacing the
+    // worklist -- keeps the button honest without a separate wiring point.
+    function updateSaveAllButtonState() {
+      const btn = document.getElementById("pairing-save-all-btn");
+      if (!btn) return;
+      const count = [...pairingRowMeta.values()].filter(
+        (meta) => !meta.bound && meta.equipmentType
+      ).length;
+      btn.disabled = count === 0;
+      btn.textContent = count > 0
+        ? t("pairing.save_all_connect_count", { count })
+        : t("pairing.save_all_none_left");
     }
 
     function initPairingWorklist(candidates) {
