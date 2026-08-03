@@ -8,12 +8,13 @@
   <style>
     :root {
       --bg: #0a0a0a;
-      --surface: #161616;
-      --surface-2: #101010;
-      --border: #333;
-      --text: #eaeaea;
-      --muted: #8c8c8c;
-      --accent: #d4f326;
+      --surface: #141414;
+      --surface-2: #0d0e0f;
+      --border: #262626;
+      --border-strong: #3a3a3a;
+      --text: #e3e2e2;
+      --muted: #a3a3a3;
+      --accent: #e2ff3b;
       --warn: #f59e0b;
       --danger: #ff4b4b;
       --ok: #34d399;
@@ -92,8 +93,8 @@
       background: var(--muted);
     }
 
-    .chip-dot.ok { background: var(--ok); box-shadow: 0 0 8px rgba(52, 211, 153, 0.5); }
-    .chip-dot.bad { background: var(--danger); box-shadow: 0 0 8px rgba(255, 75, 75, 0.5); }
+    .chip-dot.ok { background: var(--ok); }
+    .chip-dot.bad { background: var(--danger); }
     .chip-dot.pending { background: var(--muted); }
 
     .banner {
@@ -166,6 +167,23 @@
       display: grid;
       min-width: 0;
       gap: 16px;
+      opacity: 0.85;
+    }
+
+    .wifi-column .panel {
+      border-color: var(--border);
+      background: var(--bg);
+    }
+
+    .wifi-column .panel h2 {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .wifi-column .panel p,
+    .wifi-column .connection-help {
+      color: var(--muted);
+      font-size: 11px;
     }
 
     .wifi-panel {
@@ -370,11 +388,10 @@
     }
 
     .btn-primary:disabled {
-      opacity: 0.5;
       cursor: not-allowed;
       color: var(--muted);
-      border-color: var(--muted);
-      background: var(--surface);
+      border: 2px solid var(--border-strong);
+      background: var(--bg);
     }
 
     .btn-secondary {
@@ -430,7 +447,16 @@
 
     .worklist-row.moving {
       border-color: var(--accent);
-      box-shadow: 0 0 14px rgba(212, 243, 38, 0.18);
+    }
+
+    /* Worklist row states (done, blocked, ready) determined by presence of .type-grid and .worklist-outcome */
+    .worklist-row:has(.type-grid):has(.worklist-outcome.error),
+    .worklist-row:has(.type-grid):has(.worklist-outcome.warn) {
+      border-left: 3px solid var(--border-strong);
+    }
+
+    .worklist-row:has(.type-grid):not(:has(.worklist-outcome.error)):not(:has(.worklist-outcome.warn)) {
+      border-left: 3px solid var(--accent);
     }
 
     .worklist-head {
@@ -474,19 +500,34 @@
     }
 
     .worklist-outcome {
-      margin-top: 8px;
-      font-size: 12px;
+      margin-top: 12px;
+      padding: 10px 12px;
+      font-size: 13px;
+      font-weight: 600;
+      border-left: 3px solid;
     }
 
-    .worklist-outcome.ok { color: var(--ok); }
-    .worklist-outcome.error { color: var(--danger); }
-    .worklist-outcome.warn { color: var(--warn); }
+    .worklist-outcome.ok {
+      color: var(--ok);
+      border-left-color: var(--ok);
+      background: rgba(52, 211, 153, 0.08);
+    }
+    .worklist-outcome.error {
+      color: var(--danger);
+      border-left-color: var(--danger);
+      background: rgba(255, 75, 75, 0.08);
+    }
+    .worklist-outcome.warn {
+      color: var(--warn);
+      border-left-color: var(--warn);
+      background: rgba(245, 158, 11, 0.08);
+    }
 
     .worklist-row-progress {
       margin: 12px 0;
       padding: 12px;
       border: 2px solid var(--accent);
-      border-radius: 4px;
+      border-radius: 0;
       background: rgba(212, 243, 38, 0.1);
       color: var(--accent);
       font-weight: 700;
@@ -525,11 +566,10 @@
     .batch-progress-modal {
       background: var(--surface);
       border: 1px solid var(--border);
-      border-radius: 4px;
+      border-radius: 0;
       padding: 32px;
       max-width: 500px;
       width: 90vw;
-      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
     }
 
     .batch-progress-title {
@@ -544,7 +584,7 @@
       padding: 16px;
       background: var(--surface-2);
       border-left: 3px solid var(--accent);
-      border-radius: 2px;
+      border-radius: 0;
     }
 
     .batch-progress-count {
@@ -571,7 +611,7 @@
       margin-top: 20px;
       padding: 12px;
       background: var(--surface-2);
-      border-radius: 2px;
+      border-radius: 0;
       font-size: 13px;
       color: var(--text);
     }
@@ -594,7 +634,7 @@
       background: var(--surface);
       color: var(--text);
       cursor: pointer;
-      border-radius: 2px;
+      border-radius: 0;
     }
 
     .batch-progress-controls button:hover {
