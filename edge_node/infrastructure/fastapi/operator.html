@@ -1060,6 +1060,15 @@
             <button type="button" id="pairing-cancel-btn" class="btn-secondary" data-i18n="pairing.cancel">Cancel</button>
           </div>
           <button type="button" id="pairing-done-btn" class="btn-primary" data-i18n="pairing.done">Done — return home</button>
+          <div id="pairing-scan-overlay" class="batch-progress-overlay" hidden aria-live="polite" aria-atomic="true">
+            <div class="batch-progress-modal">
+              <div class="batch-progress-title" data-i18n="pairing.scanning_dialog_title">Scanning for equipment</div>
+              <div class="batch-progress-info">
+                <div class="batch-progress-count" data-i18n="pairing.scanning">Scanning every antenna channel — this can take 20-40 seconds...</div>
+                <div class="batch-progress-step" id="pairing-scan-elapsed"></div>
+              </div>
+            </div>
+          </div>
           <div id="batch-progress-overlay" class="batch-progress-overlay" hidden aria-live="polite" aria-atomic="true">
             <div class="batch-progress-modal">
               <div class="batch-progress-title" data-i18n="pairing.batch_progress">Processing devices...</div>
@@ -1194,6 +1203,13 @@
     let currentView = "home";
     let pairingCapacity = null; // {per_channel, total_free} -- from start(), refreshed by every successful bind()
     let pairingActive = false;
+    // True for exactly the duration of the in-flight /api/pairing/start
+    // request (set/cleared only by showPairingScanning). Lets
+    // renderPairingWorklist tell "scan still running, worklist just
+    // happens to be empty so far" apart from "scan finished, found
+    // nothing".
+    let pairingScanInFlight = false;
+    let pairingScanTimerHandle = null;
     // pairingRowMeta: mac -> operator-entered/derived worklist state (equipment
     // type, display name, bind/connect progress and outcome). Survives across
     // status polls -- only pairingCandidateStatus below is replaced by polling.
@@ -2206,7 +2222,13 @@
       });
 
       container.innerHTML = rows.map((meta) => worklistRowHtml(meta)).join("");
-      document.getElementById("pairing-message").textContent = rows.length ? "" : t("pairing.no_candidates");
+      // A scan takes 20-40s and the worklist is empty the whole time it
+      // runs -- showing "no candidates" during that window reads as the
+      // scan having already finished and found nothing, directly
+      // contradicting the scanning dialog sitting on top of it. Only show
+      // this once a scan has actually completed and still came back empty.
+      document.getElementById("pairing-message").textContent =
+        (rows.length || pairingScanInFlight) ? "" : t("pairing.no_candidates");
 
       if (activeMac && activeRole) {
         const restored = container.querySelector(`[data-mac="${CSS.escape(activeMac)}"][data-role="${activeRole}"]`);
@@ -2516,9 +2538,43 @@
       }
     }
 
+    // Single choke point for "a scan is running" UI: the inline message
+    // line, the modal dialog (matching .batch-progress-overlay's structure
+    // so it reads as one system with the batch overlay), its elapsed-time
+    // counter, and the pairingScanInFlight flag renderPairingWorklist reads
+    // to suppress the no-candidates message. Every caller (only
+    // startPairing()) toggles this from a try/finally, so active=false
+    // always runs even if the request throws -- the dialog can never be
+    // left stuck on screen, and the counter's interval can never leak.
     function showPairingScanning(active) {
       const el = document.getElementById("pairing-scanning");
       if (el) el.hidden = !active;
+      pairingScanInFlight = active;
+
+      if (pairingScanTimerHandle) {
+        clearInterval(pairingScanTimerHandle);
+        pairingScanTimerHandle = null;
+      }
+
+      const overlay = document.getElementById("pairing-scan-overlay");
+      const elapsedEl = document.getElementById("pairing-scan-elapsed");
+      if (overlay) overlay.hidden = !active;
+
+      if (active) {
+        const startedAt = Date.now();
+        if (elapsedEl) elapsedEl.textContent = t("pairing.scanning_elapsed", { seconds: 0 });
+        pairingScanTimerHandle = setInterval(() => {
+          const seconds = Math.floor((Date.now() - startedAt) / 1000);
+          if (elapsedEl) elapsedEl.textContent = t("pairing.scanning_elapsed", { seconds });
+        }, 1000);
+      } else {
+        // The worklist was rendered at least once while pairingScanInFlight
+        // was still true (the render right after initPairingWorklist() in
+        // startPairing(), before this finally runs) -- re-render now so a
+        // truly-empty scan result shows "no candidates" immediately instead
+        // of waiting on the next poll tick.
+        renderPairingWorklist();
+      }
     }
 
     // A page reload or a tablet waking from sleep must never strand the
@@ -2576,6 +2632,9 @@
 
     async function startPairing() {
       const addBtn = document.getElementById("add-device-btn");
+      const rescanBtn = document.getElementById("pairing-rescan-btn");
+      const cancelBtn = document.getElementById("pairing-cancel-btn");
+      const doneBtn = document.getElementById("pairing-done-btn");
       if (!centralHubReady) {
         document.getElementById("add-device-message").textContent = t("hub.required");
         return;
@@ -2587,6 +2646,16 @@
       renderCapacityStrip();
       renderPairingWorklist();
       showPairingScanning(true);
+      // The server holds the UART for the whole scan (state stays SCANNING
+      // in pairing_session.py until it returns) -- a cancel arriving in
+      // that window tears down a session that is still scanning and
+      // contends for the same serial port the scan is using. Rescan/
+      // cancel/done must be inert for the duration of this request so the
+      // page can never issue that conflicting call; re-enabled in the same
+      // finally that dismisses the dialog, so no path leaves them stuck.
+      rescanBtn.disabled = true;
+      cancelBtn.disabled = true;
+      doneBtn.disabled = true;
       try {
         // Scan-only: temp_connect: false means start() issues SCAN commands
         // and nothing else -- no CONNECT_ADD, no batch CONNECT/DISCONNECT:ALL,
@@ -2611,6 +2680,9 @@
       } finally {
         showPairingScanning(false);
         addBtn.disabled = false;
+        rescanBtn.disabled = false;
+        cancelBtn.disabled = false;
+        doneBtn.disabled = false;
       }
     }
 
@@ -2629,6 +2701,16 @@
     }
 
     async function rescan() {
+      // Disable here too, not just inside startPairing() -- otherwise a
+      // second click landing during the await cancelPairing() below (before
+      // startPairing() gets a chance to disable anything itself) could fire
+      // another overlapping cancel/start pair.
+      const rescanBtn = document.getElementById("pairing-rescan-btn");
+      const cancelBtn = document.getElementById("pairing-cancel-btn");
+      const doneBtn = document.getElementById("pairing-done-btn");
+      rescanBtn.disabled = true;
+      cancelBtn.disabled = true;
+      doneBtn.disabled = true;
       await cancelPairing();
       await startPairing();
     }

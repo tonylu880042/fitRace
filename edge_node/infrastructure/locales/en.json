@@ -204,6 +204,8 @@
   "pairing.outcome_added_unheard": "Added to {channel}, but it never heard this device during the scan — watch below to see if it actually connects",
   "pairing.start_failed": "Could not start pairing",
   "pairing.scanning": "Scanning every antenna channel — this can take 20-40 seconds...",
+  "pairing.scanning_dialog_title": "Scanning for equipment",
+  "pairing.scanning_elapsed": "{seconds}s elapsed",
   "pairing.save_connect": "Save & connect",
   "pairing.saving": "Saving...",
   "pairing.saving_indicator": "Saving equipment binding...",

@@ -204,6 +204,8 @@
   "pairing.outcome_added_unheard": "已加入 {channel} 目標清單，但掃描時未偵測到此設備——請留意下方是否真的連線成功",
   "pairing.start_failed": "無法啟動配對",
   "pairing.scanning": "正在掃描所有天線通道——可能需要 20-40 秒...",
+  "pairing.scanning_dialog_title": "掃描設備中",
+  "pairing.scanning_elapsed": "已等待 {seconds} 秒",
   "pairing.save_connect": "儲存並連線",
   "pairing.saving": "儲存中...",
   "pairing.saving_indicator": "儲存設備綁定中...",

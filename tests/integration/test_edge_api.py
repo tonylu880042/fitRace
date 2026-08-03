@@ -3266,3 +3266,158 @@ def test_edge_pairing_channel_choice_i18n_keys_present_in_both_locales():
         assert key in en, key
         assert key in zh_tw, key
     assert set(en.keys()) == set(zh_tw.keys())
+
+
+# -- scan visibly in progress (fix(edge): make the pairing scan visibly in
+# progress) --------------------------------------------------------------
+#
+# An operator on the live device reported the page looking frozen during a
+# 20-40s scan: (1) "no devices found" sat on screen the whole time,
+# contradicting the "scanning..." line above it, (2) the scanning indicator
+# was a static line with no sign of life, (3) rescan/cancel/done stayed
+# live during the scan and pressing rescan mid-scan raced a cancel() against
+# the still-running start() (both hold/touch the UART -- see
+# pairing_session.py start()/cancel()).
+
+
+def test_edge_pairing_no_candidates_message_suppressed_during_scan():
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    render_start = source.index("function renderPairingWorklist()")
+    render_end = source.index("function initPairingWorklist(candidates)", render_start)
+    render_fn = source[render_start:render_end]
+
+    assert 'pairing-message").textContent =' in render_fn
+    message_line_start = render_fn.index('pairing-message").textContent =')
+    message_line_end = render_fn.index(";", message_line_start)
+    message_line = render_fn[message_line_start:message_line_end]
+    # Must be gated on BOTH an empty worklist and "no scan currently
+    # running" -- an empty worklist alone is also true for the entire
+    # duration of a scan.
+    assert "pairingScanInFlight" in message_line
+    assert "rows.length" in message_line
+
+
+def test_edge_pairing_scanning_dialog_matches_batch_overlay_pattern():
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    scan_overlay_start = source.index('id="pairing-scan-overlay"')
+    batch_overlay_start = source.index('id="batch-progress-overlay"')
+    assert scan_overlay_start < batch_overlay_start
+    scan_overlay_html = source[scan_overlay_start:batch_overlay_start]
+
+    # Same structure/classes as the existing batch-progress-overlay so the
+    # two dialogs read as one system.
+    assert 'class="batch-progress-overlay" hidden' in scan_overlay_html
+    assert 'class="batch-progress-modal"' in scan_overlay_html
+    assert 'class="batch-progress-title"' in scan_overlay_html
+    assert 'class="batch-progress-info"' in scan_overlay_html
+    assert 'id="pairing-scan-elapsed"' in scan_overlay_html
+    assert 'data-i18n="pairing.scanning_dialog_title"' in scan_overlay_html
+    assert 'data-i18n="pairing.scanning"' in scan_overlay_html
+
+
+def test_edge_pairing_scanning_dialog_has_honest_elapsed_counter():
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    fn_start = source.index("function showPairingScanning(active)")
+    fn_end = source.index("async function restorePairingSessionIfActive()", fn_start)
+    fn = source[fn_start:fn_end]
+
+    assert "setInterval(" in fn
+    assert "clearInterval(" in fn
+    assert "pairingScanTimerHandle" in fn
+    # Elapsed seconds, not a fabricated percentage the page can't actually
+    # measure.
+    assert 't("pairing.scanning_elapsed"' in fn
+    assert "{ seconds" in fn
+    assert "%" not in fn
+    assert "pairingScanInFlight = active;" in fn
+
+
+def test_edge_pairing_start_dismisses_scan_dialog_and_reenables_controls_in_finally():
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    start_fn_start = source.index("async function startPairing()")
+    start_fn_end = source.index("async function cancelPairing()", start_fn_start)
+    start_fn = source[start_fn_start:start_fn_end]
+
+    finally_index = start_fn.index("} finally {")
+    finally_block = start_fn[finally_index:]
+
+    # showPairingScanning(false) must live in the finally block -- nowhere
+    # earlier in the function, where a thrown error or a `return` on the
+    # centralHubReady guard could skip it and strand the dialog on screen.
+    assert "showPairingScanning(false)" not in start_fn[:finally_index]
+    assert "showPairingScanning(false)" in finally_block
+
+    # Rescan/cancel/done must be re-enabled in that same finally block, not
+    # merely somewhere else in the function.
+    for line in (
+        "rescanBtn.disabled = false;",
+        "cancelBtn.disabled = false;",
+        "doneBtn.disabled = false;",
+    ):
+        assert line in finally_block
+
+
+def test_edge_pairing_start_disables_rescan_cancel_done_before_request_fires():
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    start_fn_start = source.index("async function startPairing()")
+    start_fn_end = source.index("async function cancelPairing()", start_fn_start)
+    start_fn = source[start_fn_start:start_fn_end]
+
+    fetch_index = start_fn.index('adminFetch("/api/pairing/start"')
+    for line in (
+        "rescanBtn.disabled = true;",
+        "cancelBtn.disabled = true;",
+        "doneBtn.disabled = true;",
+    ):
+        assert line in start_fn
+        assert start_fn.index(line) < fetch_index
+
+
+def test_edge_pairing_rescan_disables_controls_before_cancel_request():
+    # rescan() calls cancelPairing() then startPairing() -- the controls
+    # must already be disabled before that first await, or a second click
+    # landing during the cancel round-trip (before startPairing() gets a
+    # chance to disable anything itself) could fire another overlapping
+    # cancel/start pair against the same session.
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    rescan_fn_start = source.index("async function rescan()")
+    rescan_fn_end = source.index("async function finishPairing()", rescan_fn_start)
+    rescan_fn = source[rescan_fn_start:rescan_fn_end]
+
+    cancel_call_index = rescan_fn.index("await cancelPairing();")
+    for line in (
+        "rescanBtn.disabled = true;",
+        "cancelBtn.disabled = true;",
+        "doneBtn.disabled = true;",
+    ):
+        assert line in rescan_fn
+        assert rescan_fn.index(line) < cancel_call_index
+
+
+def test_edge_pairing_scanning_dialog_i18n_keys_present_in_both_locales():
+    locales_dir = Path(edge_app_module.__file__).resolve().parent.parent / "locales"
+    en = json.loads((locales_dir / "en.json").read_text(encoding="utf-8"))
+    zh_tw = json.loads((locales_dir / "zh_tw.json").read_text(encoding="utf-8"))
+
+    new_keys = {
+        "pairing.scanning_dialog_title",
+        "pairing.scanning_elapsed",
+    }
+    for key in new_keys:
+        assert key in en, key
+        assert key in zh_tw, key
+    assert "{seconds}" in en["pairing.scanning_elapsed"]
+    assert "{seconds}" in zh_tw["pairing.scanning_elapsed"]
+    assert set(en.keys()) == set(zh_tw.keys())
