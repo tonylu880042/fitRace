@@ -904,6 +904,42 @@
 
     .login.show { display: flex; }
 
+    .dialog-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 11;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: rgba(0,0,0,0.74);
+      backdrop-filter: blur(6px);
+    }
+
+    .dialog-overlay.show { display: flex; }
+
+    .dialog-box {
+      width: min(440px, 100%);
+      border: 2px solid var(--warn);
+      border-radius: 0;
+      background: var(--surface);
+      padding: 22px;
+    }
+
+    .dialog-box h2 {
+      margin: 0 0 8px;
+      font-family: "Oswald", sans-serif;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .dialog-box p {
+      margin: 0 0 16px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.4;
+    }
+
     .login-box {
       width: min(390px, 100%);
       border: 2px solid var(--border);
@@ -1060,6 +1096,7 @@
             <h2 class="panel-title" id="station-title" data-i18n="panel.station_assignment">Station Assignment</h2>
             <button type="button" onclick="copySignupLink()" data-i18n="button.copy_signup_link">Copy Signup Link</button>
           </div>
+          <div class="status-text warn" id="unassigned-streams-warning" hidden></div>
           <div class="assign-bar">
             <div class="field">
               <label for="station-number" data-i18n="label.station">Station</label>
@@ -1186,6 +1223,18 @@
     </div>
   </div>
 
+  <div class="dialog-overlay" id="unassigned-dialog" role="dialog" aria-modal="true" aria-labelledby="unassigned-dialog-title">
+    <div class="dialog-box">
+      <h2 id="unassigned-dialog-title" data-i18n="dialog.unassigned_title">Unassigned telemetry streams</h2>
+      <p id="unassigned-dialog-message"></p>
+      <div class="button-row">
+        <button type="button" class="primary" id="unassigned-dialog-assign-btn" onclick="assignAllUnassignedStreams()" data-i18n="button.assign_all_unassigned">Assign all to next open stations</button>
+        <button type="button" id="unassigned-dialog-close-btn" onclick="closeUnassignedDialog()" data-i18n="button.cancel">Cancel</button>
+      </div>
+      <div class="status-text" id="unassigned-dialog-status"></div>
+    </div>
+  </div>
+
   <script>
     const state = {
       race: null,
@@ -1194,6 +1243,7 @@
       update: null,
       refreshTimer: null,
       adminToken: localStorage.getItem("fitrace.adminPassword") || localStorage.getItem("fitrace.adminToken") || "",
+      knownUnassignedNodeIds: new Set(),
     };
 
     function $(id) {
@@ -1324,7 +1374,12 @@
         "message.select_and_copy_link": "Select and copy the signup link.",
         "message.report_copied": "Report copied to clipboard.",
         "message.copy_failed": "Copy failed — select the text above and copy manually.",
-        "text.unknown": "Unknown"
+        "text.unknown": "Unknown",
+        "warning.unassigned_streams": "{count} telemetry stream(s) are unassigned and will not take part in a race until assigned to a station.",
+        "dialog.unassigned_title": "Unassigned telemetry streams",
+        "dialog.unassigned_message": "{count} telemetry stream(s) became unassigned. They will not take part in a race until you assign them to a station.",
+        "button.assign_all_unassigned": "Assign all to next open stations",
+        "message.assign_all_partial_failure": "Could not assign: {streams}. They are still unassigned."
       }
     };
 
@@ -1440,7 +1495,12 @@
       "message.select_and_copy_link": "請選取並複製報名連結。",
       "message.report_copied": "報告已複製到剪貼簿。",
       "message.copy_failed": "複製失敗 — 請選取上方文字並手動複製。",
-      "text.unknown": "未知"
+      "text.unknown": "未知",
+      "warning.unassigned_streams": "有 {count} 個遙測資料流尚未指派站位,在指派站位前不會參與比賽。",
+      "dialog.unassigned_title": "尚未指派的遙測資料流",
+      "dialog.unassigned_message": "有 {count} 個資料流變成未指派狀態。在指派站位前,它們不會參與比賽。",
+      "button.assign_all_unassigned": "全部指派至下一個空站位",
+      "message.assign_all_partial_failure": "無法指派:{streams}。這些資料流仍為未指派狀態。"
     };
 
     function t(key, params = {}) {
@@ -1559,10 +1619,28 @@
       renderNodeOptions();
     }
 
-    async function refreshStations() {
-      state.stations = await fetchJson(`/api/stations?t=${Date.now()}`);
+    function getAvailableNodeIds() {
+      const catalog = getCurrentStreamCatalog();
+      return (state.stations.unassigned_nodes || []).filter(
+        (nodeId) => !staleStreamLabel(nodeId, catalog)
+      );
+    }
+
+    function applyStationsUpdate(newStations, options = {}) {
+      const { checkGrowth = false } = options;
+      state.stations = newStations;
+      const availableNodeIds = getAvailableNodeIds();
+      if (checkGrowth) {
+        const grew = availableNodeIds.some((nodeId) => !state.knownUnassignedNodeIds.has(nodeId));
+        if (grew) openUnassignedDialog();
+      }
+      state.knownUnassignedNodeIds = new Set(availableNodeIds);
       renderStations();
       renderNodeOptions();
+    }
+
+    async function refreshStations() {
+      applyStationsUpdate(await fetchJson(`/api/stations?t=${Date.now()}`), { checkGrowth: true });
     }
 
     async function refreshUpdateStatus() {
@@ -1758,14 +1836,25 @@
       }
     }
 
+    function renderUnassignedWarning(availableNodeIds) {
+      const banner = $("unassigned-streams-warning");
+      const count = availableNodeIds.length;
+      if (count > 0) {
+        banner.textContent = t("warning.unassigned_streams", { count });
+        banner.hidden = false;
+      } else {
+        banner.hidden = true;
+        banner.textContent = "";
+      }
+    }
+
     function renderStations() {
       const stations = state.stations.stations || {};
       const keys = Object.keys(stations).sort((a, b) => Number(a) - Number(b));
       const catalog = getCurrentStreamCatalog();
-      const availableNodeIds = (state.stations.unassigned_nodes || []).filter(
-        (nodeId) => !staleStreamLabel(nodeId, catalog)
-      );
+      const availableNodeIds = getAvailableNodeIds();
       updateSignupLink();
+      renderUnassignedWarning(availableNodeIds);
 
       const list = $("station-list");
       if (!keys.length && !availableNodeIds.length) {
@@ -1851,9 +1940,7 @@
         return;
       }
       try {
-        state.stations = await assignStation(stationNumber, nodeId);
-        renderStations();
-        renderNodeOptions();
+        applyStationsUpdate(await assignStation(stationNumber, nodeId));
         setMessage("station-message", t("message.station_assigned", { stationNumber, nodeId: nodeLabel }), "ok");
       } catch (error) {
         setMessage("station-message", error.message, "error");
@@ -1863,12 +1950,64 @@
     async function unassignStation(stationNumber) {
       if (!window.confirm(t("confirm.unassign_station", { stationNumber }))) return;
       try {
-        state.stations = await assignStation(stationNumber, null);
-        renderStations();
-        renderNodeOptions();
+        applyStationsUpdate(await assignStation(stationNumber, null));
         setMessage("station-message", t("message.station_unassigned", { stationNumber }), "ok");
       } catch (error) {
         setMessage("station-message", error.message, "error");
+      }
+    }
+
+    function nextFreeStationNumber(usedStationNumbers, startFrom) {
+      let candidate = startFrom;
+      while (usedStationNumbers.has(candidate)) candidate += 1;
+      return candidate;
+    }
+
+    function openUnassignedDialog() {
+      const availableNodeIds = getAvailableNodeIds();
+      if (!availableNodeIds.length) return;
+      $("unassigned-dialog-message").textContent = t("dialog.unassigned_message", { count: availableNodeIds.length });
+      setMessage("unassigned-dialog-status", "");
+      $("unassigned-dialog").classList.add("show");
+    }
+
+    function closeUnassignedDialog() {
+      $("unassigned-dialog").classList.remove("show");
+    }
+
+    async function assignAllUnassignedStreams() {
+      const availableNodeIds = getAvailableNodeIds();
+      if (!availableNodeIds.length) {
+        closeUnassignedDialog();
+        return;
+      }
+      const assignBtn = $("unassigned-dialog-assign-btn");
+      const closeBtn = $("unassigned-dialog-close-btn");
+      assignBtn.disabled = true;
+      closeBtn.disabled = true;
+      try {
+        const usedStationNumbers = new Set(Object.keys(state.stations.stations || {}).map(Number));
+        const failedLabels = [];
+        let candidate = 1;
+        for (const nodeId of availableNodeIds) {
+          candidate = nextFreeStationNumber(usedStationNumbers, candidate);
+          usedStationNumbers.add(candidate);
+          try {
+            state.stations = await assignStation(candidate, nodeId);
+          } catch (error) {
+            failedLabels.push(streamDisplayLabel(nodeId));
+          }
+          candidate += 1;
+        }
+        applyStationsUpdate(state.stations);
+        if (failedLabels.length) {
+          setMessage("unassigned-dialog-status", t("message.assign_all_partial_failure", { streams: failedLabels.join(", ") }), "error");
+        } else {
+          closeUnassignedDialog();
+        }
+      } finally {
+        assignBtn.disabled = false;
+        closeBtn.disabled = false;
       }
     }
 
@@ -2217,6 +2356,12 @@
     $("admin-token").addEventListener("keydown", (event) => {
       if (event.key === "Enter") saveAdminToken();
       if (event.key === "Escape") closeLogin();
+    });
+    $("unassigned-dialog").addEventListener("click", (event) => {
+      if (event.target.id === "unassigned-dialog") closeUnassignedDialog();
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && $("unassigned-dialog").classList.contains("show")) closeUnassignedDialog();
     });
 
     connectWebSocket();
