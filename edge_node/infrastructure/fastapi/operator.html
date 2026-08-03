@@ -495,13 +495,26 @@
       letter-spacing: 0.05em;
     }
 
+    /* The scan overlay (#pairing-scan-overlay) and the batch overlay
+       (#batch-progress-overlay) both use this rule, so it stays one
+       visual system for both dialogs. Their trigger buttons live in
+       different places -- #add-device-btn near the top of the home view,
+       #pairing-rescan-btn and #pairing-save-all-btn at the bottom of the
+       worklist -- and any of them can be scrolled out of view, so a
+       dialog that chases its trigger would be unpredictable. Anchoring
+       near the top of the viewport instead is always visible and always
+       in the same place. overflow-y: auto lets the overlay itself scroll
+       when the modal is taller than the space available, so it can never
+       become unreachable or clip its own content on a short viewport. */
     .batch-progress-overlay {
       position: fixed;
       inset: 0;
       background: rgba(0, 0, 0, 0.75);
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       justify-content: center;
+      overflow-y: auto;
+      padding: 64px 16px 32px;
       z-index: 1000;
     }
 

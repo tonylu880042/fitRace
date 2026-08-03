@@ -3519,3 +3519,37 @@ def test_edge_pairing_scanning_dialog_i18n_keys_present_in_both_locales():
     assert "{seconds}" in en["pairing.scanning_elapsed"]
     assert "{seconds}" in zh_tw["pairing.scanning_elapsed"]
     assert set(en.keys()) == set(zh_tw.keys())
+
+
+def test_edge_progress_overlay_anchors_near_top_and_stays_scrollable():
+    """Regression: .batch-progress-overlay vertically centred its modal
+    (align-items: center), which covers whatever content the operator was
+    looking at when they pressed a trigger button -- #add-device-btn near
+    the top of the home view, #pairing-rescan-btn / #pairing-save-all-btn
+    at the bottom of the worklist. Both the scan overlay
+    (#pairing-scan-overlay) and the batch overlay (#batch-progress-overlay)
+    share this one rule, so fixing it here fixes both dialogs at once.
+    The modal must sit near the top with a comfortable gap, and the
+    overlay itself must stay scrollable so a modal taller than a short
+    viewport never becomes unreachable or gets clipped.
+    """
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    rule_start = source.index(".batch-progress-overlay {")
+    rule_end = source.index("}", rule_start) + 1
+    rule = source[rule_start:rule_end]
+
+    assert "align-items: center;" not in rule
+    assert "align-items: flex-start;" in rule
+    # A comfortable gap above the modal, not flush against the viewport edge.
+    assert "padding" in rule
+    # The overlay must be able to scroll on its own so a tall modal is
+    # always reachable, never clipped.
+    assert "overflow-y: auto;" in rule
+
+    # Positioning-only change: backdrop and stacking are untouched.
+    assert "background: rgba(0, 0, 0, 0.75);" in rule
+    assert "z-index: 1000;" in rule
+    assert "position: fixed;" in rule
+    assert "inset: 0;" in rule
