@@ -262,6 +262,11 @@
       margin-top: 14px;
     }
 
+    .button-group {
+      display: flex;
+      gap: 10px;
+    }
+
     .status-text {
       min-height: 20px;
       margin-top: 10px;
@@ -816,7 +821,10 @@
         <section class="panel" aria-labelledby="station-title">
           <div class="panel-header">
             <h2 class="panel-title" id="station-title" data-i18n="panel.station_status">Station Status</h2>
-            <button type="button" onclick="refreshAll()" data-i18n="button.refresh">Refresh</button>
+            <div class="button-group">
+              <button type="button" onclick="window.location.href='/systemAdmin#stations'" data-i18n="button.go_to_station_setup">Assign Stations</button>
+              <button type="button" onclick="refreshAll()" data-i18n="button.refresh">Refresh</button>
+            </div>
           </div>
           <div class="list" id="station-list" style="margin-top: 14px;"></div>
         </section>
@@ -991,7 +999,8 @@
         "message.race_settings_saved": "Race settings saved.",
         "message.leaderboard_updated": "Leaderboard view updated.",
         "message.countdown_playing": "Countdown playing on Dashboard. Race starts on Go.",
-        "text.no_stations_available": "No configured station is available."
+        "text.no_stations_available": "No configured station is available.",
+        "button.go_to_station_setup": "Assign Stations"
       }
     };
 
@@ -1114,7 +1123,8 @@
       "message.race_settings_saved": "比賽設定已儲存。",
       "message.leaderboard_updated": "排行榜顯示已更新。",
       "message.countdown_playing": "倒數正在儀表板播放,比賽將於 Go 時開始。",
-      "text.no_stations_available": "目前沒有已設定的站位可用。"
+      "text.no_stations_available": "目前沒有已設定的站位可用。",
+      "button.go_to_station_setup": "指派站位"
     };
 
     function t(key, params = {}) {
