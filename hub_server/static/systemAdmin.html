@@ -1143,6 +1143,7 @@
           <div class="panel-header">
             <h2 class="panel-title" id="station-title" data-i18n="panel.station_assignment">Station Assignment</h2>
             <button type="button" onclick="copySignupLink()" data-i18n="button.copy_signup_link">Copy Signup Link</button>
+            <button type="button" id="btn-clear-all-stations" onclick="clearAllStations()" data-i18n="button.clear_all_stations">Clear All Stations</button>
           </div>
           <div class="status-text warn" id="unassigned-streams-warning" hidden></div>
           <div class="assign-bar">
@@ -1337,6 +1338,7 @@
         "panel.power_controls": "Power Controls",
         "panel.support": "Support",
         "button.copy_signup_link": "Copy Signup Link",
+        "button.clear_all_stations": "Clear All Stations",
         "button.assign": "Assign",
         "button.check_now": "Check Now",
         "button.download": "Download",
@@ -1417,9 +1419,12 @@
         "wifi.select_ap_hint": "Select the AP this hub should connect to.",
         "wifi.ip_change_warning": "The hub's IP may change and remote browsers will disconnect.",
         "confirm.unassign_station": "Unassign station {stationNumber}?",
+        "confirm.clear_all_stations": "Clear all {count} station assignment(s)?",
         "message.select_station_and_stream": "Select a station number and telemetry stream.",
         "message.station_assigned": "Station {stationNumber} assigned to {nodeId}.",
         "message.station_unassigned": "Station {stationNumber} unassigned.",
+        "message.clear_all_stations_success": "All station assignments cleared.",
+        "message.clear_all_stations_partial_failure": "Could not clear: stations {stations}. They remain assigned.",
         "message.signup_link_copied": "Signup link copied.",
         "message.select_and_copy_link": "Select and copy the signup link.",
         "message.report_copied": "Report copied to clipboard.",
@@ -1458,6 +1463,7 @@
       "panel.power_controls": "電源控制",
       "panel.support": "支援",
       "button.copy_signup_link": "複製報名連結",
+      "button.clear_all_stations": "清除所有站位指派",
       "button.assign": "指派",
       "button.check_now": "立即檢查",
       "button.download": "下載",
@@ -1538,9 +1544,12 @@
       "wifi.select_ap_hint": "請選擇這台 Hub 要連線的無線基地台(AP)。",
       "wifi.ip_change_warning": "Hub 的 IP 可能會改變,遠端瀏覽器將會中斷連線。",
       "confirm.unassign_station": "確定要解除站位 {stationNumber} 的指派?",
+      "confirm.clear_all_stations": "確定要清除所有 {count} 個站位指派?",
       "message.select_station_and_stream": "請選擇站位編號與遙測資料流。",
       "message.station_assigned": "站位 {stationNumber} 已指派給 {nodeId}。",
       "message.station_unassigned": "站位 {stationNumber} 已解除指派。",
+      "message.clear_all_stations_success": "所有站位指派已清除。",
+      "message.clear_all_stations_partial_failure": "無法清除:站位 {stations}。它們仍為指派狀態。",
       "message.signup_link_copied": "報名連結已複製。",
       "message.select_and_copy_link": "請選取並複製報名連結。",
       "message.report_copied": "報告已複製到剪貼簿。",
@@ -2002,6 +2011,42 @@
       try {
         applyStationsUpdate(await assignStation(stationNumber, null));
         setMessage("station-message", t("message.station_unassigned", { stationNumber }), "ok");
+      } catch (error) {
+        setMessage("station-message", error.message, "error");
+      }
+    }
+
+    async function clearAllStations() {
+      const stations = state.stations.stations || {};
+      const assignedStationNumbers = Object.keys(stations)
+        .filter((key) => Boolean(stations[key].node_id))
+        .map(Number);
+
+      if (!assignedStationNumbers.length) {
+        setMessage("station-message", t("message.no_assigned_stations"), "info");
+        return;
+      }
+
+      const count = assignedStationNumbers.length;
+      if (!window.confirm(t("confirm.clear_all_stations", { count }))) return;
+
+      const failedStations = [];
+      try {
+        let lastResult = state.stations;
+        for (const stationNumber of assignedStationNumbers) {
+          try {
+            lastResult = await assignStation(stationNumber, null);
+          } catch (error) {
+            failedStations.push(String(stationNumber).padStart(2, "0"));
+          }
+        }
+        applyStationsUpdate(lastResult);
+
+        if (failedStations.length) {
+          setMessage("station-message", t("message.clear_all_stations_partial_failure", { stations: failedStations.join(", ") }), "error");
+        } else {
+          setMessage("station-message", t("message.clear_all_stations_success"), "ok");
+        }
       } catch (error) {
         setMessage("station-message", error.message, "error");
       }
