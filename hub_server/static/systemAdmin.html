@@ -1292,6 +1292,8 @@
       refreshTimer: null,
       adminToken: localStorage.getItem("fitrace.adminPassword") || localStorage.getItem("fitrace.adminToken") || "",
       knownUnassignedNodeIds: new Set(),
+      wsSocket: null,
+      wsReconnectTimer: null,
     };
 
     function $(id) {
@@ -2302,17 +2304,28 @@
     }
 
     function connectWebSocket() {
+      if (state.wsReconnectTimer) {
+        window.clearTimeout(state.wsReconnectTimer);
+        state.wsReconnectTimer = null;
+      }
+      const existing = state.wsSocket;
+      if (existing && (existing.readyState === WebSocket.OPEN || existing.readyState === WebSocket.CONNECTING)) {
+        return;
+      }
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
       const socket = new WebSocket(`${protocol}//${window.location.host}/ws/dashboard`);
+      state.wsSocket = socket;
       socket.onopen = () => {
         $("ws-dot").className = "dot online";
         $("ws-label").textContent = "Online";
         refreshAll();
       };
       socket.onclose = () => {
+        if (state.wsSocket === socket) state.wsSocket = null;
         $("ws-dot").className = "dot";
         $("ws-label").textContent = "Offline";
-        window.setTimeout(connectWebSocket, 3000);
+        if (state.wsReconnectTimer) window.clearTimeout(state.wsReconnectTimer);
+        state.wsReconnectTimer = window.setTimeout(connectWebSocket, 3000);
       };
       socket.onmessage = (event) => {
         const payload = JSON.parse(event.data);
