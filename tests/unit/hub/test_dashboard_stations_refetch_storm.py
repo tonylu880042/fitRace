@@ -41,9 +41,44 @@ so a passing test can't be satisfied by an unrelated comment or a
 same-named string sitting elsewhere on the page.
 """
 
+import re
 from pathlib import Path
 
 STATIC_DIR = Path(__file__).resolve().parents[3] / "hub_server" / "static"
+
+# Matches a whole line whose first non-whitespace characters are `//` --
+# i.e. a comment-only line, not a trailing `code(); // note` comment and
+# not a `//` that appears mid-line inside a string/template literal (e.g.
+# `` `http://${host}` ``). See `_strip_js_comments` for why this
+# conservative shape was chosen over a full tokenizer.
+_LINE_COMMENT_RE = re.compile(r"^[ \t]*//.*$\n?", re.MULTILINE)
+# Block comments never legitimately contain `://`-style substrings (a
+# literal `/*` requires an asterisk immediately after the slash, which no
+# URL scheme or template literal in these pages produces), so a plain
+# non-greedy strip is safe here.
+_BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
+
+
+def _strip_js_comments(code: str) -> str:
+    """Strip JS comments so a `//` comment can't silently satisfy a
+    source-text assertion (CLAUDE.md's known "comment satisfies the
+    assertion" trap).
+
+    Chosen approach: whole-line `//` comments and `/* */` block comments
+    are removed; a same-line trailing comment (`fetchStations(); // done`)
+    is left alone. Distinguishing a trailing comment from a `//` that is
+    part of a string/template literal (`` `http://...` ``) requires a real
+    JS tokenizer; restricting the line-comment strip to lines that *start*
+    with `//` avoids that ambiguity entirely, at the cost of not catching
+    a hypothetical trailing same-line comment. No trailing-comment usage
+    exists in the pages this test module reads today (verified by
+    inspection of index.html, gameAdmin.html, and systemAdmin.html's
+    inline `<script>` bodies), so this covers the actual contamination
+    case without the misfire risk a blanket `//`-to-end-of-line strip
+    would carry.
+    """
+    without_blocks = _BLOCK_COMMENT_RE.sub("", code)
+    return _LINE_COMMENT_RE.sub("", without_blocks)
 
 
 def _read(name: str) -> str:
@@ -57,14 +92,19 @@ def _script(source: str) -> str:
 
 
 def _extract_braced(source: str, anchor: str) -> str:
-    """Return the exact `{ ... }` block that immediately follows `anchor`.
+    """Return the exact `{ ... }` block that immediately follows `anchor`,
+    with JavaScript comments stripped so no assertion downstream can be
+    satisfied by a comment instead of real code.
 
     Walks brace depth character-by-character from the first `{` after the
     anchor text until depth returns to zero, rather than a non-greedy regex
     stopping at the first `};` -- some handler bodies contain template
     literals like `${data.action}` whose own braces are balanced, but a
     naive `.*?\\};` regex is still fragile against nested arrow-function
-    callbacks. Brace counting is exact regardless.
+    callbacks. Brace counting is exact regardless, and runs over the raw
+    (un-stripped) source so a comment could never distort brace depth --
+    comment stripping happens only on the already-extracted slice, after
+    matching, before it is returned.
     """
     start = source.index(anchor) + len(anchor)
     brace_start = source.index("{", start)
@@ -76,7 +116,7 @@ def _extract_braced(source: str, anchor: str) -> str:
         elif ch == "}":
             depth -= 1
             if depth == 0:
-                return source[brace_start : i + 1]
+                return _strip_js_comments(source[brace_start : i + 1])
     raise AssertionError(f"unbalanced braces after anchor {anchor!r}")
 
 
