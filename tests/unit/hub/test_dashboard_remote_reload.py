@@ -318,3 +318,21 @@ def test_reload_dashboard_handler_posts_to_registered_dashboard_reload_route():
         f'{handler_name}() must send its request with method: "POST" '
         f"(found no such literal in its body: {body[:300]!r})"
     )
+
+
+def test_reload_dashboard_handler_sends_admin_headers():
+    """The handler must attach the page's admin-token headers helper
+    (adminHeaders(...)) to its request. require_admin() on the backend
+    returns 401 without the X-FitRace-Admin-Token header, and
+    FITRACE_ADMIN_TOKEN is a required pre-flight item on a correctly
+    configured production hub (DEPLOYMENT.md), so a handler that forgets
+    adminHeaders(...) fails every press there -- while looking, to a quick
+    read of the page, exactly like a working button."""
+    script = _game_admin_script()
+    handler_name = _reload_button_onclick_handler_name()
+    body = _extract_function_body(script, handler_name)
+
+    assert re.search(r"headers:\s*adminHeaders\(", body), (
+        f"{handler_name}() must pass headers: adminHeaders(...) on its "
+        f"request (found no such call in its body: {body[:300]!r})"
+    )
