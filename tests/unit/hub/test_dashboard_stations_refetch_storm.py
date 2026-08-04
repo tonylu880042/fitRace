@@ -1,34 +1,37 @@
 """Regression tests for the GET /api/stations request storm.
 
 Root-cause context (measured live on the venue hub, tony@192.168.0.130):
-4348 req/min (~72/sec) to GET /api/stations with the operator's tabs open,
-dropping to ~48/sec after closing the Game Admin tab -- roughly 24/sec per
-open tab. All traffic came from one client IP with 15 established
-connections, which then starved unrelated POSTs (e.g. the System Admin
-"assign all" flow) of the browser's per-host connection budget.
+GET /api/race/readiness ran at 1452/min (~24/sec) -- only Game Admin calls
+that endpoint, and 24/sec is exactly the telemetry rate (six machines at a
+250ms interval), and GET /api/stations ran at 5803/min.
 
-hub_server/static/index.html's dashboard `ws.onmessage` handler ended with
-an unconditional fall-through:
+A first attempted fix (commit 2553aba) gated the untyped-broadcast refetch
+on `Object.keys(payload).length === 0`, on the premise that "only the empty
+broadcast can add a new station." That premise was wrong:
+hub_server/adapters/mqtt_subscriber.py::_handle_telemetry broadcasts the
+empty `{}` on *every* telemetry row whenever the race isn't RUNNING
+(`race_manager.ingest_telemetry` returns `None` for every row unless the
+race state is RUNNING) -- so gating on emptiness changed nothing; the empty
+broadcast is exactly as high-frequency as the populated one.
 
-    if (data && Object.keys(data).length > 0) {
-      renderLeaderboard(data);
-    }
-    fetchStations(); // Update registrations dynamically
+The actual fix: stop deciding "refetch stations?" by inspecting the *shape*
+of an untyped telemetry broadcast at all. Station/node membership changes
+already have dedicated typed events -- `registration_success`,
+`node_status`, and `state_change` -- which each page already dispatches on.
+No untyped payload, populated or empty, should trigger an HTTP request.
 
-Telemetry broadcasts (hub_server/adapters/mqtt_subscriber.py, both the
-populated per-athlete `display_progress` dict broadcast while a race is
-RUNNING, and the empty `{}` broadcast used to signal "a not-yet-registered
-node just started streaming") carry no `type` field, so every single one
-reached this fall-through and re-fetched /api/stations over HTTP. With six
-machines streaming telemetry at a 250ms interval that is ~24 broadcasts/sec
--- and therefore ~24 unnecessary refetches/sec -- per open tab.
-
-Only the empty-broadcast case can actually add a new station/node
-registration; the populated leaderboard case never does. gameAdmin.html's
-`socket.onmessage` had the same shape: `if (!payload.type)` matched both
-the empty broadcast AND the populated (but gameAdmin never renders)
-leaderboard payload, firing two HTTP refetches (refreshStations +
-refreshReadiness) per telemetry tick.
+One real gap this surfaced: hub_server/static/index.html's `node_status`
+branch used to only call `renderEdgeNodes(...)` and never refreshed
+`/api/stations`. A newly-active (not yet assigned to a station) node only
+shows up in `/api/stations`' `unassigned_nodes` list -- driven by
+`race_manager._active_nodes`, populated purely from telemetry -- which
+`node_status` (the edge node's heartbeat, reporting *configured* bindings)
+never directly announces. Since the dashboard has no other periodic refresh
+while its WebSocket is connected (see `startFallbackRefresh`, which is a
+no-op whenever `wsConnected`), removing the untyped fallback without first
+wiring `fetchStations()` into `node_status` would have broken that
+discovery path. gameAdmin.html's `node_status` branch already refreshed
+stations/readiness, so no equivalent gap existed there.
 
 These tests follow the same source-extraction technique used in
 tests/unit/hub/test_system_admin_websocket_reconnect.py: pull the exact
@@ -87,63 +90,137 @@ def _game_admin_onmessage_body() -> str:
     return _extract_braced(script, "socket.onmessage = (event) =>")
 
 
+# HTTP-triggering call sites we never want to see in code that runs for an
+# untyped broadcast. Checking these specific identifiers (rather than a
+# blanket "fetch(" substring) means the assertion still pins down the exact
+# calls even if a future refactor renames the wrapper -- each must be
+# updated deliberately, not silently dropped from this list.
+_HTTP_CALL_NAMES = (
+    "fetch(",
+    "fetchStations(",
+    "fetchState(",
+    "fetchNodes(",
+    "refreshStations(",
+    "refreshReadiness(",
+    "refreshState(",
+    "refreshOperationalState(",
+    "refreshAll(",
+)
+
+
+def _assert_no_http_calls(label: str, code: str) -> None:
+    for name in _HTTP_CALL_NAMES:
+        assert name not in code, (
+            f"{label} must issue no HTTP request, but found a call to " f"{name!r}"
+        )
+
+
+def _tail_after_typed_branches(body: str, anchors: list) -> str:
+    """Return the code that runs once none of the typed `if` branches (each
+    of which anchors a `{...}` block) matched -- i.e. the untyped handling
+    left in the function after every named typed branch.
+    """
+    end = 0
+    for anchor in anchors:
+        branch = _extract_braced(body, anchor)
+        idx = body.index(branch) + len(branch)
+        end = max(end, idx)
+    return body[end:]
+
+
+INDEX_TYPED_ANCHORS = [
+    'if (data.type === "registration_success")',
+    'if (data.type === "state_change")',
+    'if (data.type === "race_countdown")',
+    'if (data.type === "node_status")',
+    'if (data.type === "race_event")',
+    'if (data.type === "system_power")',
+]
+
+GAME_ADMIN_TYPED_ANCHORS = [
+    'if (payload.type === "state_change")',
+    'if (payload.type === "node_status")',
+    'if (payload.type === "registration_success")',
+]
+
+
 # ---------------------------------------------------------------------------
-# index.html dashboard: populated (typed-leaderboard) telemetry must not
-# trigger a stations refetch; only the empty "new node" broadcast may.
+# index.html dashboard
 # ---------------------------------------------------------------------------
 
 
-def test_index_populated_leaderboard_branch_returns_before_stations_refetch():
+def test_index_populated_leaderboard_branch_only_renders():
     body = _index_onmessage_body()
     branch = _extract_braced(body, "if (data && Object.keys(data).length > 0)")
     assert "renderLeaderboard(data);" in branch
-    assert "return;" in branch, (
-        "the populated-leaderboard branch must return so this untyped, "
-        "high-frequency broadcast (up to ~24/sec across 6 machines) never "
-        "falls through into the trailing fetchStations() call"
-    )
-    render_idx = branch.index("renderLeaderboard(data);")
-    return_idx = branch.index("return;")
-    assert render_idx < return_idx
+    _assert_no_http_calls("index.html's populated-untyped (leaderboard) branch", branch)
 
 
-def test_index_fetchstations_call_sits_outside_the_leaderboard_branch():
+def test_index_untyped_tail_never_issues_an_http_request():
+    """Neither the populated-leaderboard case nor the truly-empty `{}` case
+    may reach an HTTP call. This is the property the storm was caused by
+    violating -- pin the property itself, not one line's spelling."""
     body = _index_onmessage_body()
-    branch = _extract_braced(body, "if (data && Object.keys(data).length > 0)")
-    assert "fetchStations()" not in branch, (
-        "fetchStations() must not run for populated telemetry payloads -- "
-        "those never carry station registration changes"
-    )
-    # The trailing fetchStations() call must still exist immediately after
-    # the branch closes, so it stays reachable for the empty `{}` broadcast
-    # (the only untyped message that signals a newly discovered node).
-    after_branch = body[body.index(branch) + len(branch) :]
-    assert "fetchStations(); // Update registrations dynamically" in after_branch
+    tail = _tail_after_typed_branches(body, INDEX_TYPED_ANCHORS)
+    _assert_no_http_calls("index.html's untyped broadcast handling", tail)
+
+
+def test_index_node_status_branch_refreshes_stations():
+    """node_status is the typed event that must now cover new-node
+    discovery on the dashboard (see module docstring): a not-yet-assigned
+    node only appears in /api/stations' unassigned_nodes list, and the
+    dashboard has no other periodic refresh while its socket is connected."""
+    body = _index_onmessage_body()
+    branch = _extract_braced(body, 'if (data.type === "node_status")')
+    assert "renderEdgeNodes(" in branch
+    assert "fetchStations()" in branch
+    assert "return;" in branch
 
 
 # ---------------------------------------------------------------------------
-# gameAdmin.html: same shape, guarded by payload emptiness instead of type.
+# gameAdmin.html
 # ---------------------------------------------------------------------------
 
 
-def test_game_admin_untyped_refetch_gated_on_empty_payload():
+def test_game_admin_untyped_broadcast_never_issues_an_http_request():
     body = _game_admin_onmessage_body()
-    assert "if (!payload.type && Object.keys(payload).length === 0)" in body, (
-        "the untyped-message branch must also require an empty payload -- "
-        "otherwise every populated (but unrendered) telemetry tick still "
-        "triggers refreshStations()+refreshReadiness() (~24/sec per tab)"
-    )
-    branch = _extract_braced(
-        body, "if (!payload.type && Object.keys(payload).length === 0)"
-    )
+    tail = _tail_after_typed_branches(body, GAME_ADMIN_TYPED_ANCHORS)
+    _assert_no_http_calls("gameAdmin.html's untyped broadcast handling", tail)
+
+
+def test_game_admin_has_no_bare_untyped_fallthrough():
+    body = _game_admin_onmessage_body()
+    assert "if (!payload.type)" not in body
+    assert "Object.keys(payload).length" not in body
+
+
+def test_game_admin_node_status_branch_still_refreshes_stations_and_readiness():
+    """Unchanged: gameAdmin's node_status branch already covered discovery
+    before this fix and must keep doing so."""
+    body = _game_admin_onmessage_body()
+    branch = _extract_braced(body, 'if (payload.type === "node_status")')
     assert "refreshStations()" in branch
     assert "refreshReadiness()" in branch
     assert "return;" in branch
 
 
-def test_game_admin_has_no_bare_untyped_fallthrough():
-    body = _game_admin_onmessage_body()
-    # A bare `if (!payload.type)` (without the emptiness guard) would match
-    # this narrowed condition as a substring, so check the exact bare form
-    # does not appear anywhere in the handler.
-    assert "if (!payload.type) {" not in body
+# ---------------------------------------------------------------------------
+# systemAdmin.html: confirmed to have no per-broadcast untyped refetch --
+# its `socket.onmessage` only dispatches on node_status/registration_success,
+# and station freshness instead comes from its own unconditional 5s
+# `refreshAll()` -> `scheduleRefresh()` loop, independent of any broadcast.
+# This test pins that shape so a future change can't quietly reintroduce an
+# untyped branch here.
+# ---------------------------------------------------------------------------
+
+
+def _system_admin_onmessage_body() -> str:
+    script = _script(_read("systemAdmin.html"))
+    return _extract_braced(script, "socket.onmessage = (event) =>")
+
+
+def test_system_admin_onmessage_has_no_untyped_branch():
+    body = _system_admin_onmessage_body()
+    assert "payload.type ===" in body
+    assert "!payload.type" not in body
+    assert "Object.keys(payload)" not in body

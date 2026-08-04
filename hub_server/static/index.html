@@ -2594,6 +2594,12 @@
         }
         if (data.type === "node_status") {
           renderEdgeNodes(data.nodes || (data.node ? [data.node] : []));
+          // A newly-active (not yet assigned) node only shows up in
+          // /api/stations' unassigned_nodes list, and this heartbeat is
+          // the dashboard's only periodic signal for that while the
+          // WebSocket stays connected -- fetchStations() here is what
+          // replaces the old per-telemetry-tick refetch below.
+          fetchStations();
           return;
         }
         if (data.type === "race_event") {
@@ -2608,12 +2614,12 @@
           // Populated, untyped payloads are per-athlete telemetry progress.
           // They never carry station registration changes, so no refetch.
           renderLeaderboard(data);
-          return;
         }
-        // An empty broadcast (no type, no keys) is the signal the backend
-        // sends when a not-yet-registered node starts streaming telemetry --
-        // that's the only untyped case that can add a new station/node.
-        fetchStations(); // Update registrations dynamically
+        // Untyped payloads -- whether populated leaderboard progress or the
+        // empty {} tick sent whenever no race is running -- never carry
+        // station/node membership changes on their own. Those changes are
+        // covered by the typed node_status, registration_success, and
+        // state_change branches above, so no HTTP request happens here.
       };
     }
 
