@@ -4690,7 +4690,7 @@
       let ipCheckInterval = null;
 
       function qrCodeUrl(targetUrl) {
-        return `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(targetUrl)}`;
+        return `/api/qr.svg?data=${encodeURIComponent(targetUrl)}`;
       }
 
       function updateAccessLinks(baseUrl) {

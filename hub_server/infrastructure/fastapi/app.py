@@ -1,6 +1,7 @@
 import asyncio
 import os
 import base64
+import io
 import logging
 import subprocess
 import time
@@ -8,9 +9,10 @@ from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
 from typing import Dict, Any, Optional
+import segno
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 from pydantic import BaseModel, Field
 from hub_server.domain.models import RaceState, RaceConfig
 from hub_server.usecases.race_manager import RaceManager
@@ -236,6 +238,23 @@ def get_system_version():
     }
 
 
+@app.get("/api/qr.svg")
+def get_qr_svg(data: str = ""):
+    if not data:
+        raise HTTPException(status_code=400, detail="data query parameter is required")
+    try:
+        qr = segno.make(data, error="m")
+        buffer = io.BytesIO()
+        qr.save(buffer, kind="svg", scale=8, border=2)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return Response(
+        content=buffer.getvalue(),
+        media_type="image/svg+xml",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 @app.get("/api/wifi/status")
 def get_wifi_status(interface: str = "wlan0"):
     status = wifi_status_reader.read(interface=interface).model_dump()
@@ -247,7 +266,10 @@ def get_wifi_status(interface: str = "wlan0"):
 def list_wifi_networks(request: Request, interface: str = "wlan0"):
     require_admin(request)
     try:
-        return {"interface": interface, "networks": wifi_manager.list_networks(interface)}
+        return {
+            "interface": interface,
+            "networks": wifi_manager.list_networks(interface),
+        }
     except wifi_manager.WifiError as e:
         raise HTTPException(status_code=e.status_code, detail=str(e))
 
@@ -462,7 +484,9 @@ def get_race_readiness_status() -> dict:
     }
 
     if race_state != RaceState.READY:
-        blocking_issues.append(f"Race state must be READY; current state is {race_state.value}.")
+        blocking_issues.append(
+            f"Race state must be READY; current state is {race_state.value}."
+        )
         checks["state"] = build_check("block", "Save race settings before starting.")
 
     if not config:
@@ -471,9 +495,13 @@ def get_race_readiness_status() -> dict:
     elif config.race_type in ("distance", "calories") and config.target_value <= 0:
         blocking_issues.append("Target value must be greater than 0.")
         checks["target"] = build_check("block", "Target value must be greater than 0.")
-    elif config.race_type in ("time", "max_power", "watts") and config.duration_sec <= 0:
+    elif (
+        config.race_type in ("time", "max_power", "watts") and config.duration_sec <= 0
+    ):
         blocking_issues.append("Challenge duration must be greater than 0.")
-        checks["target"] = build_check("block", "Challenge duration must be greater than 0.")
+        checks["target"] = build_check(
+            "block", "Challenge duration must be greater than 0."
+        )
 
     assigned_stations = [
         (int(station_number), station)
@@ -543,9 +571,7 @@ def get_race_readiness_status() -> dict:
         )
         if online_count == 0:
             blocking_issues.extend(individual_station_issues)
-            checks["stations"] = build_check(
-                "block", "No assigned station is online."
-            )
+            checks["stations"] = build_check("block", "No assigned station is online.")
         elif unhealthy:
             warnings.extend(individual_station_issues)
             checks["stations"] = build_check(
@@ -574,7 +600,9 @@ def get_race_readiness_status() -> dict:
         else:
             checks["teams"] = build_check("ok", f"{len(team_names)} teams ready.")
     elif config:
-        checks["teams"] = build_check("info", "Individual race; team rules are not applied.")
+        checks["teams"] = build_check(
+            "info", "Individual race; team rules are not applied."
+        )
 
     if not race_manager.get_start_countdown_sound_enabled():
         warnings.append("Start sound is disabled for this race.")
@@ -656,7 +684,9 @@ async def set_leaderboard_display(payload: LeaderboardDisplayPayload, request: R
 
 
 @app.post("/api/race/start-sound")
-async def set_start_countdown_sound(payload: StartCountdownSoundPayload, request: Request):
+async def set_start_countdown_sound(
+    payload: StartCountdownSoundPayload, request: Request
+):
     require_admin(request)
     race_manager.set_start_countdown_sound_enabled(payload.enabled)
     return await broadcast_race_state()
