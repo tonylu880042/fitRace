@@ -22,6 +22,14 @@ These tests verify:
    and both the en-US and zh-TW dictionaries define every new i18n key --
    modeled on tests/unit/hub/test_game_admin_station_signpost.py, which
    protects the same kind of i18n hookup.
+6. The button's wiring is *actually connected end to end*: its onclick names
+   a function that is genuinely defined in gameAdmin.html's script (not
+   satisfied by a same-named comment, and not left dangling by a rename),
+   and that function's body POSTs to a path that is a real route registered
+   on the FastAPI app (so frontend/backend path drift is caught), using
+   method "POST". A button with correct i18n but a broken handler still
+   looks fine and silently does nothing -- exactly the failure mode this
+   feature exists to fix.
 """
 
 import re
@@ -205,3 +213,108 @@ def test_i18n_keys_are_symmetric():
 
     assert not missing_in_zh, f"Keys in en-US but missing in zh-TW: {missing_in_zh}"
     assert not missing_in_en, f"Keys in zh-TW but missing in en-US: {missing_in_en}"
+
+
+# ---------------------------------------------------------------------------
+# 6. The button is really wired: onclick -> a real function -> the real route
+# ---------------------------------------------------------------------------
+
+
+def _game_admin_script() -> str:
+    """gameAdmin.html's <script> contents with // and /* */ comments
+    stripped, so a comment mentioning a function/path name can't satisfy an
+    assertion in place of the real code."""
+    source = _read_game_admin()
+    start = source.index("<script>") + len("<script>")
+    end = source.index("</script>", start)
+    return _strip_js_comments(source[start:end])
+
+
+def _reload_button_onclick_handler_name() -> str:
+    """Parse the function name out of the onclick="..." attribute on the
+    element carrying data-i18n="button.reload_dashboard". Deliberately does
+    not hardcode "reloadDashboard" -- if the button's handler is renamed,
+    this returns whatever name the button actually calls, so the later
+    "is that function defined" check is against the real reference, not a
+    literal that would silently stay in sync with nothing."""
+    source = _read_game_admin()
+    marker = 'data-i18n="button.reload_dashboard"'
+    marker_idx = source.index(marker)
+    tag_start = source.rfind("<button", 0, marker_idx)
+    tag_end = source.index(">", marker_idx)
+    tag = source[tag_start : tag_end + 1]
+
+    match = re.search(r'onclick="([A-Za-z_$][\w$]*)\(\)"', tag)
+    assert match, f'reload-dashboard button has no onclick="fn()" handler: {tag}'
+    return match.group(1)
+
+
+def _extract_function_body(script: str, func_name: str) -> str:
+    """Return the source of `function <func_name>(...) { ... }` (async or
+    not) up to the start of the next top-level function definition, from a
+    *comment-stripped* script. Fails loudly if the function isn't actually
+    defined -- a comment mentioning the name doesn't count, since `script`
+    has already had comments removed."""
+    def_pattern = re.compile(
+        r"(?:async\s+)?function\s+" + re.escape(func_name) + r"\s*\("
+    )
+    match = def_pattern.search(script)
+    assert match, (
+        f"No `function {func_name}(...)` definition found in gameAdmin.html's "
+        "script (checked against comment-stripped source, so a comment "
+        "mentioning the name does not count)."
+    )
+    stop_pattern = re.compile(r"\n\s*(?:async\s+)?function\s+\w+\s*\(")
+    stop_match = stop_pattern.search(script, match.end())
+    end = stop_match.start() if stop_match else len(script)
+    return script[match.start() : end]
+
+
+def test_reload_dashboard_button_onclick_resolves_to_a_defined_function():
+    """The button must call a function that genuinely exists in the page's
+    script -- not a stale name left dangling by a rename, and not a name
+    that only appears inside a comment."""
+    script = _game_admin_script()
+    handler_name = _reload_button_onclick_handler_name()
+
+    # _extract_function_body already asserts the definition exists; calling
+    # it is the check.
+    _extract_function_body(script, handler_name)
+
+
+def test_reload_dashboard_handler_posts_to_registered_dashboard_reload_route():
+    """The handler named by the button's onclick must POST to a path that
+    is an actual route on the FastAPI app -- pinned against app.routes
+    rather than a hardcoded literal, so the frontend and backend paths can
+    never silently drift apart -- using method "POST"."""
+    script = _game_admin_script()
+    handler_name = _reload_button_onclick_handler_name()
+    body = _extract_function_body(script, handler_name)
+
+    path_match = re.search(r'fetchJson\(\s*"([^"]+)"', body)
+    assert path_match, (
+        f'{handler_name}() does not call fetchJson("<path>", ...) with a '
+        "literal path"
+    )
+    called_path = path_match.group(1)
+
+    backend_routes = [
+        route
+        for route in app_module.app.routes
+        if getattr(route, "path", None) == called_path
+    ]
+    assert backend_routes, (
+        f"{handler_name}() POSTs to {called_path!r}, which is not a route "
+        "registered on the FastAPI app -- frontend/backend path drift."
+    )
+    assert any(
+        "POST" in getattr(route, "methods", set()) for route in backend_routes
+    ), (
+        f"{handler_name}() targets {called_path!r}, but no registered route "
+        "for that path accepts POST."
+    )
+
+    assert re.search(r'method:\s*["\']POST["\']', body), (
+        f'{handler_name}() must send its request with method: "POST" '
+        f"(found no such literal in its body: {body[:300]!r})"
+    )
