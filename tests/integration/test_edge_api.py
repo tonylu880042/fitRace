@@ -1,9 +1,25 @@
 from fastapi.testclient import TestClient
 import json
+import re
 from pathlib import Path
 
 from edge_node.domain.models import FtmsDevice
 from edge_node.infrastructure.fastapi import app as edge_app_module
+
+# Matches a whole line whose first non-whitespace characters are `//` (a
+# comment-only line), plus `/* */` blocks. See
+# tests/unit/hub/test_dashboard_stations_refetch_storm.py::_strip_js_comments
+# for the full rationale (conservative-vs-tokenizer tradeoff). Used below to
+# stop a function-boundary text search (`source.index("function next(...)")`)
+# from silently pulling the *next* function's leading doc-comment into an
+# extracted slice, which let a coincidental substring match in that comment
+# satisfy an assertion meant to protect the current function's real code.
+_LINE_COMMENT_RE = re.compile(r"^[ \t]*//.*$\n?", re.MULTILINE)
+_BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
+
+
+def _strip_js_comments(code: str) -> str:
+    return _LINE_COMMENT_RE.sub("", _BLOCK_COMMENT_RE.sub("", code))
 
 
 class FakeScanner:
@@ -3205,7 +3221,12 @@ def test_edge_pairing_channel_picker_offers_every_configured_channel_with_status
 
     options_start = source.index("function channelOptionsForMeta(meta)")
     options_end = source.index("function preselectChannelId(meta)", options_start)
-    options_fn = source[options_start:options_end]
+    # Comments stripped: preselectChannelId's own leading doc-comment (which
+    # discusses "never heard, but not stuck") sits inside this slice, right
+    # before the "function preselectChannelId(meta)" boundary text, and its
+    # "heard" substring silently satisfied `assert "heard," in options_fn`
+    # even with the real `heard,` property deleted from the object below.
+    options_fn = _strip_js_comments(source[options_start:options_end])
     assert "edgeConfig?.antenna_channels" in options_fn
     assert "channelFreeSlots(channel.id) === 0" in options_fn
     # every configured channel is offered regardless of whether the scan
