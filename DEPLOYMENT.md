@@ -57,6 +57,30 @@ echo 'ucare ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart fitracestudio-edge.se
 
 After hub deploy, the script prints the release name and rollback command. To rollback: `deploy.sh rollback-hub <release-name> [user@host]`.
 
+### Preinstall segno before deploying this release (offline-safe)
+
+Starting with the release that generates dashboard QR codes locally,
+`hub_server/infrastructure/fastapi/app.py` imports `segno` at module load
+time, so **the hub will not start without it**. `scripts/deploy.sh` only
+rsyncs the release and restarts the service — it never installs Python
+dependencies, and it excludes `.venv` from the sync — so a hub whose Python
+environment lacks `segno` fails to start on this release, and the deploy
+script's health check then rolls it back.
+
+`segno` must already be present in the hub service's Python environment
+*before* this release is deployed. The target device may have no WAN at
+deploy time, so install it from the pure-Python wheel checked into this repo
+at `scripts/wheels/segno-1.6.6-py3-none-any.whl` rather than from PyPI:
+
+```bash
+scp scripts/wheels/segno-1.6.6-py3-none-any.whl <user>@<hub-host>:/tmp/
+ssh <user>@<hub-host> "<path-to-hub-venv>/bin/pip install --no-index /tmp/segno-1.6.6-py3-none-any.whl"
+```
+
+This is safe to run against a hub still on the current release — `segno` is
+simply unused until the new code lands — and needs no internet access on
+either machine.
+
 ## 1. Deployment Decision
 
 FitRaceStudio ships with a professional AP. Network provisioning is completed before delivery, and Edge Nodes are configured through their local web services on the shipped LAN.
