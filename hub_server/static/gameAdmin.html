@@ -823,6 +823,7 @@
             <h2 class="panel-title" id="station-title" data-i18n="panel.station_status">Station Status</h2>
             <div class="button-group">
               <button type="button" onclick="window.location.href='/systemAdmin#stations'" data-i18n="button.go_to_station_setup">Assign Stations</button>
+              <button type="button" onclick="reloadDashboard()" data-i18n="button.reload_dashboard">Reload Dashboard</button>
               <button type="button" onclick="refreshAll()" data-i18n="button.refresh">Refresh</button>
             </div>
           </div>
@@ -1000,7 +1001,11 @@
         "message.leaderboard_updated": "Leaderboard view updated.",
         "message.countdown_playing": "Countdown playing on Dashboard. Race starts on Go.",
         "text.no_stations_available": "No configured station is available.",
-        "button.go_to_station_setup": "Assign Stations"
+        "button.go_to_station_setup": "Assign Stations",
+        "button.reload_dashboard": "Reload Dashboard",
+        "confirm.reload_dashboard": "Reload the dashboard screen now?",
+        "message.dashboard_reload_sent": "Dashboard reload sent.",
+        "message.dashboard_reload_failed": "Failed to reload dashboard: {error}"
       }
     };
 
@@ -1124,7 +1129,11 @@
       "message.leaderboard_updated": "排行榜顯示已更新。",
       "message.countdown_playing": "倒數正在儀表板播放,比賽將於 Go 時開始。",
       "text.no_stations_available": "目前沒有已設定的站位可用。",
-      "button.go_to_station_setup": "指派站位"
+      "button.go_to_station_setup": "指派站位",
+      "button.reload_dashboard": "重新載入首頁",
+      "confirm.reload_dashboard": "確定要立刻重新載入首頁畫面?",
+      "message.dashboard_reload_sent": "已送出重新載入首頁指令。",
+      "message.dashboard_reload_failed": "重新載入首頁失敗:{error}"
     };
 
     function t(key, params = {}) {
@@ -1677,6 +1686,19 @@
         setMessage("race-message", successMessage, "ok");
       } catch (error) {
         setMessage("race-message", error.message, "error");
+      }
+    }
+
+    async function reloadDashboard() {
+      if (!window.confirm(t("confirm.reload_dashboard"))) return;
+      try {
+        await fetchJson("/api/dashboard/reload", {
+          method: "POST",
+          headers: adminHeaders(),
+        });
+        setMessage("race-message", t("message.dashboard_reload_sent"), "ok");
+      } catch (error) {
+        setMessage("race-message", t("message.dashboard_reload_failed", { error: error.message }), "error");
       }
     }
 

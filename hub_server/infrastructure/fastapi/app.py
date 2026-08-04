@@ -692,6 +692,13 @@ async def set_start_countdown_sound(
     return await broadcast_race_state()
 
 
+@app.post("/api/dashboard/reload")
+async def reload_dashboard(request: Request):
+    require_admin(request)
+    await ws_manager.broadcast({"type": "dashboard_reload"})
+    return {"status": "ok"}
+
+
 @app.get("/api/nodes")
 def get_nodes():
     return {"nodes": node_registry.list_nodes()}

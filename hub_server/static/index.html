@@ -2610,6 +2610,10 @@
           showPowerStatus(`${data.action} ${data.message}${suffix}`, false);
           return;
         }
+        if (data.type === "dashboard_reload") {
+          window.location.reload();
+          return;
+        }
         if (data && Object.keys(data).length > 0) {
           // Populated, untyped payloads are per-athlete telemetry progress.
           // They never carry station registration changes, so no refetch.
