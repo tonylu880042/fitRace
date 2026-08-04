@@ -1719,7 +1719,12 @@
           refreshOperationalState();
           return;
         }
-        if (!payload.type) {
+        if (!payload.type && Object.keys(payload).length === 0) {
+          // An empty broadcast is the only untyped message that can add a
+          // new station/node (a not-yet-registered node just started
+          // streaming). Populated, untyped payloads are per-athlete race
+          // progress -- gameAdmin never renders that data, so it needs no
+          // refetch here.
           Promise.allSettled([refreshStations(), refreshReadiness()]);
           return;
         }

@@ -2605,8 +2605,14 @@
           return;
         }
         if (data && Object.keys(data).length > 0) {
+          // Populated, untyped payloads are per-athlete telemetry progress.
+          // They never carry station registration changes, so no refetch.
           renderLeaderboard(data);
+          return;
         }
+        // An empty broadcast (no type, no keys) is the signal the backend
+        // sends when a not-yet-registered node starts streaming telemetry --
+        // that's the only untyped case that can add a new station/node.
         fetchStations(); // Update registrations dynamically
       };
     }
