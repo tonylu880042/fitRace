@@ -1144,8 +1144,10 @@
             <h2 class="panel-title" id="station-title" data-i18n="panel.station_assignment">Station Assignment</h2>
             <button type="button" onclick="copySignupLink()" data-i18n="button.copy_signup_link">Copy Signup Link</button>
             <button type="button" id="btn-clear-all-stations" onclick="clearAllStations()" data-i18n="button.clear_all_stations">Clear All Stations</button>
+            <button type="button" id="btn-clear-orphaned-stations" onclick="clearOrphanedStations()" data-i18n="button.clear_orphaned_stations">Clear Orphaned Stations</button>
           </div>
           <div class="status-text warn" id="unassigned-streams-warning" hidden></div>
+          <div class="status-text warn" id="orphaned-stations-warning" hidden></div>
           <div class="assign-bar">
             <div class="field">
               <label for="station-number" data-i18n="label.station">Station</label>
@@ -1339,6 +1341,7 @@
         "panel.support": "Support",
         "button.copy_signup_link": "Copy Signup Link",
         "button.clear_all_stations": "Clear All Stations",
+        "button.clear_orphaned_stations": "Clear Orphaned Stations",
         "button.assign": "Assign",
         "button.check_now": "Check Now",
         "button.download": "Download",
@@ -1420,18 +1423,23 @@
         "wifi.ip_change_warning": "The hub's IP may change and remote browsers will disconnect.",
         "confirm.unassign_station": "Unassign station {stationNumber}?",
         "confirm.clear_all_stations": "Clear all {count} station assignment(s)?",
+        "confirm.clear_orphaned_stations": "Clear {count} orphaned station(s) whose assigned devices no longer exist?",
         "message.select_station_and_stream": "Select a station number and telemetry stream.",
         "message.no_assigned_stations": "No stations are currently assigned.",
         "message.station_assigned": "Station {stationNumber} assigned to {nodeId}.",
         "message.station_unassigned": "Station {stationNumber} unassigned.",
         "message.clear_all_stations_success": "All station assignments cleared.",
         "message.clear_all_stations_partial_failure": "Could not clear: stations {stations}. They remain assigned.",
+        "message.no_orphaned_stations": "No orphaned stations to clear.",
+        "message.clear_orphaned_stations_success": "Orphaned station assignments cleared.",
+        "message.clear_orphaned_stations_partial_failure": "Could not clear: stations {stations}. They remain assigned.",
         "message.signup_link_copied": "Signup link copied.",
         "message.select_and_copy_link": "Select and copy the signup link.",
         "message.report_copied": "Report copied to clipboard.",
         "message.copy_failed": "Copy failed — select the text above and copy manually.",
         "text.unknown": "Unknown",
         "warning.unassigned_streams": "{count} telemetry stream(s) are unassigned and will not take part in a race until assigned to a station.",
+        "warning.orphaned_stations": "{count} station(s) are assigned to devices that no longer exist. Their assignments should be cleared.",
         "dialog.unassigned_title": "Unassigned telemetry streams",
         "dialog.unassigned_message": "{count} telemetry stream(s) became unassigned. They will not take part in a race until you assign them to a station.",
         "button.assign_all_unassigned": "Assign all to next open stations",
@@ -1465,6 +1473,7 @@
       "panel.support": "支援",
       "button.copy_signup_link": "複製報名連結",
       "button.clear_all_stations": "清除所有站位指派",
+      "button.clear_orphaned_stations": "清除孤立的站位",
       "button.assign": "指派",
       "button.check_now": "立即檢查",
       "button.download": "下載",
@@ -1546,18 +1555,23 @@
       "wifi.ip_change_warning": "Hub 的 IP 可能會改變,遠端瀏覽器將會中斷連線。",
       "confirm.unassign_station": "確定要解除站位 {stationNumber} 的指派?",
       "confirm.clear_all_stations": "確定要清除所有 {count} 個站位指派?",
+      "confirm.clear_orphaned_stations": "確定要清除 {count} 個孤立站位(其指派的設備已不存在)?",
       "message.select_station_and_stream": "請選擇站位編號與遙測資料流。",
       "message.no_assigned_stations": "目前沒有已指派的站位。",
       "message.station_assigned": "站位 {stationNumber} 已指派給 {nodeId}。",
       "message.station_unassigned": "站位 {stationNumber} 已解除指派。",
       "message.clear_all_stations_success": "所有站位指派已清除。",
       "message.clear_all_stations_partial_failure": "無法清除:站位 {stations}。它們仍為指派狀態。",
+      "message.no_orphaned_stations": "沒有孤立的站位可清除。",
+      "message.clear_orphaned_stations_success": "孤立站位指派已清除。",
+      "message.clear_orphaned_stations_partial_failure": "無法清除:站位 {stations}。它們仍為指派狀態。",
       "message.signup_link_copied": "報名連結已複製。",
       "message.select_and_copy_link": "請選取並複製報名連結。",
       "message.report_copied": "報告已複製到剪貼簿。",
       "message.copy_failed": "複製失敗 — 請選取上方文字並手動複製。",
       "text.unknown": "未知",
       "warning.unassigned_streams": "有 {count} 個遙測資料流尚未指派站位,在指派站位前不會參與比賽。",
+      "warning.orphaned_stations": "{count} 個站位指派給已不存在的設備。應清除這些指派。",
       "dialog.unassigned_title": "尚未指派的遙測資料流",
       "dialog.unassigned_message": "有 {count} 個資料流變成未指派狀態。在指派站位前,它們不會參與比賽。",
       "button.assign_all_unassigned": "全部指派至下一個空站位",
@@ -1752,9 +1766,22 @@
 
 
 
-
-
-
+    // isStationOrphaned checks if a station's assigned node_id has been removed
+    // from the edge node's configuration. It returns true ONLY if the node_id is
+    // NOT present in any edge's equipment_streams list. Unlike a staleness check
+    // (which would look at last_telemetry_epoch_ms), this is a binding presence
+    // check: a sleeping/idle machine with null last_telemetry_epoch_ms still has
+    // its node_id in equipment_streams with status="configured", so it must never
+    // be selected as orphaned. If nodes is empty/null (hub just restarted), we
+    // return false to avoid orphaning the entire venue — absence of heartbeats
+    // is not evidence of removal.
+    function isStationOrphaned(nodeId, nodes) {
+      if (!nodeId) return false;
+      if (!Array.isArray(nodes) || nodes.length === 0) return false;
+      return !nodes.some((edge) =>
+        (edge.equipment_streams || []).some((stream) => stream && stream.node_id === nodeId)
+      );
+    }
 
     function getCurrentStreamCatalog() {
       const streams = new Map();
@@ -1909,6 +1936,18 @@
       }
     }
 
+    function renderOrphanedStationsWarning(orphanedStationNumbers) {
+      const banner = $("orphaned-stations-warning");
+      const count = orphanedStationNumbers.length;
+      if (count > 0) {
+        banner.textContent = t("warning.orphaned_stations", { count });
+        banner.hidden = false;
+      } else {
+        banner.hidden = true;
+        banner.textContent = "";
+      }
+    }
+
     function renderStations() {
       const stations = state.stations.stations || {};
       const keys = Object.keys(stations).sort((a, b) => Number(a) - Number(b));
@@ -1916,6 +1955,13 @@
       const availableNodeIds = getAvailableNodeIds();
       updateSignupLink();
       renderUnassignedWarning(availableNodeIds);
+      // Compute orphaned stations: assigned stations whose node_id is no longer
+      // in any edge's equipment_streams
+      const orphanedStationNumbers = keys.filter((key) => {
+        const station = stations[key] || {};
+        return station.node_id && isStationOrphaned(station.node_id, state.nodes);
+      }).map(Number);
+      renderOrphanedStationsWarning(orphanedStationNumbers);
 
       const list = $("station-list");
       if (!keys.length && !availableNodeIds.length) {
@@ -2048,6 +2094,45 @@
           setMessage("station-message", t("message.clear_all_stations_partial_failure", { stations: failedStations.join(", ") }), "error");
         } else {
           setMessage("station-message", t("message.clear_all_stations_success"), "ok");
+        }
+      } catch (error) {
+        setMessage("station-message", error.message, "error");
+      }
+    }
+
+    async function clearOrphanedStations() {
+      const stations = state.stations.stations || {};
+      const orphanedStationNumbers = Object.keys(stations)
+        .filter((key) => {
+          const station = stations[key] || {};
+          return station.node_id && isStationOrphaned(station.node_id, state.nodes);
+        })
+        .map(Number);
+
+      if (!orphanedStationNumbers.length) {
+        setMessage("station-message", t("message.no_orphaned_stations"), "info");
+        return;
+      }
+
+      const count = orphanedStationNumbers.length;
+      if (!window.confirm(t("confirm.clear_orphaned_stations", { count }))) return;
+
+      const failedStations = [];
+      try {
+        let lastResult = state.stations;
+        for (const stationNumber of orphanedStationNumbers) {
+          try {
+            lastResult = await assignStation(stationNumber, null);
+          } catch (error) {
+            failedStations.push(String(stationNumber).padStart(2, "0"));
+          }
+        }
+        applyStationsUpdate(lastResult);
+
+        if (failedStations.length) {
+          setMessage("station-message", t("message.clear_orphaned_stations_partial_failure", { stations: failedStations.join(", ") }), "error");
+        } else {
+          setMessage("station-message", t("message.clear_orphaned_stations_success"), "ok");
         }
       } catch (error) {
         setMessage("station-message", error.message, "error");
