@@ -216,3 +216,37 @@ def test_station_status_panel_uses_i18n_not_hardcoded():
         tag_html = panel_html[tag_start : tag_end + 1]
         # Should have data-i18n or be used with t() somewhere
         assert "data-i18n" in tag_html or "button.go_to_station_setup" in panel_html
+
+
+def test_signpost_button_has_data_i18n_attribute():
+    """The signpost button MUST carry data-i18n="button.go_to_station_setup"
+    to be visible to applyTranslations(). Without it, the button stays
+    hardcoded "Assign Stations" even when the operator switches to zh-TW.
+
+    This is a strict gate: applyTranslations() only touches elements with
+    [data-i18n] attributes (document.querySelectorAll("[data-i18n]")), so
+    the attribute is not optional — its absence is a silent i18n breakage.
+    """
+    source = _read()
+    panel_start = source.index('aria-labelledby="station-title"')
+    panel_section_start = source.rfind("<", 0, panel_start)
+    section_end = source.index("</section>", panel_start) + len("</section>")
+    panel_html = source[panel_section_start:section_end]
+
+    # Locate the specific <button> tag with onclick="/systemAdmin#stations"
+    # Find the button start
+    button_marker = 'onclick="window.location.href=\'/systemAdmin#stations\'"'
+    assert button_marker in panel_html, (
+        "button with onclick to /systemAdmin#stations not found in Station Status panel"
+    )
+
+    # Extract just the opening <button ...> tag
+    button_onclick_idx = panel_html.index(button_marker)
+    button_start = panel_html.rfind("<button", 0, button_onclick_idx)
+    button_tag_end = panel_html.index(">", button_onclick_idx)
+    button_opening_tag = panel_html[button_start : button_tag_end + 1]
+
+    # Assert the tag itself contains data-i18n="button.go_to_station_setup"
+    assert (
+        'data-i18n="button.go_to_station_setup"' in button_opening_tag
+    ), f"Button element missing data-i18n hook. Tag: {button_opening_tag}"
