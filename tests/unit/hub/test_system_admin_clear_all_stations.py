@@ -176,6 +176,7 @@ def test_unassign_station_function_unchanged():
 
 NEW_I18N_KEYS = [
     "confirm.clear_all_stations",
+    "message.no_assigned_stations",
     "message.clear_all_stations_success",
     "message.clear_all_stations_partial_failure",
 ]
