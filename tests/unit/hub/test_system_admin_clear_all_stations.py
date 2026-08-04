@@ -8,6 +8,7 @@ window. That keeps a passing test from being satisfied by an unrelated
 comment or a same-named string sitting somewhere else on the page.
 """
 
+import re
 from pathlib import Path
 
 STATIC_DIR = Path(__file__).resolve().parents[3] / "hub_server" / "static"
@@ -36,6 +37,27 @@ def _script(source: str) -> str:
 NEXT_FN = "\n    function "
 NEXT_ASYNC_FN = "\n    async function "
 STOPS = [NEXT_FN, NEXT_ASYNC_FN]
+
+# Comment-stripping helpers (CLAUDE.md: a comment must not satisfy a source assertion)
+_LINE_COMMENT_RE = re.compile(r"^[ \t]*//.*$\n?", re.MULTILINE)
+_BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
+
+
+def _strip_js_comments(code: str) -> str:
+    """Strip JS comments so a `//` comment can't silently satisfy a
+    source-text assertion (CLAUDE.md's known "comment satisfies the
+    assertion" trap).
+
+    Chosen approach: whole-line `//` comments and `/* */` block comments
+    are removed; a same-line trailing comment (`fetchStations(); // done`)
+    is left alone. Distinguishing a trailing comment from a `//` that is
+    part of a string/template literal (`` `http://...` ``) requires a real
+    JS tokenizer; restricting the line-comment strip to lines that *start*
+    with `//` avoids that ambiguity entirely, at the cost of not catching
+    a hypothetical trailing same-line comment.
+    """
+    without_blocks = _BLOCK_COMMENT_RE.sub("", code)
+    return _LINE_COMMENT_RE.sub("", without_blocks)
 
 
 # ---------------------------------------------------------------------------
@@ -167,6 +189,44 @@ def test_unassign_station_function_unchanged():
     assert "window.confirm(t(" in body
     assert "confirm.unassign_station" in body
     assert "assignStation(stationNumber, null)" in body
+
+
+# ---------------------------------------------------------------------------
+# 5b. Failure-reporting catch block (mutation-proof)
+# ---------------------------------------------------------------------------
+
+
+def test_clear_all_stations_failure_reporting_in_catch_block():
+    """The catch block that handles per-station failures MUST push failed
+    stations to the failure list. If this is removed (e.g., commented out or
+    replaced with a comment-only catch body), the test will fail.
+
+    This is a mutation-proof assertion: we extract the specific catch block,
+    strip comments (so a comment can't satisfy the assertion), and verify
+    that `.push(` is called inside it.
+    """
+    source = _script(_read())
+    body = _extract_function(source, "async function clearAllStations(", STOPS)
+
+    # Find the catch block that follows assignStation(stationNumber, null)
+    # Pattern: catch (error) { ... } (brace-matched)
+    catch_match = re.search(
+        r"catch\s*\(\s*error\s*\)\s*\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}",
+        body,
+        re.DOTALL,
+    )
+    assert catch_match, "catch (error) block not found in clearAllStations"
+
+    catch_body = catch_match.group(1)
+    # Strip comments so a comment can't satisfy this test
+    catch_body_stripped = _strip_js_comments(catch_body)
+
+    # The catch block MUST push to failedStations (or whatever array collects failures)
+    # Look for any .push( call in the catch block
+    assert ".push(" in catch_body_stripped, (
+        "catch block must push failed station(s) to a failures list, "
+        "not silently swallow errors"
+    )
 
 
 # ---------------------------------------------------------------------------
