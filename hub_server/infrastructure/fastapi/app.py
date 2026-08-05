@@ -380,7 +380,9 @@ def station_stream_health(node_id: str | None) -> dict:
                 continue
 
             display_fields = {
-                "node_display_name": stream.get("display_name") or node_id,
+                "node_display_name": (
+                    stream.get("display_name") or stream.get("equipment_id") or node_id
+                ),
                 "edge_node_id": edge_node.get("edge_node_id"),
                 "edge_display_name": edge_node.get("display_name")
                 or edge_node.get("edge_node_id"),
