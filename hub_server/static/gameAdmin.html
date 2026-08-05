@@ -465,8 +465,15 @@
       color: var(--ok);
     }
 
-    .button-row-danger {
-      margin-left: auto;
+    .action-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-top: 18px;
+      padding-top: 14px;
+      border-top: 2px solid var(--border);
     }
 
     .field-note {
@@ -867,6 +874,16 @@
       .button-row button {
         width: 100%;
       }
+      .action-bar {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .action-bar .button-group {
+        width: 100%;
+      }
+      .action-bar button {
+        width: 100%;
+      }
     }
   </style>
 </head>
@@ -1027,14 +1044,14 @@
           </div>
 
           <div class="countdown-banner" id="countdown-status" aria-live="polite" data-i18n="banner.countdown_active">Countdown active on Dashboard. Race starts on Go.</div>
-          <div class="button-row">
+          <div class="action-bar">
+            <div class="button-group">
+              <button type="button" class="danger" id="btn-stop" onclick="stopRace()" data-i18n="button.stop_race">Stop Race</button>
+              <button type="button" class="danger" id="btn-reset" onclick="resetRace()" data-i18n="button.reset_race">Reset Race</button>
+            </div>
             <div class="button-group">
               <button type="button" class="primary" id="btn-save-race" onclick="saveRaceConfig()" data-i18n="button.save_race">Save Race</button>
               <button type="button" class="primary" id="btn-start-race" onclick="startRaceAction()" data-i18n="button.start_race">Start Race</button>
-            </div>
-            <div class="button-group button-row-danger">
-              <button type="button" class="danger" id="btn-stop" onclick="stopRace()" data-i18n="button.stop_race">Stop Race</button>
-              <button type="button" class="danger" id="btn-reset" onclick="resetRace()" data-i18n="button.reset_race">Reset Race</button>
             </div>
           </div>
           <div class="status-text" id="race-message"></div>
