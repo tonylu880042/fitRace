@@ -1005,7 +1005,13 @@
         "button.reload_dashboard": "Reload Dashboard",
         "confirm.reload_dashboard": "Reload the dashboard screen now?",
         "message.dashboard_reload_sent": "Dashboard reload sent.",
-        "message.dashboard_reload_failed": "Failed to reload dashboard: {error}"
+        "message.dashboard_reload_failed": "Failed to reload dashboard: {error}",
+        "check.state": "Race State",
+        "check.target": "Target",
+        "check.registrations": "Registrations",
+        "check.teams": "Teams",
+        "check.stations": "Station Health",
+        "check.sound": "Sound"
       }
     };
 
@@ -1133,7 +1139,13 @@
       "button.reload_dashboard": "重新載入首頁",
       "confirm.reload_dashboard": "確定要立刻重新載入首頁畫面?",
       "message.dashboard_reload_sent": "已送出重新載入首頁指令。",
-      "message.dashboard_reload_failed": "重新載入首頁失敗:{error}"
+      "message.dashboard_reload_failed": "重新載入首頁失敗:{error}",
+      "check.state": "比賽狀態",
+      "check.target": "目標設定",
+      "check.registrations": "選手報名",
+      "check.teams": "隊伍編組",
+      "check.stations": "場站狀態",
+      "check.sound": "音效"
     };
 
     function t(key, params = {}) {
@@ -1452,12 +1464,12 @@
         : "";
       const checks = readiness.checks || {};
       const checkOrder = [
-        ["state", "Race State"],
-        ["target", "Target"],
-        ["registrations", "Registrations"],
-        ["teams", "Teams"],
-        ["stations", "Station Health"],
-        ["sound", "Sound"],
+        ["state", t("check.state")],
+        ["target", t("check.target")],
+        ["registrations", t("check.registrations")],
+        ["teams", t("check.teams")],
+        ["stations", t("check.stations")],
+        ["sound", t("check.sound")],
       ];
       const checksHtml = checkOrder.map(([key, label]) => {
         const check = checks[key] || { status: "info", message: "--" };
