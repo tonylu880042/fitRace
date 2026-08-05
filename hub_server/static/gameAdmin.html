@@ -358,6 +358,39 @@
       display: block;
     }
 
+    .race-control-grid {
+      display: grid;
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+      gap: 18px;
+      align-items: stretch;
+    }
+
+    .race-control-left {
+      grid-column: span 8;
+      min-width: 0;
+    }
+
+    .race-control-right {
+      grid-column: span 4;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .race-control-right .readiness {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      margin-top: 0;
+      margin-bottom: 0;
+    }
+
+    .race-control-right .readiness-card {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+
     .control-block {
       border: 1px solid var(--border);
       border-radius: 4px;
@@ -584,7 +617,7 @@
 
     .readiness-checks {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: 1fr;
       gap: 8px;
       margin-top: 12px;
     }
@@ -803,9 +836,24 @@
       }
       .summary-grid,
       .guidance-grid,
-      .readiness-checks,
       .grid-3 {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .race-control-grid {
+        grid-template-columns: 1fr;
+      }
+      .race-control-left,
+      .race-control-right {
+        grid-column: 1 / -1;
+      }
+      .race-control-right {
+        display: block;
+      }
+      .race-control-right .readiness {
+        display: block;
+      }
+      .race-control-right .readiness-card {
+        display: block;
       }
     }
 
@@ -813,7 +861,6 @@
       .grid-2,
       .grid-3,
       .guidance-grid,
-      .readiness-checks,
       .summary-grid {
         grid-template-columns: 1fr;
       }
@@ -870,106 +917,115 @@
             <h2 class="panel-title" id="race-title" data-i18n="panel.race_control">Race Control</h2>
             <span class="pill race-state" id="race-state-pill" data-i18n="text.idle">IDLE</span>
           </div>
-          <div class="control-block" id="rules-block">
-            <div class="control-block-header">
-              <h3 class="control-block-title" data-i18n="panel.race_rules">Race Rules</h3>
-              <span class="badge-dirty" id="rules-dirty-badge" data-i18n="badge.unsaved_changes">Unsaved Changes</span>
+          <div class="race-control-grid">
+            <div class="race-control-left">
+              <div class="control-block" id="rules-block">
+                <div class="control-block-header">
+                  <h3 class="control-block-title" data-i18n="panel.race_rules">Race Rules</h3>
+                  <span class="badge-dirty" id="rules-dirty-badge" data-i18n="badge.unsaved_changes">Unsaved Changes</span>
+                </div>
+                <div class="grid-2">
+                  <div class="field">
+                    <label for="race-type" data-i18n="label.race_type">Race Type</label>
+                    <select id="race-type" onchange="syncRaceFields(); markRaceConfigDirty()">
+                      <option value="distance" data-i18n="option.distance">Distance Challenge</option>
+                      <option value="calories" data-i18n="option.calories">Calories Challenge</option>
+                      <option value="time" data-i18n="option.time">Time Challenge</option>
+                      <option value="max_power" data-i18n="option.max_power">Max Power Challenge</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label for="competition-mode" data-i18n="label.competition">Competition</label>
+                    <select id="competition-mode" onchange="syncCompetitionFields(); renderStations(); markRaceConfigDirty()">
+                      <option value="individual" data-i18n="option.individual">Individual Race (Anonymous Allowed)</option>
+                      <option value="team" data-i18n="option.team">Team Race</option>
+                    </select>
+                  </div>
+                  <div class="field" id="team-scoring-field">
+                    <label for="team-scoring-policy" data-i18n="label.team_scoring">Team Scoring</label>
+                    <select id="team-scoring-policy" onchange="updateControlGuidance(); renderStations(); markRaceConfigDirty()">
+                      <option value="average" data-i18n="option.team_average">Team Average</option>
+                      <option value="total" data-i18n="option.team_total">Team Total</option>
+                    </select>
+                    <p class="field-note" id="team-scoring-note" data-i18n="text.team_field_note">Applies to team races only.</p>
+                  </div>
+                  <div class="field" id="team-completion-field">
+                    <label for="team-completion-policy" data-i18n="label.completion_rule">Completion Rule</label>
+                    <select id="team-completion-policy" onchange="updateControlGuidance(); renderStations(); markRaceConfigDirty()">
+                      <option value="aggregate" data-i18n="option.team_target">Team Target</option>
+                      <option value="all_members" data-i18n="option.everyone_finishes">Everyone Finishes</option>
+                    </select>
+                    <p class="field-note" id="team-completion-note" data-i18n="text.team_field_note">Applies to team races only.</p>
+                  </div>
+                  <div class="field" id="target-field">
+                    <label for="race-target" id="race-target-label" data-i18n="label.target_distance">Target Distance (m)</label>
+                    <input type="number" id="race-target" min="1" value="500" oninput="markRaceConfigDirty()">
+                  </div>
+                </div>
+              </div>
+
+              <div class="control-block" id="live-block">
+                <div class="control-block-header">
+                  <h3 class="control-block-title" data-i18n="panel.live_presentation">Live Presentation</h3>
+                  <span class="pill pill-immediate" data-i18n="pill.applies_immediately">Applies Immediately</span>
+                </div>
+                <div class="grid-2">
+                  <div class="field">
+                    <label for="leaderboard-display-mode" data-i18n="label.leaderboard_view">Leaderboard View</label>
+                    <select id="leaderboard-display-mode" onchange="updateControlGuidance(); setLeaderboardDisplayMode(this.value)">
+                      <option value="classic" data-i18n="option.classic">Classic</option>
+                      <option value="race_track" data-i18n="option.race_track">Race Track</option>
+                      <option value="team_battle" data-i18n="option.team_battle">Team Battle</option>
+                      <option value="sprint_board" data-i18n="option.sprint_board">Sprint Board</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label for="start-sound-enabled" data-i18n="label.start_sound_select">Start Sound</label>
+                    <select id="start-sound-enabled" onchange="updateControlGuidance(); setStartCountdownSound(this.value === 'true')">
+                      <option value="true" selected data-i18n="option.play_countdown">Play 3, 2, 1, Go</option>
+                      <option value="false" data-i18n="option.silent_start">Silent Start</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div class="control-block control-block-muted" id="local-block">
+                <div class="control-block-header">
+                  <h3 class="control-block-title" data-i18n="panel.local_preference">Local Preference</h3>
+                </div>
+                <div class="field">
+                  <label for="auto-refresh" data-i18n="label.refresh">Refresh</label>
+                  <select id="auto-refresh">
+                    <option value="0" data-i18n="option.live_websocket">Live WebSocket only</option>
+                    <option value="5000" data-i18n="option.fallback_5s">Fallback: 5 seconds</option>
+                    <option value="15000" selected data-i18n="option.fallback_15s">Fallback: 15 seconds</option>
+                  </select>
+                </div>
+                <p class="control-block-note" data-i18n="text.local_preference_note">Affects this browser only.</p>
+              </div>
+
+              <div class="guidance-grid" aria-label="Race setup guidance">
+                <div class="guidance-card">
+                  <div class="guidance-title" data-i18n="guidance.team_rule">Team Rule</div>
+                  <div class="guidance-body" id="team-rule-summary" data-i18n="text.individual_race">Individual race. Team rules are not applied.</div>
+                </div>
+                <div class="guidance-card">
+                  <div class="guidance-title" data-i18n="guidance.leaderboard_preview">Leaderboard Preview</div>
+                  <div class="guidance-body" id="leaderboard-mode-summary" data-i18n="leaderboard.mode_classic_detail">Classic ranking list for clear results.</div>
+                  <div class="mode-preview" id="leaderboard-mode-preview" aria-hidden="true"></div>
+                </div>
+                <div class="guidance-card">
+                  <div class="guidance-title" data-i18n="guidance.start_flow">Start Flow</div>
+                  <div class="guidance-body" id="start-flow-summary" data-i18n="text.start_flow_default">Start Race sends the countdown to the Dashboard. The race timer begins on Go.</div>
+                </div>
+              </div>
             </div>
-            <div class="grid-3">
-              <div class="field">
-                <label for="race-type" data-i18n="label.race_type">Race Type</label>
-                <select id="race-type" onchange="syncRaceFields(); markRaceConfigDirty()">
-                  <option value="distance" data-i18n="option.distance">Distance Challenge</option>
-                  <option value="calories" data-i18n="option.calories">Calories Challenge</option>
-                  <option value="time" data-i18n="option.time">Time Challenge</option>
-                  <option value="max_power" data-i18n="option.max_power">Max Power Challenge</option>
-                </select>
-              </div>
-              <div class="field">
-                <label for="competition-mode" data-i18n="label.competition">Competition</label>
-                <select id="competition-mode" onchange="syncCompetitionFields(); renderStations(); markRaceConfigDirty()">
-                  <option value="individual" data-i18n="option.individual">Individual Race (Anonymous Allowed)</option>
-                  <option value="team" data-i18n="option.team">Team Race</option>
-                </select>
-              </div>
-              <div class="field" id="team-scoring-field">
-                <label for="team-scoring-policy" data-i18n="label.team_scoring">Team Scoring</label>
-                <select id="team-scoring-policy" onchange="updateControlGuidance(); renderStations(); markRaceConfigDirty()">
-                  <option value="average" data-i18n="option.team_average">Team Average</option>
-                  <option value="total" data-i18n="option.team_total">Team Total</option>
-                </select>
-                <p class="field-note" id="team-scoring-note" data-i18n="text.team_field_note">Applies to team races only.</p>
-              </div>
-              <div class="field" id="team-completion-field">
-                <label for="team-completion-policy" data-i18n="label.completion_rule">Completion Rule</label>
-                <select id="team-completion-policy" onchange="updateControlGuidance(); renderStations(); markRaceConfigDirty()">
-                  <option value="aggregate" data-i18n="option.team_target">Team Target</option>
-                  <option value="all_members" data-i18n="option.everyone_finishes">Everyone Finishes</option>
-                </select>
-                <p class="field-note" id="team-completion-note" data-i18n="text.team_field_note">Applies to team races only.</p>
-              </div>
-              <div class="field" id="target-field">
-                <label for="race-target" id="race-target-label" data-i18n="label.target_distance">Target Distance (m)</label>
-                <input type="number" id="race-target" min="1" value="500" oninput="markRaceConfigDirty()">
-              </div>
+
+            <div class="race-control-right">
+              <div class="readiness" id="race-readiness-panel" aria-live="polite"></div>
             </div>
           </div>
 
-          <div class="control-block" id="live-block">
-            <div class="control-block-header">
-              <h3 class="control-block-title" data-i18n="panel.live_presentation">Live Presentation</h3>
-              <span class="pill pill-immediate" data-i18n="pill.applies_immediately">Applies Immediately</span>
-            </div>
-            <div class="grid-2">
-              <div class="field">
-                <label for="leaderboard-display-mode" data-i18n="label.leaderboard_view">Leaderboard View</label>
-                <select id="leaderboard-display-mode" onchange="updateControlGuidance(); setLeaderboardDisplayMode(this.value)">
-                  <option value="classic" data-i18n="option.classic">Classic</option>
-                  <option value="race_track" data-i18n="option.race_track">Race Track</option>
-                  <option value="team_battle" data-i18n="option.team_battle">Team Battle</option>
-                  <option value="sprint_board" data-i18n="option.sprint_board">Sprint Board</option>
-                </select>
-              </div>
-              <div class="field">
-                <label for="start-sound-enabled" data-i18n="label.start_sound_select">Start Sound</label>
-                <select id="start-sound-enabled" onchange="updateControlGuidance(); setStartCountdownSound(this.value === 'true')">
-                  <option value="true" selected data-i18n="option.play_countdown">Play 3, 2, 1, Go</option>
-                  <option value="false" data-i18n="option.silent_start">Silent Start</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          <div class="control-block control-block-muted" id="local-block">
-            <div class="control-block-header">
-              <h3 class="control-block-title" data-i18n="panel.local_preference">Local Preference</h3>
-            </div>
-            <div class="field">
-              <label for="auto-refresh" data-i18n="label.refresh">Refresh</label>
-              <select id="auto-refresh">
-                <option value="0" data-i18n="option.live_websocket">Live WebSocket only</option>
-                <option value="5000" data-i18n="option.fallback_5s">Fallback: 5 seconds</option>
-                <option value="15000" selected data-i18n="option.fallback_15s">Fallback: 15 seconds</option>
-              </select>
-            </div>
-            <p class="control-block-note" data-i18n="text.local_preference_note">Affects this browser only.</p>
-          </div>
-          <div class="guidance-grid" aria-label="Race setup guidance">
-            <div class="guidance-card">
-              <div class="guidance-title" data-i18n="guidance.team_rule">Team Rule</div>
-              <div class="guidance-body" id="team-rule-summary" data-i18n="text.individual_race">Individual race. Team rules are not applied.</div>
-            </div>
-            <div class="guidance-card">
-              <div class="guidance-title" data-i18n="guidance.leaderboard_preview">Leaderboard Preview</div>
-              <div class="guidance-body" id="leaderboard-mode-summary" data-i18n="leaderboard.mode_classic_detail">Classic ranking list for clear results.</div>
-              <div class="mode-preview" id="leaderboard-mode-preview" aria-hidden="true"></div>
-            </div>
-            <div class="guidance-card">
-              <div class="guidance-title" data-i18n="guidance.start_flow">Start Flow</div>
-              <div class="guidance-body" id="start-flow-summary" data-i18n="text.start_flow_default">Start Race sends the countdown to the Dashboard. The race timer begins on Go.</div>
-            </div>
-          </div>
-          <div class="readiness" id="race-readiness-panel" aria-live="polite"></div>
           <div class="countdown-banner" id="countdown-status" aria-live="polite" data-i18n="banner.countdown_active">Countdown active on Dashboard. Race starts on Go.</div>
           <div class="button-row">
             <div class="button-group">
