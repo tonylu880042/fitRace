@@ -358,8 +358,103 @@
       display: block;
     }
 
-    .field.is-hidden {
+    .control-block {
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 14px;
+      margin-bottom: 14px;
+    }
+
+    .control-block:last-of-type {
+      margin-bottom: 0;
+    }
+
+    .control-block-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .control-block-title {
+      margin: 0;
+      color: var(--text);
+      font-family: "Oswald", sans-serif;
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .control-block-muted {
+      padding: 10px 14px;
+      background: rgba(255,255,255,0.02);
+    }
+
+    .control-block-muted .control-block-title {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .control-block-muted .field {
+      max-width: 280px;
+    }
+
+    .control-block-note {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.4;
+    }
+
+    .badge-dirty {
       display: none;
+      align-items: center;
+      min-height: 26px;
+      padding: 0 9px;
+      border: 1px solid rgba(245,158,11,0.65);
+      border-radius: 4px;
+      background: rgba(245,158,11,0.12);
+      color: var(--warn);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .badge-dirty.show {
+      display: inline-flex;
+    }
+
+    .pill-immediate {
+      border-color: rgba(52,211,153,0.5);
+      color: var(--ok);
+    }
+
+    .button-row-danger {
+      margin-left: auto;
+    }
+
+    .field-note {
+      display: none;
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.35;
+    }
+
+    .field-note.show {
+      display: block;
+    }
+
+    .field.is-disabled label {
+      opacity: 0.5;
+    }
+
+    .field.is-disabled select {
+      opacity: 0.5;
+      cursor: not-allowed;
     }
 
     .race-state {
@@ -495,15 +590,57 @@
     }
 
     .readiness-check {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
       border: 1px solid var(--border);
       border-radius: 4px;
       background: rgba(255,255,255,0.03);
       padding: 9px;
     }
 
-    .readiness-check.ok { border-color: rgba(52,211,153,0.45); }
-    .readiness-check.warn { border-color: rgba(245,158,11,0.55); }
-    .readiness-check.block { border-color: rgba(244,63,94,0.65); }
+    .readiness-check-dot {
+      flex: none;
+      width: 8px;
+      height: 8px;
+      margin-top: 3px;
+      border-radius: 50%;
+      background: var(--muted);
+    }
+
+    .readiness-check-dot.ok {
+      background: var(--ok);
+      box-shadow: 0 0 6px rgba(52,211,153,0.55);
+    }
+
+    .readiness-check-dot.warn {
+      background: var(--warn);
+      box-shadow: 0 0 6px rgba(245,158,11,0.55);
+    }
+
+    .readiness-check-dot.block {
+      background: var(--danger);
+      box-shadow: 0 0 6px rgba(244,63,94,0.55);
+    }
+
+    .readiness-check-body {
+      display: grid;
+      gap: 5px;
+      min-width: 0;
+    }
+
+    .readiness-remedy {
+      margin-top: 10px;
+      padding: 8px 10px;
+      border: 1px solid rgba(244,63,94,0.5);
+      border-radius: 4px;
+      background: rgba(244,63,94,0.08);
+      color: var(--danger);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+    }
 
     .readiness-stations {
       display: grid;
@@ -733,40 +870,79 @@
             <h2 class="panel-title" id="race-title" data-i18n="panel.race_control">Race Control</h2>
             <span class="pill race-state" id="race-state-pill" data-i18n="text.idle">IDLE</span>
           </div>
-          <div class="grid-3">
-            <div class="field">
-              <label for="race-type" data-i18n="label.race_type">Race Type</label>
-              <select id="race-type" onchange="syncRaceFields(); markRaceConfigDirty()">
-                <option value="distance" data-i18n="option.distance">Distance Challenge</option>
-                <option value="calories" data-i18n="option.calories">Calories Challenge</option>
-                <option value="time" data-i18n="option.time">Time Challenge</option>
-                <option value="max_power" data-i18n="option.max_power">Max Power Challenge</option>
-              </select>
+          <div class="control-block" id="rules-block">
+            <div class="control-block-header">
+              <h3 class="control-block-title" data-i18n="panel.race_rules">Race Rules</h3>
+              <span class="badge-dirty" id="rules-dirty-badge" data-i18n="badge.unsaved_changes">Unsaved Changes</span>
             </div>
-            <div class="field">
-              <label for="competition-mode" data-i18n="label.competition">Competition</label>
-              <select id="competition-mode" onchange="syncCompetitionFields(); renderStations(); markRaceConfigDirty()">
-                <option value="individual" data-i18n="option.individual">Individual Race (Anonymous Allowed)</option>
-                <option value="team" data-i18n="option.team">Team Race</option>
-              </select>
+            <div class="grid-3">
+              <div class="field">
+                <label for="race-type" data-i18n="label.race_type">Race Type</label>
+                <select id="race-type" onchange="syncRaceFields(); markRaceConfigDirty()">
+                  <option value="distance" data-i18n="option.distance">Distance Challenge</option>
+                  <option value="calories" data-i18n="option.calories">Calories Challenge</option>
+                  <option value="time" data-i18n="option.time">Time Challenge</option>
+                  <option value="max_power" data-i18n="option.max_power">Max Power Challenge</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="competition-mode" data-i18n="label.competition">Competition</label>
+                <select id="competition-mode" onchange="syncCompetitionFields(); renderStations(); markRaceConfigDirty()">
+                  <option value="individual" data-i18n="option.individual">Individual Race (Anonymous Allowed)</option>
+                  <option value="team" data-i18n="option.team">Team Race</option>
+                </select>
+              </div>
+              <div class="field" id="team-scoring-field">
+                <label for="team-scoring-policy" data-i18n="label.team_scoring">Team Scoring</label>
+                <select id="team-scoring-policy" onchange="updateControlGuidance(); renderStations(); markRaceConfigDirty()">
+                  <option value="average" data-i18n="option.team_average">Team Average</option>
+                  <option value="total" data-i18n="option.team_total">Team Total</option>
+                </select>
+                <p class="field-note" id="team-scoring-note" data-i18n="text.team_field_note">Applies to team races only.</p>
+              </div>
+              <div class="field" id="team-completion-field">
+                <label for="team-completion-policy" data-i18n="label.completion_rule">Completion Rule</label>
+                <select id="team-completion-policy" onchange="updateControlGuidance(); renderStations(); markRaceConfigDirty()">
+                  <option value="aggregate" data-i18n="option.team_target">Team Target</option>
+                  <option value="all_members" data-i18n="option.everyone_finishes">Everyone Finishes</option>
+                </select>
+                <p class="field-note" id="team-completion-note" data-i18n="text.team_field_note">Applies to team races only.</p>
+              </div>
+              <div class="field" id="target-field">
+                <label for="race-target" id="race-target-label" data-i18n="label.target_distance">Target Distance (m)</label>
+                <input type="number" id="race-target" min="1" value="500" oninput="markRaceConfigDirty()">
+              </div>
             </div>
-            <div class="field" id="team-scoring-field">
-              <label for="team-scoring-policy" data-i18n="label.team_scoring">Team Scoring</label>
-              <select id="team-scoring-policy" onchange="updateControlGuidance(); renderStations(); markRaceConfigDirty()">
-                <option value="average" data-i18n="option.team_average">Team Average</option>
-                <option value="total" data-i18n="option.team_total">Team Total</option>
-              </select>
+          </div>
+
+          <div class="control-block" id="live-block">
+            <div class="control-block-header">
+              <h3 class="control-block-title" data-i18n="panel.live_presentation">Live Presentation</h3>
+              <span class="pill pill-immediate" data-i18n="pill.applies_immediately">Applies Immediately</span>
             </div>
-            <div class="field" id="team-completion-field">
-              <label for="team-completion-policy" data-i18n="label.completion_rule">Completion Rule</label>
-              <select id="team-completion-policy" onchange="updateControlGuidance(); renderStations(); markRaceConfigDirty()">
-                <option value="aggregate" data-i18n="option.team_target">Team Target</option>
-                <option value="all_members" data-i18n="option.everyone_finishes">Everyone Finishes</option>
-              </select>
+            <div class="grid-2">
+              <div class="field">
+                <label for="leaderboard-display-mode" data-i18n="label.leaderboard_view">Leaderboard View</label>
+                <select id="leaderboard-display-mode" onchange="updateControlGuidance(); setLeaderboardDisplayMode(this.value)">
+                  <option value="classic" data-i18n="option.classic">Classic</option>
+                  <option value="race_track" data-i18n="option.race_track">Race Track</option>
+                  <option value="team_battle" data-i18n="option.team_battle">Team Battle</option>
+                  <option value="sprint_board" data-i18n="option.sprint_board">Sprint Board</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="start-sound-enabled" data-i18n="label.start_sound_select">Start Sound</label>
+                <select id="start-sound-enabled" onchange="updateControlGuidance(); setStartCountdownSound(this.value === 'true')">
+                  <option value="true" selected data-i18n="option.play_countdown">Play 3, 2, 1, Go</option>
+                  <option value="false" data-i18n="option.silent_start">Silent Start</option>
+                </select>
+              </div>
             </div>
-            <div class="field" id="target-field">
-              <label for="race-target" id="race-target-label" data-i18n="label.target_distance">Target Distance (m)</label>
-              <input type="number" id="race-target" min="1" value="500" oninput="markRaceConfigDirty()">
+          </div>
+
+          <div class="control-block control-block-muted" id="local-block">
+            <div class="control-block-header">
+              <h3 class="control-block-title" data-i18n="panel.local_preference">Local Preference</h3>
             </div>
             <div class="field">
               <label for="auto-refresh" data-i18n="label.refresh">Refresh</label>
@@ -776,22 +952,7 @@
                 <option value="15000" selected data-i18n="option.fallback_15s">Fallback: 15 seconds</option>
               </select>
             </div>
-            <div class="field">
-              <label for="leaderboard-display-mode" data-i18n="label.leaderboard_view">Leaderboard View</label>
-              <select id="leaderboard-display-mode" onchange="updateControlGuidance(); setLeaderboardDisplayMode(this.value)">
-                <option value="classic" data-i18n="option.classic">Classic</option>
-                <option value="race_track" data-i18n="option.race_track">Race Track</option>
-                <option value="team_battle" data-i18n="option.team_battle">Team Battle</option>
-                <option value="sprint_board" data-i18n="option.sprint_board">Sprint Board</option>
-              </select>
-            </div>
-            <div class="field">
-              <label for="start-sound-enabled" data-i18n="label.start_sound_select">Start Sound</label>
-              <select id="start-sound-enabled" onchange="updateControlGuidance(); setStartCountdownSound(this.value === 'true')">
-                <option value="true" selected data-i18n="option.play_countdown">Play 3, 2, 1, Go</option>
-                <option value="false" data-i18n="option.silent_start">Silent Start</option>
-              </select>
-            </div>
+            <p class="control-block-note" data-i18n="text.local_preference_note">Affects this browser only.</p>
           </div>
           <div class="guidance-grid" aria-label="Race setup guidance">
             <div class="guidance-card">
@@ -811,9 +972,14 @@
           <div class="readiness" id="race-readiness-panel" aria-live="polite"></div>
           <div class="countdown-banner" id="countdown-status" aria-live="polite" data-i18n="banner.countdown_active">Countdown active on Dashboard. Race starts on Go.</div>
           <div class="button-row">
-            <button type="button" class="primary" id="btn-race-action" onclick="handleRaceAction()" data-i18n="button.save_race">Save Race</button>
-            <button type="button" class="danger" id="btn-stop" onclick="stopRace()" data-i18n="button.stop_race">Stop Race</button>
-            <button type="button" class="danger" id="btn-reset" onclick="resetRace()" data-i18n="button.reset_race">Reset Race</button>
+            <div class="button-group">
+              <button type="button" class="primary" id="btn-save-race" onclick="saveRaceConfig()" data-i18n="button.save_race">Save Race</button>
+              <button type="button" class="primary" id="btn-start-race" onclick="startRaceAction()" data-i18n="button.start_race">Start Race</button>
+            </div>
+            <div class="button-group button-row-danger">
+              <button type="button" class="danger" id="btn-stop" onclick="stopRace()" data-i18n="button.stop_race">Stop Race</button>
+              <button type="button" class="danger" id="btn-reset" onclick="resetRace()" data-i18n="button.reset_race">Reset Race</button>
+            </div>
           </div>
           <div class="status-text" id="race-message"></div>
         </section>
@@ -860,7 +1026,7 @@
       refreshTimer: null,
       wsConnected: false,
       countdownActive: false,
-      raceActionPending: false,
+      raceActionPending: null,
       raceConfigDirty: false,
       adminToken: localStorage.getItem("fitrace.adminPassword") || localStorage.getItem("fitrace.adminToken") || "",
     };
@@ -1011,7 +1177,15 @@
         "check.registrations": "Registrations",
         "check.teams": "Teams",
         "check.stations": "Station Health",
-        "check.sound": "Sound"
+        "check.sound": "Sound",
+        "panel.race_rules": "Race Rules",
+        "panel.live_presentation": "Live Presentation",
+        "panel.local_preference": "Local Preference",
+        "badge.unsaved_changes": "Unsaved Changes",
+        "pill.applies_immediately": "Applies Immediately",
+        "text.local_preference_note": "Affects this browser only.",
+        "text.team_field_note": "Applies to team races only.",
+        "text.readiness_remedy_summary": "{count} item(s) need attention before you can start."
       }
     };
 
@@ -1145,7 +1319,15 @@
       "check.registrations": "選手報名",
       "check.teams": "隊伍編組",
       "check.stations": "場站狀態",
-      "check.sound": "音效"
+      "check.sound": "音效",
+      "panel.race_rules": "比賽規則",
+      "panel.live_presentation": "即時呈現",
+      "panel.local_preference": "本機偏好",
+      "badge.unsaved_changes": "未儲存變更",
+      "pill.applies_immediately": "立即套用",
+      "text.local_preference_note": "僅影響此瀏覽器。",
+      "text.team_field_note": "僅適用於隊伍賽。",
+      "text.readiness_remedy_summary": "尚有 {count} 項需要處理才能開始比賽。"
     };
 
     function t(key, params = {}) {
@@ -1245,14 +1427,18 @@
 
     function syncCompetitionFields() {
       const isTeamRace = $("competition-mode").value === "team";
-      $("team-scoring-field").classList.toggle("is-hidden", !isTeamRace);
-      $("team-completion-field").classList.toggle("is-hidden", !isTeamRace);
+      $("team-scoring-field").classList.toggle("is-disabled", !isTeamRace);
+      $("team-completion-field").classList.toggle("is-disabled", !isTeamRace);
+      $("team-scoring-policy").disabled = !isTeamRace;
+      $("team-completion-policy").disabled = !isTeamRace;
+      $("team-scoring-note").classList.toggle("show", !isTeamRace);
+      $("team-completion-note").classList.toggle("show", !isTeamRace);
       updateControlGuidance();
     }
 
     function markRaceConfigDirty() {
       state.raceConfigDirty = true;
-      renderRaceActionButton();
+      renderRaceActionButtons();
     }
 
     function normalizeLeaderboardDisplayMode(mode) {
@@ -1332,7 +1518,7 @@
       state.readiness = await fetchJson(`/api/race/readiness?t=${Date.now()}`);
       renderReadinessPanel();
       renderStations();
-      renderRaceActionButton();
+      renderRaceActionButtons();
     }
 
 
@@ -1399,7 +1585,7 @@
           : metricNumber(config.duration_sec, 0);
       }
 
-      renderRaceActionButton();
+      renderRaceActionButtons();
       $("btn-stop").disabled = raceState !== "RUNNING";
       $("btn-reset").disabled = raceState === "RUNNING";
       $("countdown-status").classList.toggle("show", state.countdownActive);
@@ -1408,22 +1594,24 @@
 
     }
 
-    function renderRaceActionButton() {
+    function renderRaceActionButtons() {
       const raceState = state.race?.state || "IDLE";
-      const shouldSave = state.raceConfigDirty || raceState !== "READY";
       const readinessReady = state.readiness?.ready === true;
-      const button = $("btn-race-action");
-      button.disabled = raceState === "RUNNING"
-        || state.countdownActive
-        || state.raceActionPending
-        || (!shouldSave && !readinessReady);
-      if (state.countdownActive) {
-        button.textContent = t("text.countdown_active");
-      } else if (state.raceActionPending) {
-        button.textContent = t("text.processing_race_action");
-      } else {
-        button.textContent = shouldSave ? t("button.save_race") : t("button.start_race");
-      }
+      const busy = state.countdownActive || Boolean(state.raceActionPending);
+      const saveBtn = $("btn-save-race");
+      const startBtn = $("btn-start-race");
+
+      saveBtn.disabled = !state.raceConfigDirty || raceState === "RUNNING" || busy;
+      startBtn.disabled = raceState === "RUNNING" || state.raceConfigDirty || !readinessReady || busy;
+
+      saveBtn.textContent = state.raceActionPending === "save" ? t("text.processing_race_action") : t("button.save_race");
+      startBtn.textContent = state.countdownActive
+        ? t("text.countdown_active")
+        : state.raceActionPending === "start"
+        ? t("text.processing_race_action")
+        : t("button.start_race");
+
+      $("rules-dirty-badge").classList.toggle("show", state.raceConfigDirty === true);
     }
 
     function readinessStatusClass(status) {
@@ -1471,13 +1659,17 @@
         ["stations", t("check.stations")],
         ["sound", t("check.sound")],
       ];
+      const blockingCheckCount = checkOrder.filter(([key]) => (checks[key] || {}).status === "block").length;
       const checksHtml = checkOrder.map(([key, label]) => {
         const check = checks[key] || { status: "info", message: "--" };
         const klass = readinessStatusClass(check.status);
         return `
-          <div class="readiness-check ${klass}">
-            <div class="readiness-check-title">${escapeHtml(label)}</div>
-            <div class="readiness-check-message">${escapeHtml(check.message || "--")}</div>
+          <div class="readiness-check">
+            <span class="readiness-check-dot ${klass}"></span>
+            <div class="readiness-check-body">
+              <div class="readiness-check-title">${escapeHtml(label)}</div>
+              <div class="readiness-check-message">${escapeHtml(check.message || "--")}</div>
+            </div>
           </div>
         `;
       }).join("");
@@ -1492,6 +1684,11 @@
           `).join("")}</div>`
         : "";
 
+      const remedyCount = blockingCheckCount + unhealthyStations.length;
+      const remedyHtml = !readiness.ready && remedyCount > 0
+        ? `<div class="readiness-remedy">${escapeHtml(t("text.readiness_remedy_summary", { count: remedyCount }))}</div>`
+        : "";
+
       panel.innerHTML = `
         <div class="readiness-card ${statusClass}">
           <div class="readiness-main">
@@ -1501,6 +1698,7 @@
           <div class="readiness-meta">${escapeHtml(t("text.readiness_meta"))}</div>
           ${issueHtml}
           ${stationDetailHtml}
+          ${remedyHtml}
           <div class="readiness-checks">${checksHtml}</div>
         </div>
       `;
@@ -1640,21 +1838,27 @@
       }
     }
 
-    async function handleRaceAction() {
+    async function saveRaceConfig() {
       if (state.raceActionPending || state.countdownActive || state.race?.state === "RUNNING") return;
-      const raceState = state.race?.state || "IDLE";
-      const shouldSave = state.raceConfigDirty || raceState !== "READY";
-      state.raceActionPending = true;
-      renderRaceActionButton();
+      state.raceActionPending = "save";
+      renderRaceActionButtons();
       try {
-        if (shouldSave) {
-          await configureRace();
-        } else {
-          await startRace();
-        }
+        await configureRace();
       } finally {
-        state.raceActionPending = false;
-        renderRaceActionButton();
+        state.raceActionPending = null;
+        renderRaceActionButtons();
+      }
+    }
+
+    async function startRaceAction() {
+      if (state.raceActionPending || state.countdownActive || state.race?.state === "RUNNING") return;
+      state.raceActionPending = "start";
+      renderRaceActionButtons();
+      try {
+        await startRace();
+      } finally {
+        state.raceActionPending = null;
+        renderRaceActionButtons();
       }
     }
 

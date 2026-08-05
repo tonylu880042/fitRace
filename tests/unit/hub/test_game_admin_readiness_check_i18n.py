@@ -75,7 +75,7 @@ def test_check_order_labels_are_no_longer_hardcoded_english():
 def test_check_order_labels_route_through_t():
     body = _check_order_region()
     for key in NEW_CHECK_KEYS:
-        assert f't("{key}")' in body, f"checkOrder does not call t(\"{key}\")"
+        assert f't("{key}")' in body, f'checkOrder does not call t("{key}")'
 
 
 def test_check_labels_present_in_both_dictionaries_with_expected_copy():

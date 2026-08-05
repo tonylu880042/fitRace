@@ -122,28 +122,44 @@ def test_game_admin_subtitle_has_data_i18n():
     assert "data-i18n=" in subtitle_line
 
 
-def test_game_admin_uses_one_button_for_separate_save_and_start_steps():
+def test_game_admin_uses_two_separate_buttons_for_save_and_start_steps():
+    """Superseded design: a single id="btn-race-action" button used to swap
+    its own label between Save Race and Start Race depending on dirty
+    state -- dangerous mid-race, since a mis-timed click on stale UI state
+    could start the race instead of saving a settings tweak. It is now two
+    independent buttons, gated separately (save on unsaved changes, start
+    on readiness). Full coverage of the split (disabled-state logic,
+    countdown/processing text, guard clauses) lives in
+    tests/unit/hub/test_game_admin_race_control_restructure.py; this test
+    keeps the historical i18n-value assertions that this file already made
+    for button.save_race/button.start_race, updated for the new wiring.
+    """
     source = _read("gameAdmin.html")
 
-    assert 'id="btn-race-action"' in source
-    assert 'onclick="handleRaceAction()"' in source
+    assert 'id="btn-race-action"' not in source
+    assert "handleRaceAction" not in source
+    assert 'id="btn-save-race"' in source
+    assert 'onclick="saveRaceConfig()"' in source
+    assert 'id="btn-start-race"' in source
+    assert 'onclick="startRaceAction()"' in source
     assert 'data-i18n="button.save_race"' in source
+    assert 'data-i18n="button.start_race"' in source
     assert '"button.save_race": "Save Race"' in source
     assert '"button.save_race": "儲存比賽"' in source
     assert '"button.start_race": "Start Race"' in source
     assert '"button.start_race": "開始比賽"' in source
     assert "button.save_and_start_race" not in source
     assert 'id="btn-configure"' not in source
-    assert 'id="btn-start"' not in source
 
-    action_start = source.index("async function handleRaceAction()")
-    action_end = source.index("async function stopRace()", action_start)
-    action_source = source[action_start:action_end]
-    assert 'const shouldSave = state.raceConfigDirty || raceState !== "READY";' in action_source
-    assert "if (shouldSave) {" in action_source
-    assert "await configureRace();" in action_source
-    assert "} else {" in action_source
-    assert "await startRace();" in action_source
+    save_start = source.index("async function saveRaceConfig()")
+    save_end = source.index("async function startRaceAction()", save_start)
+    save_source = source[save_start:save_end]
+    assert "await configureRace();" in save_source
+
+    start_start = source.index("async function startRaceAction()")
+    start_end = source.index("async function startRace()", start_start)
+    start_source = source[start_start:start_end]
+    assert "await startRace();" in start_source
 
     configure_start = source.index("async function configureRace()")
     configure_end = source.index(
@@ -152,13 +168,13 @@ def test_game_admin_uses_one_button_for_separate_save_and_start_steps():
     configure_source = source[configure_start:configure_end]
     assert "state.raceConfigDirty = false;" in configure_source
 
-    render_start = source.index("function renderRace()")
+    render_start = source.index("function renderRaceActionButtons()")
     render_end = source.index("function readinessStatusClass", render_start)
     render_source = source[render_start:render_end]
-    assert 'const shouldSave = state.raceConfigDirty || raceState !== "READY";' in render_source
+    assert "!state.raceConfigDirty" in render_source
+    assert "!readinessReady" in render_source
     assert 't("button.save_race")' in render_source
     assert 't("button.start_race")' in render_source
-    assert "!shouldSave && !readinessReady" in render_source
 
     assert source.count("markRaceConfigDirty()") >= 6
     assert "if (config && !state.raceConfigDirty)" in source
