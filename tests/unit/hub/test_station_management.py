@@ -101,7 +101,7 @@ def test_reset_race_clears_athletes_but_keeps_station_mapping():
 
     manager.reset_race()
     assert manager.get_state() == RaceState.IDLE
-    
+
     # Check that station 1 is still mapped to node-01, but the athlete is cleared
     status = manager.get_stations_status()
     assert status["stations"][1]["node_id"] == "node-01"
@@ -113,10 +113,10 @@ def test_unassign_station_clears_athlete():
     manager.update_active_node("node-01", "fan_bike")
     manager.assign_station(1, "node-01")
     manager.register_athlete(1, "Tony")
-    
+
     status = manager.get_stations_status()
     assert status["stations"][1]["athlete_name"] == "Tony"
-    
+
     # Unassign station (assign None)
     manager.assign_station(1, None)
     status = manager.get_stations_status()
@@ -124,3 +124,98 @@ def test_unassign_station_clears_athlete():
     # Verify that athlete registrations dictionary is cleared for this station
     assert len(status["stations"]) == 0
 
+
+def test_update_active_node_remembers_ble_equipment_id():
+    manager = RaceManager()
+
+    # equipment_id (the BLE name the operator reads off the machine itself)
+    # must be captured so it survives the edge node dropping off later.
+    manager.update_active_node("node-01", "fan_bike", equipment_id="Vmax53932")
+
+    status = manager.get_stations_status()
+    assert status["remembered_equipment_ids"]["node-01"] == "Vmax53932"
+
+
+def test_update_active_node_without_equipment_id_does_not_clear_remembered_name():
+    manager = RaceManager()
+    manager.update_active_node("node-01", "fan_bike", equipment_id="Vmax53932")
+
+    # A later telemetry tick that (for whatever reason) carries no
+    # equipment_id must not blank out the name we already learned.
+    manager.update_active_node("node-01", "fan_bike")
+
+    status = manager.get_stations_status()
+    assert status["remembered_equipment_ids"]["node-01"] == "Vmax53932"
+
+
+def test_ingest_telemetry_captures_ble_equipment_id_from_payload():
+    manager = RaceManager()
+
+    manager.ingest_telemetry(
+        {
+            "node_id": "node-01",
+            "equipment_type": "rowing_machine",
+            "equipment_id": "Vmax53932",
+        }
+    )
+
+    status = manager.get_stations_status()
+    assert status["remembered_equipment_ids"]["node-01"] == "Vmax53932"
+
+
+def test_update_telemetry_captures_ble_equipment_id_during_running_race():
+    manager = RaceManager()
+    manager.update_active_node("node-01", "fan_bike")
+    manager.assign_station(1, "node-01")
+    config = RaceConfig(race_type="distance", target_value=1000.0)
+    manager.configure(config)
+    manager.start_race()
+
+    manager.update_telemetry(
+        {
+            "node_id": "node-01",
+            "equipment_type": "fan_bike",
+            "equipment_id": "Vmax53932",
+            "distance_m": 10.0,
+            "elapsed_time_ms": 1000,
+        }
+    )
+
+    status = manager.get_stations_status()
+    assert status["remembered_equipment_ids"]["node-01"] == "Vmax53932"
+
+
+def test_remembered_ble_equipment_id_survives_race_reset():
+    manager = RaceManager()
+    manager.update_active_node("node-01", "fan_bike", equipment_id="Vmax53932")
+    manager.assign_station(1, "node-01")
+
+    config = RaceConfig(race_type="distance", target_value=1000.0)
+    manager.configure(config)
+    manager.start_race()
+    manager.stop_race()
+    manager.reset_race()
+
+    # The physical machine hasn't changed just because the race was reset,
+    # so the operator-facing BLE name must not be forgotten.
+    status = manager.get_stations_status()
+    assert status["remembered_equipment_ids"]["node-01"] == "Vmax53932"
+    assert status["stations"][1]["node_id"] == "node-01"
+
+
+def test_remembered_ble_equipment_id_survives_reconfigure_from_stopped():
+    manager = RaceManager()
+    manager.update_active_node("node-01", "fan_bike", equipment_id="Vmax53932")
+    manager.assign_station(1, "node-01")
+
+    config = RaceConfig(race_type="distance", target_value=1000.0)
+    manager.configure(config)
+    manager.start_race()
+    manager.stop_race()
+
+    # Reconfigure straight from STOPPED (the other place _active_nodes gets
+    # cleared) without going through reset_race().
+    manager.configure(config)
+
+    status = manager.get_stations_status()
+    assert status["remembered_equipment_ids"]["node-01"] == "Vmax53932"

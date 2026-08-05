@@ -25,6 +25,13 @@ class RaceManager:
         self._station_teams: Dict[int, Optional[str]] = {}  # station_number (int) -> team_name (str)
         self._station_has_avatar: Dict[int, bool] = {}  # station_number (int) -> has_avatar (bool)
         self._active_nodes: Dict[str, str] = {}  # node_id (str) -> equipment_type (str)
+        # node_id (str) -> BLE name (str), e.g. "Vmax53932". Captured from
+        # telemetry's equipment_id and kept even after the edge node (and
+        # therefore _active_nodes) goes away, so operators can still
+        # identify a machine by the name printed on its own console once it
+        # drops offline. Deliberately NOT cleared by configure()/reset_race()
+        # -- the physical machine hasn't changed just because the race has.
+        self._node_equipment_ids: Dict[str, str] = {}
         self._start_time_epoch_ms: Optional[int] = None
         self._end_time_epoch_ms: Optional[int] = None
 
@@ -421,8 +428,12 @@ class RaceManager:
             raise ValueError(f"Cannot register nodes in state {self._state}")
         self._registered_nodes[node_id] = athlete_name
 
-    def update_active_node(self, node_id: str, equipment_type: str):
+    def update_active_node(
+        self, node_id: str, equipment_type: str, equipment_id: Optional[str] = None
+    ):
         self._active_nodes[node_id] = equipment_type
+        if equipment_id:
+            self._node_equipment_ids[node_id] = equipment_id
 
     def get_station_equipment_type(self, station_number: int) -> str:
         node_id = self._stations.get(station_number)
@@ -457,7 +468,7 @@ class RaceManager:
             return None
 
         equipment_type = payload.get("equipment_type", "unknown")
-        self.update_active_node(node_id, equipment_type)
+        self.update_active_node(node_id, equipment_type, payload.get("equipment_id"))
 
         if self.get_state() != RaceState.RUNNING:
             return None
@@ -526,7 +537,12 @@ class RaceManager:
 
         return {
             "stations": stations_data,
-            "unassigned_nodes": unassigned_nodes
+            "unassigned_nodes": unassigned_nodes,
+            # node_id -> BLE name remembered from earlier telemetry, kept
+            # even for node_ids that are no longer in _active_nodes (i.e.
+            # their edge has gone offline). Consumers use this as the
+            # offline fallback rung, ahead of the raw node_id.
+            "remembered_equipment_ids": dict(self._node_equipment_ids),
         }
 
     def start_race(self):
@@ -625,7 +641,7 @@ class RaceManager:
 
         # Auto-discover node and type
         eq_type = payload.get("equipment_type", "unknown")
-        self.update_active_node(node_id, eq_type)
+        self.update_active_node(node_id, eq_type, payload.get("equipment_id"))
 
         # Retrieve athlete name and station number
         station_number = None

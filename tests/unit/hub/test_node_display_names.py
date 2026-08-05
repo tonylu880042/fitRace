@@ -129,6 +129,69 @@ def test_station_display_name_falls_back_to_equipment_id_before_node_id():
     }
 
 
+def test_station_display_name_falls_back_to_remembered_ble_name_when_edge_offline():
+    """Reproduces the reported defect: the edge has dropped out of the live
+    registry entirely (nodes=[]), but the station remembers the BLE name
+    from earlier telemetry. The operator must see the bare BLE name, not
+    the internal node_id, at exactly the moment the machine looks broken."""
+    stations = {
+        "stations": {
+            1: {
+                "node_id": "fitrace-edge-01-01",
+                "equipment_type": "rowing_machine",
+                "athlete_name": "王小明",
+            },
+        },
+        "unassigned_nodes": [],
+        "remembered_equipment_ids": {"fitrace-edge-01-01": "Vmax53932"},
+    }
+
+    enriched = enrich_station_display_names(stations, nodes=[])
+
+    assert enriched["stations"][1]["node_display_name"] == "Vmax53932"
+
+
+def test_station_display_name_prefers_live_prefixed_name_over_remembered():
+    """When the edge is online, the Node{octet}+{BLE name} form must win,
+    even if a (possibly stale) remembered BLE name is also on file."""
+    stations = {
+        "stations": {1: {"node_id": "fitrace-edge-01-01"}},
+        "unassigned_nodes": [],
+        "remembered_equipment_ids": {"fitrace-edge-01-01": "StaleName"},
+    }
+
+    enriched = enrich_station_display_names(stations, NODES)
+
+    assert enriched["stations"][1]["node_display_name"] == "Node130+Vmax_1183"
+
+
+def test_station_display_name_falls_back_to_node_id_when_ble_name_never_seen():
+    """Last resort: no live catalog entry and nothing remembered either."""
+    stations = {
+        "stations": {1: {"node_id": "fitrace-edge-01-01"}},
+        "unassigned_nodes": [],
+        "remembered_equipment_ids": {},
+    }
+
+    enriched = enrich_station_display_names(stations, nodes=[])
+
+    assert enriched["stations"][1]["node_display_name"] == "fitrace-edge-01-01"
+
+
+def test_unassigned_node_display_name_falls_back_to_remembered_ble_name_when_offline():
+    stations = {
+        "stations": {},
+        "unassigned_nodes": ["fitrace-edge-01-01"],
+        "remembered_equipment_ids": {"fitrace-edge-01-01": "Vmax53932"},
+    }
+
+    enriched = enrich_station_display_names(stations, nodes=[])
+
+    assert enriched["unassigned_node_display_names"] == {
+        "fitrace-edge-01-01": "Vmax53932"
+    }
+
+
 def test_station_payload_exposes_raw_equipment_id_for_assigned_and_unassigned():
     """The station payload must carry the raw equipment_id (BLE name)
     alongside node_display_name so client-side renderers can apply their own

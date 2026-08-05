@@ -64,18 +64,27 @@ def enrich_station_display_names(
     enriched = deepcopy(stations_status)
     node_labels = build_stream_display_catalog(nodes)
     equipment_ids = _build_stream_equipment_catalog(nodes)
+    # BLE names remembered by race_manager from earlier telemetry, keyed by
+    # node_id. This is the offline fallback: the edge (and therefore the
+    # live `nodes` catalog above) may have dropped out entirely, but the
+    # BLE name printed on the machine's own console doesn't change just
+    # because the edge stopped reporting.
+    remembered_names = enriched.get("remembered_equipment_ids") or {}
 
     for station in enriched.get("stations", {}).values():
         node_id = station.get("node_id")
-        station["node_display_name"] = node_labels.get(node_id, node_id)
-        station["equipment_id"] = equipment_ids.get(node_id)
+        remembered_name = remembered_names.get(node_id)
+        station["node_display_name"] = (
+            node_labels.get(node_id) or remembered_name or node_id
+        )
+        station["equipment_id"] = equipment_ids.get(node_id) or remembered_name
 
     enriched["unassigned_node_display_names"] = {
-        node_id: node_labels.get(node_id, node_id)
+        node_id: node_labels.get(node_id) or remembered_names.get(node_id) or node_id
         for node_id in enriched.get("unassigned_nodes", [])
     }
     enriched["unassigned_node_equipment_ids"] = {
-        node_id: equipment_ids.get(node_id)
+        node_id: equipment_ids.get(node_id) or remembered_names.get(node_id)
         for node_id in enriched.get("unassigned_nodes", [])
     }
     return enriched
