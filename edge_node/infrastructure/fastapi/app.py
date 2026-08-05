@@ -2183,7 +2183,7 @@ EDGE_SETUP_HTML = """
 
     async function refreshMonitorEvents() {
       try {
-        const response = await adminFetch("/api/monitor/events?limit=200");
+        const response = await adminFetch("/api/monitor/events?kind=telemetry&limit=200");
         const payload = await response.json();
         if (!response.ok) {
           throw new Error(payload.detail || t("monitor.failed"));
