@@ -4243,7 +4243,7 @@
                   <button onclick="directUnassign(${sn})" style="background: none; border: 1px solid #ef4444; color: #ef4444; font-size: 0.65rem; padding: 0.05rem 0.25rem; border-radius: 2px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='#ef4444'; this.style.color='#fff';" onmouseout="this.style.background='none'; this.style.color='#ef4444';">${escapeHtml(t("stations.unassign"))}</button>
                 </div>
               </div>
-              <div style="font-size: 0.75rem; color: var(--text-muted);">${escapeHtml(t("stations.equipment_id"))}: ${escapeHtml(info.node_display_name || info.node_id || "--")}</div>
+              <div style="font-size: 0.75rem; color: var(--text-muted);">${escapeHtml(t("stations.equipment_id"))}: ${escapeHtml(info.node_display_name || info.equipment_id || info.node_id || "--")}</div>
               <div style="font-size: 0.8rem; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 0.3rem; margin-top: 0.2rem;">
                 ${escapeHtml(t("stations.athlete"))}: <strong style="color: var(--text-main);">${escapeHtml(info.athlete_name || t("stations.not_registered"))}${info.team_name ? ` (${escapeHtml(info.team_name)})` : ''}</strong>
               </div>

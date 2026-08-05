@@ -1809,7 +1809,7 @@
         <div class="row-card">
           <div class="row-main">
             <div>
-              <div class="row-name">${escapeHtml(state.stations.unassigned_node_display_names?.[nodeId] || nodeId)}</div>
+              <div class="row-name">${escapeHtml(state.stations.unassigned_node_display_names?.[nodeId] || state.stations.unassigned_node_equipment_ids?.[nodeId] || nodeId)}</div>
               <div class="row-meta">Unassigned telemetry stream. Configure it in System Admin.</div>
             </div>
           </div>
@@ -1825,7 +1825,7 @@
             <div class="row-main">
               <div>
                 <div class="row-name">Station ${escapeHtml(key)} · ${escapeHtml(station.equipment_type || "unbound")}</div>
-                <div class="row-meta">${escapeHtml(station.node_display_name || station.node_id || "No telemetry stream")} · ${escapeHtml(station.athlete_name || "No athlete")}${station.team_name ? ` (${escapeHtml(station.team_name)})` : ""}</div>
+                <div class="row-meta">${escapeHtml(station.node_display_name || station.equipment_id || station.node_id || "No telemetry stream")} · ${escapeHtml(station.athlete_name || "No athlete")}${station.team_name ? ` (${escapeHtml(station.team_name)})` : ""}</div>
                 <div class="row-meta">Health: ${escapeHtml(health.label || health.health || "--")}${health.edge_node_id ? ` · ${escapeHtml(health.edge_display_name || health.edge_node_id)}` : ""}</div>
                 <div class="row-meta">${escapeHtml(signupUrl)}</div>
               </div>

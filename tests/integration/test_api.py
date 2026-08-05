@@ -191,9 +191,9 @@ def test_signup_page_has_language_switcher_defaulting_to_english():
     assert response.status_code == 200
     assert '<html lang="en-US">' in response.text
     assert 'id="language-select"' in response.text
-    assert 'Athlete Self-Registration' in response.text
-    assert 'Deutsch (Schweiz)' in response.text
-    assert 'Svenska' in response.text
+    assert "Athlete Self-Registration" in response.text
+    assert "Deutsch (Schweiz)" in response.text
+    assert "Svenska" in response.text
     assert "function convertAvatarFileToWebp" in response.text
     assert "function convertAvatarSourceToWebp" in response.text
     assert "AVATAR_MAX_SOURCE_BYTES = 8 * 1024 * 1024" in response.text
@@ -227,7 +227,7 @@ def test_index_has_finish_celebration_and_record_wall_markers():
     # No forbidden strings from the removed management controls should sneak back in.
     assert "enableDashboardSound" not in response_index.text
     assert 'id="sound-control"' not in response_index.text
-    assert "id=\"leaderboard-display-mode\"" not in response_index.text
+    assert 'id="leaderboard-display-mode"' not in response_index.text
     assert "System Power" not in response_index.text
 
 
@@ -238,7 +238,7 @@ def test_management_controls_are_split_by_admin_role():
     assert "renderRaceTrackLeaderboard" in response_index.text
     assert "renderTeamBattleLeaderboard" in response_index.text
     assert "renderSprintBoardLeaderboard" in response_index.text
-    assert "competition_mode === \"team\"" in response_index.text
+    assert 'competition_mode === "team"' in response_index.text
     assert "team-leaderboard-item" in response_index.text
     assert "race-track-item" in response_index.text
     assert "team-battle-card" in response_index.text
@@ -251,7 +251,7 @@ def test_management_controls_are_split_by_admin_role():
     assert "race_countdown" in response_index.text
     assert "enableDashboardSound" not in response_index.text
     assert 'id="sound-control"' not in response_index.text
-    assert "id=\"leaderboard-display-mode\"" not in response_index.text
+    assert 'id="leaderboard-display-mode"' not in response_index.text
     assert "System Power" not in response_index.text
 
     response_signup = client.get("/static/signup.html")
@@ -293,7 +293,10 @@ def test_management_controls_are_split_by_admin_role():
     assert "Team Target" in response_game_admin.text
     assert "Everyone Finishes" in response_game_admin.text
     assert "Countdown Active" in response_game_admin.text
-    assert "Everyone Finishes means every teammate must complete" in response_game_admin.text
+    assert (
+        "Everyone Finishes means every teammate must complete"
+        in response_game_admin.text
+    )
     assert "Operator Unlock" in response_game_admin.text
     assert "Access Code" in response_game_admin.text
     assert "Admin Token" not in response_game_admin.text
@@ -325,8 +328,14 @@ def test_management_controls_are_split_by_admin_role():
     assert "Admin Token" not in response_system_admin.text
     assert "Race Control" not in response_system_admin.text
 
-    assert client.get("/gameAdmin", follow_redirects=False).headers["location"] == "/static/gameAdmin.html"
-    assert client.get("/systemAdmin", follow_redirects=False).headers["location"] == "/static/systemAdmin.html"
+    assert (
+        client.get("/gameAdmin", follow_redirects=False).headers["location"]
+        == "/static/gameAdmin.html"
+    )
+    assert (
+        client.get("/systemAdmin", follow_redirects=False).headers["location"]
+        == "/static/systemAdmin.html"
+    )
 
 
 def test_nodes_endpoint_returns_registered_edge_nodes():
@@ -420,11 +429,15 @@ def test_user_facing_pages_prefer_operator_node_labels():
     assert "nodeDisplayName(node)" in dashboard
     assert "stream.display_name || stream.equipment_id" in dashboard
     assert "node.display_name || node.edge_node_id" in dashboard
-    assert "info.node_display_name || info.node_id" in dashboard
+    assert "info.node_display_name || info.equipment_id || info.node_id" in dashboard
 
-    assert "station.node_display_name || station.node_id" in game_admin
+    assert (
+        "station.node_display_name || station.equipment_id || station.node_id"
+        in game_admin
+    )
     assert "health.edge_display_name || health.edge_node_id" in game_admin
     assert "state.stations.unassigned_node_display_names" in game_admin
+    assert "state.stations.unassigned_node_equipment_ids" in game_admin
 
     assert "st.node_display_name || st.node_id" in signup
 
@@ -563,7 +576,9 @@ def test_update_apply_hub_endpoint_starts_updater_service_when_idle(monkeypatch)
 
     assert response.status_code == 200
     assert response.json()["state"] == "updater_started"
-    assert calls == [["sudo", "systemctl", "start", "fitracestudio-hub-updater.service"]]
+    assert calls == [
+        ["sudo", "systemctl", "start", "fitracestudio-hub-updater.service"]
+    ]
 
 
 def test_hub_checks_updates_once_on_startup(monkeypatch):
@@ -583,7 +598,9 @@ def test_hub_checks_updates_once_on_startup(monkeypatch):
     assert calls == ["checked"]
 
 
-def test_power_shutdown_requires_confirmation_and_does_not_execute_in_dry_run(monkeypatch):
+def test_power_shutdown_requires_confirmation_and_does_not_execute_in_dry_run(
+    monkeypatch,
+):
     client.post("/api/race/reset")
 
     missing_confirmation = client.post("/api/system/power/shutdown", json={})
@@ -598,6 +615,7 @@ def test_power_shutdown_requires_confirmation_and_does_not_execute_in_dry_run(mo
 
     mock_mqtt = MockMqttClient()
     from hub_server.infrastructure.fastapi.app import app
+
     app.state.mqtt_client = mock_mqtt
 
     response = client.post(
@@ -671,7 +689,9 @@ def test_stopped_race_result_is_persisted_and_listed(monkeypatch, tmp_path):
     assert len(results) == 1
     assert results[0]["snapshot"]["state"] == "STOPPED"
     assert results[0]["snapshot"]["config"]["race_type"] == "time"
-    assert results[0]["snapshot"]["leaderboard"]["node-01"]["athlete_name"] == "Runner A"
+    assert (
+        results[0]["snapshot"]["leaderboard"]["node-01"]["athlete_name"] == "Runner A"
+    )
     client.post("/api/race/reset")
 
     set_online_station(1, "node-01")
@@ -725,7 +745,9 @@ def test_race_readiness_reports_blocking_issues_before_start():
     assert readiness.status_code == 200
     payload = readiness.json()
     assert payload["ready"] is False
-    assert "Register at least one athlete before starting." in payload["blocking_issues"]
+    assert (
+        "Register at least one athlete before starting." in payload["blocking_issues"]
+    )
     assert "Team race needs at least two teams." in payload["blocking_issues"]
     assert payload["checks"]["sound"]["status"] == "ok"
 
@@ -813,7 +835,10 @@ def test_race_readiness_passes_for_online_registered_team_race():
     assert payload["blocking_issues"] == []
     assert payload["checks"]["teams"]["status"] == "ok"
     assert payload["checks"]["stations"]["status"] == "ok"
-    assert [station["health"] for station in payload["station_health"]] == ["online", "online"]
+    assert [station["health"] for station in payload["station_health"]] == [
+        "online",
+        "online",
+    ]
 
 
 def test_start_race_blocks_registered_station_without_online_device():
@@ -870,7 +895,7 @@ def test_countdown_start_delays_race_start_for_dashboard_audio(monkeypatch):
     broadcasts = []
 
     async def capture_broadcast(payload):
-      broadcasts.append(payload)
+        broadcasts.append(payload)
 
     monkeypatch.setattr(hub_app.ws_manager, "broadcast", capture_broadcast)
     set_online_station(1, "node-01")
@@ -974,7 +999,9 @@ def test_team_race_state_exposes_team_leaderboard(monkeypatch):
     assert state["team_leaderboard"][0]["team_finished"] is False
     assert state["team_leaderboard"][0]["score_value"] == 60.0
     assert state["team_leaderboard"][0]["member_count"] == 2
-    assert [member["station_number"] for member in state["team_leaderboard"][0]["members"]] == [1, 2]
+    assert [
+        member["station_number"] for member in state["team_leaderboard"][0]["members"]
+    ] == [1, 2]
     client.post("/api/race/reset")
     for station_number in (1, 2, 3):
         client.post(
@@ -1209,6 +1236,7 @@ def test_power_shutdown_system_notifies_nodes_and_shuts_down(monkeypatch):
 
     mock_mqtt = MockMqttClient()
     from hub_server.infrastructure.fastapi.app import app
+
     app.state.mqtt_client = mock_mqtt
 
     response = client.post("/api/system/power/shutdown-system")
@@ -1338,7 +1366,9 @@ def test_results_token_endpoint_404_for_unknown_token(monkeypatch, tmp_path):
     assert response.status_code == 404
 
 
-def test_results_records_endpoint_returns_top_three_for_distance_category(monkeypatch, tmp_path):
+def test_results_records_endpoint_returns_top_three_for_distance_category(
+    monkeypatch, tmp_path
+):
     _seed_results_store(monkeypatch, tmp_path)
 
     response = client.get("/api/results/records")
@@ -1355,7 +1385,9 @@ def test_results_records_endpoint_returns_top_three_for_distance_category(monkey
     assert records[0]["entries"][0]["end_time_epoch_ms"] == 2000
 
 
-def test_results_records_endpoint_returns_empty_records_with_no_stored_results(monkeypatch, tmp_path):
+def test_results_records_endpoint_returns_empty_records_with_no_stored_results(
+    monkeypatch, tmp_path
+):
     import hub_server.infrastructure.fastapi.app as hub_app
     from hub_server.usecases.race_result_store import RaceResultStore
     from hub_server.usecases.race_results_query import RaceResultsQuery
@@ -1372,7 +1404,7 @@ def test_results_records_endpoint_returns_empty_records_with_no_stored_results(m
 def test_result_page_returns_200_with_result_card():
     response = client.get("/static/result.html")
     assert response.status_code == 200
-    assert "id=\"result-card\"" in response.text
+    assert 'id="result-card"' in response.text
     assert 'data-lang="en"' in response.text
     assert "setLang" in response.text
     assert "/api/results/token/" in response.text
@@ -1385,7 +1417,7 @@ def test_results_wall_page_returns_200_with_qrcode_reference():
     assert "/static/vendor/qrcode.min.js" in response.text
     assert "new QRCode" in response.text
     assert "/api/results/races" in response.text
-    assert "id=\"results-container\"" in response.text
+    assert 'id="results-container"' in response.text
     assert 'data-lang="en"' in response.text
     assert "setLang" in response.text
 
