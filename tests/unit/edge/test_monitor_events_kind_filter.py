@@ -13,7 +13,10 @@ monitor cards can show "waiting" for a machine that is actively streaming.
 
 This pins the fetch call itself, with JS comments stripped first, so a
 comment mentioning "kind=telemetry" near the call could not satisfy the
-assertion while the real query string is missing it.
+assertion while the real query string is missing it. (The backend's own
+honoring of kind=telemetry -- that the predicate actually filters -- is
+covered separately by
+tests/integration/test_edge_api.py::test_edge_monitor_events_kind_telemetry_survives_a_scan_noise_flood.)
 """
 
 import re
@@ -77,16 +80,3 @@ def test_refresh_monitor_events_requests_telemetry_kind_filter():
         f"cannot evict real telemetry from the trailing limit window "
         f"(requested path was {requested_path!r})"
     )
-
-
-def test_monitor_events_route_accepts_kind_telemetry_and_applies_predicate():
-    """Backend sanity check: the route this fetch targets really does exist
-    and really does honor kind=telemetry (guards against the frontend fix
-    pointing at a param the backend silently ignores)."""
-    from fastapi.testclient import TestClient
-
-    client = TestClient(edge_app_module.app)
-
-    res = client.get("/api/monitor/events?kind=telemetry&limit=10")
-    assert res.status_code == 200
-    assert "events" in res.json()
