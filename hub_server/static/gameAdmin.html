@@ -1674,7 +1674,8 @@
       const saveBtn = $("btn-save-race");
       const startBtn = $("btn-start-race");
 
-      saveBtn.disabled = !state.raceConfigDirty || raceState === "RUNNING" || busy;
+      const needsSave = state.raceConfigDirty || raceState !== "READY";
+      saveBtn.disabled = !needsSave || raceState === "RUNNING" || busy;
       startBtn.disabled = raceState === "RUNNING" || state.raceConfigDirty || !readinessReady || busy;
 
       saveBtn.textContent = state.raceActionPending === "save" ? t("text.processing_race_action") : t("button.save_race");

@@ -376,13 +376,21 @@ def test_start_race_action_is_a_real_defined_function_that_calls_start_race():
     assert "await startRace();" in body
 
 
-def test_save_button_enabled_only_when_there_are_unsaved_changes():
+def test_save_button_enabled_when_dirty_or_config_not_yet_validated():
+    """Save must be enabled both when there are unsaved edits AND when the
+    race hasn't reached READY yet (e.g. right after Reset Race, or on
+    first load) -- otherwise the operator has no way to configure a race
+    that was never saved. See
+    tests/unit/hub/test_game_admin_race_action_buttons.py for the
+    behavioral (node-executed) proof of this; this test only pins that the
+    source still threads both conditions through."""
     script = _stripped_script(_read())
     body = _extract_function_body(script, "renderRaceActionButtons")
+    assert 'raceState !== "READY"' in body
     save_disabled_line = next(
         line for line in body.splitlines() if "saveBtn.disabled" in line
     )
-    assert "!state.raceConfigDirty" in save_disabled_line
+    assert "needsSave" in save_disabled_line
 
 
 def test_start_button_disabled_when_readiness_not_ready():

@@ -171,7 +171,8 @@ def test_game_admin_uses_two_separate_buttons_for_save_and_start_steps():
     render_start = source.index("function renderRaceActionButtons()")
     render_end = source.index("function readinessStatusClass", render_start)
     render_source = source[render_start:render_end]
-    assert "!state.raceConfigDirty" in render_source
+    assert "needsSave" in render_source
+    assert 'raceState !== "READY"' in render_source
     assert "!readinessReady" in render_source
     assert 't("button.save_race")' in render_source
     assert 't("button.start_race")' in render_source
