@@ -22,10 +22,25 @@ dev = [
   "httpx>=0.27,<1",
   "pytest==9.1.0",
   "pytest-asyncio==1.4.0",
+  # Pinned exactly: CLAUDE.md requires `black .` and `ruff check . --fix`
+  # before every commit, so an unpinned formatter turns a version drift on
+  # one machine into a repo-wide reformat diff on the next. This happened --
+  # a stray newer black left 47 unrelated files dirty mid-review.
+  "black==26.5.1",
+  "ruff==0.15.17",
 ]
 
 [tool.setuptools.packages.find]
 include = ["edge_node*", "hub_server*", "fitrace_common*"]
+
+[tool.black]
+# Vendor reference code for the antenna board -- not packaged (see
+# packages.find above), not imported by anything, and not our style to
+# enforce. Reformatting it only creates noise against whatever upstream ships.
+force-exclude = "referece_for_edge_node/"
+
+[tool.ruff]
+extend-exclude = ["referece_for_edge_node"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
