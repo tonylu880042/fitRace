@@ -2020,8 +2020,21 @@
       updateSignupLink();
     }
 
+    function nextFreeStationNumber() {
+      const assigned = new Set(Object.keys(state.stations.stations || {}).map(Number));
+      for (let candidate = 1; candidate <= 99; candidate += 1) {
+        if (!assigned.has(candidate)) return candidate;
+      }
+      return null;
+    }
+
     function selectNode(nodeId) {
       $("node-select").value = nodeId;
+      const nextFree = nextFreeStationNumber();
+      if (nextFree !== null) {
+        $("station-number").value = nextFree;
+      }
+      updateSignupLink();
     }
 
     function selectStation(stationNumber, nodeId) {
