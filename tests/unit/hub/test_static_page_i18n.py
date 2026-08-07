@@ -194,7 +194,12 @@ def test_game_admin_and_system_admin_inline_dictionaries_stay_symmetric():
         en_start = source.index('"en-US": {')
         zh_start = source.index('dictionaries["zh-TW"] = {')
         en_block = source[en_start:zh_start]
-        zh_block = source[zh_start : zh_start + 6000]
+        # 8000, not 6000: matches the window already used by the sibling
+        # i18n test (test_game_admin_station_signpost.py). The inline
+        # zh-TW dict keeps growing (station-status i18n added ~6 keys) and
+        # a too-tight fixed window truncates it mid-value, producing false
+        # "missing from zh-TW" failures for keys that are actually present.
+        zh_block = source[zh_start : zh_start + 8000]
 
         en_keys = set(re.findall(r'"([a-zA-Z0-9_.]+)":\s*"', en_block))
         zh_keys = set(re.findall(r'"([a-zA-Z0-9_.]+)":\s*"', zh_block))

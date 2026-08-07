@@ -239,6 +239,13 @@
       text-transform: uppercase;
     }
 
+    .panel-subtitle {
+      margin: 0 0 4px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.35;
+    }
+
     .grid-2 {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1066,6 +1073,7 @@
               <button type="button" onclick="refreshAll()" data-i18n="button.refresh">Refresh</button>
             </div>
           </div>
+          <p class="panel-subtitle" data-i18n="text.station_status_subtitle">Pre-race checklist: confirm every station has a live machine and a registered athlete before you start.</p>
           <div class="list" id="station-list" style="margin-top: 14px;"></div>
         </section>
       </div>
@@ -1258,7 +1266,13 @@
         "pill.applies_immediately": "Applies Immediately",
         "text.local_preference_note": "Affects this browser only.",
         "text.team_field_note": "Applies to team races only.",
-        "text.readiness_remedy_summary": "{count} item(s) need attention before you can start."
+        "text.readiness_remedy_summary": "{count} item(s) need attention before you can start.",
+        "text.station_status_subtitle": "Pre-race checklist: confirm every station has a live machine and a registered athlete before you start.",
+        "text.unbound": "unbound",
+        "text.no_telemetry_stream": "No telemetry stream",
+        "text.no_athlete": "No athlete",
+        "label.health": "Health:",
+        "text.unassigned_telemetry": "Unassigned telemetry stream. Configure it in System Admin."
       }
     };
 
@@ -1400,7 +1414,13 @@
       "pill.applies_immediately": "立即套用",
       "text.local_preference_note": "僅影響此瀏覽器。",
       "text.team_field_note": "僅適用於隊伍賽。",
-      "text.readiness_remedy_summary": "尚有 {count} 項需要處理才能開始比賽。"
+      "text.readiness_remedy_summary": "尚有 {count} 項需要處理才能開始比賽。",
+      "text.station_status_subtitle": "賽前檢查清單:確認每個站位都已連上機台並完成選手報名,再開始比賽。",
+      "text.unbound": "未綁定",
+      "text.no_telemetry_stream": "無遙測串流",
+      "text.no_athlete": "尚無選手",
+      "label.health": "狀態:",
+      "text.unassigned_telemetry": "未指派遙測串流,請至系統管理設定。"
     };
 
     function t(key, params = {}) {
@@ -1811,7 +1831,7 @@
           <div class="row-main">
             <div>
               <div class="row-name">${escapeHtml(state.stations.unassigned_node_display_names?.[nodeId] || state.stations.unassigned_node_equipment_ids?.[nodeId] || nodeId)}</div>
-              <div class="row-meta">Unassigned telemetry stream. Configure it in System Admin.</div>
+              <div class="row-meta">${escapeHtml(t("text.unassigned_telemetry"))}</div>
             </div>
           </div>
         </div>
@@ -1825,9 +1845,9 @@
           <div class="row-card">
             <div class="row-main">
               <div>
-                <div class="row-name">Station ${escapeHtml(key)} · ${escapeHtml(station.equipment_type || "unbound")}</div>
-                <div class="row-meta">${escapeHtml(station.node_display_name || station.equipment_id || station.node_id || "No telemetry stream")} · ${escapeHtml(station.athlete_name || "No athlete")}${station.team_name ? ` (${escapeHtml(station.team_name)})` : ""}</div>
-                <div class="row-meta">Health: ${escapeHtml(health.label || health.health || "--")}${health.edge_node_id ? ` · ${escapeHtml(health.edge_display_name || health.edge_node_id)}` : ""}</div>
+                <div class="row-name">${escapeHtml(t("text.station"))} ${escapeHtml(key)} · ${escapeHtml(station.equipment_type || t("text.unbound"))}</div>
+                <div class="row-meta">${escapeHtml(station.node_display_name || station.equipment_id || station.node_id || t("text.no_telemetry_stream"))} · ${escapeHtml(station.athlete_name || t("text.no_athlete"))}${station.team_name ? ` (${escapeHtml(station.team_name)})` : ""}</div>
+                <div class="row-meta">${escapeHtml(t("label.health"))} ${escapeHtml(health.label || health.health || "--")}${health.edge_node_id ? ` · ${escapeHtml(health.edge_display_name || health.edge_node_id)}` : ""}</div>
                 <div class="row-meta">${escapeHtml(signupUrl)}</div>
               </div>
               <span class="health-pill ${escapeHtml(health.health || "missing")}">${escapeHtml(health.health || "missing")}</span>
