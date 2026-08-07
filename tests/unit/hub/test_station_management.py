@@ -125,6 +125,22 @@ def test_unassign_station_clears_athlete():
     assert len(status["stations"]) == 0
 
 
+def test_get_station_node_ids_returns_plain_station_to_node_id_mapping():
+    manager = RaceManager()
+    manager.update_active_node("node-01", "fan_bike")
+    manager.assign_station(1, "node-01")
+    manager.update_active_node("node-02", "treadmill")
+    manager.assign_station(2, "node-02")
+
+    mapping = manager.get_station_node_ids()
+
+    assert mapping == {1: "node-01", 2: "node-02"}
+
+    # Must be a copy: mutating the return value must not corrupt internal state.
+    mapping[3] = "node-03"
+    assert manager.get_station_node_ids() == {1: "node-01", 2: "node-02"}
+
+
 def test_update_active_node_remembers_ble_equipment_id():
     manager = RaceManager()
 

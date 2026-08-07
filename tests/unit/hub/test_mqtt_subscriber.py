@@ -1,7 +1,11 @@
+import logging
+
 import pytest
 
 from hub_server.adapters.mqtt_subscriber import MqttSubscriber
 from hub_server.domain.models import RaceState
+from hub_server.usecases.node_registry import NodeRegistry
+from hub_server.usecases.race_manager import RaceManager
 from hub_server.usecases.race_result_store import RaceResultStore
 
 
@@ -226,3 +230,202 @@ async def test_mqtt_subscriber_persists_result_when_telemetry_auto_stops_race(tm
     results = result_store.list_results()
     assert len(results) == 1
     assert results[0]["snapshot"]["state"] == "STOPPED"
+
+
+# -- bindings_removed: Edge -> Hub equipment-removal propagation ----------
+#
+# The trigger is a one-shot MQTT event an Edge publishes only on an
+# explicit operator action (see edge_node's config-save hook). It must
+# never be confused with the periodic heartbeat/status topic, which fires
+# on its own regardless of operator intent and drops out constantly under
+# real Wi-Fi conditions -- treating a missing/empty heartbeat as "equipment
+# removed" would wipe venue setup on every drop. See
+# test_node_status_heartbeat_never_triggers_station_unassignment below.
+from hub_server.domain.models import RaceConfig  # noqa: E402
+
+
+@pytest.mark.asyncio
+async def test_mqtt_subscriber_bindings_removed_unassigns_exactly_affected_stations():
+    race_manager = RaceManager()
+    race_manager.update_active_node("fitrace-edge-01-01", "fan_bike")
+    race_manager.assign_station(1, "fitrace-edge-01-01")
+    race_manager.register_athlete(1, "Athlete One")
+    race_manager.update_active_node("fitrace-edge-01-02", "treadmill")
+    race_manager.assign_station(2, "fitrace-edge-01-02")
+    race_manager.update_active_node("fitrace-edge-02-01", "rowing_machine")
+    race_manager.assign_station(3, "fitrace-edge-02-01")
+
+    ws_manager = FakeWebSocketManager()
+    subscriber = MqttSubscriber(
+        async_mqtt_client=None,
+        race_manager=race_manager,
+        ws_manager=ws_manager,
+    )
+
+    await subscriber._handle_bindings_removed(
+        {
+            "edge_node_id": "fitrace-edge-01",
+            "removed_node_ids": ["fitrace-edge-01-01", "fitrace-edge-01-02"],
+        },
+        "fitrace-edge-01",
+    )
+
+    status = race_manager.get_stations_status()
+    assert 1 not in status["stations"]
+    assert 2 not in status["stations"]
+    # Station 3, bound to a different edge's node_id, is untouched.
+    assert status["stations"][3]["node_id"] == "fitrace-edge-02-01"
+
+    # The user's explicit call: athlete data goes with the equipment,
+    # because assign_station(n, None) is reused rather than a partial-unbind
+    # path. Re-fetching after the removal must show no leftover athlete.
+    status_again = race_manager.get_stations_status()
+    assert 1 not in status_again["stations"]
+
+
+@pytest.mark.asyncio
+async def test_mqtt_subscriber_bindings_removed_broadcasts_updated_stations():
+    race_manager = RaceManager()
+    race_manager.update_active_node("fitrace-edge-01-01", "fan_bike")
+    race_manager.assign_station(1, "fitrace-edge-01-01")
+
+    ws_manager = FakeWebSocketManager()
+    subscriber = MqttSubscriber(
+        async_mqtt_client=None,
+        race_manager=race_manager,
+        ws_manager=ws_manager,
+    )
+
+    await subscriber._handle_bindings_removed(
+        {
+            "edge_node_id": "fitrace-edge-01",
+            "removed_node_ids": ["fitrace-edge-01-01"],
+        },
+        "fitrace-edge-01",
+    )
+
+    assert len(ws_manager.broadcasts) == 1
+    assert ws_manager.broadcasts[0]["type"] == "state_change"
+
+
+@pytest.mark.asyncio
+async def test_mqtt_subscriber_bindings_removed_during_running_unassigns_nothing(
+    caplog,
+):
+    race_manager = RaceManager()
+    race_manager.update_active_node("fitrace-edge-01-01", "fan_bike")
+    race_manager.assign_station(1, "fitrace-edge-01-01")
+    race_manager.configure(RaceConfig(race_type="distance", target_value=100.0))
+    race_manager.start_race()
+    assert race_manager.get_state() == RaceState.RUNNING
+
+    ws_manager = FakeWebSocketManager()
+    subscriber = MqttSubscriber(
+        async_mqtt_client=None,
+        race_manager=race_manager,
+        ws_manager=ws_manager,
+    )
+
+    with caplog.at_level(logging.WARNING, logger="hub_server.mqtt_subscriber"):
+        await subscriber._handle_bindings_removed(
+            {
+                "edge_node_id": "fitrace-edge-01",
+                "removed_node_ids": ["fitrace-edge-01-01"],
+            },
+            "fitrace-edge-01",
+        )
+
+    status = race_manager.get_stations_status()
+    assert status["stations"][1]["node_id"] == "fitrace-edge-01-01"
+    assert ws_manager.broadcasts == []
+    assert any(
+        "RUNNING" in record.message and "fitrace-edge-01-01" in record.message
+        for record in caplog.records
+    )
+
+
+@pytest.mark.asyncio
+async def test_mqtt_subscriber_bindings_removed_unknown_node_id_is_a_noop():
+    race_manager = RaceManager()
+    race_manager.update_active_node("fitrace-edge-01-01", "fan_bike")
+    race_manager.assign_station(1, "fitrace-edge-01-01")
+
+    ws_manager = FakeWebSocketManager()
+    subscriber = MqttSubscriber(
+        async_mqtt_client=None,
+        race_manager=race_manager,
+        ws_manager=ws_manager,
+    )
+
+    await subscriber._handle_bindings_removed(
+        {
+            "edge_node_id": "fitrace-edge-02",
+            "removed_node_ids": ["fitrace-edge-02-99"],
+        },
+        "fitrace-edge-02",
+    )
+
+    status = race_manager.get_stations_status()
+    assert status["stations"][1]["node_id"] == "fitrace-edge-01-01"
+    assert ws_manager.broadcasts == []
+
+
+@pytest.mark.asyncio
+async def test_mqtt_subscriber_bindings_removed_rejects_invalid_payload():
+    race_manager = RaceManager()
+    race_manager.update_active_node("fitrace-edge-01-01", "fan_bike")
+    race_manager.assign_station(1, "fitrace-edge-01-01")
+
+    ws_manager = FakeWebSocketManager()
+    subscriber = MqttSubscriber(
+        async_mqtt_client=None,
+        race_manager=race_manager,
+        ws_manager=ws_manager,
+    )
+
+    # Missing required edge_node_id field.
+    await subscriber._handle_bindings_removed(
+        {"removed_node_ids": ["fitrace-edge-01-01"]},
+        "fitrace-edge-01",
+    )
+
+    status = race_manager.get_stations_status()
+    assert status["stations"][1]["node_id"] == "fitrace-edge-01-01"
+    assert ws_manager.broadcasts == []
+
+
+@pytest.mark.asyncio
+async def test_node_status_heartbeat_never_triggers_station_unassignment():
+    """Pinning the user's core safety requirement: an empty or absent
+    heartbeat/status message must never unassign a station, no matter how
+    it looks. A heartbeat reporting equipment_streams=[] (exactly what a
+    dropped-Wi-Fi edge looks like) must leave every station bound exactly
+    as it was -- only the explicit bindings_removed event may unassign.
+    """
+    race_manager = RaceManager()
+    race_manager.update_active_node("fitrace-edge-01-01", "fan_bike")
+    race_manager.assign_station(1, "fitrace-edge-01-01")
+    race_manager.register_athlete(1, "Athlete One")
+
+    ws_manager = FakeWebSocketManager()
+    node_registry = NodeRegistry()
+    subscriber = MqttSubscriber(
+        async_mqtt_client=None,
+        race_manager=race_manager,
+        ws_manager=ws_manager,
+        node_registry=node_registry,
+    )
+
+    # A heartbeat with an empty equipment_streams list -- what the bug
+    # report actually observed on a dropped edge -- goes through the
+    # ordinary node_status handler.
+    await subscriber._handle_node_status(
+        {"equipment_streams": [], "status": "online"},
+        "fitrace-edge-01",
+    )
+    # And an absent/None node status payload for good measure.
+    await subscriber._handle_node_status({}, "fitrace-edge-01")
+
+    status = race_manager.get_stations_status()
+    assert status["stations"][1]["node_id"] == "fitrace-edge-01-01"
+    assert status["stations"][1]["athlete_name"] == "Athlete One"

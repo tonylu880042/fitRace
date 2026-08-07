@@ -435,6 +435,14 @@ class RaceManager:
         if equipment_id:
             self._node_equipment_ids[node_id] = equipment_id
 
+    def get_station_node_ids(self) -> Dict[int, str]:
+        """Plain station_number -> node_id snapshot for reconciliation
+        usecases (e.g. binding_removal_reconciler) that must stay
+        broker-free and must not reach into RaceManager's private fields
+        (see test_race_manager_boundaries.py). Returns a copy so callers
+        cannot mutate internal state through it."""
+        return dict(self._stations)
+
     def get_station_equipment_type(self, station_number: int) -> str:
         node_id = self._stations.get(station_number)
         if not node_id:
