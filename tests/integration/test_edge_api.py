@@ -581,6 +581,254 @@ def test_edge_config_endpoint_rejects_duplicate_binding_macs(monkeypatch, tmp_pa
     assert json.loads(config_path.read_text(encoding="utf-8")) == original
 
 
+# -- bindings_removed: publish propagation on config save -----------------
+#
+# The hook lives in save_edge_config() (used by ALL THREE removal entry
+# points: POST /api/config, DELETE /api/equipment-bindings, and DELETE
+# /api/equipment-bindings/{node_id}, plus the pairing-session flow), so a
+# single set of POST /api/config tests below pins the diff+publish
+# behaviour, and one test each for the two DELETE endpoints proves the same
+# hook covers them too.
+
+
+def test_config_save_publishes_bindings_removed_event_for_removed_node_ids(
+    monkeypatch, tmp_path
+):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "node_id": "fitrace-edge-test",
+                "mqtt_host": "192.168.0.130",
+                "mqtt_port": 1883,
+                "max_ftms_connections": 2,
+                "antenna_channels": [{"id": "uart-1", "port": "/dev/ttyAMA0"}],
+                "equipment_bindings": [
+                    {
+                        "node_id": "fitrace-edge-test-01",
+                        "equipment_id": "BIKE_01",
+                        "equipment_type": "fan_bike",
+                        "ble_target": "AA:BB:CC:DD:EE:01",
+                        "antenna_channel": "uart-1",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    published = []
+    monkeypatch.setattr(edge_app_module, "CONFIG_PATH", config_path)
+    monkeypatch.setattr(
+        edge_app_module,
+        "publish_bindings_removed",
+        lambda host, port, edge_node_id, removed: published.append(
+            (host, port, edge_node_id, removed)
+        )
+        or True,
+    )
+    client = TestClient(edge_app_module.app)
+
+    payload = client.get("/api/config").json()
+    payload["equipment_bindings"] = []
+
+    response = client.post("/api/config", json=payload)
+
+    assert response.status_code == 200
+    assert published == [
+        ("192.168.0.130", 1883, "fitrace-edge-test", ["fitrace-edge-test-01"])
+    ]
+
+
+def test_config_save_does_not_publish_when_no_bindings_removed(monkeypatch, tmp_path):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "node_id": "fitrace-edge-test",
+                "max_ftms_connections": 2,
+                "antenna_channels": [{"id": "uart-1", "port": "/dev/ttyAMA0"}],
+                "equipment_bindings": [
+                    {
+                        "node_id": "fitrace-edge-test-01",
+                        "equipment_id": "BIKE_01",
+                        "equipment_type": "fan_bike",
+                        "ble_target": "AA:BB:CC:DD:EE:01",
+                        "antenna_channel": "uart-1",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    published = []
+    monkeypatch.setattr(edge_app_module, "CONFIG_PATH", config_path)
+    monkeypatch.setattr(
+        edge_app_module,
+        "publish_bindings_removed",
+        lambda *a, **kw: published.append((a, kw)) or True,
+    )
+    client = TestClient(edge_app_module.app)
+
+    # Save the exact same bindings back (no removal) -- e.g. an operator
+    # editing an unrelated field like mqtt_host.
+    payload = client.get("/api/config").json()
+
+    response = client.post("/api/config", json=payload)
+
+    assert response.status_code == 200
+    assert published == []
+
+
+def test_config_save_succeeds_even_when_publish_raises(monkeypatch, tmp_path):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "node_id": "fitrace-edge-test",
+                "max_ftms_connections": 2,
+                "antenna_channels": [{"id": "uart-1", "port": "/dev/ttyAMA0"}],
+                "equipment_bindings": [
+                    {
+                        "node_id": "fitrace-edge-test-01",
+                        "equipment_id": "BIKE_01",
+                        "equipment_type": "fan_bike",
+                        "ble_target": "AA:BB:CC:DD:EE:01",
+                        "antenna_channel": "uart-1",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def _raise(*args, **kwargs):
+        raise ConnectionError("MQTT broker unreachable")
+
+    monkeypatch.setattr(edge_app_module, "CONFIG_PATH", config_path)
+    monkeypatch.setattr(edge_app_module, "publish_bindings_removed", _raise)
+    client = TestClient(edge_app_module.app)
+
+    payload = client.get("/api/config").json()
+    payload["equipment_bindings"] = []
+
+    # A technician clearing bindings on a bench with no hub present must
+    # not be blocked by an unreachable broker.
+    response = client.post("/api/config", json=payload)
+
+    assert response.status_code == 200
+    saved = json.loads(config_path.read_text(encoding="utf-8"))
+    assert saved["equipment_bindings"] == []
+
+
+def test_clear_equipment_bindings_endpoint_publishes_removed_bindings(
+    monkeypatch, tmp_path
+):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "node_id": "fitrace-edge-test",
+                "mqtt_host": "192.168.0.130",
+                "mqtt_port": 1883,
+                "max_ftms_connections": 2,
+                "antenna_channels": [
+                    {"id": "uart-1", "port": "/dev/ttyAMA0"},
+                    {"id": "uart-2", "port": "/dev/ttyAMA4"},
+                ],
+                "equipment_bindings": [
+                    {
+                        "node_id": "fitrace-edge-test-01",
+                        "equipment_id": "BIKE_01",
+                        "equipment_type": "fan_bike",
+                        "ble_target": "AA:BB:CC:DD:EE:01",
+                        "antenna_channel": "uart-1",
+                    },
+                    {
+                        "node_id": "fitrace-edge-test-02",
+                        "equipment_id": "BIKE_02",
+                        "equipment_type": "fan_bike",
+                        "ble_target": "AA:BB:CC:DD:EE:02",
+                        "antenna_channel": "uart-2",
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    class FakeAntennaCommandRunner:
+        def run(self, request):
+            return {
+                "port": request.port,
+                "command": request.command,
+                "rx": ["OK:DISCONNECT"],
+            }
+
+    published = []
+    monkeypatch.setattr(edge_app_module, "CONFIG_PATH", config_path)
+    monkeypatch.setattr(
+        edge_app_module, "antenna_command_runner", FakeAntennaCommandRunner()
+    )
+    monkeypatch.setattr(
+        edge_app_module,
+        "publish_bindings_removed",
+        lambda host, port, edge_node_id, removed: published.append(
+            (host, port, edge_node_id, sorted(removed))
+        )
+        or True,
+    )
+    client = TestClient(edge_app_module.app)
+
+    response = client.delete("/api/equipment-bindings")
+
+    assert response.status_code == 200
+    assert published == [
+        (
+            "192.168.0.130",
+            1883,
+            "fitrace-edge-test",
+            ["fitrace-edge-test-01", "fitrace-edge-test-02"],
+        )
+    ]
+
+
+def test_remove_single_equipment_binding_endpoint_publishes_removed_binding(
+    monkeypatch, tmp_path
+):
+    config_path = tmp_path / "config.json"
+    _write_multi_binding_config(config_path)
+
+    class FakeAntennaCommandRunner:
+        def run(self, request):
+            return {
+                "port": request.port,
+                "command": request.command,
+                "rx": ["OK:DISCONNECT"],
+            }
+
+    published = []
+    monkeypatch.setattr(edge_app_module, "CONFIG_PATH", config_path)
+    monkeypatch.setattr(
+        edge_app_module, "antenna_command_runner", FakeAntennaCommandRunner()
+    )
+    monkeypatch.setattr(
+        edge_app_module,
+        "publish_bindings_removed",
+        lambda host, port, edge_node_id, removed: published.append(
+            (host, port, edge_node_id, removed)
+        )
+        or True,
+    )
+    client = TestClient(edge_app_module.app)
+
+    response = client.delete("/api/equipment-bindings/fitrace-edge-test-02")
+
+    assert response.status_code == 200
+    assert published == [
+        ("192.168.0.130", 1883, "fitrace-edge-test", ["fitrace-edge-test-02"])
+    ]
+
+
 def test_clear_equipment_bindings_disconnects_every_channel_and_restarts_runtime(
     monkeypatch, tmp_path
 ):

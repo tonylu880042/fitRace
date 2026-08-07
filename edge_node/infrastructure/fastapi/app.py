@@ -1,5 +1,6 @@
 import ipaddress
 import json
+import logging
 import os
 import socket
 import time
@@ -17,16 +18,20 @@ from edge_node.infrastructure.antenna.command_runner import (
     AntennaCommandRunner,
 )
 from edge_node.infrastructure.ble.ftms_scanner import BleakFtmsScanner
+from edge_node.infrastructure.mqtt.one_shot_publisher import publish_bindings_removed
 from fitrace_common.wifi_status import (
     LinuxWifiStatusReader,
     WifiStatus,  # noqa: F401 -- re-exported: tests build fakes via edge_app_module.WifiStatus(...)
 )
 from edge_node.usecases.antenna_reconnect import reconnect_configured_devices
+from edge_node.usecases.binding_removal import diff_removed_binding_node_ids
 from edge_node.usecases.event_log import EdgeEventLog
 from edge_node.usecases.ftms_scanner import scan_ftms_devices
 from edge_node.usecases.pairing_session import PairingSession, PairingSessionError
 from fitrace_common import wifi_manager
 from fitrace_common.power_manager import PowerActionError, PowerManager
+
+logger = logging.getLogger("edge_node.fastapi")
 
 app = FastAPI(title="FitRaceStudio Edge Node")
 ftms_scanner = BleakFtmsScanner()
@@ -165,7 +170,39 @@ def load_edge_config() -> EdgeNodeConfig:
 
 
 def save_edge_config(config: EdgeNodeConfig):
+    # Hooked here (not in each individual endpoint) because every removal
+    # entry point -- POST /api/config, DELETE /api/equipment-bindings,
+    # DELETE /api/equipment-bindings/{node_id}, and the pairing-session
+    # flow -- funnels through this single function. Diffing against the
+    # config already on disk, in this one place, covers all of them.
+    previous_config = load_edge_config()
+    removed_node_ids = diff_removed_binding_node_ids(
+        previous_config.equipment_bindings, config.equipment_bindings
+    )
+
     _config_store.save_edge_config(config, CONFIG_PATH)
+
+    if removed_node_ids:
+        # Best-effort: this API process has no long-lived MQTT client of
+        # its own (that belongs to the separate fitracestudio-edge.service
+        # runtime), and the local binding removal above has already
+        # succeeded on disk. A broker that is unreachable -- e.g. a
+        # technician working on a bench with no Central Hub present --
+        # must never turn into a failed config save.
+        try:
+            publish_bindings_removed(
+                config.mqtt_host,
+                config.mqtt_port,
+                config.node_id,
+                removed_node_ids,
+            )
+        except Exception as exc:
+            logger.warning(
+                "publish_bindings_removed raised for node_id=%s removed=%s: %s",
+                config.node_id,
+                removed_node_ids,
+                exc,
+            )
 
 
 def default_antenna_port() -> str:
