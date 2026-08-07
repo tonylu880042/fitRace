@@ -79,12 +79,31 @@ def enrich_station_display_names(
         )
         station["equipment_id"] = equipment_ids.get(node_id) or remembered_name
 
+    # An "unassigned" stream carries no venue setup (no athlete, no team,
+    # no station binding) -- unlike an assigned station, which keeps
+    # working even while its edge is offline (see the loop above; that
+    # must never change here). So it is safe -- and required, to fix the
+    # phantom-forever-unassigned bug -- to only ever list node_ids the
+    # edge CURRENTLY reports in its equipment_streams (node_labels' keys).
+    # A node_id race_manager remembers from past telemetry but that no
+    # edge reports any more (a stale id from a superseded pairing scheme,
+    # or simply an edge that's gone) is dropped here. It reappears
+    # automatically if an edge reports it again -- nothing is destroyed,
+    # unlike station unassignment, which stays driven solely by an
+    # explicit `bindings_removed` event and must never be touched here.
+    live_unassigned_nodes = [
+        node_id
+        for node_id in enriched.get("unassigned_nodes", [])
+        if node_id in node_labels
+    ]
+    enriched["unassigned_nodes"] = live_unassigned_nodes
+
     enriched["unassigned_node_display_names"] = {
         node_id: node_labels.get(node_id) or remembered_names.get(node_id) or node_id
-        for node_id in enriched.get("unassigned_nodes", [])
+        for node_id in live_unassigned_nodes
     }
     enriched["unassigned_node_equipment_ids"] = {
         node_id: equipment_ids.get(node_id) or remembered_names.get(node_id)
-        for node_id in enriched.get("unassigned_nodes", [])
+        for node_id in live_unassigned_nodes
     }
     return enriched

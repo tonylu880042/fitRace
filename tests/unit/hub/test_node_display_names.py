@@ -178,7 +178,15 @@ def test_station_display_name_falls_back_to_node_id_when_ble_name_never_seen():
     assert enriched["stations"][1]["node_display_name"] == "fitrace-edge-01-01"
 
 
-def test_unassigned_node_display_name_falls_back_to_remembered_ble_name_when_offline():
+def test_unassigned_node_no_longer_shows_when_edge_stops_reporting_even_with_remembered_name():
+    """Root-cause fix (Task A): unlike an assigned station, an unassigned
+    stream carries no venue setup, so once no edge reports a node_id at
+    all any more it must disappear from unassigned_nodes -- even if a BLE
+    name was remembered from earlier telemetry. This scenario used to
+    assert the OPPOSITE (that the phantom entry stays, using the
+    remembered name): that older assertion was itself the bug this task
+    fixes, so it has been replaced rather than kept alongside a
+    contradictory new one."""
     stations = {
         "stations": {},
         "unassigned_nodes": ["fitrace-edge-01-01"],
@@ -187,9 +195,8 @@ def test_unassigned_node_display_name_falls_back_to_remembered_ble_name_when_off
 
     enriched = enrich_station_display_names(stations, nodes=[])
 
-    assert enriched["unassigned_node_display_names"] == {
-        "fitrace-edge-01-01": "Vmax53932"
-    }
+    assert enriched["unassigned_nodes"] == []
+    assert enriched["unassigned_node_display_names"] == {}
 
 
 def test_station_payload_exposes_raw_equipment_id_for_assigned_and_unassigned():
@@ -210,3 +217,90 @@ def test_station_payload_exposes_raw_equipment_id_for_assigned_and_unassigned():
     assert enriched["unassigned_node_equipment_ids"] == {
         "fitrace-edge-01-01": "Vmax_1183"
     }
+
+
+def test_unassigned_stream_no_longer_reported_by_any_edge_is_dropped():
+    """Root-cause regression: a node_id that sent telemetry under an old
+    pairing scheme is no longer in ANY edge's live equipment_streams. It
+    must not linger as a phantom 'unassigned' entry forever."""
+    stations = {
+        "stations": {},
+        "unassigned_nodes": ["fitrace-edge-01-stale"],
+    }
+    enriched = enrich_station_display_names(stations, NODES)
+    assert enriched["unassigned_nodes"] == []
+    assert enriched["unassigned_node_display_names"] == {}
+    assert enriched["unassigned_node_equipment_ids"] == {}
+
+
+def test_unassigned_stream_still_reported_stays_listed():
+    stations = {
+        "stations": {},
+        "unassigned_nodes": ["fitrace-edge-01-01"],
+    }
+    enriched = enrich_station_display_names(stations, NODES)
+    assert enriched["unassigned_nodes"] == ["fitrace-edge-01-01"]
+    assert enriched["unassigned_node_display_names"] == {
+        "fitrace-edge-01-01": "Node130+Vmax_1183"
+    }
+
+
+def test_assigned_station_unaffected_by_unassigned_filter_when_edge_offline():
+    """Pin the highest-risk regression: an ASSIGNED station's node must keep
+    showing in `stations` even when its edge is not currently reporting
+    (nodes=[]). Only the *unassigned* list is filtered by live streams."""
+    stations = {
+        "stations": {1: {"node_id": "fitrace-edge-01-01"}},
+        "unassigned_nodes": [],
+    }
+    enriched = enrich_station_display_names(stations, nodes=[])
+    assert enriched["stations"][1]["node_id"] == "fitrace-edge-01-01"
+
+
+def test_assigned_station_unaffected_by_unassigned_filter_when_edge_online():
+    """Same station-unassignment-must-not-change guarantee, but with the
+    edge online: assigned stations are also unaffected in this case."""
+    stations = {
+        "stations": {1: {"node_id": "fitrace-edge-01-01"}},
+        "unassigned_nodes": [],
+    }
+    enriched = enrich_station_display_names(stations, NODES)
+    assert enriched["stations"][1]["node_id"] == "fitrace-edge-01-01"
+    assert enriched["stations"][1]["node_display_name"] == "Node130+Vmax_1183"
+
+
+def test_live_venue_scenario_six_reported_six_stale_all_assigned():
+    """Reproduces the exact live-venue report: six streams currently
+    reported by the edge, all six bound to stations 1-6; six MAC-derived
+    ids from an older pairing scheme that the edge no longer reports at
+    all. unassigned_nodes must end up empty, not showing the stale six."""
+    reported = [
+        ("fitrace-edge-01-01", "Vmax26_9EE"),
+        ("fitrace-edge-01-02", "Vmax26_35B"),
+        ("fitrace-edge-01-03", "Vmax26_5E5"),
+        ("fitrace-edge-01-04", "Vmax_F341"),
+        ("fitrace-edge-01-05", "Vmax_2014"),
+        ("fitrace-edge-01-06", "Vmax_E551"),
+    ]
+    nodes = [
+        {
+            "edge_node_id": "fitrace-edge-01",
+            "equipment_streams": [
+                {"node_id": nid, "equipment_id": eq} for nid, eq in reported
+            ],
+        }
+    ]
+    stale_ids = [
+        "fitrace-edge-01-d58c35fa5e56",
+        "fitrace-edge-01-dff929d79eed",
+        "fitrace-edge-01-f3031f872014",
+        "fitrace-edge-01-d634a6df35b0",
+        "fitrace-edge-01-d2c16a98f341",
+        "fitrace-edge-01-ca1b69abe551",
+    ]
+    stations = {
+        "stations": {i + 1: {"node_id": nid} for i, (nid, _) in enumerate(reported)},
+        "unassigned_nodes": stale_ids,
+    }
+    enriched = enrich_station_display_names(stations, nodes)
+    assert enriched["unassigned_nodes"] == []
