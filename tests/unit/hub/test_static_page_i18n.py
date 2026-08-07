@@ -1,4 +1,7 @@
+import json
 import re
+import subprocess
+import tempfile
 from pathlib import Path
 
 STATIC_DIR = Path(__file__).resolve().parents[3] / "hub_server" / "static"
@@ -6,6 +9,79 @@ STATIC_DIR = Path(__file__).resolve().parents[3] / "hub_server" / "static"
 
 def _read(name: str) -> str:
     return (STATIC_DIR / name).read_text(encoding="utf-8")
+
+
+def _matching_brace_end(source: str, open_idx: int) -> int:
+    """Return the index of the "}" that matches the "{" at open_idx,
+    tracking string literals so braces inside quoted values (none exist
+    today, but nothing guarantees that forever) don't throw off the depth
+    count."""
+    depth = 0
+    i = open_idx
+    in_str = None
+    while i < len(source):
+        char = source[i]
+        if in_str:
+            if char == "\\":
+                i += 2
+                continue
+            if char == in_str:
+                in_str = None
+        elif char in ('"', "'", "`"):
+            in_str = char
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return i
+        i += 1
+    raise ValueError("no matching closing brace found")
+
+
+def _extract_dictionaries_js(source: str) -> str:
+    """Pull the `const dictionaries = {...}` and the following
+    `dictionaries["zh-TW"] = {...}` statements out of a static page,
+    brace-matched so the slice ends exactly where each dictionary ends --
+    no matter how many keys either one grows to. A fixed-length window
+    (the previous approach) silently truncates once the dictionary outgrows
+    it, producing false "missing from zh-TW" failures for keys that are
+    actually present."""
+    const_start = source.index("const dictionaries = {")
+    const_open = source.index("{", const_start)
+    const_close = _matching_brace_end(source, const_open)
+
+    zh_marker = 'dictionaries["zh-TW"] = {'
+    zh_start = source.index(zh_marker, const_close)
+    zh_open = source.index("{", zh_start)
+    zh_close = _matching_brace_end(source, zh_open)
+
+    return source[const_start : zh_close + 1] + ";"
+
+
+def _load_dictionaries(source: str) -> dict:
+    """Evaluate the real `dictionaries` object literal under node and
+    return it as a Python dict ({"en-US": {...}, "zh-TW": {...}}). This
+    both sidesteps any fixed-length slicing problem and proves the
+    dictionary object is actually valid, parseable JS -- a regex-based
+    key scan over a mis-sliced window can't tell the difference between
+    "key genuinely missing" and "key exists past the cut"."""
+    js = _extract_dictionaries_js(source)
+    js += "\nconsole.log(JSON.stringify(dictionaries));"
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".js", delete=False) as tmp_file:
+        tmp_file.write(js)
+        tmp_file.flush()
+        tmp_path = tmp_file.name
+    try:
+        result = subprocess.run(
+            ["node", tmp_path], capture_output=True, text=True, timeout=5
+        )
+        assert (
+            result.returncode == 0
+        ), f"node failed to evaluate dictionaries: {result.stderr}"
+        return json.loads(result.stdout)
+    finally:
+        Path(tmp_path).unlink()
 
 
 def _extract_get_race_stage_details(source: str) -> str:
@@ -188,25 +264,51 @@ def test_game_admin_labels_individual_race_as_anonymous_optional():
     assert '"option.individual": "個人賽（可匿名參加）"' in source
 
 
+# Keys allowed to carry the exact same string in en-US and zh-TW, e.g. a
+# proper noun or a pure number with no meaningful translation. Empty today
+# -- as of this writing every key in both gameAdmin.html and
+# systemAdmin.html genuinely differs between locales -- but kept as an
+# explicit, documented escape hatch rather than silently skipping any
+# future identical pair. Add entries as {"gameAdmin.html": {"some.key"}}
+# with a comment naming why that key is legitimately untranslated.
+_IDENTICAL_VALUE_ALLOWLIST = {}
+
+
 def test_game_admin_and_system_admin_inline_dictionaries_stay_symmetric():
     for name in ("gameAdmin.html", "systemAdmin.html"):
         source = _read(name)
-        en_start = source.index('"en-US": {')
-        zh_start = source.index('dictionaries["zh-TW"] = {')
-        en_block = source[en_start:zh_start]
-        # 8000, not 6000: matches the window already used by the sibling
-        # i18n test (test_game_admin_station_signpost.py). The inline
-        # zh-TW dict keeps growing (station-status i18n added ~6 keys) and
-        # a too-tight fixed window truncates it mid-value, producing false
-        # "missing from zh-TW" failures for keys that are actually present.
-        zh_block = source[zh_start : zh_start + 8000]
+        dictionaries = _load_dictionaries(source)
+        en = dictionaries["en-US"]
+        zh = dictionaries["zh-TW"]
 
-        en_keys = set(re.findall(r'"([a-zA-Z0-9_.]+)":\s*"', en_block))
-        zh_keys = set(re.findall(r'"([a-zA-Z0-9_.]+)":\s*"', zh_block))
+        en_keys = set(en.keys())
+        zh_keys = set(zh.keys())
         missing_from_zh = en_keys - zh_keys
+        missing_from_en = zh_keys - en_keys
         assert (
             not missing_from_zh
         ), f"{name}: keys missing from zh-TW dict: {missing_from_zh}"
+        assert (
+            not missing_from_en
+        ), f"{name}: keys missing from en-US dict: {missing_from_en}"
+
+        # Key symmetry alone is a weak assertion here: gameAdmin.html (and
+        # systemAdmin.html) build zh-TW as
+        # {...dictionaries["en-US"], ...overrides}, so every en-US key is
+        # STRUCTURALLY present in zh-TW via the spread even if it was never
+        # given an actual Chinese override -- the key exists, but its value
+        # is silently still the English string. Assert every value genuinely
+        # differs too, so a key added to en-US but never given a zh-TW
+        # override is caught.
+        allowlisted = _IDENTICAL_VALUE_ALLOWLIST.get(name, set())
+        untranslated = {
+            key for key in en_keys if key not in allowlisted and en[key] == zh[key]
+        }
+        assert not untranslated, (
+            f"{name}: zh-TW value is identical to en-US (missing translation; "
+            "if this is legitimate -- a proper noun or pure number -- add it "
+            f"to _IDENTICAL_VALUE_ALLOWLIST with a comment): {untranslated}"
+        )
 
 
 # ---------------------------------------------------------------------------

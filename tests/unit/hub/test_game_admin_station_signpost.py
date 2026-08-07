@@ -13,7 +13,10 @@ These tests verify:
 4. New i18n keys exist in both inline dictionaries
 """
 
+import json
 import re
+import subprocess
+import tempfile
 from pathlib import Path
 
 STATIC_DIR = Path(__file__).resolve().parents[3] / "hub_server" / "static"
@@ -21,6 +24,74 @@ STATIC_DIR = Path(__file__).resolve().parents[3] / "hub_server" / "static"
 
 def _read() -> str:
     return (STATIC_DIR / "gameAdmin.html").read_text(encoding="utf-8")
+
+
+def _matching_brace_end(source: str, open_idx: int) -> int:
+    """Return the index of the "}" that matches the "{" at open_idx,
+    tracking string literals so braces inside quoted values don't throw
+    off the depth count."""
+    depth = 0
+    i = open_idx
+    in_str = None
+    while i < len(source):
+        char = source[i]
+        if in_str:
+            if char == "\\":
+                i += 2
+                continue
+            if char == in_str:
+                in_str = None
+        elif char in ('"', "'", "`"):
+            in_str = char
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return i
+        i += 1
+    raise ValueError("no matching closing brace found")
+
+
+def _extract_dictionaries_js(source: str) -> str:
+    """Pull the `const dictionaries = {...}` and the following
+    `dictionaries["zh-TW"] = {...}` statements out of gameAdmin.html,
+    brace-matched so the slice ends exactly where each dictionary ends --
+    no matter how many keys either one grows to. A fixed-length window (the
+    previous approach, shared with test_static_page_i18n.py) silently
+    truncates once the dictionary outgrows it, producing false "missing
+    from zh-TW" failures for keys that are actually present."""
+    const_start = source.index("const dictionaries = {")
+    const_open = source.index("{", const_start)
+    const_close = _matching_brace_end(source, const_open)
+
+    zh_marker = 'dictionaries["zh-TW"] = {'
+    zh_start = source.index(zh_marker, const_close)
+    zh_open = source.index("{", zh_start)
+    zh_close = _matching_brace_end(source, zh_open)
+
+    return source[const_start : zh_close + 1] + ";"
+
+
+def _load_dictionaries(source: str) -> dict:
+    """Evaluate the real `dictionaries` object literal under node and
+    return it as a Python dict ({"en-US": {...}, "zh-TW": {...}})."""
+    js = _extract_dictionaries_js(source)
+    js += "\nconsole.log(JSON.stringify(dictionaries));"
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".js", delete=False) as tmp_file:
+        tmp_file.write(js)
+        tmp_file.flush()
+        tmp_path = tmp_file.name
+    try:
+        result = subprocess.run(
+            ["node", tmp_path], capture_output=True, text=True, timeout=5
+        )
+        assert (
+            result.returncode == 0
+        ), f"node failed to evaluate dictionaries: {result.stderr}"
+        return json.loads(result.stdout)
+    finally:
+        Path(tmp_path).unlink()
 
 
 def _extract_panel(source: str, panel_id: str) -> str:
@@ -155,35 +226,21 @@ NEW_I18N_KEYS = [
 def test_new_i18n_keys_present_in_both_dictionaries():
     """All new i18n keys must exist in both en-US and zh-TW dictionaries."""
     source = _read()
-    en_start = source.index('"en-US": {')
-    zh_start = source.index('dictionaries["zh-TW"] = {')
-    en_block = source[en_start:zh_start]
-    zh_block = source[zh_start : zh_start + 8000]
+    dictionaries = _load_dictionaries(source)
+    en_keys = set(dictionaries["en-US"].keys())
+    zh_keys = set(dictionaries["zh-TW"].keys())
 
     for key in NEW_I18N_KEYS:
-        assert (
-            f'"{key}":' in en_block
-        ), f"{key} missing from en-US dictionary in gameAdmin.html"
-        assert (
-            f'"{key}":' in zh_block
-        ), f"{key} missing from zh-TW dictionary in gameAdmin.html"
+        assert key in en_keys, f"{key} missing from en-US dictionary in gameAdmin.html"
+        assert key in zh_keys, f"{key} missing from zh-TW dictionary in gameAdmin.html"
 
 
 def test_i18n_keys_are_symmetric():
     """The en-US and zh-TW dictionaries must have the same set of keys."""
     source = _read()
-    en_start = source.index('"en-US": {')
-    zh_start = source.index('dictionaries["zh-TW"] = {')
-    en_block = source[en_start:zh_start]
-    zh_block = source[zh_start : zh_start + 8000]
-
-    # Extract all keys from each dictionary
-    en_keys = re.findall(r'"([^"]+)":\s*"', en_block)
-    zh_keys = re.findall(r'"([^"]+)":\s*"', zh_block)
-
-    # Convert to set for comparison (order doesn't matter)
-    en_key_set = set(en_keys)
-    zh_key_set = set(zh_keys)
+    dictionaries = _load_dictionaries(source)
+    en_key_set = set(dictionaries["en-US"].keys())
+    zh_key_set = set(dictionaries["zh-TW"].keys())
 
     missing_in_zh = en_key_set - zh_key_set
     missing_in_en = zh_key_set - en_key_set
