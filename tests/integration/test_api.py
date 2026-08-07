@@ -1,6 +1,7 @@
 import time
 
 from fastapi.testclient import TestClient
+from fitrace_common.version import APP_VERSION
 from hub_server.infrastructure.fastapi.app import app
 
 client = TestClient(app)
@@ -142,7 +143,7 @@ def test_station_assignment_is_blocked_while_race_is_running():
 def test_health_check_endpoint():
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "version": "0.1.2"}
+    assert response.json() == {"status": "ok", "version": APP_VERSION}
 
 
 def test_system_version_endpoint_returns_app_version_and_build_fingerprint():
@@ -150,7 +151,7 @@ def test_system_version_endpoint_returns_app_version_and_build_fingerprint():
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["app_version"] == "0.1.2"
+    assert payload["app_version"] == APP_VERSION
     # The build fingerprint is computed from the real dashboard asset at
     # startup (see build_fingerprint tests for the differing-content /
     # missing-file behaviour in isolation); here we just confirm it's a
