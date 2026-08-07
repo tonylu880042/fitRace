@@ -16,14 +16,22 @@ class RaceManager:
         self._leaderboard_display_mode: str = "classic"
         self._start_countdown_sound_enabled: bool = True
         self._settings_store = settings_store
-        self._registered_nodes: Dict[str, str] = {}  # node_id -> athlete_name (for legacy backward compatibility)
+        self._registered_nodes: Dict[str, str] = (
+            {}
+        )  # node_id -> athlete_name (for legacy backward compatibility)
         self._progress: Dict[str, Dict[str, Any]] = {}  # node_id -> metrics dict
-        
+
         # New station mapping structures
         self._stations: Dict[int, str] = {}  # station_number (int) -> node_id (str)
-        self._station_registrations: Dict[int, str] = {}  # station_number (int) -> athlete_name (str)
-        self._station_teams: Dict[int, Optional[str]] = {}  # station_number (int) -> team_name (str)
-        self._station_has_avatar: Dict[int, bool] = {}  # station_number (int) -> has_avatar (bool)
+        self._station_registrations: Dict[int, str] = (
+            {}
+        )  # station_number (int) -> athlete_name (str)
+        self._station_teams: Dict[int, Optional[str]] = (
+            {}
+        )  # station_number (int) -> team_name (str)
+        self._station_has_avatar: Dict[int, bool] = (
+            {}
+        )  # station_number (int) -> has_avatar (bool)
         self._active_nodes: Dict[str, str] = {}  # node_id (str) -> equipment_type (str)
         # node_id (str) -> BLE name (str), e.g. "Vmax53932". Captured from
         # telemetry's equipment_id and kept even after the edge node (and
@@ -49,9 +57,7 @@ class RaceManager:
             return
         stations = data.get("stations")
         if isinstance(stations, dict):
-            self._stations = {
-                int(sn): nid for sn, nid in stations.items() if nid
-            }
+            self._stations = {int(sn): nid for sn, nid in stations.items() if nid}
         mode = data.get("leaderboard_display_mode")
         if mode in self.VALID_LEADERBOARD_DISPLAY_MODES:
             self._leaderboard_display_mode = mode
@@ -161,7 +167,7 @@ class RaceManager:
 
         progress = {}
         import time
-        
+
         # 1. Initialize from legacy registered_nodes
         for node_id, athlete_name in self._registered_nodes.items():
             station_number = None
@@ -184,7 +190,7 @@ class RaceManager:
                 "max_power_watts": 0,
                 "finished_time_ms": None,
             }
-            
+
         # 2. Initialize from station registrations
         for station_number, athlete_name in self._station_registrations.items():
             node_id = self._stations.get(station_number)
@@ -192,7 +198,11 @@ class RaceManager:
             if key not in progress:
                 team_name = self._station_teams.get(station_number)
                 has_avatar = self._station_has_avatar.get(station_number, False)
-                avatar_url = f"/static/avatars/station_{station_number}.webp?t={int(time.time())}" if has_avatar else None
+                avatar_url = (
+                    f"/static/avatars/station_{station_number}.webp?t={int(time.time())}"
+                    if has_avatar
+                    else None
+                )
                 progress[key] = {
                     "node_id": node_id or key,
                     "athlete_name": athlete_name,
@@ -238,7 +248,8 @@ class RaceManager:
             progress_percent = self._metric_number(node.get("progress_percent"))
             team_progress_percent = (
                 min(100.0, progress_percent)
-                if config.team_completion_policy == "all_members" and config.race_type in ("distance", "calories")
+                if config.team_completion_policy == "all_members"
+                and config.race_type in ("distance", "calories")
                 else progress_percent
             )
             distance_m = self._metric_number(node.get("distance_m"))
@@ -248,7 +259,9 @@ class RaceManager:
             elapsed_time_ms = int(self._metric_number(node.get("elapsed_time_ms")))
 
             team["member_count"] += 1
-            team["finished_count"] += 1 if node.get("finished_time_ms") is not None else 0
+            team["finished_count"] += (
+                1 if node.get("finished_time_ms") is not None else 0
+            )
             team["distance_m"] += distance_m
             team["calories"] += calories
             team["power_watts"] += power_watts
@@ -256,7 +269,9 @@ class RaceManager:
             team["elapsed_time_ms"] = max(team["elapsed_time_ms"], elapsed_time_ms)
             team["progress_total"] += team_progress_percent
             if node.get("finished_time_ms") is not None:
-                finished_time_ms = int(self._metric_number(node.get("finished_time_ms")))
+                finished_time_ms = int(
+                    self._metric_number(node.get("finished_time_ms"))
+                )
                 team["team_finished_time_ms"] = max(
                     team["team_finished_time_ms"] or 0,
                     finished_time_ms,
@@ -283,10 +298,14 @@ class RaceManager:
             average_progress = team["progress_total"] / member_count
             score_value, progress_percent, score_label = self._team_score(team, config)
             team_finished = self._team_finished(team, config, progress_percent)
-            team_finished_time_ms = team["team_finished_time_ms"] if team_finished else None
+            team_finished_time_ms = (
+                team["team_finished_time_ms"] if team_finished else None
+            )
 
             team["members"].sort(
-                key=lambda member: self._metric_number(member.get("station_number"), 999)
+                key=lambda member: self._metric_number(
+                    member.get("station_number"), 999
+                )
             )
             leaderboard.append(
                 {
@@ -313,7 +332,9 @@ class RaceManager:
         self._sort_team_leaderboard(leaderboard, config)
         return leaderboard
 
-    def _team_score(self, team: Dict[str, Any], config: RaceConfig) -> tuple[float, float, str]:
+    def _team_score(
+        self, team: Dict[str, Any], config: RaceConfig
+    ) -> tuple[float, float, str]:
         member_count = team["member_count"] or 1
         policy = config.team_scoring_policy
 
@@ -355,21 +376,40 @@ class RaceManager:
                 score = team["max_power_watts"] / member_count
             return score, team["progress_total"] / member_count, "max_power_watts"
 
-        return team["progress_total"] / member_count, team["progress_total"] / member_count, "progress"
+        return (
+            team["progress_total"] / member_count,
+            team["progress_total"] / member_count,
+            "progress",
+        )
 
-    def _team_finished(self, team: Dict[str, Any], config: RaceConfig, progress_percent: float) -> bool:
-        if config.team_completion_policy == "all_members" and config.race_type in ("distance", "calories"):
-            return team["member_count"] > 0 and team["finished_count"] == team["member_count"]
+    def _team_finished(
+        self, team: Dict[str, Any], config: RaceConfig, progress_percent: float
+    ) -> bool:
+        if config.team_completion_policy == "all_members" and config.race_type in (
+            "distance",
+            "calories",
+        ):
+            return (
+                team["member_count"] > 0
+                and team["finished_count"] == team["member_count"]
+            )
         if config.race_type in ("distance", "calories"):
             return progress_percent >= 100.0
         return self._state == RaceState.STOPPED
 
-    def _sort_team_leaderboard(self, leaderboard: list[Dict[str, Any]], config: RaceConfig):
-        if config.team_completion_policy == "all_members" and config.race_type in ("distance", "calories"):
+    def _sort_team_leaderboard(
+        self, leaderboard: list[Dict[str, Any]], config: RaceConfig
+    ):
+        if config.team_completion_policy == "all_members" and config.race_type in (
+            "distance",
+            "calories",
+        ):
             leaderboard.sort(
                 key=lambda team: (
                     0 if team.get("team_finished") else 1,
-                    self._metric_number(team.get("team_finished_time_ms"), float("inf")),
+                    self._metric_number(
+                        team.get("team_finished_time_ms"), float("inf")
+                    ),
                     -self._metric_number(team.get("average_progress_percent")),
                     str(team.get("team_name") or ""),
                 )
@@ -407,7 +447,7 @@ class RaceManager:
         # We can configure in IDLE, READY, or STOPPED state
         if self._state not in (RaceState.IDLE, RaceState.READY, RaceState.STOPPED):
             raise ValueError(f"Cannot configure race in state {self._state}")
-        
+
         if self._state == RaceState.STOPPED:
             self._start_time_epoch_ms = None
             self._end_time_epoch_ms = None
@@ -470,7 +510,9 @@ class RaceManager:
                 station_number,
             )
 
-    def ingest_telemetry(self, payload: Dict[str, Any]) -> Optional[Dict[str, Dict[str, Any]]]:
+    def ingest_telemetry(
+        self, payload: Dict[str, Any]
+    ) -> Optional[Dict[str, Dict[str, Any]]]:
         node_id = payload.get("node_id")
         if not node_id:
             return None
@@ -502,14 +544,22 @@ class RaceManager:
             return
 
         # Ensure node_id is only assigned to one station at a time
-        stations_to_remove = [sn for sn, nid in self._stations.items() if nid == node_id]
+        stations_to_remove = [
+            sn for sn, nid in self._stations.items() if nid == node_id
+        ]
         for sn in stations_to_remove:
             del self._stations[sn]
 
         self._stations[station_number] = node_id
         self._persist_settings()
 
-    def register_athlete(self, station_number: int, athlete_name: str, team_name: Optional[str] = None, has_avatar: bool = False):
+    def register_athlete(
+        self,
+        station_number: int,
+        athlete_name: str,
+        team_name: Optional[str] = None,
+        has_avatar: bool = False,
+    ):
         if self._state not in (RaceState.IDLE, RaceState.READY):
             raise ValueError(f"Cannot register athletes in state {self._state}")
         self._station_registrations[station_number] = athlete_name
@@ -518,7 +568,9 @@ class RaceManager:
 
     def get_stations_status(self) -> dict:
         assigned_nodes = set(self._stations.values())
-        unassigned_nodes = [nid for nid in self._active_nodes if nid not in assigned_nodes]
+        unassigned_nodes = [
+            nid for nid in self._active_nodes if nid not in assigned_nodes
+        ]
 
         stations_data = {}
         for sn, nid in self._stations.items():
@@ -558,12 +610,13 @@ class RaceManager:
             raise ValueError("Race must be in READY state to start")
         self._state = RaceState.RUNNING
         import time
+
         self._start_time_epoch_ms = int(time.time() * 1000)
         self._end_time_epoch_ms = None
-        
+
         # Initialize progress
         self._progress = {}
-        
+
         # 1. Initialize from legacy registered_nodes
         for node_id, athlete_name in self._registered_nodes.items():
             station_number = None
@@ -586,7 +639,7 @@ class RaceManager:
                 "max_power_watts": 0,
                 "finished_time_ms": None,
             }
-            
+
         # 2. Initialize from station registrations
         for station_number, athlete_name in self._station_registrations.items():
             node_id = self._stations.get(station_number)
@@ -595,8 +648,13 @@ class RaceManager:
                 team_name = self._station_teams.get(station_number)
                 has_avatar = self._station_has_avatar.get(station_number, False)
                 import time
-                avatar_url = f"/static/avatars/station_{station_number}.webp?t={int(time.time())}" if has_avatar else None
-                
+
+                avatar_url = (
+                    f"/static/avatars/station_{station_number}.webp?t={int(time.time())}"
+                    if has_avatar
+                    else None
+                )
+
                 self._progress[key] = {
                     "node_id": node_id or key,
                     "athlete_name": athlete_name,
@@ -612,6 +670,7 @@ class RaceManager:
                     "max_power_watts": 0,
                     "finished_time_ms": None,
                 }
+
     def stop_race(self):
         if self._state == RaceState.STOPPED:
             return
@@ -619,6 +678,7 @@ class RaceManager:
             raise ValueError("Race is not running")
         self._state = RaceState.STOPPED
         import time
+
         self._end_time_epoch_ms = int(time.time() * 1000)
 
     def close_race(self):
@@ -667,7 +727,12 @@ class RaceManager:
             team_name = self._station_teams.get(station_number)
             has_avatar = self._station_has_avatar.get(station_number, False)
             import time
-            avatar_url = f"/static/avatars/station_{station_number}.webp?t={int(time.time())}" if has_avatar else None
+
+            avatar_url = (
+                f"/static/avatars/station_{station_number}.webp?t={int(time.time())}"
+                if has_avatar
+                else None
+            )
         else:
             athlete_name = self._registered_nodes.get(
                 node_id, self._default_participant_name(node_id)
@@ -718,7 +783,10 @@ class RaceManager:
                 progress_percent = (distance_m / self._config.target_value) * 100.0
             elif self._config.race_type == "calories" and self._config.target_value > 0:
                 progress_percent = (calories / self._config.target_value) * 100.0
-            elif self._config.race_type in ("time", "max_power", "watts") and self._config.duration_sec > 0:
+            elif (
+                self._config.race_type in ("time", "max_power", "watts")
+                and self._config.duration_sec > 0
+            ):
                 progress_percent = (
                     elapsed_time_ms / (self._config.duration_sec * 1000.0)
                 ) * 100.0
@@ -761,6 +829,7 @@ class RaceManager:
             if all_finished:
                 self._state = RaceState.STOPPED
                 import time
+
                 self._end_time_epoch_ms = int(time.time() * 1000)
 
         return self._progress
@@ -786,8 +855,11 @@ class RaceManager:
             return elapsed_time_ms
         timestamp_ms = payload.get("timestamp_epoch_ms")
         if self._start_time_epoch_ms and timestamp_ms:
-            return max(0, int(self._metric_number(timestamp_ms)) - self._start_time_epoch_ms)
+            return max(
+                0, int(self._metric_number(timestamp_ms)) - self._start_time_epoch_ms
+            )
         import time
+
         if self._start_time_epoch_ms:
             return max(0, int(time.time() * 1000) - self._start_time_epoch_ms)
         return 0

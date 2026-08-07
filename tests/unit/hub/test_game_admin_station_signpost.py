@@ -292,10 +292,10 @@ def test_signpost_button_has_data_i18n_attribute():
 
     # Locate the specific <button> tag with onclick="/systemAdmin#stations"
     # Find the button start
-    button_marker = 'onclick="window.location.href=\'/systemAdmin#stations\'"'
-    assert button_marker in panel_html, (
-        "button with onclick to /systemAdmin#stations not found in Station Status panel"
-    )
+    button_marker = "onclick=\"window.location.href='/systemAdmin#stations'\""
+    assert (
+        button_marker in panel_html
+    ), "button with onclick to /systemAdmin#stations not found in Station Status panel"
 
     # Extract just the opening <button ...> tag
     button_onclick_idx = panel_html.index(button_marker)

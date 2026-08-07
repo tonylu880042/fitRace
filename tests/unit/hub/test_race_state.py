@@ -212,32 +212,38 @@ def test_calorie_challenge():
     manager.start_race()
 
     # Step 1: Low calories
-    progress = manager.update_telemetry({
-        "node_id": "bike-01",
-        "elapsed_time_ms": 10000,
-        "power_watts": 200,
-        "calories": 20.0
-    })
+    progress = manager.update_telemetry(
+        {
+            "node_id": "bike-01",
+            "elapsed_time_ms": 10000,
+            "power_watts": 200,
+            "calories": 20.0,
+        }
+    )
     assert progress["bike-01"]["progress_percent"] == 40.0
     assert progress["bike-01"]["finished_time_ms"] is None
 
     # Step 2: Cross target (50 kcal)
-    progress = manager.update_telemetry({
-        "node_id": "bike-01",
-        "elapsed_time_ms": 25000,
-        "power_watts": 200,
-        "calories": 52.0
-    })
+    progress = manager.update_telemetry(
+        {
+            "node_id": "bike-01",
+            "elapsed_time_ms": 25000,
+            "power_watts": 200,
+            "calories": 52.0,
+        }
+    )
     assert progress["bike-01"]["progress_percent"] >= 100.0
     assert progress["bike-01"]["finished_time_ms"] == 25000
 
     # Step 3: Send more telemetry, should remain locked to Step 2 values
-    progress = manager.update_telemetry({
-        "node_id": "bike-01",
-        "elapsed_time_ms": 35000,
-        "power_watts": 150,
-        "calories": 70.0
-    })
+    progress = manager.update_telemetry(
+        {
+            "node_id": "bike-01",
+            "elapsed_time_ms": 35000,
+            "power_watts": 150,
+            "calories": 70.0,
+        }
+    )
     assert progress["bike-01"]["finished_time_ms"] == 25000
     assert progress["bike-01"]["elapsed_time_ms"] == 25000
     assert progress["bike-01"]["calories"] == 52.0
@@ -250,25 +256,31 @@ def test_max_power_challenge():
     manager.register_node("bike-01", "Rider A")
     manager.start_race()
 
-    progress = manager.update_telemetry({
-        "node_id": "bike-01",
-        "elapsed_time_ms": 5000,
-        "power_watts": 180,
-    })
+    progress = manager.update_telemetry(
+        {
+            "node_id": "bike-01",
+            "elapsed_time_ms": 5000,
+            "power_watts": 180,
+        }
+    )
     assert progress["bike-01"]["max_power_watts"] == 180
 
-    progress = manager.update_telemetry({
-        "node_id": "bike-01",
-        "elapsed_time_ms": 10000,
-        "power_watts": 350,
-    })
+    progress = manager.update_telemetry(
+        {
+            "node_id": "bike-01",
+            "elapsed_time_ms": 10000,
+            "power_watts": 350,
+        }
+    )
     assert progress["bike-01"]["max_power_watts"] == 350
 
-    progress = manager.update_telemetry({
-        "node_id": "bike-01",
-        "elapsed_time_ms": 15000,
-        "power_watts": 120,
-    })
+    progress = manager.update_telemetry(
+        {
+            "node_id": "bike-01",
+            "elapsed_time_ms": 15000,
+            "power_watts": 120,
+        }
+    )
     # Peak max wattage should remain 350
     assert progress["bike-01"]["max_power_watts"] == 350
 
@@ -284,29 +296,35 @@ def test_race_auto_stop_on_completion():
     assert manager.get_state() == RaceState.RUNNING
 
     # Runner A completes 50m
-    progress = manager.update_telemetry({
-        "node_id": "node-01",
-        "distance_m": 50.0,
-        "elapsed_time_ms": 10000,
-    })
+    progress = manager.update_telemetry(
+        {
+            "node_id": "node-01",
+            "distance_m": 50.0,
+            "elapsed_time_ms": 10000,
+        }
+    )
     assert manager.get_state() == RaceState.RUNNING
     assert progress["node-01"]["finished_time_ms"] is None
 
     # Runner B completes 100m (reaches 100%)
-    progress = manager.update_telemetry({
-        "node_id": "node-02",
-        "distance_m": 100.0,
-        "elapsed_time_ms": 15000,
-    })
+    progress = manager.update_telemetry(
+        {
+            "node_id": "node-02",
+            "distance_m": 100.0,
+            "elapsed_time_ms": 15000,
+        }
+    )
     assert manager.get_state() == RaceState.RUNNING  # node-01 is still active
     assert progress["node-02"]["finished_time_ms"] == 15000
 
     # Runner A completes 100m (reaches 100%)
-    progress = manager.update_telemetry({
-        "node_id": "node-01",
-        "distance_m": 100.0,
-        "elapsed_time_ms": 18000,
-    })
+    progress = manager.update_telemetry(
+        {
+            "node_id": "node-01",
+            "distance_m": 100.0,
+            "elapsed_time_ms": 18000,
+        }
+    )
     # Now all registered nodes have finished, the race state should transition to STOPPED
     assert manager.get_state() == RaceState.STOPPED
     assert progress["node-01"]["finished_time_ms"] == 18000
@@ -330,9 +348,15 @@ def test_team_leaderboard_aggregates_distance_by_average_progress():
     manager.configure(config)
     manager.start_race()
 
-    manager.update_telemetry({"node_id": "node-01", "distance_m": 80.0, "elapsed_time_ms": 10000})
-    manager.update_telemetry({"node_id": "node-02", "distance_m": 40.0, "elapsed_time_ms": 10000})
-    manager.update_telemetry({"node_id": "node-03", "distance_m": 70.0, "elapsed_time_ms": 10000})
+    manager.update_telemetry(
+        {"node_id": "node-01", "distance_m": 80.0, "elapsed_time_ms": 10000}
+    )
+    manager.update_telemetry(
+        {"node_id": "node-02", "distance_m": 40.0, "elapsed_time_ms": 10000}
+    )
+    manager.update_telemetry(
+        {"node_id": "node-03", "distance_m": 70.0, "elapsed_time_ms": 10000}
+    )
 
     teams = manager.get_team_leaderboard_progress()
 
@@ -362,16 +386,25 @@ def test_team_leaderboard_aggregates_distance_by_total_progress():
     manager.configure(config)
     manager.start_race()
 
-    manager.update_telemetry({"node_id": "node-01", "distance_m": 80.0, "elapsed_time_ms": 10000})
-    manager.update_telemetry({"node_id": "node-02", "distance_m": 40.0, "elapsed_time_ms": 10000})
-    manager.update_telemetry({"node_id": "node-03", "distance_m": 70.0, "elapsed_time_ms": 10000})
+    manager.update_telemetry(
+        {"node_id": "node-01", "distance_m": 80.0, "elapsed_time_ms": 10000}
+    )
+    manager.update_telemetry(
+        {"node_id": "node-02", "distance_m": 40.0, "elapsed_time_ms": 10000}
+    )
+    manager.update_telemetry(
+        {"node_id": "node-03", "distance_m": 70.0, "elapsed_time_ms": 10000}
+    )
 
     teams = manager.get_team_leaderboard_progress()
 
     assert [team["team_name"] for team in teams] == ["Volt", "Apex"]
     assert teams[0]["score_value"] == 120.0
     assert teams[0]["progress_percent"] == 120.0
-    assert [member["athlete_name"] for member in teams[0]["members"]] == ["Runner A", "Runner B"]
+    assert [member["athlete_name"] for member in teams[0]["members"]] == [
+        "Runner A",
+        "Runner B",
+    ]
 
 
 def test_team_leaderboard_all_members_requires_every_distance_member_to_finish():
@@ -394,10 +427,18 @@ def test_team_leaderboard_all_members_requires_every_distance_member_to_finish()
     manager.configure(config)
     manager.start_race()
 
-    manager.update_telemetry({"node_id": "node-01", "distance_m": 100.0, "elapsed_time_ms": 10000})
-    manager.update_telemetry({"node_id": "node-02", "distance_m": 70.0, "elapsed_time_ms": 10000})
-    manager.update_telemetry({"node_id": "node-03", "distance_m": 100.0, "elapsed_time_ms": 12000})
-    manager.update_telemetry({"node_id": "node-04", "distance_m": 100.0, "elapsed_time_ms": 18000})
+    manager.update_telemetry(
+        {"node_id": "node-01", "distance_m": 100.0, "elapsed_time_ms": 10000}
+    )
+    manager.update_telemetry(
+        {"node_id": "node-02", "distance_m": 70.0, "elapsed_time_ms": 10000}
+    )
+    manager.update_telemetry(
+        {"node_id": "node-03", "distance_m": 100.0, "elapsed_time_ms": 12000}
+    )
+    manager.update_telemetry(
+        {"node_id": "node-04", "distance_m": 100.0, "elapsed_time_ms": 18000}
+    )
 
     teams = manager.get_team_leaderboard_progress()
 
@@ -425,8 +466,12 @@ def test_team_leaderboard_all_members_applies_to_calories():
     manager.configure(config)
     manager.start_race()
 
-    manager.update_telemetry({"node_id": "node-01", "calories": 52.0, "elapsed_time_ms": 10000})
-    manager.update_telemetry({"node_id": "node-02", "calories": 40.0, "elapsed_time_ms": 10000})
+    manager.update_telemetry(
+        {"node_id": "node-01", "calories": 52.0, "elapsed_time_ms": 10000}
+    )
+    manager.update_telemetry(
+        {"node_id": "node-02", "calories": 40.0, "elapsed_time_ms": 10000}
+    )
 
     teams = manager.get_team_leaderboard_progress()
 
@@ -443,11 +488,13 @@ def test_close_race_keeps_unfinished_progress_for_awards():
     manager.register_node("node-02", "Runner B")
     manager.start_race()
 
-    progress = manager.update_telemetry({
-        "node_id": "node-01",
-        "distance_m": 100.0,
-        "elapsed_time_ms": 15000,
-    })
+    progress = manager.update_telemetry(
+        {
+            "node_id": "node-01",
+            "distance_m": 100.0,
+            "elapsed_time_ms": 15000,
+        }
+    )
     assert progress["node-01"]["finished_time_ms"] == 15000
     assert progress["node-02"]["finished_time_ms"] is None
     assert manager.get_state() == RaceState.RUNNING
@@ -466,19 +513,21 @@ def test_configure_from_stopped_state():
     manager.configure(config1)
     manager.register_node("node-01", "Runner A")
     manager.start_race()
-    
+
     # Complete the race
-    manager.update_telemetry({
-        "node_id": "node-01",
-        "distance_m": 100.0,
-        "elapsed_time_ms": 10000,
-    })
+    manager.update_telemetry(
+        {
+            "node_id": "node-01",
+            "distance_m": 100.0,
+            "elapsed_time_ms": 10000,
+        }
+    )
     assert manager.get_state() == RaceState.STOPPED
-    
+
     # Configure new race from STOPPED state
     config2 = RaceConfig(race_type="calories", target_value=50.0)
     manager.configure(config2)
-    
+
     assert manager.get_state() == RaceState.READY
     assert manager.get_config().race_type == "calories"
     assert manager.get_config().target_value == 50.0
@@ -516,21 +565,25 @@ def test_unbound_station_start_and_telemetry():
     assert running_leaderboard["station-2"]["progress_percent"] == 0.0
 
     # Send telemetry for Station 1
-    progress = manager.update_telemetry({
-        "node_id": "bike-01",
-        "distance_m": 50.0,
-        "elapsed_time_ms": 5000,
-    })
+    progress = manager.update_telemetry(
+        {
+            "node_id": "bike-01",
+            "distance_m": 50.0,
+            "elapsed_time_ms": 5000,
+        }
+    )
     assert progress["bike-01"]["progress_percent"] == 50.0
     assert progress["station-2"]["progress_percent"] == 0.0
     assert manager.get_state() == RaceState.RUNNING
 
     # Send finished telemetry for Station 1
-    progress = manager.update_telemetry({
-        "node_id": "bike-01",
-        "distance_m": 100.0,
-        "elapsed_time_ms": 10000,
-    })
+    progress = manager.update_telemetry(
+        {
+            "node_id": "bike-01",
+            "distance_m": 100.0,
+            "elapsed_time_ms": 10000,
+        }
+    )
     # Since only Station 1 is bound and active, it should auto-stop the race (ignoring unbound Station 2)
     assert manager.get_state() == RaceState.STOPPED
     assert progress["bike-01"]["finished_time_ms"] == 10000

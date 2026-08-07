@@ -42,8 +42,7 @@ class RaceResultsQuery:
 
     def list_races(self, limit: int = 20) -> list[dict[str, Any]]:
         return [
-            summary
-            for summary, _, _ in itertools.islice(self._iter_races(), limit)
+            summary for summary, _, _ in itertools.islice(self._iter_races(), limit)
         ]
 
     def get_race(self, result_id: str) -> Optional[dict[str, Any]]:
@@ -85,7 +84,9 @@ class RaceResultsQuery:
 
             end_time = snapshot.get("end_time_epoch_ms")
             leaderboard = snapshot.get("leaderboard")
-            rows = self._named_rows(leaderboard if isinstance(leaderboard, dict) else {})
+            rows = self._named_rows(
+                leaderboard if isinstance(leaderboard, dict) else {}
+            )
 
             bucket = categories.setdefault(
                 (race_type, label), {"race_type": race_type, "label": label, "rows": []}
@@ -139,8 +140,12 @@ class RaceResultsQuery:
                 continue
             snapshot = record["snapshot"]
             leaderboard = snapshot.get("leaderboard")
-            rows = self._named_rows(leaderboard if isinstance(leaderboard, dict) else {})
-            ranked_rows = self._rank_and_tag(rows, summary["race_type"], summary["result_id"])
+            rows = self._named_rows(
+                leaderboard if isinstance(leaderboard, dict) else {}
+            )
+            ranked_rows = self._rank_and_tag(
+                rows, summary["race_type"], summary["result_id"]
+            )
             yield summary, ranked_rows, snapshot.get("team_leaderboard")
 
     def _load_records(self) -> list[Any]:
@@ -249,10 +254,16 @@ class RaceResultsQuery:
             finishers = [r for r in rows if r.get("finished_time_ms") is not None]
             non_finishers = [r for r in rows if r.get("finished_time_ms") is None]
             finishers.sort(key=lambda r: _as_number(r.get("finished_time_ms")))
-            non_finishers.sort(key=lambda r: _as_number(r.get(metric_field)), reverse=True)
+            non_finishers.sort(
+                key=lambda r: _as_number(r.get(metric_field)), reverse=True
+            )
             return finishers + non_finishers
         if race_type in _TIME_BOXED_RACE_TYPES:
-            return sorted(rows, key=lambda r: _as_number(r.get("distance_m")), reverse=True)
+            return sorted(
+                rows, key=lambda r: _as_number(r.get("distance_m")), reverse=True
+            )
         if race_type == "max_power":
-            return sorted(rows, key=lambda r: _as_number(r.get("max_power_watts")), reverse=True)
+            return sorted(
+                rows, key=lambda r: _as_number(r.get("max_power_watts")), reverse=True
+            )
         return list(rows)

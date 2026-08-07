@@ -1,5 +1,6 @@
 from typing import Dict, Any
 
+
 def parse_indoor_bike(data: bytes) -> Dict[str, Any]:
     if len(data) < 4:
         raise ValueError("Indoor bike data too short")

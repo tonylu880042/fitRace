@@ -2,7 +2,6 @@ import json
 from functools import lru_cache
 from pathlib import Path
 
-
 SUPPORTED_LOCALES = ["en-US", "zh-TW", "it", "fr", "de-CH", "sv"]
 DEFAULT_LOCALE = "en-US"
 

@@ -37,7 +37,9 @@ class NodeRegistry:
         for stream in data.get("equipment_streams") or []:
             if not isinstance(stream, dict):
                 continue
-            equipment_name = stream.get("equipment_id") or stream.get("node_id") or "Device"
+            equipment_name = (
+                stream.get("equipment_id") or stream.get("node_id") or "Device"
+            )
             stream["display_name"] = f"{edge_name}+{equipment_name}"
 
     def update_status(
@@ -112,8 +114,10 @@ class NodeRegistry:
         stream.update(
             {
                 "node_id": node_id,
-                "equipment_id": payload.get("equipment_id") or stream.get("equipment_id"),
-                "equipment_type": payload.get("equipment_type") or stream.get("equipment_type"),
+                "equipment_id": payload.get("equipment_id")
+                or stream.get("equipment_id"),
+                "equipment_type": payload.get("equipment_type")
+                or stream.get("equipment_type"),
                 "mac_address": payload.get("mac_address") or stream.get("mac_address"),
                 "rssi": payload.get("rssi"),
                 "status": "online",

@@ -37,8 +37,18 @@ def saved_wifi_profiles() -> set[str]:
 def list_networks(interface: str = "wlan0") -> list[dict]:
     # SSID last so embedded colons survive the terse-format split
     out = _run_nmcli(
-        ["-t", "-f", "IN-USE,SIGNAL,SECURITY,SSID", "device", "wifi", "list",
-         "ifname", interface, "--rescan", "yes"]
+        [
+            "-t",
+            "-f",
+            "IN-USE,SIGNAL,SECURITY,SSID",
+            "device",
+            "wifi",
+            "list",
+            "ifname",
+            interface,
+            "--rescan",
+            "yes",
+        ]
     )
     saved = saved_wifi_profiles()
     networks: dict[str, dict] = {}

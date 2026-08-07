@@ -1,15 +1,12 @@
 import os
 import base64
-import pytest
 from fastapi.testclient import TestClient
 from hub_server.domain.models import RaceConfig
 from hub_server.usecases.race_manager import RaceManager
 from hub_server.infrastructure.fastapi.app import app
 
 # A tiny 1x1 valid base64 webp image (transparent pixel)
-TINY_WEBP_BASE64 = (
-    "data:image/webp;base64,UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4H"
-)
+TINY_WEBP_BASE64 = "data:image/webp;base64,UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4H"
 
 
 def remove_station_avatar(station_number: int):
@@ -20,11 +17,11 @@ def remove_station_avatar(station_number: int):
 
 def test_race_manager_stores_team_and_avatar():
     manager = RaceManager()
-    
+
     # Register an athlete with a team name
     manager.register_athlete(1, "Tony", team_name="RD", has_avatar=True)
     status = manager.get_stations_status()
-    
+
     # Assert get_stations_status contains team_name and has_avatar
     assert status["stations"][1]["athlete_name"] == "Tony"
     assert status["stations"][1]["team_name"] == "RD"
@@ -40,7 +37,7 @@ def test_race_manager_stores_team_and_avatar():
 
 def test_race_manager_telemetry_includes_team_and_avatar_url():
     manager = RaceManager()
-    
+
     # Register athlete 1
     manager.update_active_node("node-01", "fan_bike")
     manager.assign_station(1, "node-01")
@@ -90,7 +87,7 @@ def test_api_avatar_upload_and_removal():
 
     avatar_dir = "hub_server/static/avatars"
     target_file = os.path.join(avatar_dir, "station_1.webp")
-    
+
     # Ensure any residual file is deleted
     if os.path.exists(target_file):
         os.remove(target_file)
@@ -100,17 +97,17 @@ def test_api_avatar_upload_and_removal():
         "station_number": 1,
         "athlete_name": "Tony",
         "team_name": "RD",
-        "avatar_base64": TINY_WEBP_BASE64
+        "avatar_base64": TINY_WEBP_BASE64,
     }
-    
+
     res = client.post("/api/race/register", json=register_payload)
     assert res.status_code == 200
-    
+
     # Check status response
     data = res.json()
     assert data["stations"]["1"]["athlete_name"] == "Tony"
     assert data["stations"]["1"]["team_name"] == "RD"
-    
+
     # Check that avatar file was created
     assert os.path.exists(target_file)
     with open(target_file, "rb") as f:
@@ -123,7 +120,7 @@ def test_api_avatar_upload_and_removal():
         "station_number": 1,
         "athlete_name": "Tony",
         "team_name": "RD",
-        "avatar_base64": None
+        "avatar_base64": None,
     }
     res = client.post("/api/race/register", json=register_payload_no_avatar)
     assert res.status_code == 200
@@ -172,7 +169,9 @@ def test_api_avatar_upload_rejects_non_webp_bytes():
     client = TestClient(app)
     client.post("/api/race/reset")
     remove_station_avatar(9)
-    png_like_data = "data:image/webp;base64," + base64.b64encode(b"\x89PNG\r\n").decode()
+    png_like_data = (
+        "data:image/webp;base64," + base64.b64encode(b"\x89PNG\r\n").decode()
+    )
 
     res = client.post(
         "/api/race/register",
@@ -193,10 +192,7 @@ def test_api_avatar_upload_rejects_oversized_payload():
     client.post("/api/race/reset")
     remove_station_avatar(10)
     oversized_webp = (
-        b"RIFF"
-        + (300_000).to_bytes(4, "little")
-        + b"WEBP"
-        + (b"0" * 300_000)
+        b"RIFF" + (300_000).to_bytes(4, "little") + b"WEBP" + (b"0" * 300_000)
     )
 
     res = client.post(

@@ -22,7 +22,11 @@ def test_list_networks_parses_terse_output_and_dedupes(monkeypatch):
     by_ssid = {net["ssid"]: net for net in networks}
     assert set(by_ssid) == {"UCM_DEMO", "fitRace26", "OpenNet", "has\\:colon"}
     assert by_ssid["fitRace26"] == {
-        "ssid": "fitRace26", "signal": 82, "secured": True, "active": True, "saved": True,
+        "ssid": "fitRace26",
+        "signal": 82,
+        "secured": True,
+        "active": True,
+        "saved": True,
     }
     assert by_ssid["OpenNet"]["secured"] is False
     assert by_ssid["UCM_DEMO"]["saved"] is False

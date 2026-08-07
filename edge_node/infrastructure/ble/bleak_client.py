@@ -9,6 +9,7 @@ logger = logging.getLogger("edge_node.bleak_client")
 
 try:
     from bleak import BleakClient, BleakScanner
+
     BLEAK_AVAILABLE = True
 except ImportError:
     BLEAK_AVAILABLE = False
@@ -32,6 +33,7 @@ EQUIPMENT_TO_UUID = {
     "ski_erg": CHAR_ROWER,  # Fallback to rower
     # elliptical / stair_climber fall through to the default (indoor bike char)
 }
+
 
 class BleakTelemetryClient:
     def __init__(
@@ -60,7 +62,7 @@ class BleakTelemetryClient:
     async def start(self):
         if not BLEAK_AVAILABLE:
             raise RuntimeError("Cannot start BLE client: bleak is not installed.")
-        
+
         self._should_run = True
         logger.info(f"Starting BLE Client for device: {self._target_device}")
         self._reconnect_task = asyncio.create_task(self._connect_loop())
@@ -83,14 +85,16 @@ class BleakTelemetryClient:
                 try:
                     await self._connect()
                 except Exception as e:
-                    logger.error(f"Failed to connect to BLE device {self._target_device}: {e}. Retrying in 5 seconds...")
+                    logger.error(
+                        f"Failed to connect to BLE device {self._target_device}: {e}. Retrying in 5 seconds..."
+                    )
                     await asyncio.sleep(5.0)
             else:
                 await asyncio.sleep(1.0)
 
     async def _connect(self):
         device_address = self._target_device
-        
+
         # If it doesn't look like a MAC address, scan for device name
         # MAC format validation helper (rough check for colons or dashes)
         is_mac = ":" in device_address or "-" in device_address
@@ -106,12 +110,11 @@ class BleakTelemetryClient:
 
         logger.info(f"Connecting to {device_address}...")
         self._client = BleakClient(
-            device_address,
-            disconnected_callback=self._on_disconnected
+            device_address, disconnected_callback=self._on_disconnected
         )
         await self._client.connect()
         logger.info("BLE Connected. Subscribing to notifications...")
-        
+
         # Start notification
         await self._client.start_notify(self._char_uuid, self._notification_handler)
         self._connected = True
@@ -124,7 +127,7 @@ class BleakTelemetryClient:
     def _notification_handler(self, sender, data: bytes):
         try:
             parsed = parse_ftms(self._char_uuid, data)
-            
+
             # Map values to TelemetryData structure
             telemetry = TelemetryData(
                 node_id=self._node_id,
@@ -137,9 +140,9 @@ class BleakTelemetryClient:
                 heart_rate_bpm=parsed.get("heart_rate_bpm", 0),
                 distance_m=parsed.get("distance_m", 0.0),
                 elapsed_time_ms=parsed.get("elapsed_time_sec", 0) * 1000,
-                timestamp_epoch_ms=int(time.time() * 1000)
+                timestamp_epoch_ms=int(time.time() * 1000),
             )
-            
+
             # Fire the callback (run asynchronously)
             asyncio.create_task(self._on_telemetry(telemetry))
         except Exception as e:

@@ -43,7 +43,13 @@ def _distance_snapshot():
         "start_time_epoch_ms": 1000,
         "end_time_epoch_ms": 2000,
         "leaderboard": {
-            "node-01": _row("node-01", "Alice", station_number=1, distance_m=100, finished_time_ms=5000),
+            "node-01": _row(
+                "node-01",
+                "Alice",
+                station_number=1,
+                distance_m=100,
+                finished_time_ms=5000,
+            ),
             "node-02": _row("node-02", "Bob", station_number=2, distance_m=80),
             "node-03": _row("node-03", "Cara", station_number=3, distance_m=90),
             "node-04": _row("node-04", "", station_number=4, distance_m=0),
@@ -189,7 +195,9 @@ def test_token_is_stable_and_unique_per_node(tmp_path):
     assert len(set(tokens_first.values())) == len(tokens_first)
 
     expected_alice_token = hashlib.sha1(b"1000-2000-distance:node-01").hexdigest()[:12]
-    alice_token = next(r["token"] for r in race_first["results"] if r["athlete_name"] == "Alice")
+    alice_token = next(
+        r["token"] for r in race_first["results"] if r["athlete_name"] == "Alice"
+    )
     assert alice_token == expected_alice_token
 
 
@@ -241,10 +249,18 @@ def test_get_records_groups_distance_by_target_and_ranks_top_three(tmp_path):
             1000,
             2000,
             rows={
-                "node-01": _row("node-01", "Alice", distance_m=1000, finished_time_ms=60000),
-                "node-02": _row("node-02", "Bob", distance_m=1000, finished_time_ms=50000),
-                "node-03": _row("node-03", "Cara", distance_m=1000, finished_time_ms=70000),
-                "node-04": _row("node-04", "Dan", distance_m=1000, finished_time_ms=40000),
+                "node-01": _row(
+                    "node-01", "Alice", distance_m=1000, finished_time_ms=60000
+                ),
+                "node-02": _row(
+                    "node-02", "Bob", distance_m=1000, finished_time_ms=50000
+                ),
+                "node-03": _row(
+                    "node-03", "Cara", distance_m=1000, finished_time_ms=70000
+                ),
+                "node-04": _row(
+                    "node-04", "Dan", distance_m=1000, finished_time_ms=40000
+                ),
             },
         )
     )
@@ -254,7 +270,11 @@ def test_get_records_groups_distance_by_target_and_ranks_top_three(tmp_path):
             500,
             3000,
             4000,
-            rows={"node-01": _row("node-01", "Erin", distance_m=500, finished_time_ms=30000)},
+            rows={
+                "node-01": _row(
+                    "node-01", "Erin", distance_m=500, finished_time_ms=30000
+                )
+            },
         )
     )
     query = RaceResultsQuery(store)
@@ -282,9 +302,13 @@ def test_get_records_excludes_non_finishers_from_distance_records(tmp_path):
             1000,
             2000,
             rows={
-                "node-01": _row("node-01", "Alice", distance_m=1000, finished_time_ms=60000),
+                "node-01": _row(
+                    "node-01", "Alice", distance_m=1000, finished_time_ms=60000
+                ),
                 "node-02": _row("node-02", "Bob", distance_m=900),  # never finished
-                "node-03": _row("node-03", "", distance_m=1000, finished_time_ms=1000),  # no name
+                "node-03": _row(
+                    "node-03", "", distance_m=1000, finished_time_ms=1000
+                ),  # no name
             },
         )
     )
@@ -348,21 +372,37 @@ def test_get_records_orders_categories_most_recently_contested_first(tmp_path):
     store = RaceResultStore(tmp_path / "race_results.jsonl")
     store.save_finished_snapshot(
         _distance_snapshot_variant(
-            1000, 1000, 2000,
-            rows={"node-01": _row("node-01", "Alice", distance_m=1000, finished_time_ms=1000)},
+            1000,
+            1000,
+            2000,
+            rows={
+                "node-01": _row(
+                    "node-01", "Alice", distance_m=1000, finished_time_ms=1000
+                )
+            },
         )
     )
     store.save_finished_snapshot(
         _distance_snapshot_variant(
-            500, 3000, 4000,
-            rows={"node-01": _row("node-01", "Bob", distance_m=500, finished_time_ms=1000)},
+            500,
+            3000,
+            4000,
+            rows={
+                "node-01": _row("node-01", "Bob", distance_m=500, finished_time_ms=1000)
+            },
         )
     )
     # Re-contest the 1000m category more recently than the 500m one.
     store.save_finished_snapshot(
         _distance_snapshot_variant(
-            1000, 5000, 6000,
-            rows={"node-01": _row("node-01", "Cara", distance_m=1000, finished_time_ms=900)},
+            1000,
+            5000,
+            6000,
+            rows={
+                "node-01": _row(
+                    "node-01", "Cara", distance_m=1000, finished_time_ms=900
+                )
+            },
         )
     )
     query = RaceResultsQuery(store)

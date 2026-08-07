@@ -2,7 +2,11 @@ import asyncio
 
 import pytest
 
-from edge_node.domain.models import AntennaChannelConfig, EdgeNodeConfig, EquipmentBinding
+from edge_node.domain.models import (
+    AntennaChannelConfig,
+    EdgeNodeConfig,
+    EquipmentBinding,
+)
 from edge_node.usecases.event_log import EdgeEventLog
 from edge_node.usecases.antenna_ftms_manager import (
     AntennaFtmsManager,
@@ -380,7 +384,13 @@ async def test_antenna_manager_reconnects_when_status_reports_missing_links():
 
 def test_connect_assignments_caps_at_board_limit():
     channels = [AntennaChannelConfig(id="uart-2", port="/dev/ttyAMA4")]
-    serial = FakeSerial({"CONNECT:AA:BB:CC:DD:EE:03,AA:BB:CC:DD:EE:04,AA:BB:CC:DD:EE:05;\r\n": ["CONNECT:OK;\r\n"]})
+    serial = FakeSerial(
+        {
+            "CONNECT:AA:BB:CC:DD:EE:03,AA:BB:CC:DD:EE:04,AA:BB:CC:DD:EE:05;\r\n": [
+                "CONNECT:OK;\r\n"
+            ]
+        }
+    )
     config = EdgeNodeConfig(
         node_id="fitrace-edge-01",
         antenna_channels=channels,
@@ -422,7 +432,7 @@ def test_connect_assignments_caps_at_board_limit():
 
     connect_writes = [w for w in serial.writes if w.startswith("CONNECT:")]
     assert len(connect_writes) == 1
-    sent_macs = connect_writes[0][len("CONNECT:"):].rstrip(";\r\n").split(",")
+    sent_macs = connect_writes[0][len("CONNECT:") :].rstrip(";\r\n").split(",")
     assert sorted(sent_macs) == [
         "AA:BB:CC:DD:EE:03",
         "AA:BB:CC:DD:EE:04",
@@ -460,8 +470,13 @@ async def test_antenna_manager_records_uart_monitor_events(tmp_path):
     await manager.stop()
 
     events = event_log.list_events(limit=10)
-    assert any(event["direction"] == "tx" and event["message"] == "PING;" for event in events)
-    assert any(event["direction"] == "rx" and event["message"].startswith("BOOT:") for event in events)
+    assert any(
+        event["direction"] == "tx" and event["message"] == "PING;" for event in events
+    )
+    assert any(
+        event["direction"] == "rx" and event["message"].startswith("BOOT:")
+        for event in events
+    )
 
 
 @pytest.mark.asyncio
@@ -519,7 +534,9 @@ async def test_antenna_manager_assigns_saved_targets_to_channel_bindings():
 
     # both boards reported HAS_LIST: no startup scan, saved lists stay intact
     assert not any(write == "SCAN:START;\r\n" for write in serials["uart-1"].writes)
-    assert not any(write.startswith("DISCONNECT:") for write in serials["uart-1"].writes)
+    assert not any(
+        write.startswith("DISCONNECT:") for write in serials["uart-1"].writes
+    )
     assert received[0].node_id == "fitrace-edge-01-bike-01"
     assert received[0].equipment_id == "BIKE_01"
 

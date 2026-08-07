@@ -28,7 +28,9 @@ class RaceResultStore:
         }
         self._path.parent.mkdir(parents=True, exist_ok=True)
         with self._path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n")
+            f.write(
+                json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n"
+            )
         self._saved_keys.add(result_key)
         return record
 
@@ -45,7 +47,7 @@ class RaceResultStore:
                     records.append(json.loads(line))
                 except json.JSONDecodeError:
                     continue
-        return records[-max(1, limit):]
+        return records[-max(1, limit) :]
 
     def _key_exists(self, result_key: str) -> bool:
         if not self._path.exists():

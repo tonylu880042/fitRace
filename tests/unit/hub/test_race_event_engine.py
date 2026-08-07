@@ -22,11 +22,13 @@ def test_event_engine_checkpoint_distance_race():
     manager.start_race()
 
     # Runner A progresses to 26% (past 25% checkpoint)
-    progress = manager.update_telemetry({
-        "node_id": "node-01",
-        "distance_m": 104.0,
-        "elapsed_time_ms": 15000,
-    })
+    progress = manager.update_telemetry(
+        {
+            "node_id": "node-01",
+            "distance_m": 104.0,
+            "elapsed_time_ms": 15000,
+        }
+    )
     events = engine.evaluate(manager, progress)
 
     checkpoint_events = [e for e in events if e["event_type"] == "checkpoint_crossed"]
@@ -35,11 +37,13 @@ def test_event_engine_checkpoint_distance_race():
     assert checkpoint_events[0]["data"]["node_id"] == "node-01"
 
     # Runner B also passes 25%
-    progress = manager.update_telemetry({
-        "node_id": "node-02",
-        "distance_m": 110.0,
-        "elapsed_time_ms": 14000,
-    })
+    progress = manager.update_telemetry(
+        {
+            "node_id": "node-02",
+            "distance_m": 110.0,
+            "elapsed_time_ms": 14000,
+        }
+    )
     events = engine.evaluate(manager, progress)
 
     checkpoint_events = [e for e in events if e["event_type"] == "checkpoint_crossed"]
@@ -57,11 +61,13 @@ def test_event_engine_no_duplicate_checkpoints():
     manager.start_race()
 
     # Pass 25% checkpoint
-    progress = manager.update_telemetry({
-        "node_id": "node-01",
-        "distance_m": 110.0,
-        "elapsed_time_ms": 10000,
-    })
+    progress = manager.update_telemetry(
+        {
+            "node_id": "node-01",
+            "distance_m": 110.0,
+            "elapsed_time_ms": 10000,
+        }
+    )
     events = engine.evaluate(manager, progress)
     assert len([e for e in events if e["event_type"] == "checkpoint_crossed"]) == 1
 
@@ -81,19 +87,23 @@ def test_event_engine_catch_up_warning():
     manager.start_race()
 
     # Runner A at 200m, Runner B at 0m (gap=200m, not small)
-    progress = manager.update_telemetry({
-        "node_id": "node-01",
-        "distance_m": 200.0,
-        "elapsed_time_ms": 20000,
-    })
+    progress = manager.update_telemetry(
+        {
+            "node_id": "node-01",
+            "distance_m": 200.0,
+            "elapsed_time_ms": 20000,
+        }
+    )
     engine.evaluate(manager, progress)
 
     # Runner B jumps to 150m (gap goes from 200→50, ratio=0.25, gap<100 → triggers)
-    progress = manager.update_telemetry({
-        "node_id": "node-02",
-        "distance_m": 150.0,
-        "elapsed_time_ms": 20000,
-    })
+    progress = manager.update_telemetry(
+        {
+            "node_id": "node-02",
+            "distance_m": 150.0,
+            "elapsed_time_ms": 20000,
+        }
+    )
     events = engine.evaluate(manager, progress)
 
     catch_up_events = [e for e in events if e["event_type"] == "catch_up_warning"]
@@ -114,16 +124,20 @@ def test_event_engine_no_catch_up_for_max_power():
     manager.register_node("node-02", "Athlete B")
     manager.start_race()
 
-    progress = manager.update_telemetry({
-        "node_id": "node-01",
-        "elapsed_time_ms": 10000,
-        "power_watts": 200,
-    })
-    progress = manager.update_telemetry({
-        "node_id": "node-02",
-        "elapsed_time_ms": 10000,
-        "power_watts": 180,
-    })
+    progress = manager.update_telemetry(
+        {
+            "node_id": "node-01",
+            "elapsed_time_ms": 10000,
+            "power_watts": 200,
+        }
+    )
+    progress = manager.update_telemetry(
+        {
+            "node_id": "node-02",
+            "elapsed_time_ms": 10000,
+            "power_watts": 180,
+        }
+    )
     events = engine.evaluate(manager, progress)
 
     catch_up_events = [e for e in events if e["event_type"] == "catch_up_warning"]
@@ -140,11 +154,13 @@ def test_event_engine_countdown():
     manager.start_race()
 
     # Simulate progress with elapsed_time_ms approaching duration
-    progress = manager.update_telemetry({
-        "node_id": "node-01",
-        "elapsed_time_ms": 20000,
-        "distance_m": 200,
-    })
+    progress = manager.update_telemetry(
+        {
+            "node_id": "node-01",
+            "elapsed_time_ms": 20000,
+            "distance_m": 200,
+        }
+    )
     events = engine.evaluate(manager, progress)
 
     # At 20s elapsed (10s remaining), countdown 10 should trigger
@@ -163,11 +179,13 @@ def test_event_engine_final_sprint():
     manager.start_race()
 
     # 86% progress (above 85% threshold)
-    progress = manager.update_telemetry({
-        "node_id": "node-01",
-        "distance_m": 860.0,
-        "elapsed_time_ms": 60000,
-    })
+    progress = manager.update_telemetry(
+        {
+            "node_id": "node-01",
+            "distance_m": 860.0,
+            "elapsed_time_ms": 60000,
+        }
+    )
     events = engine.evaluate(manager, progress)
 
     sprint_events = [e for e in events if e["event_type"] == "final_sprint"]
@@ -183,11 +201,13 @@ def test_event_engine_final_sprint_once():
     manager.register_node("node-01", "Athlete A")
     manager.start_race()
 
-    progress = manager.update_telemetry({
-        "node_id": "node-01",
-        "distance_m": 860.0,
-        "elapsed_time_ms": 60000,
-    })
+    progress = manager.update_telemetry(
+        {
+            "node_id": "node-01",
+            "distance_m": 860.0,
+            "elapsed_time_ms": 60000,
+        }
+    )
     events = engine.evaluate(manager, progress)
     assert len([e for e in events if e["event_type"] == "final_sprint"]) == 1
 
@@ -205,11 +225,13 @@ def test_event_engine_reset():
     manager.register_node("node-01", "Runner A")
     manager.start_race()
 
-    progress = manager.update_telemetry({
-        "node_id": "node-01",
-        "distance_m": 110.0,
-        "elapsed_time_ms": 10000,
-    })
+    progress = manager.update_telemetry(
+        {
+            "node_id": "node-01",
+            "distance_m": 110.0,
+            "elapsed_time_ms": 10000,
+        }
+    )
     engine.evaluate(manager, progress)
 
     engine.reset()

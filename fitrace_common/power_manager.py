@@ -17,9 +17,7 @@ class PowerActionResult:
     command: list[str]
     accepted: bool = True
     executed: bool = False
-    timestamp_epoch_ms: int = field(
-        default_factory=lambda: int(time.time() * 1000)
-    )
+    timestamp_epoch_ms: int = field(default_factory=lambda: int(time.time() * 1000))
     message: str = "accepted"
 
 
@@ -67,7 +65,9 @@ class PowerManager:
 
     def shutdown(self, confirmation: str | None = None) -> PowerActionResult:
         self._require_confirmation(confirmation, expected="SHUTDOWN")
-        return self._execute(action="shutdown", command=["sudo", "systemctl", "poweroff"])
+        return self._execute(
+            action="shutdown", command=["sudo", "systemctl", "poweroff"]
+        )
 
     def _execute(self, *, action: str, command: list[str]) -> PowerActionResult:
         if not self._action_allowed():

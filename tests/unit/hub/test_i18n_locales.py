@@ -1,7 +1,11 @@
 import json
 from pathlib import Path
 
-from hub_server.infrastructure.locales import DEFAULT_LOCALE, SUPPORTED_LOCALES, load_locale
+from hub_server.infrastructure.locales import (
+    DEFAULT_LOCALE,
+    SUPPORTED_LOCALES,
+    load_locale,
+)
 
 
 def test_all_supported_locales_have_matching_keys():
@@ -13,7 +17,12 @@ def test_all_supported_locales_have_matching_keys():
 
 
 def test_locale_json_files_are_valid():
-    locale_dir = Path(__file__).resolve().parents[3] / "hub_server" / "infrastructure" / "locales"
+    locale_dir = (
+        Path(__file__).resolve().parents[3]
+        / "hub_server"
+        / "infrastructure"
+        / "locales"
+    )
 
     for locale in SUPPORTED_LOCALES:
         with open(locale_dir / f"{locale}.json", "r", encoding="utf-8") as file:

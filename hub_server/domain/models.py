@@ -19,7 +19,8 @@ class RaceConfig(BaseModel):
         "individual", description="Whether rankings are scored by athlete or team"
     )
     team_scoring_policy: Literal["average", "total"] = Field(
-        "average", description="How team scores are aggregated when competition_mode is team"
+        "average",
+        description="How team scores are aggregated when competition_mode is team",
     )
     team_completion_policy: Literal["aggregate", "all_members"] = Field(
         "aggregate",
@@ -39,9 +40,13 @@ class RaceConfig(BaseModel):
     @model_validator(mode="after")
     def validate_required_target(self):
         if self.race_type in ("distance", "calories") and self.target_value <= 0:
-            raise ValueError("target_value must be greater than 0 for distance and calories races")
+            raise ValueError(
+                "target_value must be greater than 0 for distance and calories races"
+            )
         if self.race_type in ("time", "max_power", "watts") and self.duration_sec <= 0:
-            raise ValueError("duration_sec must be greater than 0 for time, max_power, and watts races")
+            raise ValueError(
+                "duration_sec must be greater than 0 for time, max_power, and watts races"
+            )
         return self
 
 

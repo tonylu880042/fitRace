@@ -12,4 +12,3 @@ def test_fastapi_and_mqtt_adapters_do_not_access_race_manager_private_fields():
         source = file_path.read_text()
         assert "race_manager._" not in source
         assert "_race_manager._" not in source
-

@@ -14,11 +14,28 @@ from contextlib import asynccontextmanager
 
 from hub_server.infrastructure.fastapi.app import app, node_registry
 
-
 DEMO_EDGES = (
-    ("fitrace-edge-01", "192.168.0.141", (("fitrace-edge-01-bike-01", "fan_bike"), ("fitrace-edge-01-bike-02", "fan_bike"))),
-    ("fitrace-edge-02", "192.168.0.142", (("fitrace-edge-02-row-01", "rower"), ("fitrace-edge-02-ski-01", "skierg"))),
-    ("fitrace-edge-03", "192.168.0.143", (("fitrace-edge-03-tread-01", "treadmill"), ("fitrace-edge-03-bike-01", "fan_bike"))),
+    (
+        "fitrace-edge-01",
+        "192.168.0.141",
+        (
+            ("fitrace-edge-01-bike-01", "fan_bike"),
+            ("fitrace-edge-01-bike-02", "fan_bike"),
+        ),
+    ),
+    (
+        "fitrace-edge-02",
+        "192.168.0.142",
+        (("fitrace-edge-02-row-01", "rower"), ("fitrace-edge-02-ski-01", "skierg")),
+    ),
+    (
+        "fitrace-edge-03",
+        "192.168.0.143",
+        (
+            ("fitrace-edge-03-tread-01", "treadmill"),
+            ("fitrace-edge-03-bike-01", "fan_bike"),
+        ),
+    ),
 )
 
 

@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import pytest
 
 from hub_server.usecases.hub_update_applier import apply_hub_update

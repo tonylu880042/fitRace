@@ -63,5 +63,7 @@ class MultiFtmsManager:
 
     async def _handle_telemetry(self, telemetry: TelemetryData):
         if telemetry.edge_node_id is None:
-            telemetry = telemetry.model_copy(update={"edge_node_id": self._edge_node_id})
+            telemetry = telemetry.model_copy(
+                update={"edge_node_id": self._edge_node_id}
+            )
         await self._on_telemetry(telemetry)

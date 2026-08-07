@@ -15,7 +15,9 @@ except ImportError:
 
 
 class BleakFtmsScanner:
-    async def scan(self, timeout_sec: float, adapter: str | None = None) -> list[FtmsDevice]:
+    async def scan(
+        self, timeout_sec: float, adapter: str | None = None
+    ) -> list[FtmsDevice]:
         if not BLEAK_SCANNER_AVAILABLE:
             raise RuntimeError("Cannot scan BLE devices: bleak is not installed.")
 
@@ -30,9 +32,13 @@ class BleakFtmsScanner:
                 logger.warning(
                     "Bleak scanner does not support adapter selection in this environment; scanning with default adapter."
                 )
-            discovered = await BleakScanner.discover(timeout=timeout_sec, return_adv=True)
+            discovered = await BleakScanner.discover(
+                timeout=timeout_sec, return_adv=True
+            )
         except Exception as e:
-            raise RuntimeError(f"BLE scan failed on adapter {adapter or 'default'}: {e}") from e
+            raise RuntimeError(
+                f"BLE scan failed on adapter {adapter or 'default'}: {e}"
+            ) from e
 
         devices: list[FtmsDevice] = []
         for device, advertisement in _iter_discovered(discovered):

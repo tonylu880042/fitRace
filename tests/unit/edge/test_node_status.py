@@ -108,9 +108,7 @@ def test_node_command_rejects_wrong_token(monkeypatch):
     monkeypatch.setenv("FITRACE_NODE_COMMAND_TOKEN", "node-secret")
 
     assert (
-        _is_authorized_node_command(
-            {"action": "shutdown", "token": "wrong-secret"}
-        )
+        _is_authorized_node_command({"action": "shutdown", "token": "wrong-secret"})
         is False
     )
 
@@ -119,8 +117,6 @@ def test_node_command_accepts_expected_token(monkeypatch):
     monkeypatch.setenv("FITRACE_NODE_COMMAND_TOKEN", "node-secret")
 
     assert (
-        _is_authorized_node_command(
-            {"action": "shutdown", "token": "node-secret"}
-        )
+        _is_authorized_node_command({"action": "shutdown", "token": "node-secret"})
         is True
     )

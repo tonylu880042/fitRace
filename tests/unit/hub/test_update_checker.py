@@ -43,7 +43,8 @@ def test_update_checker_detects_available_release_and_fetches_signature():
         public_key_path="/tmp/release-public.pem",
         verify_signature=lambda manifest, signature, key_path: verify_calls.append(
             (manifest, signature, key_path)
-        ) or True,
+        )
+        or True,
     )
 
     status = checker.check()
@@ -178,7 +179,9 @@ def test_update_checker_downloads_artifacts_and_verifies_sha256(tmp_path):
     assert status["artifacts"]["hub"]["sha256_verified"] is True
     assert status["artifacts"]["edge"]["sha256_verified"] is True
     assert (tmp_path / "0.1.1" / "fitrace-hub-0.1.1.tar.zst").read_bytes() == hub_bytes
-    assert (tmp_path / "0.1.1" / "fitrace-edge-0.1.1.tar.zst").read_bytes() == edge_bytes
+    assert (
+        tmp_path / "0.1.1" / "fitrace-edge-0.1.1.tar.zst"
+    ).read_bytes() == edge_bytes
 
 
 def test_update_checker_rejects_artifact_checksum_mismatch(tmp_path):

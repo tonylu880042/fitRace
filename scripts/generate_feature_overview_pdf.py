@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER, TA_LEFT
+from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.pagesizes import landscape, letter
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import inch
@@ -20,7 +20,6 @@ from reportlab.platypus import (
     Table,
     TableStyle,
 )
-
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "output/pdf/FitRaceStudio_Feature_Overview.pdf"
@@ -178,10 +177,7 @@ def card(title: str, body: str, accent=LINE):
 
 
 def bullet_list(items: list[str]):
-    return [
-        Paragraph(f"- {item}", styles["Body"])
-        for item in items
-    ]
+    return [Paragraph(f"- {item}", styles["Body"]) for item in items]
 
 
 def image_block(filename: str, caption: str, width=8.65 * inch, height=3.25 * inch):
@@ -191,7 +187,11 @@ def image_block(filename: str, caption: str, width=8.65 * inch, height=3.25 * in
         img = Image(str(path), width=width, height=height, kind="proportional")
         flowables.append(img)
     else:
-        placeholder = Table([[Paragraph(caption, styles["Body"])]], colWidths=[width], rowHeights=[height])
+        placeholder = Table(
+            [[Paragraph(caption, styles["Body"])]],
+            colWidths=[width],
+            rowHeights=[height],
+        )
         placeholder.setStyle(
             TableStyle(
                 [
@@ -247,12 +247,14 @@ def build_story():
     ]
 
     badges = Table(
-        [[
-            Paragraph("GAME<br/>ADMIN", styles["Label"]),
-            Paragraph("SYSTEM<br/>ADMIN", styles["Label"]),
-            Paragraph("ATHLETE<br/>SIGNUP", styles["Label"]),
-            Paragraph("LIVE<br/>DASHBOARD", styles["Label"]),
-        ]],
+        [
+            [
+                Paragraph("GAME<br/>ADMIN", styles["Label"]),
+                Paragraph("SYSTEM<br/>ADMIN", styles["Label"]),
+                Paragraph("ATHLETE<br/>SIGNUP", styles["Label"]),
+                Paragraph("LIVE<br/>DASHBOARD", styles["Label"]),
+            ]
+        ],
         colWidths=[1.3 * inch] * 4,
         rowHeights=[0.55 * inch],
         hAlign="CENTER",
@@ -282,14 +284,38 @@ def build_story():
             Table(
                 [
                     [
-                        card("Coach Race Operations", "Game Admin provides race setup, start, stop, reset, and read-only station status.", LIME),
-                        card("Technical Administration", "System Admin owns Edge Node status, telemetry stream discovery, station assignment, updates, and power actions.", BLUE),
-                        card("Athlete Registration", "Signup is mobile-friendly and focused only on station-based registration.", PINK),
+                        card(
+                            "Coach Race Operations",
+                            "Game Admin provides race setup, start, stop, reset, and read-only station status.",
+                            LIME,
+                        ),
+                        card(
+                            "Technical Administration",
+                            "System Admin owns Edge Node status, telemetry stream discovery, station assignment, updates, and power actions.",
+                            BLUE,
+                        ),
+                        card(
+                            "Athlete Registration",
+                            "Signup is mobile-friendly and focused only on station-based registration.",
+                            PINK,
+                        ),
                     ],
                     [
-                        card("Live Race Display", "The dashboard presents rankings, race state, station labels, athletes, teams, and progress.", colors.white),
-                        card("Edge Node Setup", "Local Edge screens support signal checks and equipment discovery during installation.", LINE),
-                        card("International Events", "The UI includes language switching for mixed-language studios and events.", LINE),
+                        card(
+                            "Live Race Display",
+                            "The dashboard presents rankings, race state, station labels, athletes, teams, and progress.",
+                            colors.white,
+                        ),
+                        card(
+                            "Edge Node Setup",
+                            "Local Edge screens support signal checks and equipment discovery during installation.",
+                            LINE,
+                        ),
+                        card(
+                            "International Events",
+                            "The UI includes language switching for mixed-language studios and events.",
+                            LINE,
+                        ),
                     ],
                 ],
                 colWidths=[2.75 * inch] * 3,
@@ -303,7 +329,10 @@ def build_story():
     story.extend(
         [
             Paragraph("Role-Based Admin Model", styles["PageTitle"]),
-            Paragraph("The latest admin split keeps daily race operation simple and moves equipment configuration to technical staff.", styles["PageSub"]),
+            Paragraph(
+                "The latest admin split keeps daily race operation simple and moves equipment configuration to technical staff.",
+                styles["PageSub"],
+            ),
             Table(
                 [
                     [
@@ -349,32 +378,73 @@ def build_story():
     story.extend(
         [
             Paragraph("Live Race Dashboard", styles["PageTitle"]),
-            Paragraph("The large-screen view for athletes, coaches, and spectators.", styles["PageSub"]),
-            image_block("dashboard.png", "Live leaderboard with race state, ranking, station labels, athlete names, teams, and progress."),
+            Paragraph(
+                "The large-screen view for athletes, coaches, and spectators.",
+                styles["PageSub"],
+            ),
+            image_block(
+                "dashboard.png",
+                "Live leaderboard with race state, ranking, station labels, athlete names, teams, and progress.",
+            ),
             PageBreak(),
             Paragraph("Athlete Self-Registration", styles["PageTitle"]),
-            Paragraph("A mobile-first page for fast station-based signup. Management controls are intentionally kept out of this screen.", styles["PageSub"]),
-            image_block("signup.png", "Phone-friendly registration with name, team, avatar, and station context.", width=3.0 * inch, height=3.65 * inch),
+            Paragraph(
+                "A mobile-first page for fast station-based signup. Management controls are intentionally kept out of this screen.",
+                styles["PageSub"],
+            ),
+            image_block(
+                "signup.png",
+                "Phone-friendly registration with name, team, avatar, and station context.",
+                width=3.0 * inch,
+                height=3.65 * inch,
+            ),
             PageBreak(),
             Paragraph("Edge Node Setup", styles["PageTitle"]),
-            Paragraph("Local setup view for signal checks and equipment discovery before technical mapping in System Admin.", styles["PageSub"]),
-            image_block("edge-setup.png", "Edge setup screen for Wi-Fi status and FTMS device scanning."),
+            Paragraph(
+                "Local setup view for signal checks and equipment discovery before technical mapping in System Admin.",
+                styles["PageSub"],
+            ),
+            image_block(
+                "edge-setup.png",
+                "Edge setup screen for Wi-Fi status and FTMS device scanning.",
+            ),
             PageBreak(),
         ]
     )
 
     feature_rows = [
-        ("Live Leaderboard", "Ranking, race state, station labels, athlete names, teams, speed, distance, and progress."),
-        ("Game Admin Race Control", "Select race type, set targets, start, stop, and reset races without exposing device maintenance controls."),
-        ("System Admin Station Assignment", "Bind equipment streams to station numbers, review athletes, and copy station signup links."),
-        ("Edge Node Monitoring", "Review online/offline status, software version, endpoint, last heartbeat, and equipment streams."),
-        ("Athlete Registration", "Phone-friendly signup with name, team, avatar, and station context."),
-        ("System Maintenance", "Check updates, download artifacts, stage Hub updates, restart service, reboot, or shut down with confirmations."),
+        (
+            "Live Leaderboard",
+            "Ranking, race state, station labels, athlete names, teams, speed, distance, and progress.",
+        ),
+        (
+            "Game Admin Race Control",
+            "Select race type, set targets, start, stop, and reset races without exposing device maintenance controls.",
+        ),
+        (
+            "System Admin Station Assignment",
+            "Bind equipment streams to station numbers, review athletes, and copy station signup links.",
+        ),
+        (
+            "Edge Node Monitoring",
+            "Review online/offline status, software version, endpoint, last heartbeat, and equipment streams.",
+        ),
+        (
+            "Athlete Registration",
+            "Phone-friendly signup with name, team, avatar, and station context.",
+        ),
+        (
+            "System Maintenance",
+            "Check updates, download artifacts, stage Hub updates, restart service, reboot, or shut down with confirmations.",
+        ),
     ]
     story.extend(
         [
             Paragraph("Feature Summary", styles["PageTitle"]),
-            Paragraph("The core functions available across the system screens.", styles["PageSub"]),
+            Paragraph(
+                "The core functions available across the system screens.",
+                styles["PageSub"],
+            ),
             Spacer(1, 0.12 * inch),
         ]
     )
@@ -392,18 +462,51 @@ def build_story():
     story.append(PageBreak())
 
     flow = [
-        ("1", "System Setup", "Technical staff check Edge Nodes and equipment streams in System Admin."),
-        ("2", "Assign Stations", "Telemetry streams are mapped to numbered physical stations."),
-        ("3", "Register Athletes", "Participants register by station from phone-friendly signup links."),
-        ("4", "Configure Race", "Coaches choose the race type and target in Game Admin."),
-        ("5", "Start Live Race", "The dashboard updates ranking, progress, and timing in real time."),
-        ("6", "Review Results", "Final leaderboard supports wrap-up, awards, and event moments."),
+        (
+            "1",
+            "System Setup",
+            "Technical staff check Edge Nodes and equipment streams in System Admin.",
+        ),
+        (
+            "2",
+            "Assign Stations",
+            "Telemetry streams are mapped to numbered physical stations.",
+        ),
+        (
+            "3",
+            "Register Athletes",
+            "Participants register by station from phone-friendly signup links.",
+        ),
+        (
+            "4",
+            "Configure Race",
+            "Coaches choose the race type and target in Game Admin.",
+        ),
+        (
+            "5",
+            "Start Live Race",
+            "The dashboard updates ranking, progress, and timing in real time.",
+        ),
+        (
+            "6",
+            "Review Results",
+            "Final leaderboard supports wrap-up, awards, and event moments.",
+        ),
     ]
     flow_cells = []
     for number, title, body in flow:
         flow_cells.append(
             [
-                Paragraph(number, ParagraphStyle("Step", parent=styles["HeroTitle"], textColor=LIME, fontSize=28, leading=30)),
+                Paragraph(
+                    number,
+                    ParagraphStyle(
+                        "Step",
+                        parent=styles["HeroTitle"],
+                        textColor=LIME,
+                        fontSize=28,
+                        leading=30,
+                    ),
+                ),
                 Paragraph(title, styles["CardTitle"]),
                 Paragraph(body, styles["Body"]),
             ]
@@ -430,7 +533,10 @@ def build_story():
                 ),
             ),
             Spacer(1, 0.28 * inch),
-            Paragraph("Built for live fitness competitions, studio classes, and event operations.", styles["HeroSub"]),
+            Paragraph(
+                "Built for live fitness competitions, studio classes, and event operations.",
+                styles["HeroSub"],
+            ),
         ]
     )
     return story

@@ -17,7 +17,12 @@ def test_power_manager_defaults_to_dry_run_and_restarts_service_when_idle():
 
     assert result.dry_run is True
     assert result.executed is False
-    assert result.command == ["sudo", "systemctl", "restart", "fitracestudio-hub.service"]
+    assert result.command == [
+        "sudo",
+        "systemctl",
+        "restart",
+        "fitracestudio-hub.service",
+    ]
     assert calls == []
 
 

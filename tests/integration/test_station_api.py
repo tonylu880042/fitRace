@@ -45,45 +45,55 @@ def test_station_api_workflow():
     # Actually, we want nodes to be discovered even when the race is IDLE, so that technicians can assign them.
     # The subscriber receives telemetry. We can also let the HTTP endpoint discover the node.
     # Let's test if we can assign a node even if we post telemetry. We'll verify this flow.
-    
+
     # Let's assign station 1 to "bike-01" via API.
     # Wait, we can assign a node even if it hasn't sent telemetry yet, but it will be in the unassigned list once active.
     # Let's post an assignment.
-    res = client.post("/api/stations/assign", json={"station_number": 1, "node_id": "bike-01"})
+    res = client.post(
+        "/api/stations/assign", json={"station_number": 1, "node_id": "bike-01"}
+    )
     assert res.status_code == 200
     node_registry.update_status(
         {
             "edge_node_id": "edge-01",
             "status": "online",
             "equipment_streams": [
-                    {
-                        "node_id": "bike-01",
-                        "equipment_id": "BIKE_01",
-                        "equipment_type": "fan_bike",
-                        "status": "configured",
-                        "last_telemetry_epoch_ms": int(time.time() * 1000),
-                    }
-                ],
-            }
+                {
+                    "node_id": "bike-01",
+                    "equipment_id": "BIKE_01",
+                    "equipment_type": "fan_bike",
+                    "status": "configured",
+                    "last_telemetry_epoch_ms": int(time.time() * 1000),
+                }
+            ],
+        }
     )
-    
+
     res = client.get("/api/stations")
     assert res.json()["stations"]["1"]["node_id"] == "bike-01"
 
     # 4. Register an athlete to Station 1
-    res = client.post("/api/race/register", json={"station_number": 1, "athlete_name": "Tony"})
+    res = client.post(
+        "/api/race/register", json={"station_number": 1, "athlete_name": "Tony"}
+    )
     assert res.status_code == 200
     assert res.json()["stations"]["1"]["athlete_name"] == "Tony"
 
     # 5. Overwrite the registration
-    res = client.post("/api/race/register", json={"station_number": 1, "athlete_name": "Tony Lu"})
+    res = client.post(
+        "/api/race/register", json={"station_number": 1, "athlete_name": "Tony Lu"}
+    )
     assert res.status_code == 200
     assert res.json()["stations"]["1"]["athlete_name"] == "Tony Lu"
 
     # 6. Test that registering fails if race is running
     # Configure and start
-    client.post("/api/race/configure", json={"race_type": "distance", "target_value": 500})
+    client.post(
+        "/api/race/configure", json={"race_type": "distance", "target_value": 500}
+    )
     client.post("/api/race/start")
-    
-    res = client.post("/api/race/register", json={"station_number": 1, "athlete_name": "Another"})
+
+    res = client.post(
+        "/api/race/register", json={"station_number": 1, "athlete_name": "Another"}
+    )
     assert res.status_code == 400

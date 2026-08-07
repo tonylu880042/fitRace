@@ -24,9 +24,18 @@ def fetch_url_text(url: str, timeout_sec: int) -> str:
     return fetch_url_bytes(url, timeout_sec).decode("utf-8")
 
 
-def verify_ed25519_signature(manifest_text: str, signature_text: str | bytes, public_key_path: str) -> bool:
-    signature_bytes = signature_text if isinstance(signature_text, bytes) else signature_text.encode("utf-8")
-    with tempfile.NamedTemporaryFile() as manifest_file, tempfile.NamedTemporaryFile() as signature_file:
+def verify_ed25519_signature(
+    manifest_text: str, signature_text: str | bytes, public_key_path: str
+) -> bool:
+    signature_bytes = (
+        signature_text
+        if isinstance(signature_text, bytes)
+        else signature_text.encode("utf-8")
+    )
+    with (
+        tempfile.NamedTemporaryFile() as manifest_file,
+        tempfile.NamedTemporaryFile() as signature_file,
+    ):
         manifest_file.write(manifest_text.encode("utf-8"))
         manifest_file.flush()
         signature_file.write(signature_bytes)
@@ -57,7 +66,9 @@ def version_key(version: str) -> tuple[int, ...]:
 
 
 def extract_zstd_tar(source: Path, target: Path):
-    command = f"zstd -dc {shlex.quote(str(source))} | tar -xf - -C {shlex.quote(str(target))}"
+    command = (
+        f"zstd -dc {shlex.quote(str(source))} | tar -xf - -C {shlex.quote(str(target))}"
+    )
     subprocess.run(command, shell=True, check=True, timeout=60)
 
 
@@ -70,7 +81,9 @@ class UpdateChecker:
         fetch_text: Callable[[str, int], str] = fetch_url_text,
         fetch_bytes: Callable[[str, int], bytes] = fetch_url_bytes,
         public_key_path: str = "",
-        verify_signature: Callable[[str, str | bytes, str], bool] = verify_ed25519_signature,
+        verify_signature: Callable[
+            [str, str | bytes, str], bool
+        ] = verify_ed25519_signature,
         cache_dir: str = "/tmp/fitrace-update-cache",
         extract_archive: Callable[[Path, Path], None] = extract_zstd_tar,
         timeout_sec: int = 10,
@@ -123,7 +136,9 @@ class UpdateChecker:
 
             hub_version = manifest.get("components", {}).get("hub", {}).get("version")
             edge_version = manifest.get("components", {}).get("edge", {}).get("version")
-            update_available = version_key(hub_version or "") > version_key(self.current_version)
+            update_available = version_key(hub_version or "") > version_key(
+                self.current_version
+            )
 
             self._status = {
                 "state": "available" if update_available else "current",
@@ -163,7 +178,9 @@ class UpdateChecker:
             if not hub_artifact or not hub_artifact.get("sha256_verified"):
                 raise ValueError("hub artifact is not downloaded")
 
-            version = hub_artifact.get("version") or self._status.get("manifest", {}).get("release_version")
+            version = hub_artifact.get("version") or self._status.get(
+                "manifest", {}
+            ).get("release_version")
             artifact_path = Path(hub_artifact["path"])
             if not artifact_path.exists():
                 raise ValueError("hub artifact is not downloaded")
