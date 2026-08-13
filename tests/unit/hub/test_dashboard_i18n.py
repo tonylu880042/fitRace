@@ -134,6 +134,17 @@ OFFENDING_LITERALS = [
     '${station || "Node"}',
     "}s finish`",
     "}% progress`",
+    # race state heading + edge node card (second i18n pass)
+    '"current-state-lbl").innerText = currentState;',
+    'if (diffSec < 2) return "now";',
+    "if (diffSec < 60) return `${diffSec}s`;",
+    "return `${minutes}m`;",
+    'stream.node_id || "UNBOUND"',
+    'stream.status || "unknown"',
+    "<strong>0 streams</strong>",
+    'aria-label="${isOnline ? "online" : "offline"}"',
+    'node.edge_node_id || "unknown-edge"',
+    "· last ${formatRelativeAge(",
 ]
 
 
@@ -346,6 +357,18 @@ NEW_LOCALE_KEYS = [
     "podium.aria_individual",
     "podium.aria_team",
     "qr.register_alt",
+    # race state heading + edge node card (second i18n pass)
+    "state.idle",
+    "state.ready",
+    "state.running",
+    "state.stopped",
+    "status.unknown",
+    "edge.unknown_node",
+    "edge.zero_streams",
+    "edge.last_seen",
+    "time.now",
+    "time.seconds_short",
+    "time.minutes_short",
 ]
 
 _CJK_RE = re.compile(r"[一-鿿]")
@@ -415,3 +438,203 @@ def test_every_referenced_i18n_key_exists_in_en_us_locale():
     assert (
         not missing
     ), f"index.html references i18n keys missing from en-US.json: {missing}"
+
+
+# -- 5. Race state heading + Edge Nodes card (second i18n pass). Same
+# executing-node technique as section 2: extract the real function by
+# brace-depth matching and run it under `node` with a `t` stub that returns
+# a recognisable `T[key]` marker, so a match proves the string genuinely
+# came from a `t()` call. Each render-path test additionally stubs
+# `document.getElementById` with a plain recording object and asserts the
+# marker actually reaches that object's `innerText`/`innerHTML` -- not just
+# that the pure helper returns the right thing in isolation, which is the
+# defect class the last four review rounds kept finding (a correct helper
+# whose result never reaches the DOM).
+
+
+def _run_race_state_label(state_js: str) -> str:
+    source = _read_index()
+    fn = _strip_js_comments(_extract_function(source, "raceStateLabel"))
+    script = _t_stub() + fn + "\n" + f"console.log(raceStateLabel({state_js}));"
+    result = subprocess.run(
+        ["node", "-e", script], capture_output=True, text=True, timeout=5
+    )
+    assert result.returncode == 0, f"node failed: {result.stderr}"
+    return result.stdout.strip()
+
+
+def test_race_state_label_idle_routes_through_t():
+    assert _run_race_state_label('"IDLE"') == "T[state.idle]"
+
+
+def test_race_state_label_ready_routes_through_t():
+    assert _run_race_state_label('"READY"') == "T[state.ready]"
+
+
+def test_race_state_label_running_routes_through_t():
+    assert _run_race_state_label('"RUNNING"') == "T[state.running]"
+
+
+def test_race_state_label_stopped_routes_through_t():
+    assert _run_race_state_label('"STOPPED"') == "T[state.stopped]"
+
+
+def test_race_state_label_unrecognised_state_falls_back_to_raw_value():
+    """An unknown state must still surface -- silently returning "" would
+    blank the venue heading, which is worse than showing the raw enum."""
+    result = _run_race_state_label('"BOGUS_STATE"')
+    assert result == "BOGUS_STATE"
+    assert not result.startswith("T[")
+
+
+def _run_render_current_state_label(state_js: str) -> dict:
+    """Executes the actual DOM-writing wrapper (not just the pure helper),
+    with document.getElementById stubbed to hand back a plain recording
+    object -- proving the translated value genuinely lands on
+    el.innerText, not merely that raceStateLabel() computes it correctly
+    off to the side."""
+    source = _read_index()
+    label_fn = _strip_js_comments(_extract_function(source, "raceStateLabel"))
+    render_fn = _strip_js_comments(_extract_function(source, "renderCurrentStateLabel"))
+    script = (
+        _t_stub()
+        + label_fn
+        + "\n"
+        + render_fn
+        + "\n"
+        + "const el = {};\n"
+        + 'const document = { getElementById: (id) => (id === "current-state-lbl" ? el : null) };\n'
+        + f"renderCurrentStateLabel({state_js});\n"
+        + "console.log(JSON.stringify({ innerText: el.innerText }));"
+    )
+    result = subprocess.run(
+        ["node", "-e", script], capture_output=True, text=True, timeout=5
+    )
+    assert result.returncode == 0, f"node failed: {result.stderr}"
+    return json.loads(result.stdout)
+
+
+def test_render_current_state_label_writes_translated_value_to_element():
+    result = _run_render_current_state_label('"RUNNING"')
+    assert result["innerText"] == "T[state.running]"
+
+
+def test_render_current_state_label_writes_translated_value_for_stopped():
+    result = _run_render_current_state_label('"STOPPED"')
+    assert result["innerText"] == "T[state.stopped]"
+
+
+def _run_format_relative_age(epoch_expr: str) -> str:
+    source = _read_index()
+    fn = _strip_js_comments(_extract_function(source, "formatRelativeAge"))
+    script = _t_stub() + fn + "\n" + f"console.log(formatRelativeAge({epoch_expr}));"
+    result = subprocess.run(
+        ["node", "-e", script], capture_output=True, text=True, timeout=5
+    )
+    assert result.returncode == 0, f"node failed: {result.stderr}"
+    return result.stdout.strip()
+
+
+def test_format_relative_age_now_routes_through_t():
+    assert _run_format_relative_age("Date.now()") == "T[time.now]"
+
+
+def test_format_relative_age_seconds_routes_through_t():
+    assert _run_format_relative_age("Date.now() - 30000") == "T[time.seconds_short]"
+
+
+def test_format_relative_age_minutes_routes_through_t():
+    assert _run_format_relative_age("Date.now() - 5 * 60000") == "T[time.minutes_short]"
+
+
+def _run_render_edge_nodes(nodes_js: str) -> dict:
+    """Executes the real renderEdgeNodes() with document.getElementById
+    stubbed to plain recording objects, proving the translated markers
+    actually land in the rendered innerHTML/innerText -- not just that
+    t("edge.unbound") etc. appear as literal calls somewhere in the source
+    (that grep-only style of check is what let a computed-but-unused
+    translation slip through in earlier rounds)."""
+    source = _read_index()
+    format_age_fn = _strip_js_comments(_extract_function(source, "formatRelativeAge"))
+    render_fn = _strip_js_comments(_extract_function(source, "renderEdgeNodes"))
+    script = (
+        _t_stub()
+        + _metric_number_stub()
+        + 'const escapeHtml = (v) => String(v ?? "");\n'
+        + format_age_fn
+        + "\n"
+        + render_fn
+        + "\n"
+        + "const listEl = {};\n"
+        + "const summaryEl = {};\n"
+        + "const captionEl = {};\n"
+        + "const document = { getElementById: (id) => ({\n"
+        + '  "edge-node-list": listEl,\n'
+        + '  "edge-node-summary": summaryEl,\n'
+        + '  "edge-node-caption": captionEl,\n'
+        + "}[id] || null) };\n"
+        + f"renderEdgeNodes({nodes_js});\n"
+        + "console.log(JSON.stringify({ listHtml: listEl.innerHTML, summary: summaryEl.innerText, caption: captionEl.innerText }));"
+    )
+    result = subprocess.run(
+        ["node", "-e", script], capture_output=True, text=True, timeout=5
+    )
+    assert result.returncode == 0, f"node failed: {result.stderr}"
+    return json.loads(result.stdout)
+
+
+_EDGE_NODES_FIXTURE = """[
+  {
+    edge_node_id: "e1",
+    display_name: "Edge One",
+    status: "online",
+    ip: "1.2.3.4",
+    available_channels: 2,
+    max_ftms_connections: 5,
+    last_seen_epoch_ms: Date.now(),
+    equipment_streams: [{}]
+  },
+  {
+    status: "offline",
+    equipment_streams: []
+  }
+]"""
+
+
+def test_render_edge_nodes_stream_name_and_status_fallbacks_are_translated():
+    result = _run_render_edge_nodes(_EDGE_NODES_FIXTURE)
+    html = result["listHtml"]
+    assert "T[edge.unbound]" in html
+    assert "T[status.unknown]" in html
+    assert "UNBOUND" not in html
+    assert ">unknown<" not in html
+
+
+def test_render_edge_nodes_zero_streams_count_is_translated():
+    result = _run_render_edge_nodes(_EDGE_NODES_FIXTURE)
+    html = result["listHtml"]
+    assert "T[edge.zero_streams]" in html
+    assert "0 streams" not in html
+
+
+def test_render_edge_nodes_unknown_node_name_is_translated():
+    result = _run_render_edge_nodes(_EDGE_NODES_FIXTURE)
+    html = result["listHtml"]
+    assert "T[edge.unknown_node]" in html
+    assert "unknown-edge" not in html
+
+
+def test_render_edge_nodes_online_offline_aria_label_is_translated():
+    result = _run_render_edge_nodes(_EDGE_NODES_FIXTURE)
+    html = result["listHtml"]
+    assert "T[connection.online]" in html
+    assert "T[connection.offline]" in html
+    assert 'aria-label="online"' not in html
+    assert 'aria-label="offline"' not in html
+
+
+def test_render_edge_nodes_last_seen_prefix_is_translated():
+    result = _run_render_edge_nodes(_EDGE_NODES_FIXTURE)
+    html = result["listHtml"]
+    assert "T[edge.last_seen]" in html
+    assert "· last " not in html

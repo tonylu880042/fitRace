@@ -2724,10 +2724,10 @@
       const timestamp = Number(epochMs);
       if (!Number.isFinite(timestamp) || timestamp <= 0) return "--";
       const diffSec = Math.max(0, Math.round((Date.now() - timestamp) / 1000));
-      if (diffSec < 2) return "now";
-      if (diffSec < 60) return `${diffSec}s`;
+      if (diffSec < 2) return t("time.now");
+      if (diffSec < 60) return t("time.seconds_short", { sec: diffSec });
       const minutes = Math.floor(diffSec / 60);
-      return `${minutes}m`;
+      return t("time.minutes_short", { min: minutes });
     }
 
     function renderEdgeNodes(nodes) {
@@ -2764,20 +2764,20 @@
               const channel = stream.antenna_channel ? ` · ${escapeHtml(stream.antenna_channel)}` : "";
               return `
                 <span class="stream-pill" title="${escapeHtml(stream.display_name || stream.equipment_id || stream.node_id || "")}">
-                  <strong>${escapeHtml(stream.display_name || stream.equipment_id || stream.node_id || "UNBOUND")}</strong>
-                  <span>${escapeHtml(stream.status || "unknown")}${channel}</span>
+                  <strong>${escapeHtml(stream.display_name || stream.equipment_id || stream.node_id || t("edge.unbound"))}</strong>
+                  <span>${escapeHtml(stream.status || t("status.unknown"))}${channel}</span>
                 </span>`;
             }).join("")
-          : `<span class="stream-pill"><strong>0 streams</strong><span>${escapeHtml(t("edge.unbound"))}</span></span>`;
+          : `<span class="stream-pill"><strong>${escapeHtml(t("edge.zero_streams"))}</strong><span>${escapeHtml(t("edge.unbound"))}</span></span>`;
 
         return `
           <div class="edge-node-card ${isOnline ? "" : "offline"}">
             <div class="edge-node-head">
               <div class="edge-node-title">
-                <span class="node-status-dot ${isOnline ? "online" : ""}" aria-label="${isOnline ? "online" : "offline"}"></span>
+                <span class="node-status-dot ${isOnline ? "online" : ""}" aria-label="${isOnline ? t("connection.online") : t("connection.offline")}"></span>
                 <div>
-                  <div class="edge-node-name">${escapeHtml(node.display_name || node.edge_node_id || "unknown-edge")}</div>
-                  <div class="edge-node-meta">${escapeHtml(endpoint)} · ${channelText} · last ${formatRelativeAge(node.last_seen_epoch_ms)}</div>
+                  <div class="edge-node-name">${escapeHtml(node.display_name || node.edge_node_id || t("edge.unknown_node"))}</div>
+                  <div class="edge-node-meta">${escapeHtml(endpoint)} · ${channelText} · ${t("edge.last_seen")} ${formatRelativeAge(node.last_seen_epoch_ms)}</div>
                 </div>
               </div>
               <div class="stream-count">${streams.length}/${streamLimit}</div>
@@ -4224,6 +4224,19 @@
 
     let raceEndTime = null;
 
+    function raceStateLabel(state) {
+      if (state === "IDLE") return t("state.idle");
+      if (state === "READY") return t("state.ready");
+      if (state === "RUNNING") return t("state.running");
+      if (state === "STOPPED") return t("state.stopped");
+      return state;
+    }
+
+    function renderCurrentStateLabel(state) {
+      const el = document.getElementById("current-state-lbl");
+      if (el) el.innerText = raceStateLabel(state);
+    }
+
     function updateUIState(data) {
       console.log("updateUIState data:", data);
       if (!data || data.state === undefined) {
@@ -4272,7 +4285,7 @@
         exitIdleRecordWall();
       }
 
-      document.getElementById("current-state-lbl").innerText = currentState;
+      renderCurrentStateLabel(currentState);
       
       const configDesc = document.getElementById("current-config-desc");
       const typeIndicator = document.getElementById("race-type-indicator");

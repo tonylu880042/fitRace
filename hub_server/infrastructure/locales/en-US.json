@@ -154,5 +154,16 @@
   "leaderboard.finish_flag": "Finish",
   "podium.aria_individual": "Race winners",
   "podium.aria_team": "Team race winners",
-  "qr.register_alt": "Register QR"
+  "qr.register_alt": "Register QR",
+  "state.idle": "Idle",
+  "state.ready": "Ready",
+  "state.running": "Running",
+  "state.stopped": "Stopped",
+  "status.unknown": "Unknown",
+  "edge.unknown_node": "Unknown node",
+  "edge.zero_streams": "0 streams",
+  "edge.last_seen": "last",
+  "time.now": "now",
+  "time.seconds_short": "{sec}s",
+  "time.minutes_short": "{min}m"
 }

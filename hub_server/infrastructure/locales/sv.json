@@ -154,5 +154,16 @@
   "leaderboard.finish_flag": "Mål",
   "podium.aria_individual": "Loppvinnare",
   "podium.aria_team": "Lagvinnare",
-  "qr.register_alt": "Registrerings-QR"
+  "qr.register_alt": "Registrerings-QR",
+  "state.idle": "Inaktiv",
+  "state.ready": "Redo",
+  "state.running": "Pågår",
+  "state.stopped": "Stoppad",
+  "status.unknown": "Okänd",
+  "edge.unknown_node": "Okänd nod",
+  "edge.zero_streams": "0 strömmar",
+  "edge.last_seen": "senast",
+  "time.now": "nu",
+  "time.seconds_short": "{sec}s",
+  "time.minutes_short": "{min}m"
 }

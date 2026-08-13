@@ -154,5 +154,16 @@
   "leaderboard.finish_flag": "Ziel",
   "podium.aria_individual": "Rennsieger",
   "podium.aria_team": "Team-Rennsieger",
-  "qr.register_alt": "Registrierungs-QR"
+  "qr.register_alt": "Registrierungs-QR",
+  "state.idle": "Inaktiv",
+  "state.ready": "Bereit",
+  "state.running": "Läuft",
+  "state.stopped": "Gestoppt",
+  "status.unknown": "Unbekannt",
+  "edge.unknown_node": "Unbekannter Knoten",
+  "edge.zero_streams": "0 Streams",
+  "edge.last_seen": "zuletzt",
+  "time.now": "jetzt",
+  "time.seconds_short": "{sec}s",
+  "time.minutes_short": "{min}m"
 }

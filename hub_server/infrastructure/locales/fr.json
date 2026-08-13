@@ -154,5 +154,16 @@
   "leaderboard.finish_flag": "Arrivée",
   "podium.aria_individual": "Vainqueurs de la course",
   "podium.aria_team": "Vainqueurs par équipe",
-  "qr.register_alt": "QR d'inscription"
+  "qr.register_alt": "QR d'inscription",
+  "state.idle": "Inactif",
+  "state.ready": "Prêt",
+  "state.running": "En cours",
+  "state.stopped": "Arrêté",
+  "status.unknown": "Inconnu",
+  "edge.unknown_node": "Nœud inconnu",
+  "edge.zero_streams": "0 flux",
+  "edge.last_seen": "il y a",
+  "time.now": "maintenant",
+  "time.seconds_short": "{sec}s",
+  "time.minutes_short": "{min}min"
 }

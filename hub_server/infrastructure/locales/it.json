@@ -154,5 +154,16 @@
   "leaderboard.finish_flag": "Traguardo",
   "podium.aria_individual": "Vincitori della gara",
   "podium.aria_team": "Vincitori a squadre",
-  "qr.register_alt": "QR di registrazione"
+  "qr.register_alt": "QR di registrazione",
+  "state.idle": "Inattivo",
+  "state.ready": "Pronto",
+  "state.running": "In corso",
+  "state.stopped": "Fermato",
+  "status.unknown": "Sconosciuto",
+  "edge.unknown_node": "Nodo sconosciuto",
+  "edge.zero_streams": "0 flussi",
+  "edge.last_seen": "ultimo",
+  "time.now": "adesso",
+  "time.seconds_short": "{sec}s",
+  "time.minutes_short": "{min}m"
 }

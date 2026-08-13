@@ -154,5 +154,16 @@
   "leaderboard.finish_flag": "終點",
   "podium.aria_individual": "個人獲勝名單",
   "podium.aria_team": "團體獲勝隊伍",
-  "qr.register_alt": "報名 QR Code"
+  "qr.register_alt": "報名 QR Code",
+  "state.idle": "待機",
+  "state.ready": "準備就緒",
+  "state.running": "進行中",
+  "state.stopped": "已結束",
+  "status.unknown": "未知",
+  "edge.unknown_node": "未知節點",
+  "edge.zero_streams": "0 個串流",
+  "edge.last_seen": "最後",
+  "time.now": "剛剛",
+  "time.seconds_short": "{sec}秒",
+  "time.minutes_short": "{min}分"
 }
