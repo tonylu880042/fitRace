@@ -439,6 +439,15 @@ def test_sync_race_fields_renders_distance_note_text_on_screen():
 # to catch). Also asserts the disabled flag itself, and that the two
 # distinct disabled-reasons (individual race vs. time-based team race)
 # render genuinely different note text, not just different keys.
+#
+# It also records every classList.toggle("show", value) call on the note so
+# the visibility layer can be pinned separately from the text layer: a
+# `completionNote.classList.toggle("show", false)` (text still computed and
+# assigned correctly, but the note forced hidden -- `.field-note` is
+# `display: none` without the `show` class, CSS line 486) would satisfy the
+# textContent assertions above while leaving the operator looking at a
+# greyed-out control with no visible explanation. The recorded toggle value
+# closes that gap.
 # ---------------------------------------------------------------------------
 
 
@@ -472,6 +481,7 @@ def _run_sync_competition_fields(race_type: str, is_team_race: bool) -> dict:
         "console.log(JSON.stringify({\n"
         "  completionNoteText: mockElements['team-completion-note'].textContent,\n"
         "  completionDisabled: mockElements['team-completion-policy'].disabled,\n"
+        "  completionNoteShowToggle: mockElements['team-completion-note'].classList.toggled['show'],\n"
         "}));\n"
     )
     return json.loads(_run_node(script))
@@ -498,6 +508,26 @@ def test_sync_competition_fields_individual_and_time_based_notes_render_differen
 def test_sync_competition_fields_enables_completion_for_distance_team_race():
     result = _run_sync_competition_fields("distance", is_team_race=True)
     assert result["completionDisabled"] is False
+
+
+def test_sync_competition_fields_shows_completion_note_for_individual_race():
+    """A disabled control with a computed-but-never-shown note is the exact
+    failure mode this test exists to catch: text alone isn't proof the
+    operator can actually see the explanation."""
+    result = _run_sync_competition_fields("distance", is_team_race=False)
+    assert result["completionNoteShowToggle"] is True
+
+
+def test_sync_competition_fields_shows_completion_note_for_time_based_team_race():
+    result = _run_sync_competition_fields("max_power", is_team_race=True)
+    assert result["completionNoteShowToggle"] is True
+
+
+def test_sync_competition_fields_hides_completion_note_for_distance_team_race():
+    """Completion Rule is enabled (noteKey is null) for a distance team
+    race, so the note must be hidden -- there is nothing to explain."""
+    result = _run_sync_competition_fields("distance", is_team_race=True)
+    assert result["completionNoteShowToggle"] is False
 
 
 # ---------------------------------------------------------------------------
