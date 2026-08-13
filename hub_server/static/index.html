@@ -2170,7 +2170,7 @@
             <div style="font-family: 'Oswald', sans-serif; font-weight: 700; font-size: 0.9rem; color: var(--volt-yellow); text-transform: uppercase; letter-spacing: 0.5px;" data-i18n="qr.self_registration">Self Registration</div>
             <div style="font-size: 0.7rem; color: var(--text-muted);" data-i18n="qr.scan_to_register">Scan to Register</div>
           </div>
-          <img id="header-qr-img" class="signup-qr-img" src="" style="width: 97px; height: 97px; border-radius: 4px; background: white; padding: 2px;" alt="Register QR">
+          <img id="header-qr-img" class="signup-qr-img" src="" style="width: 97px; height: 97px; border-radius: 4px; background: white; padding: 2px;" data-i18n-alt="qr.register_alt" alt="Register QR">
         </div>
         <div class="status-badge">
           <span class="status-dot" id="ws-dot"></span>
@@ -2208,7 +2208,7 @@
               <div class="registration-empty-sub" data-i18n="leaderboard.empty">Waiting for the race to start and nodes to send data...</div>
             </div>
             <div class="registration-empty-qr">
-              <img class="signup-qr-img" src="" alt="Register QR">
+              <img class="signup-qr-img" src="" data-i18n-alt="qr.register_alt" alt="Register QR">
               <span data-i18n="qr.scan_to_register">Scan to Register</span>
             </div>
           </div>
@@ -2362,6 +2362,9 @@
     function applyTranslations() {
       document.querySelectorAll("[data-i18n]").forEach((element) => {
         element.innerText = t(element.dataset.i18n);
+      });
+      document.querySelectorAll("[data-i18n-alt]").forEach((element) => {
+        element.setAttribute("alt", t(element.dataset.i18nAlt));
       });
     }
 
@@ -2850,35 +2853,52 @@
               <span class="medal-mark ${medal.className}" title="${medal.title}">${medal.label}</span>
               <span>#${rank} ${medal.title}</span>
             </div>
-            <div class="podium-name">${escapeHtml(node.athlete_name || "Athlete")}${teamSuffix}</div>
+            <div class="podium-name">${escapeHtml(node.athlete_name || t("stations.athlete"))}${teamSuffix}</div>
             <div class="podium-score">${score.value}</div>
             <div class="podium-sub">${score.label} · ${escapeHtml(nodeDisplayName(node))}</div>
           </div>
         `;
       }).join("");
 
-      return `<div class="podium-panel" aria-label="Race winners">${cards}</div>`;
+      return `<div class="podium-panel" aria-label="${escapeHtml(t("podium.aria_individual"))}">${cards}</div>`;
+    }
+
+    // Small enum -> i18n translators shared by the team render paths below,
+    // so the raw config enum values ("aggregate" / "all_members" / "average"
+    // / "total") never reach the screen untranslated.
+    function teamCompletionLabel(policy) {
+      return policy === "all_members"
+        ? t("team.completion_all_members")
+        : t("team.completion_aggregate");
+    }
+
+    function teamPolicyLabel(policy) {
+      return policy === "all_members" ? t("team.policy_all_members") : t("team.policy_aggregate");
+    }
+
+    function teamScoringLabel(policy) {
+      return policy === "total" ? t("team.scoring_total") : t("team.scoring_average");
     }
 
     function formatTeamScore(team, raceType) {
       const scoreLabel = team.score_label || "progress";
       if (raceType === "distance") {
         return scoreLabel === "distance_m"
-          ? { value: `${metricNumber(team.score_value).toFixed(0)}m`, label: "Team distance" }
-          : { value: `${metricNumber(team.score_value).toFixed(1)}%`, label: "Avg progress" };
+          ? { value: `${metricNumber(team.score_value).toFixed(0)}m`, label: t("team.distance_label") }
+          : { value: `${metricNumber(team.score_value).toFixed(1)}%`, label: t("team.avg_progress_label") };
       }
       if (raceType === "calories") {
         return scoreLabel === "calories"
-          ? { value: `${metricNumber(team.score_value).toFixed(1)}`, label: "Team kcal" }
-          : { value: `${metricNumber(team.score_value).toFixed(1)}%`, label: "Avg progress" };
+          ? { value: `${metricNumber(team.score_value).toFixed(1)}`, label: t("team.kcal_label") }
+          : { value: `${metricNumber(team.score_value).toFixed(1)}%`, label: t("team.avg_progress_label") };
       }
       if (raceType === "time") {
-        return { value: `${metricNumber(team.score_value).toFixed(0)}m`, label: "Team distance" };
+        return { value: `${metricNumber(team.score_value).toFixed(0)}m`, label: t("team.distance_label") };
       }
       if (raceType === "max_power" || raceType === "watts") {
-        return { value: `${metricNumber(team.score_value).toFixed(0)}W`, label: "Team power" };
+        return { value: `${metricNumber(team.score_value).toFixed(0)}W`, label: t("team.power_label") };
       }
-      return { value: `${metricNumber(team.score_value).toFixed(1)}%`, label: "Team score" };
+      return { value: `${metricNumber(team.score_value).toFixed(1)}%`, label: t("team.score_label") };
     }
 
     function renderTeamPodium(teams, raceType) {
@@ -2898,20 +2918,20 @@
               <span class="medal-mark ${medal.className}" title="${medal.title}">${medal.label}</span>
               <span>#${rank} ${medal.title}</span>
             </div>
-            <div class="podium-name">${escapeHtml(team.team_name || "Team")}</div>
+            <div class="podium-name">${escapeHtml(team.team_name || t("fallback.team"))}</div>
             <div class="podium-score">${score.value}</div>
-            <div class="podium-sub">${score.label} · ${metricNumber(team.member_count).toFixed(0)} athletes</div>
+            <div class="podium-sub">${score.label} · ${escapeHtml(t("team.athlete_count", { count: metricNumber(team.member_count).toFixed(0) }))}</div>
           </div>
         `;
       }).join("");
 
-      return `<div class="podium-panel" aria-label="Team race winners">${cards}</div>`;
+      return `<div class="podium-panel" aria-label="${escapeHtml(t("podium.aria_team"))}">${cards}</div>`;
     }
 
     function aggregateTeamLeaderboard(progressData, raceType) {
       const teams = new Map();
       Object.values(progressData || {}).forEach((node) => {
-        const teamName = String(node.team_name || "").trim() || "Unassigned";
+        const teamName = String(node.team_name || "").trim() || t("fallback.unassigned_team");
         if (!teams.has(teamName)) {
           teams.set(teamName, {
             team_name: teamName,
@@ -3179,7 +3199,7 @@
         <div class="podium-overlay-card place-${rank}">
           ${avatarHtml}
           <div class="podium-overlay-rank">${medal.label} ${escapeHtml(medal.title)}</div>
-          <div class="podium-overlay-name">${escapeHtml(name || "Athlete")}</div>
+          <div class="podium-overlay-name">${escapeHtml(name || t("stations.athlete"))}</div>
           ${teamHtml}
           <div class="podium-overlay-score">${escapeHtml(scoreValue)}</div>
         </div>
@@ -3268,7 +3288,7 @@
           <div class="record-wall-row rank-${rank}">
             <div class="record-wall-rank">#${rank}</div>
             <div>
-              <div class="record-wall-name">${escapeHtml(entry.athlete_name || "Athlete")}</div>
+              <div class="record-wall-name">${escapeHtml(entry.athlete_name || t("stations.athlete"))}</div>
               ${teamHtml}
             </div>
             <div class="record-wall-value">${formatRecordEntryValue(raceType, entry.value)}</div>
@@ -3523,7 +3543,7 @@
             <div class="registration-empty-sub">${escapeHtml(message)}</div>
           </div>
           <div class="registration-empty-qr">
-            <img class="signup-qr-img" src="${escapeHtml(currentSignupQrUrl || "")}" alt="Register QR">
+            <img class="signup-qr-img" src="${escapeHtml(currentSignupQrUrl || "")}" alt="${escapeHtml(t("qr.register_alt"))}">
             <span>${escapeHtml(t("qr.scan_to_register"))}</span>
           </div>
         </div>`;
@@ -3540,19 +3560,19 @@
     function formatSprintSignal(row, raceType) {
       if (row.kind === "team") {
         if (raceType === "max_power" || raceType === "watts") {
-          return { value: `${metricNumber(row.raw.max_power_watts).toFixed(0)}W`, label: "Team peak" };
+          return { value: `${metricNumber(row.raw.max_power_watts).toFixed(0)}W`, label: t("team.peak_power_label") };
         }
         const avgSpeed = (row.raw.members || []).reduce((total, member) => {
           const elapsedSec = Math.max(1, metricNumber(member.elapsed_time_ms) / 1000);
           return total + (metricNumber(member.distance_m) / elapsedSec) * 3.6;
         }, 0) / Math.max(1, metricNumber(row.raw.member_count, 1));
-        return { value: `${avgSpeed.toFixed(1)}`, label: "Avg kph" };
+        return { value: `${avgSpeed.toFixed(1)}`, label: t("team.avg_speed_label") };
       }
 
       if (raceType === "max_power" || raceType === "watts" || raceType === "calories") {
-        return { value: `${metricNumber(row.raw.power_watts).toFixed(0)}W`, label: "Current power" };
+        return { value: `${metricNumber(row.raw.power_watts).toFixed(0)}W`, label: t("metric.current_power") };
       }
-      return { value: `${metricNumber(row.raw.instantaneous_speed_kph).toFixed(1)}`, label: "kph" };
+      return { value: `${metricNumber(row.raw.instantaneous_speed_kph).toFixed(1)}`, label: t("metric.speed") };
     }
 
     function renderMemberProgressChips(members, className = "race-track-chip") {
@@ -3564,7 +3584,7 @@
         return `
           <span class="${className} ${finished ? "finished" : ""}">
             ${station}
-            <strong>${escapeHtml(member.athlete_name || "Athlete")}</strong>
+            <strong>${escapeHtml(member.athlete_name || t("stations.athlete"))}</strong>
             ${machineText}
             ${metricNumber(member.progress_percent).toFixed(0)}%
           </span>
@@ -3588,15 +3608,18 @@
       const rows = isTeamMode
         ? teamRows.map((team, index) => {
             const score = formatTeamScore(team, raceType);
-            const completionLabel = team.completion_policy === "all_members" ? "all members finish" : "aggregate finish";
+            const completionLabel = teamCompletionLabel(team.completion_policy);
             return {
               id: team.team_name || `team-${index + 1}`,
-              name: team.team_name || "Team",
-              meta: `${metricNumber(team.member_count).toFixed(0)} athletes · ${completionLabel}`,
+              name: team.team_name || t("fallback.team"),
+              meta: `${t("team.athlete_count", { count: metricNumber(team.member_count).toFixed(0) })} · ${completionLabel}`,
               score,
               progress: metricNumber(team.progress_percent),
               members: team.members || [],
-              finished: `${metricNumber(team.finished_count).toFixed(0)}/${metricNumber(team.member_count).toFixed(0)} finished`,
+              finished: t("team.finished_count", {
+                finished: metricNumber(team.finished_count).toFixed(0),
+                total: metricNumber(team.member_count).toFixed(0),
+              }),
             };
           })
         : individualRows.map((node) => {
@@ -3605,12 +3628,14 @@
             const teamSuffix = node.team_name ? ` · ${node.team_name}` : "";
             return {
               id: node.node_id,
-              name: node.athlete_name || "Athlete",
-              meta: `${station || "Node"}${teamSuffix}`,
+              name: node.athlete_name || t("stations.athlete"),
+              meta: `${station || t("fallback.node")}${teamSuffix}`,
               score,
               progress: metricNumber(node.progress_percent),
               members: [],
-              finished: node.finished_time_ms ? `${(metricNumber(node.finished_time_ms) / 1000).toFixed(1)}s finish` : `${metricNumber(node.progress_percent).toFixed(1)}% progress`,
+              finished: node.finished_time_ms
+                ? t("leaderboard.seconds_finish", { seconds: (metricNumber(node.finished_time_ms) / 1000).toFixed(1) })
+                : t("leaderboard.percent_progress", { percent: metricNumber(node.progress_percent).toFixed(1) }),
             };
           });
 
@@ -3657,7 +3682,7 @@
                 <div class="race-track-checkpoint" style="left: 50%"><span>50</span></div>
                 <div class="race-track-checkpoint" style="left: 75%"><span>75</span></div>
                 <div class="race-track-marker" style="left: ${progress}%"></div>
-                <div class="race-track-finish" title="Finish"></div>
+                <div class="race-track-finish" title="${escapeHtml(t("leaderboard.finish_flag"))}"></div>
               </div>
             </div>
             <div class="race-track-score">
@@ -3685,12 +3710,12 @@
       const allMembersComplete = metricNumber(team.member_count) > 0 && missingCount === 0;
       const statusClass = teamFinished ? "finished" : allMembersComplete ? "all-in" : "";
       const statusLabel = teamFinished
-        ? "Finished"
+        ? t("team.finished_label")
         : allMembersComplete
-          ? "All in"
+          ? t("team.status_all_in")
           : team.completion_policy === "all_members"
-            ? `${missingCount.toFixed(0)} member${missingCount === 1 ? "" : "s"} to finish`
-            : `${progress.toFixed(0)}% team progress`;
+            ? t("team.status_members_remaining", { count: missingCount.toFixed(0) })
+            : t("team.status_progress", { percent: progress.toFixed(0) });
       return { allMembersComplete, statusClass, statusLabel, teamFinished };
     }
 
@@ -3719,13 +3744,17 @@
         const rankClass = rankDelta > 0 ? "rank-up" : rankDelta < 0 ? "rank-down" : "";
         const score = formatTeamScore(team, raceType);
         const progress = Math.max(0, Math.min(100, smoothMetricNumber(`${teamKey}:progress`, team.progress_percent)));
-        const completionLabel = team.completion_policy === "all_members" ? "all members finish" : "aggregate finish";
+        const completionLabel = teamCompletionLabel(team.completion_policy);
         const { allMembersComplete, statusClass, statusLabel, teamFinished } = getTeamBattleStatus(team, progress);
         const members = renderMemberProgressChips(team.members, "race-track-chip");
+        const finishedCount = t("team.finished_count", {
+          finished: metricNumber(team.finished_count).toFixed(0),
+          total: metricNumber(team.member_count).toFixed(0),
+        });
         return `
           <div class="team-battle-card ${compact ? "compact" : ""} ${currentRank === 1 ? "leader" : ""} ${teamFinished ? "finished" : ""} ${allMembersComplete ? "all-in" : ""} ${rankClass}" data-node-id="${escapeHtml(teamKey)}">
-            <div class="team-battle-rank">#${currentRank} · ${metricNumber(team.finished_count).toFixed(0)}/${metricNumber(team.member_count).toFixed(0)} finished</div>
-            <div class="team-battle-name">${escapeHtml(team.team_name || "Team")}</div>
+            <div class="team-battle-rank">#${currentRank} · ${finishedCount}</div>
+            <div class="team-battle-name">${escapeHtml(team.team_name || t("fallback.team"))}</div>
             <div class="team-battle-score">${escapeHtml(score.value)}</div>
             <div class="team-battle-meta">${escapeHtml(score.label)} · ${completionLabel}</div>
             <div class="team-battle-status ${statusClass}">${escapeHtml(statusLabel)}</div>
@@ -3740,12 +3769,12 @@
       let html = leaderboardFinal ? renderTeamPodium(teams, raceType) : "";
       html += '<div class="team-battle-panel">';
       if (teams.length === 1) {
-        html += `<div class="team-battle-arena">${cardHtml(teams[0], 0)}<div class="team-battle-vs">Solo</div><div></div></div>`;
+        html += `<div class="team-battle-arena">${cardHtml(teams[0], 0)}<div class="team-battle-vs">${escapeHtml(t("team.solo_label"))}</div><div></div></div>`;
       } else {
         html += `
           <div class="team-battle-arena">
             ${cardHtml(teams[0], 0)}
-            <div class="team-battle-vs">VS</div>
+            <div class="team-battle-vs">${escapeHtml(t("team.vs_label"))}</div>
             ${cardHtml(teams[1], 1)}
           </div>
         `;
@@ -3783,32 +3812,32 @@
         ? teamRows.map((team, index) => ({
             id: team.team_name || `team-${index + 1}`,
             kind: "team",
-            name: team.team_name || "Team",
-            meta: `${metricNumber(team.member_count).toFixed(0)} athletes`,
+            name: team.team_name || t("fallback.team"),
+            meta: t("team.athlete_count", { count: metricNumber(team.member_count).toFixed(0) }),
             progress: metricNumber(team.progress_percent),
             score: formatTeamScore(team, raceType),
             raw: team,
             statA: `${metricNumber(team.finished_count).toFixed(0)}/${metricNumber(team.member_count).toFixed(0)}`,
-            statALabel: "Finished",
+            statALabel: t("team.finished_label"),
             statB: `${metricNumber(team.average_progress_percent).toFixed(0)}%`,
-            statBLabel: "Average",
+            statBLabel: t("team.avg_progress_label"),
             statC: `${metricNumber(team.distance_m).toFixed(0)}m`,
-            statCLabel: "Distance",
+            statCLabel: t("metric.distance"),
           }))
         : individualRows.map((node) => ({
             id: node.node_id,
             kind: "individual",
-            name: node.athlete_name || "Athlete",
+            name: node.athlete_name || t("stations.athlete"),
             meta: `${stationLabel(node)}${node.team_name ? ` · ${node.team_name}` : ""}`,
             progress: metricNumber(node.progress_percent),
             score: formatResultScore(node, raceType),
             raw: node,
             statA: `${metricNumber(node.power_watts).toFixed(0)}W`,
-            statALabel: "Power",
+            statALabel: t("metric.power"),
             statB: `${metricNumber(node.distance_m).toFixed(0)}m`,
-            statBLabel: "Distance",
+            statBLabel: t("metric.distance"),
             statC: `${metricNumber(node.calories).toFixed(1)}`,
-            statCLabel: "Kcal",
+            statCLabel: t("metric.calories"),
           }));
 
       if (rows.length === 0) {
@@ -3835,7 +3864,7 @@
         const sprintSignal = formatSprintSignal(row, raceType);
         const progress = Math.max(0, Math.min(100, smoothMetricNumber(`${row.id}:progress`, row.progress)));
         const policyOrNode = row.kind === "team"
-          ? String(row.raw.completion_policy || "aggregate").replace(/_/g, " ")
+          ? teamPolicyLabel(row.raw.completion_policy)
           : nodeDisplayName(row.raw);
 
         html += `
@@ -3858,8 +3887,8 @@
             </div>
             <div class="sprint-board-stats">
               <div class="sprint-stat"><strong>${escapeHtml(row.statC)}</strong><span>${escapeHtml(row.statCLabel)}</span></div>
-              <div class="sprint-stat"><strong>${progress.toFixed(0)}%</strong><span>Progress</span></div>
-              <div class="sprint-stat"><strong>${escapeHtml(policyOrNode)}</strong><span>${row.kind === "team" ? "Policy" : "Node"}</span></div>
+              <div class="sprint-stat"><strong>${progress.toFixed(0)}%</strong><span>${escapeHtml(t("metric.progress"))}</span></div>
+              <div class="sprint-stat"><strong>${escapeHtml(policyOrNode)}</strong><span>${row.kind === "team" ? escapeHtml(t("team.policy_label")) : escapeHtml(t("fallback.node"))}</span></div>
             </div>
             <div class="sprint-board-progress"><div style="width: ${progress}%"></div></div>
           </div>
@@ -3923,7 +3952,8 @@
         const teamProgress = Math.max(0, smoothMetricNumber(`${teamKey}:progress`, team.progress_percent));
         const score = formatTeamScore(team, raceType);
         const progressText = `${teamProgress.toFixed(1)}%`;
-        const completionLabel = team.completion_policy === "all_members" ? "all members finish" : "aggregate finish";
+        const completionLabel = teamCompletionLabel(team.completion_policy);
+        const scoringLabel = t("team.scoring_method_label", { policy: teamScoringLabel(team.scoring_policy) });
         const members = (team.members || []).map((member) => {
           const station = member.station_number ? `<span class="team-member-station">S${escapeHtml(member.station_number)}</span>` : "";
           const machine = nodeDisplayName(member);
@@ -3931,7 +3961,7 @@
           return `
             <span class="team-member-chip">
               ${station}
-              <strong>${escapeHtml(member.athlete_name || "Athlete")}</strong>
+              <strong>${escapeHtml(member.athlete_name || t("stations.athlete"))}</strong>
               ${machineText}
               ${smoothMetricNumber(`${teamKey}:${member.node_id || member.athlete_name}:progress`, member.progress_percent).toFixed(0)}%
             </span>
@@ -3942,8 +3972,8 @@
           <div class="team-leaderboard-item ${rankClass}" data-node-id="${escapeHtml(teamKey)}">
             <div class="rank">${rankDisplayHtml}</div>
             <div class="team-main">
-              <div class="team-name">${escapeHtml(team.team_name || "Team")}</div>
-              <div class="team-meta">${metricNumber(team.member_count).toFixed(0)} athletes · ${escapeHtml(team.scoring_policy || "average")} scoring · ${completionLabel}</div>
+              <div class="team-name">${escapeHtml(team.team_name || t("fallback.team"))}</div>
+              <div class="team-meta">${escapeHtml(t("team.athlete_count", { count: metricNumber(team.member_count).toFixed(0) }))} · ${escapeHtml(scoringLabel)} · ${escapeHtml(completionLabel)}</div>
             </div>
             <div class="metric-group">
               <div class="metric-val score-primary">${score.value}</div>
@@ -3951,11 +3981,11 @@
             </div>
             <div class="metric-group">
               <div class="metric-val">${progressText}</div>
-              <div class="metric-lbl">Team progress</div>
+              <div class="metric-lbl">${escapeHtml(t("team.progress_label"))}</div>
             </div>
             <div class="metric-group">
               <div class="metric-val">${metricNumber(team.finished_count).toFixed(0)}/${metricNumber(team.member_count).toFixed(0)}</div>
-              <div class="metric-lbl">Finished</div>
+              <div class="metric-lbl">${escapeHtml(t("team.finished_label"))}</div>
             </div>
             <div class="progress-track">
               <div class="progress-fill" style="width: ${Math.min(100, teamProgress)}%"></div>
@@ -4041,11 +4071,11 @@
         if (currentRank === 1) {
           cardExtraClass = leaderboardFinal ? "champion-final" : "";
         }
-        const stationBadge = node.station_number 
-          ? `<span class="station-pill">STATION ${escapeHtml(node.station_number)}</span>`
+        const stationBadge = node.station_number
+          ? `<span class="station-pill">${escapeHtml(t("stations.station"))} ${escapeHtml(node.station_number)}</span>`
           : '';
 
-        const athleteName = escapeHtml(node.athlete_name || "Athlete");
+        const athleteName = escapeHtml(node.athlete_name || t("stations.athlete"));
         const displayName = athleteName + (node.team_name ? ` <span class="team-suffix" style="font-size: 0.8rem; color: var(--volt-yellow); opacity: 0.85; font-weight: 600;">(${escapeHtml(node.team_name)})</span>` : '');
 
         let avatarHtml = '';
@@ -4248,7 +4278,7 @@
       const typeIndicator = document.getElementById("race-type-indicator");
 
       if (currentConfig) {
-        const competitionLabel = currentConfig.competition_mode === "team" ? "Team" : "Individual";
+        const competitionLabel = currentConfig.competition_mode === "team" ? t("stage.team") : t("stage.individual");
         if (currentConfig.race_type === "distance") {
           configDesc.innerText = `${competitionLabel} · ${t("race.distance")}: ${currentConfig.target_value}m`;
           typeIndicator.innerText = `${competitionLabel} · ${t("race.distance")} (${currentConfig.target_value}m)`;
