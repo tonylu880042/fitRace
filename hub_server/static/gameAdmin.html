@@ -1565,6 +1565,26 @@
       return keys[mode] || keys.classic;
     }
 
+    function teamRuleSummaryText({ isTeamRace, scoring, completion, raceType, targetLabel }) {
+      if (!isTeamRace) {
+        return t("text.individual_race");
+      }
+      const scoringText = scoring === "total"
+        ? t("text.team_total_detail")
+        : t("text.team_average_detail");
+      const completionText = completion === "all_members"
+        ? t("text.everyone_finishes_detail", { targetLabel })
+        : t("text.team_target_detail");
+      let summary = `${scoringText} ${completionText}`;
+      const scoringOverridden = completion === "all_members"
+        && (raceType === "distance" || raceType === "calories")
+        && scoring === "total";
+      if (scoringOverridden) {
+        summary += ` ${t("text.team_total_overridden_by_everyone_finishes")}`;
+      }
+      return summary;
+    }
+
     function syncRaceFields() {
       const type = $("race-type").value;
       const label = $("race-target-label");
@@ -1628,24 +1648,7 @@
         sprint_board: [["P1", 96, t("status.fast")], ["P2", 84, t("status.hot")], ["P3", 68, t("status.next")]],
       };
 
-      if (isTeamRace) {
-        const scoringText = scoring === "total"
-          ? t("text.team_total_detail")
-          : t("text.team_average_detail");
-        const completionText = completion === "all_members"
-          ? t("text.everyone_finishes_detail", { targetLabel })
-          : t("text.team_target_detail");
-        let summary = `${scoringText} ${completionText}`;
-        const scoringOverridden = completion === "all_members"
-          && (raceType === "distance" || raceType === "calories")
-          && scoring === "total";
-        if (scoringOverridden) {
-          summary += ` ${t("text.team_total_overridden_by_everyone_finishes")}`;
-        }
-        $("team-rule-summary").textContent = summary;
-      } else {
-        $("team-rule-summary").textContent = t("text.individual_race");
-      }
+      $("team-rule-summary").textContent = teamRuleSummaryText({ isTeamRace, scoring, completion, raceType, targetLabel });
 
       $("leaderboard-mode-summary").textContent = modeText[mode];
       $("leaderboard-mode-preview").innerHTML = previewRows[mode].map(([label, width, value]) => `

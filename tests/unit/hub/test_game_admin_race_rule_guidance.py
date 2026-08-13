@@ -87,10 +87,42 @@ def _matching_brace_end(source: str, open_idx: int) -> int:
     raise ValueError("no matching closing brace found")
 
 
+def _matching_paren_end(source: str, open_idx: int) -> int:
+    """Same idea as _matching_brace_end but for the parameter-list parens,
+    string-aware. Needed because a destructured-object parameter (e.g.
+    `function f({ a, b }) {`) has a `{` inside the parameter list, before
+    the function body's own `{` -- naively taking the first `{` after the
+    function name grabs the destructuring literal's closing `}` instead of
+    the body's, silently truncating the extracted source."""
+    depth = 0
+    i = open_idx
+    in_str = None
+    while i < len(source):
+        char = source[i]
+        if in_str:
+            if char == "\\":
+                i += 2
+                continue
+            if char == in_str:
+                in_str = None
+        elif char in ('"', "'", "`"):
+            in_str = char
+        elif char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth == 0:
+                return i
+        i += 1
+    raise ValueError("no matching closing paren found")
+
+
 def _extract_function(source: str, name: str) -> str:
     marker = f"function {name}("
     start = source.index(marker)
-    brace_open = source.index("{", start)
+    paren_open = start + len(marker) - 1
+    paren_close = _matching_paren_end(source, paren_open)
+    brace_open = source.index("{", paren_close)
     brace_end = _matching_brace_end(source, brace_open)
     return source[start : brace_end + 1]
 
@@ -241,6 +273,161 @@ def test_leaderboard_mode_note_key_other_modes_unaffected_by_race_type():
 
 
 # ---------------------------------------------------------------------------
+# teamRuleSummaryText -- the Team Rule card composition, extracted out of
+# updateControlGuidance so the finished string (including the "Team Total is
+# silently overridden by Everyone Finishes" sentence) can be executed and
+# asserted directly, rather than only checked by a source-text grep on
+# updateControlGuidance's body.
+# ---------------------------------------------------------------------------
+
+
+def _team_rule_t_stub() -> str:
+    return (
+        "const t = (key, params) => {\n"
+        "  if (params && Object.keys(params).length) {\n"
+        "    return `T[${key}|${JSON.stringify(params)}]`;\n"
+        "  }\n"
+        "  return `T[${key}]`;\n"
+        "};\n"
+    )
+
+
+def _run_team_rule_summary_text(params: dict) -> str:
+    source = _stripped_script()
+    fn = _extract_function(source, "teamRuleSummaryText")
+    script = (
+        _team_rule_t_stub() + fn + "\n"
+        f"console.log(teamRuleSummaryText({json.dumps(params)}));"
+    )
+    return _run_node(script)
+
+
+def test_team_rule_summary_text_individual_race_ignores_scoring_and_completion():
+    result = _run_team_rule_summary_text(
+        {
+            "isTeamRace": False,
+            "scoring": "average",
+            "completion": "aggregate",
+            "raceType": "distance",
+            "targetLabel": "distance target",
+        }
+    )
+    assert result == "T[text.individual_race]"
+
+
+def test_team_rule_summary_text_override_sentence_present_for_all_members_distance_total():
+    result = _run_team_rule_summary_text(
+        {
+            "isTeamRace": True,
+            "scoring": "total",
+            "completion": "all_members",
+            "raceType": "distance",
+            "targetLabel": "distance target",
+        }
+    )
+    assert "T[text.team_total_overridden_by_everyone_finishes]" in result
+
+
+def test_team_rule_summary_text_override_sentence_absent_for_all_members_distance_average():
+    """Everyone Finishes + Team Average is not an override -- Average is
+    what all_members forces anyway, so no contradiction to call out."""
+    result = _run_team_rule_summary_text(
+        {
+            "isTeamRace": True,
+            "scoring": "average",
+            "completion": "all_members",
+            "raceType": "distance",
+            "targetLabel": "distance target",
+        }
+    )
+    assert "team_total_overridden_by_everyone_finishes" not in result
+
+
+def test_team_rule_summary_text_override_sentence_absent_for_aggregate_distance_total():
+    """Team Target (aggregate) + Team Total is a real, honoured combination
+    -- no override to warn about."""
+    result = _run_team_rule_summary_text(
+        {
+            "isTeamRace": True,
+            "scoring": "total",
+            "completion": "aggregate",
+            "raceType": "distance",
+            "targetLabel": "distance target",
+        }
+    )
+    assert "team_total_overridden_by_everyone_finishes" not in result
+
+
+def test_team_rule_summary_text_override_sentence_absent_for_time_based_race_types():
+    """The completion policy is entirely ignored for time/max_power/watts
+    (race_manager._team_finished), so the distance/calories-only override
+    warning must not appear there either."""
+    for race_type in ("time", "max_power", "watts"):
+        result = _run_team_rule_summary_text(
+            {
+                "isTeamRace": True,
+                "scoring": "total",
+                "completion": "all_members",
+                "raceType": race_type,
+                "targetLabel": "challenge window",
+            }
+        )
+        assert "team_total_overridden_by_everyone_finishes" not in result
+
+
+# ---------------------------------------------------------------------------
+# syncRaceFields DOM wiring -- proves the race-type note's rendered
+# textContent actually changes with the selected race type, not merely that
+# raceRuleNoteKey() is called or that dataset.i18n was written (a
+# raceNote.dataset.i18n = raceNoteKey; assignment with the
+# raceNote.textContent = t(raceNoteKey); line deleted would still call
+# raceRuleNoteKey() and satisfy every prior source-text assertion in this
+# module, while leaving stale rules copy on screen after every race-type
+# change -- exactly the bug this test exists to catch).
+# ---------------------------------------------------------------------------
+
+
+def _run_sync_race_fields(race_type: str) -> dict:
+    source = _stripped_script()
+    race_rule_note_key_fn = _extract_function(source, "raceRuleNoteKey")
+    sync_race_fields_fn = _extract_function(source, "syncRaceFields")
+    script = (
+        "const mockElements = {};\n"
+        "function $(id) {\n"
+        "  if (!mockElements[id]) mockElements[id] = { textContent: '', dataset: {} };\n"
+        "  return mockElements[id];\n"
+        "}\n"
+        "function t(key) { return `T[${key}]`; }\n"
+        "function syncCompetitionFields() {}\n"
+        + race_rule_note_key_fn
+        + "\n"
+        + sync_race_fields_fn
+        + "\n"
+        f"mockElements['race-type'] = {{ value: {json.dumps(race_type)} }};\n"
+        "syncRaceFields();\n"
+        "console.log(JSON.stringify({\n"
+        "  textContent: mockElements['race-type-note'].textContent,\n"
+        "  datasetI18n: mockElements['race-type-note'].dataset.i18n,\n"
+        "}));\n"
+    )
+    return json.loads(_run_node(script))
+
+
+def test_sync_race_fields_renders_max_power_note_text_on_screen():
+    result = _run_sync_race_fields("max_power")
+    assert result["textContent"] == "T[text.race_note_max_power]"
+    assert result["datasetI18n"] == "text.race_note_max_power"
+
+
+def test_sync_race_fields_renders_distance_note_text_on_screen():
+    """Paired with the max_power case above so a hardcoded constant
+    textContent (instead of a real per-race-type render) cannot pass both."""
+    result = _run_sync_race_fields("distance")
+    assert result["textContent"] == "T[text.race_note_distance]"
+    assert result["datasetI18n"] == "text.race_note_distance"
+
+
+# ---------------------------------------------------------------------------
 # i18n: every new key must exist in BOTH inline dictionaries (and, per the
 # existing symmetry/untranslated tests in test_static_page_i18n.py, carry a
 # genuinely different zh-TW value). This module additionally asserts the
@@ -332,4 +519,10 @@ def test_update_control_guidance_uses_leaderboard_mode_note_key_helper():
     source = _stripped_script()
     fn = _extract_function(source, "updateControlGuidance")
     assert "leaderboardModeNoteKey(" in fn
+    assert "teamRuleSummaryText(" in fn
+
+
+def test_team_rule_summary_text_contains_the_override_sentence_key():
+    source = _stripped_script()
+    fn = _extract_function(source, "teamRuleSummaryText")
     assert "text.team_total_overridden_by_everyone_finishes" in fn
