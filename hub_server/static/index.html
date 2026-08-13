@@ -2693,6 +2693,14 @@
       return node?.node_display_name || node?.display_name || node?.node_id || "--";
     }
 
+    function stationLabel(node) {
+      const parts = [];
+      if (node?.station_number) parts.push(`${t("stations.station")} ${node.station_number}`);
+      const machine = nodeDisplayName(node);
+      if (machine && machine !== "--") parts.push(machine);
+      return parts.join(" · ");
+    }
+
     function metricNumber(value, fallback = 0) {
       const number = Number(value);
       return Number.isFinite(number) ? number : fallback;
@@ -3559,11 +3567,14 @@
     function renderMemberProgressChips(members, className = "race-track-chip") {
       return (members || []).map((member) => {
         const station = member.station_number ? `<span class="team-member-station">S${escapeHtml(member.station_number)}</span>` : "";
+        const machine = nodeDisplayName(member);
+        const machineText = machine && machine !== "--" ? escapeHtml(machine) : "";
         const finished = Boolean(member.finished_time_ms) || metricNumber(member.progress_percent) >= 100;
         return `
           <span class="${className} ${finished ? "finished" : ""}">
             ${station}
             <strong>${escapeHtml(member.athlete_name || "Athlete")}</strong>
+            ${machineText}
             ${metricNumber(member.progress_percent).toFixed(0)}%
           </span>
         `;
@@ -3599,7 +3610,7 @@
           })
         : individualRows.map((node) => {
             const score = formatResultScore(node, raceType);
-            const station = node.station_number ? `Station ${node.station_number}` : nodeDisplayName(node);
+            const station = stationLabel(node);
             const teamSuffix = node.team_name ? ` · ${node.team_name}` : "";
             return {
               id: node.node_id,
@@ -3797,7 +3808,7 @@
             id: node.node_id,
             kind: "individual",
             name: node.athlete_name || "Athlete",
-            meta: `${node.station_number ? `Station ${node.station_number}` : nodeDisplayName(node)}${node.team_name ? ` · ${node.team_name}` : ""}`,
+            meta: `${stationLabel(node)}${node.team_name ? ` · ${node.team_name}` : ""}`,
             progress: metricNumber(node.progress_percent),
             score: formatResultScore(node, raceType),
             raw: node,
@@ -3924,10 +3935,13 @@
         const completionLabel = team.completion_policy === "all_members" ? "all members finish" : "aggregate finish";
         const members = (team.members || []).map((member) => {
           const station = member.station_number ? `<span class="team-member-station">S${escapeHtml(member.station_number)}</span>` : "";
+          const machine = nodeDisplayName(member);
+          const machineText = machine && machine !== "--" ? escapeHtml(machine) : "";
           return `
             <span class="team-member-chip">
               ${station}
               <strong>${escapeHtml(member.athlete_name || "Athlete")}</strong>
+              ${machineText}
               ${smoothMetricNumber(`${teamKey}:${member.node_id || member.athlete_name}:progress`, member.progress_percent).toFixed(0)}%
             </span>
           `;
