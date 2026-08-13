@@ -16,6 +16,25 @@ tests/unit/hub/test_operator_name_equipment_id_rung.py), and running the
 result under `node`. It also asserts (against comment-stripped source, so a
 comment can't satisfy the check) that each of the four render sites still
 calls the shared helper -- so an unused helper cannot pass.
+
+The two member-chip sites were originally covered ONLY by the source-text
+assertion above (`"nodeDisplayName(member)" in fn`), which pins that the
+call is *present* but not that its result actually reaches the rendered
+HTML -- a `const machine = nodeDisplayName(member);` that is computed and
+then never interpolated into the returned template still satisfies that
+assertion, silently reintroducing the exact bug this module exists to
+catch. `test_member_progress_chips_render_includes_machine_name` and
+`test_team_leaderboard_member_chip_render_includes_machine_name` close that
+gap by executing the real chip renderers under `node` and asserting the
+machine name is present in the returned HTML string.
+`renderMemberProgressChips` is a standalone pure function, extracted the
+same way as `stationLabel`. `renderTeamLeaderboard`'s chip markup instead
+lives inline as a `.map((member) => {...})` callback inside a much larger
+function with DOM/state dependencies that can't run under plain `node`, so
+only that callback -- not the whole function -- is extracted (again by
+brace-depth matching, anchored on the unique `const members = (team.members
+|| []).map((member) => {` line) and run with light stand-ins for the two
+free variables it closes over (`teamKey`, `smoothMetricNumber`).
 """
 
 import re
@@ -136,6 +155,96 @@ def test_team_leaderboard_member_chips_calls_node_display_name_helper():
     source = _read_index()
     fn = _strip_js_comments(_extract_function(source, "renderTeamLeaderboard"))
     assert "nodeDisplayName(member)" in fn
+
+
+def _run_member_progress_chips(members_js: str) -> str:
+    source = _read_index()
+    node_display_name_fn = _strip_js_comments(
+        _extract_function(source, "nodeDisplayName")
+    )
+    render_fn = _strip_js_comments(
+        _extract_function(source, "renderMemberProgressChips")
+    )
+    script = (
+        'const escapeHtml = (v) => String(v ?? "");\n'
+        "const metricNumber = (value, fallback = 0) => {\n"
+        "  const n = Number(value);\n"
+        "  return Number.isFinite(n) ? n : fallback;\n"
+        "};\n"
+        + node_display_name_fn
+        + "\n"
+        + render_fn
+        + "\n"
+        + f"console.log(renderMemberProgressChips({members_js}));"
+    )
+    result = subprocess.run(
+        ["node", "-e", script], capture_output=True, text=True, timeout=5
+    )
+    assert result.returncode == 0, f"node failed: {result.stderr}"
+    return result.stdout
+
+
+def test_member_progress_chips_render_includes_machine_name():
+    """Executes the real renderMemberProgressChips() under node -- proves
+    the machine name actually reaches the output HTML, not just that
+    nodeDisplayName(member) is called somewhere in the source."""
+    html = _run_member_progress_chips(
+        '[{station_number: 1, athlete_name: "Marcus", '
+        'node_display_name: "Node141+BIKE_01", progress_percent: 36}]'
+    )
+    assert "Node141+BIKE_01" in html
+    assert "S1" in html
+    assert "Marcus" in html
+
+
+def _extract_team_member_chip_arrow_fn(source: str) -> str:
+    """Return just the `(member) => {...}` callback passed to
+    `(team.members || []).map(...)` inside renderTeamLeaderboard, found by
+    brace-depth matching from a unique anchor line -- NOT the whole
+    enclosing function, which depends on the DOM and other closured state
+    that can't run under plain `node`."""
+    outer_anchor = "const members = (team.members || []).map("
+    start = source.index(outer_anchor)
+    arrow_marker = "(member) => "
+    arrow_start = source.index(arrow_marker, start)
+    brace_open = source.index("{", arrow_start)
+    brace_end = _matching_brace_end(source, brace_open)
+    return "(member) => " + source[brace_open : brace_end + 1]
+
+
+def _run_team_member_chip(member_js: str) -> str:
+    source = _read_index()
+    node_display_name_fn = _strip_js_comments(
+        _extract_function(source, "nodeDisplayName")
+    )
+    chip_fn = _strip_js_comments(_extract_team_member_chip_arrow_fn(source))
+    script = (
+        'const escapeHtml = (v) => String(v ?? "");\n'
+        'const teamKey = "team-1";\n'
+        "const smoothMetricNumber = (key, target) => Number(target) || 0;\n"
+        + node_display_name_fn
+        + "\n"
+        + f"const teamMemberChip = {chip_fn};\n"
+        + f"console.log(teamMemberChip({member_js}));"
+    )
+    result = subprocess.run(
+        ["node", "-e", script], capture_output=True, text=True, timeout=5
+    )
+    assert result.returncode == 0, f"node failed: {result.stderr}"
+    return result.stdout
+
+
+def test_team_leaderboard_member_chip_render_includes_machine_name():
+    """Executes the real team-chip callback under node -- same gap-closing
+    rationale as test_member_progress_chips_render_includes_machine_name."""
+    html = _run_team_member_chip(
+        '{station_number: 1, athlete_name: "Marcus", '
+        'node_display_name: "Node141+BIKE_01", progress_percent: 36, '
+        'node_id: "n1"}'
+    )
+    assert "Node141+BIKE_01" in html
+    assert "S1" in html
+    assert "Marcus" in html
 
 
 def _equipment_tag_css_block() -> str:
