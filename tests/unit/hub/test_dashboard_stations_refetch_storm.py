@@ -20,18 +20,40 @@ already have dedicated typed events -- `registration_success`,
 `node_status`, and `state_change` -- which each page already dispatches on.
 No untyped payload, populated or empty, should trigger an HTTP request.
 
-One real gap this surfaced: hub_server/static/index.html's `node_status`
-branch used to only call `renderEdgeNodes(...)` and never refreshed
-`/api/stations`. A newly-active (not yet assigned to a station) node only
-shows up in `/api/stations`' `unassigned_nodes` list -- driven by
-`race_manager._active_nodes`, populated purely from telemetry -- which
-`node_status` (the edge node's heartbeat, reporting *configured* bindings)
-never directly announces. Since the dashboard has no other periodic refresh
-while its WebSocket is connected (see `startFallbackRefresh`, which is a
-no-op whenever `wsConnected`), removing the untyped fallback without first
-wiring `fetchStations()` into `node_status` would have broken that
-discovery path. gameAdmin.html's `node_status` branch already refreshed
+One real gap this surfaced (now closed differently, see below): hub_server/
+static/index.html's `node_status` branch used to only call
+`renderEdgeNodes(...)` and never refreshed `/api/stations`. A newly-active
+(not yet assigned to a station) node only shows up in `/api/stations`'
+`unassigned_nodes` list -- driven by `race_manager._active_nodes`,
+populated purely from telemetry -- which `node_status` (the edge node's
+heartbeat, reporting *configured* bindings) never directly announces.
+Since the dashboard has no other periodic refresh while its WebSocket is
+connected (see `startFallbackRefresh`, which is a no-op whenever
+`wsConnected`), removing the untyped fallback without first wiring
+`fetchStations()` into `node_status` would have broken that discovery
+path -- so at the time, `fetchStations()` was wired into `node_status` to
+close it. gameAdmin.html's `node_status` branch already refreshed
 stations/readiness, so no equivalent gap existed there.
+
+That fix was later found to be defending a render path that was never
+live: `renderStations()` (the only consumer of `fetchStations()`'s
+response on this page) targeted `document.getElementById(
+"station-list-container")`, and that element does not exist anywhere in
+index.html -- confirmed live in a browser (`stationListContainer: false`).
+`renderStations()` always hit its `if (!listContainer) return;` guard and
+returned immediately, so the "new unassigned node becomes visible"
+discovery path this section describes was dead code from the start: there
+was no dashboard station panel for a freshly-discovered node to ever
+appear in. Measured live, `/api/stations` was still being requested 4
+times per page load for a panel nothing ever rendered into. `renderStations()`,
+`fetchStations()`, and the `directUnassign()` station-unassign control it
+held (a violation of CLAUDE.md's "Dashboard `/` is display-only, no
+controls of any kind") were all removed from index.html, and every
+`fetchStations()` call site on that page -- including the `node_status`
+branch wiring described above -- was removed with them. index.html now
+issues no `/api/stations` request at all; see
+`test_index_node_status_branch_no_longer_refreshes_stations` and
+`test_index_never_requests_api_stations` below.
 
 These tests follow the same source-extraction technique used in
 tests/unit/hub/test_system_admin_websocket_reconnect.py: pull the exact
@@ -205,16 +227,29 @@ def test_index_untyped_tail_never_issues_an_http_request():
     _assert_no_http_calls("index.html's untyped broadcast handling", tail)
 
 
-def test_index_node_status_branch_refreshes_stations():
-    """node_status is the typed event that must now cover new-node
-    discovery on the dashboard (see module docstring): a not-yet-assigned
-    node only appears in /api/stations' unassigned_nodes list, and the
-    dashboard has no other periodic refresh while its socket is connected."""
+def test_index_node_status_branch_no_longer_refreshes_stations():
+    """See module docstring: the discovery gap this branch's fetchStations()
+    call used to defend against was never reachable, because renderStations()
+    -- fetchStations()'s only consumer -- targeted a #station-list-container
+    element that never existed in index.html. That dead panel, and every
+    fetchStations() call site on this page, were removed."""
     body = _index_onmessage_body()
     branch = _extract_braced(body, 'if (data.type === "node_status")')
     assert "renderEdgeNodes(" in branch
-    assert "fetchStations()" in branch
+    assert "fetchStations()" not in branch
     assert "return;" in branch
+
+
+def test_index_never_requests_api_stations():
+    """New contract: index.html makes no /api/stations request at all,
+    anywhere on the page -- not just within ws.onmessage. renderStations()
+    and fetchStations() (its only caller) were deleted outright."""
+    script = _script(_read("index.html"))
+    stripped = _strip_js_comments(script)
+    assert "fetchStations(" not in stripped
+    assert "/api/stations" not in stripped
+    assert "renderStations(" not in stripped
+    assert "directUnassign(" not in stripped
 
 
 # ---------------------------------------------------------------------------

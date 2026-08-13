@@ -120,7 +120,7 @@ def test_dashboard_staleness_check_is_wired_into_the_existing_fetchNodes_poll():
     fn = _extract_function(
         source,
         "async function fetchNodes()",
-        "function renderStations(data)",
+        "function updateUIState(data)",
     )
     fn = _strip_full_line_comments(fn)
 
@@ -130,7 +130,7 @@ def test_dashboard_staleness_check_is_wired_into_the_existing_fetchNodes_poll():
     # do not appear anywhere in fetchNodes(), loadHubVersion(), or
     # checkBuildFreshness().
     for name, marker, stop in [
-        ("fetchNodes", "async function fetchNodes()", "function renderStations(data)"),
+        ("fetchNodes", "async function fetchNodes()", "function updateUIState(data)"),
         (
             "checkBuildFreshness",
             "async function checkBuildFreshness()",

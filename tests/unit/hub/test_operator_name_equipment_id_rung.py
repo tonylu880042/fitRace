@@ -9,6 +9,16 @@ now also ships alongside it. This pins the exact three-rung fallback chain
 an edit that drops the equipment_id rung again is caught -- against
 *comment-stripped* source, so a comment mentioning the same text can't
 satisfy the assertion while the real expression is reverted.
+
+The index.html rung (`info.node_display_name || info.equipment_id ||
+info.node_id`) lived inside `renderStations()`, which targeted
+`#station-list-container` -- an element that never existed in index.html.
+That dead function, its dead render target, and the `directUnassign()`
+station-unassign control it held were removed, so the corresponding test
+below (`test_dashboard_station_label_prefers_equipment_id_over_raw_node_id`)
+was deleted along with it. index.html now composes node labels solely via
+`nodeDisplayName()` / `stationLabel()`, covered by
+tests/unit/hub/test_dashboard_station_machine_name.py.
 """
 
 import re
@@ -47,8 +57,3 @@ def test_game_admin_assigned_row_prefers_equipment_id_over_raw_node_id():
     assert (
         "station.node_display_name || station.equipment_id || station.node_id"
     ) in script
-
-
-def test_dashboard_station_label_prefers_equipment_id_over_raw_node_id():
-    script = _stripped_script("index.html")
-    assert ("info.node_display_name || info.equipment_id || info.node_id") in script

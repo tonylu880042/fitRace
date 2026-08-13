@@ -430,7 +430,12 @@ def test_user_facing_pages_prefer_operator_node_labels():
     assert "nodeDisplayName(node)" in dashboard
     assert "stream.display_name || stream.equipment_id" in dashboard
     assert "node.display_name || node.edge_node_id" in dashboard
-    assert "info.node_display_name || info.equipment_id || info.node_id" in dashboard
+    # The equipment_id fallback rung used to be pinned here via
+    # `info.node_display_name || info.equipment_id || info.node_id` inside
+    # index.html's renderStations(). That function (and the dead
+    # #station-list-container panel it targeted, which never existed on
+    # this page) was removed; the dashboard now composes node labels solely
+    # through nodeDisplayName(), asserted above.
 
     assert (
         "station.node_display_name || station.equipment_id || station.node_id"
