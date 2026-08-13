@@ -370,3 +370,48 @@ def test_new_keys_zh_tw_values_are_genuinely_chinese():
         assert _CJK_RE.search(
             value
         ), f"{key} zh-TW value has no CJK character: {value!r}"
+
+
+# -- 4. Referenced-key guard: t() is `messages[key] || key`, so a key that
+# does not exist in the locale files silently renders the RAW KEY on the
+# venue projector instead of raising an error. Nothing else in the suite
+# checks that every key index.html *asks for* actually exists -- the tests
+# above only check that specific literals were replaced, not that every
+# t()/data-i18n reference in the file resolves. This collects every key
+# index.html references (both `t("...")` calls in the inline <script> and
+# `data-i18n`/`data-i18n-alt` attribute values in the HTML) and asserts each
+# one is defined in en-US.json. Key symmetry across the other five locale
+# files is already enforced by test_all_supported_locales_have_matching_keys
+# in tests/unit/hub/test_i18n_locales.py, so checking en-US alone here is
+# sufficient to guarantee every referenced key resolves in every locale.
+#
+# The `t\(` pattern uses a negative lookbehind so it only matches `t(` as a
+# standalone call -- without it, `document.createElement("div")` and
+# `createElement("span")` also match on their trailing `t("...")`-shaped
+# tail, producing phantom missing keys "div" and "span" that don't exist
+# because they were never real key references.
+_T_CALL_RE = re.compile(r'(?<![A-Za-z0-9_$])t\(\s*"([^"]+)"')
+_DATA_I18N_ATTR_RE = re.compile(r'data-i18n(?:-alt)?="([^"]+)"')
+
+
+def _referenced_i18n_keys() -> set:
+    script_keys = set(_T_CALL_RE.findall(_stripped_script()))
+    attr_keys = set(_DATA_I18N_ATTR_RE.findall(_read_index()))
+    return script_keys | attr_keys
+
+
+def test_every_referenced_i18n_key_exists_in_en_us_locale():
+    keys = _referenced_i18n_keys()
+    # Sanity floor: if the extraction regex ever breaks (e.g. index.html
+    # stops using inline t("...") calls the way it does today), this test
+    # must not silently pass with zero keys collected.
+    assert len(keys) >= 100, (
+        f"only {len(keys)} i18n keys extracted from index.html -- "
+        "the extraction regex may be broken"
+    )
+
+    en = _load_locale("en-US")
+    missing = sorted(key for key in keys if key not in en)
+    assert (
+        not missing
+    ), f"index.html references i18n keys missing from en-US.json: {missing}"
