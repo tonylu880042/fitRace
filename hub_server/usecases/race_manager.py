@@ -779,6 +779,12 @@ class RaceManager:
         self._station_teams.clear()
         self._station_has_avatar.clear()
         self._active_nodes.clear()
+        # Reset must actually stick: without this, race_settings.json still
+        # holds the cleared config/class_plan, and the next hub restart
+        # resurrects them via _load_settings(). Station mapping, display
+        # mode, and sound setting are untouched by the clears above, so
+        # persisting here only writes back the None-ed out config/plan.
+        self._persist_settings()
 
     def update_telemetry(self, payload: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
         if self._state == RaceState.STOPPED:

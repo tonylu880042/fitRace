@@ -113,6 +113,40 @@ def test_reset_race_clears_plan_and_returns_session_mode_to_race():
     assert manager.get_class_plan() is None
 
 
+def test_reset_race_clears_class_plan_on_disk_so_it_does_not_survive_a_restart(
+    tmp_path,
+):
+    # A same-instance assertion after reset would pass even if reset_race()
+    # never persisted -- the in-memory fields are cleared either way. The
+    # bug this pins is that race_settings.json kept the old plan, so a
+    # fresh RaceManager built from the SAME store (simulating a hub
+    # restart) would resurrect it. Construct a genuinely new instance.
+    store = RaceSettingsStore(tmp_path / "settings.json")
+    manager = RaceManager(settings_store=store)
+    manager.configure_class(_plan(300, 1200, 300, 300, 300, 300))  # 6 segments
+    manager.reset_race()
+
+    restarted = RaceManager(
+        settings_store=RaceSettingsStore(tmp_path / "settings.json")
+    )
+    assert restarted.get_class_plan() is None
+    assert restarted.get_session_mode() == "race"
+
+
+def test_reset_race_clears_race_config_on_disk_so_it_does_not_survive_a_restart(
+    tmp_path,
+):
+    store = RaceSettingsStore(tmp_path / "settings.json")
+    manager = RaceManager(settings_store=store)
+    manager.configure(RaceConfig(race_type="distance", target_value=1000.0))
+    manager.reset_race()
+
+    restarted = RaceManager(
+        settings_store=RaceSettingsStore(tmp_path / "settings.json")
+    )
+    assert restarted.get_config() is None
+
+
 def test_race_configure_sets_session_mode_back_to_race():
     manager = RaceManager()
     manager.configure_class(_plan(60, 60))
