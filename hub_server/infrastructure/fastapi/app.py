@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse, Response
 from pydantic import BaseModel, Field
 from hub_server.domain.models import RaceState, RaceConfig
+from hub_server.domain.class_models import ClassPlan
 from hub_server.usecases.race_manager import RaceManager
 from hub_server.usecases.node_registry import NodeRegistry
 from hub_server.usecases.node_display_names import (
@@ -149,6 +150,10 @@ class ConfigurePayload(BaseModel):
 
 
 class LeaderboardDisplayPayload(BaseModel):
+    mode: str
+
+
+class SessionModePayload(BaseModel):
     mode: str
 
 
@@ -945,10 +950,37 @@ async def configure_race(payload: ConfigurePayload, request: Request):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@app.post("/api/class/configure")
+async def configure_class(payload: ClassPlan, request: Request):
+    require_admin(request)
+    try:
+        prev_state = race_manager.get_state()
+        race_manager.configure_class(payload)
+        if prev_state == RaceState.STOPPED:
+            race_event_engine.reset()
+        return await broadcast_race_state()
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/session/mode")
+async def set_session_mode(payload: SessionModePayload, request: Request):
+    require_admin(request)
+    try:
+        race_manager.set_session_mode(payload.mode)
+        return await broadcast_race_state()
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @app.post("/api/race/start")
 async def start_race(request: Request):
     require_admin(request)
-    enforce_race_readiness()
+    # Readiness checks (target value, station assignment, team setup, ...)
+    # are all race-config concepts a class doesn't have. Classes get their
+    # own guard inside race_manager.start_race() (plan must be configured).
+    if race_manager.get_session_mode() == "race":
+        enforce_race_readiness()
     try:
         race_manager.start_race()
         race_event_engine.reset()

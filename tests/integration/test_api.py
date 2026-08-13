@@ -1433,3 +1433,109 @@ def test_qrcode_library_returns_200():
     assert response.status_code == 200
     assert "QRCode" in response.text
     assert len(response.content) > 10000
+
+
+# -- training class mode ----------------------------------------------
+
+_SHORT_CLASS_PLAN = {
+    "segments": [
+        {"kind": "warmup", "duration_sec": 60},
+        {"kind": "work", "duration_sec": 60},
+        {"kind": "cooldown", "duration_sec": 60},
+    ]
+}
+
+
+def test_class_configure_endpoint_moves_session_to_ready_in_class_mode():
+    client.post("/api/race/reset")
+    res = client.post("/api/class/configure", json=_SHORT_CLASS_PLAN)
+    assert res.status_code == 200
+    body = res.json()
+    assert body["state"] == "READY"
+    assert body["session_mode"] == "class"
+    assert body["class_plan"]["segments"][0]["kind"] == "warmup"
+    client.post("/api/race/reset")
+
+
+def test_class_workflow_via_api_never_auto_stops_and_can_be_manually_stopped(
+    monkeypatch,
+):
+    monkeypatch.setenv("TESTING", "1")
+    client.post("/api/race/reset")
+    client.post("/api/class/configure", json=_SHORT_CLASS_PLAN)
+
+    start_res = client.post("/api/race/start")
+    assert start_res.status_code == 200
+    assert start_res.json()["state"] == "RUNNING"
+    assert start_res.json()["session_mode"] == "class"
+
+    # Feed telemetry well past the plan's total duration (180s) for a
+    # participant -- a race would auto-stop, a class must not.
+    telemetry_res = client.post(
+        "/api/test/telemetry",
+        json={
+            "node_id": "class-node-01",
+            "distance_m": 5000.0,
+            "elapsed_time_ms": 999_000,
+        },
+    )
+    assert telemetry_res.status_code == 200
+
+    state_res = client.get("/api/race/state")
+    assert state_res.json()["state"] == "RUNNING"
+    assert state_res.json()["leaderboard"]["class-node-01"]["finished_time_ms"] is None
+
+    stop_res = client.post("/api/race/stop")
+    assert stop_res.status_code == 200
+    assert stop_res.json()["state"] == "STOPPED"
+
+    client.post("/api/race/reset")
+
+
+def test_session_mode_endpoint_switches_mode_and_rejects_while_running():
+    client.post("/api/race/reset")
+
+    res = client.post("/api/session/mode", json={"mode": "class"})
+    assert res.status_code == 200
+    assert res.json()["session_mode"] == "class"
+
+    res = client.post("/api/session/mode", json={"mode": "race"})
+    assert res.status_code == 200
+    assert res.json()["session_mode"] == "race"
+
+    # Now switch to class, start it, and confirm mode changes are rejected
+    # both directions while RUNNING.
+    client.post("/api/class/configure", json=_SHORT_CLASS_PLAN)
+    client.post("/api/race/start")
+
+    blocked = client.post("/api/session/mode", json={"mode": "race"})
+    assert blocked.status_code == 400
+
+    client.post("/api/race/stop")
+    client.post("/api/race/reset")
+
+
+def test_race_configure_resets_session_mode_back_to_race():
+    client.post("/api/race/reset")
+    client.post("/api/class/configure", json=_SHORT_CLASS_PLAN)
+    assert client.get("/api/race/state").json()["session_mode"] == "class"
+
+    res = client.post(
+        "/api/race/configure",
+        json={"race_type": "distance", "target_value": 100, "duration_sec": 0},
+    )
+    assert res.status_code == 200
+    assert res.json()["session_mode"] == "race"
+    client.post("/api/race/reset")
+
+
+def test_starting_class_with_no_plan_is_rejected_by_api():
+    client.post("/api/race/reset")
+    prepare_individual_ready_race()
+    # Flip to class mode without ever configuring a plan.
+    client.post("/api/session/mode", json={"mode": "class"})
+
+    res = client.post("/api/race/start")
+    assert res.status_code == 400
+
+    client.post("/api/race/reset")

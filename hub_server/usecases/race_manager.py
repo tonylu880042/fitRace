@@ -1,5 +1,6 @@
 from typing import Dict, Any, Optional
 from hub_server.domain.models import RaceState, RaceConfig
+from hub_server.domain.class_models import ClassPlan, segment_at
 
 
 class RaceManager:
@@ -10,12 +11,16 @@ class RaceManager:
         "sprint_board",
     }
 
+    VALID_SESSION_MODES = {"race", "class"}
+
     def __init__(self, settings_store=None):
         self._state: RaceState = RaceState.IDLE
         self._config: Optional[RaceConfig] = None
         self._leaderboard_display_mode: str = "classic"
         self._start_countdown_sound_enabled: bool = True
         self._settings_store = settings_store
+        self._session_mode: str = "race"
+        self._class_plan: Optional[ClassPlan] = None
         self._registered_nodes: Dict[str, str] = (
             {}
         )  # node_id -> athlete_name (for legacy backward compatibility)
@@ -69,6 +74,18 @@ class RaceManager:
                 self._config = RaceConfig.model_validate(config)
             except Exception:
                 self._config = None
+        # Keys absent (e.g. a settings.json written by 0.2.1, before this
+        # feature existed) default session_mode to "race" and the plan to
+        # None -- an old file must still load cleanly.
+        session_mode = data.get("session_mode")
+        if session_mode in self.VALID_SESSION_MODES:
+            self._session_mode = session_mode
+        class_plan = data.get("class_plan")
+        if isinstance(class_plan, dict):
+            try:
+                self._class_plan = ClassPlan.model_validate(class_plan)
+            except Exception:
+                self._class_plan = None
 
     def _persist_settings(self) -> None:
         if not self._settings_store:
@@ -79,6 +96,10 @@ class RaceManager:
                 "leaderboard_display_mode": self._leaderboard_display_mode,
                 "start_countdown_sound_enabled": self._start_countdown_sound_enabled,
                 "config": self._config.model_dump() if self._config else None,
+                "session_mode": self._session_mode,
+                "class_plan": (
+                    self._class_plan.model_dump() if self._class_plan else None
+                ),
             }
         )
 
@@ -103,6 +124,23 @@ class RaceManager:
         self._leaderboard_display_mode = mode
         self._persist_settings()
         return self._leaderboard_display_mode
+
+    def get_session_mode(self) -> str:
+        return self._session_mode
+
+    def set_session_mode(self, mode: str) -> str:
+        if mode not in self.VALID_SESSION_MODES:
+            raise ValueError(f"Unsupported session mode: {mode}")
+        if self._state == RaceState.RUNNING:
+            raise ValueError(
+                "Cannot change session mode while a race or class is RUNNING"
+            )
+        self._session_mode = mode
+        self._persist_settings()
+        return self._session_mode
+
+    def get_class_plan(self) -> Optional[ClassPlan]:
+        return self._class_plan
 
     def get_start_countdown_sound_enabled(self) -> bool:
         return self._start_countdown_sound_enabled
@@ -159,7 +197,22 @@ class RaceManager:
             "start_countdown_sound_enabled": self.get_start_countdown_sound_enabled(),
             "leaderboard": self.get_leaderboard_progress(),
             "team_leaderboard": team_leaderboard,
+            "session_mode": self.get_session_mode(),
+            "class_plan": (self._class_plan.model_dump() if self._class_plan else None),
+            "class_segment": self._current_class_segment(),
         }
+
+    def _current_class_segment(self) -> Optional[Dict[str, Any]]:
+        if self._session_mode != "class":
+            return None
+        if self._state != RaceState.RUNNING:
+            return None
+        if not self._class_plan or self._start_time_epoch_ms is None:
+            return None
+        import time
+
+        elapsed_ms = max(0, int(time.time() * 1000) - self._start_time_epoch_ms)
+        return segment_at(elapsed_ms, self._class_plan)
 
     def get_leaderboard_progress(self) -> Dict[str, Dict[str, Any]]:
         if self._state in (RaceState.RUNNING, RaceState.STOPPED):
@@ -461,6 +514,32 @@ class RaceManager:
 
         self._config = config
         self._state = RaceState.READY
+        # A plain race configure always lands the session back in "race"
+        # mode -- mutual exclusion with class mode is enforced here, not
+        # just at the API layer.
+        self._session_mode = "race"
+        self._persist_settings()
+
+    def configure_class(self, plan: ClassPlan):
+        # Reuses the exact same state machine gate as configure(): allowed
+        # in IDLE, READY, or STOPPED.
+        if self._state not in (RaceState.IDLE, RaceState.READY, RaceState.STOPPED):
+            raise ValueError(f"Cannot configure class in state {self._state}")
+
+        if self._state == RaceState.STOPPED:
+            self._start_time_epoch_ms = None
+            self._end_time_epoch_ms = None
+            self._registered_nodes.clear()
+            self._progress.clear()
+            # Clean current athlete registrations but keep hardware station mapping
+            self._station_registrations.clear()
+            self._station_teams.clear()
+            self._station_has_avatar.clear()
+            self._active_nodes.clear()
+
+        self._class_plan = plan
+        self._session_mode = "class"
+        self._state = RaceState.READY
         self._persist_settings()
 
     def register_node(self, node_id: str, athlete_name: str):
@@ -608,6 +687,8 @@ class RaceManager:
     def start_race(self):
         if self._state != RaceState.READY:
             raise ValueError("Race must be in READY state to start")
+        if self._session_mode == "class" and self._class_plan is None:
+            raise ValueError("Cannot start a class without a configured plan")
         self._state = RaceState.RUNNING
         import time
 
@@ -687,6 +768,8 @@ class RaceManager:
     def reset_race(self):
         self._state = RaceState.IDLE
         self._config = None
+        self._class_plan = None
+        self._session_mode = "race"
         self._start_time_epoch_ms = None
         self._end_time_epoch_ms = None
         self._registered_nodes.clear()
@@ -778,7 +861,16 @@ class RaceManager:
 
         # Calculate progress percent
         progress_percent = 0.0
-        if self._config:
+        if self._session_mode == "class":
+            # A class has no target/duration RaceConfig -- progress is
+            # purely the plan clock, clamped so it never reads past 100.
+            if self._class_plan and self._class_plan.total_duration_sec > 0:
+                progress_percent = min(
+                    100.0,
+                    (elapsed_time_ms / (self._class_plan.total_duration_sec * 1000.0))
+                    * 100.0,
+                )
+        elif self._config:
             if self._config.race_type == "distance" and self._config.target_value > 0:
                 progress_percent = (distance_m / self._config.target_value) * 100.0
             elif self._config.race_type == "calories" and self._config.target_value > 0:
@@ -791,8 +883,14 @@ class RaceManager:
                     elapsed_time_ms / (self._config.duration_sec * 1000.0)
                 ) * 100.0
 
+        # A class has no finish line -- finished_time_ms must stay None for
+        # every participant, even once progress_percent reads 100.
         finished_time_ms = prev_finished_time
-        if progress_percent >= 100.0 and finished_time_ms is None:
+        if (
+            self._session_mode != "class"
+            and progress_percent >= 100.0
+            and finished_time_ms is None
+        ):
             finished_time_ms = elapsed_time_ms
 
         # Update metrics
@@ -812,8 +910,10 @@ class RaceManager:
             "finished_time_ms": finished_time_ms,
         }
 
-        # Check if all participants have finished the race
-        if self._progress:
+        # Check if all participants have finished the race. A class is a
+        # coach-run session with no ranking or finish line -- it must NEVER
+        # auto-stop, so this whole block is skipped in class mode.
+        if self._session_mode != "class" and self._progress:
             all_finished = True
             for nid, p in self._progress.items():
                 if nid.startswith("station-"):
