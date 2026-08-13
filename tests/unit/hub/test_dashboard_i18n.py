@@ -811,3 +811,43 @@ def test_call_site_placeholder_params_match_en_us_locale_tokens():
                 f"en-US locale tokens {sorted(expected)}"
             )
     assert not mismatches, "call-site placeholder mismatch:\n" + "\n".join(mismatches)
+
+
+# -- 7. Zero-argument call sites on a parameterised key.
+#
+# `_call_sites_with_object_literal_params` above only looks at calls it has
+# already matched via `_T_CALL_WITH_ARG_RE`, whose `(,)?` group must find a
+# comma before it will inspect a second argument at all -- a bare
+# `t("time.seconds_short")` with NO second argument never reaches that
+# comma, so it is invisible to guard 2 by construction, not by an
+# oversight in the object-literal parsing. It still resolves fine (`t()`
+# never raises on a missing params arg) and just returns the locale string
+# untouched, `{token}` and all, straight onto the venue screen -- likely
+# the single most common real-world mistake here: adding a parameterised
+# key and simply forgetting to pass anything.
+
+_T_SINGLE_ARG_CALL_RE = re.compile(r'(?<![A-Za-z0-9_$])t\(\s*"([^"]+)"\s*\)')
+
+
+def _single_arg_call_keys() -> set:
+    """Every `t("key")` call in the stripped script whose argument list is
+    just the key -- no comma, no params object, nothing."""
+    return set(_T_SINGLE_ARG_CALL_RE.findall(_stripped_script()))
+
+
+def test_single_arg_call_sites_never_target_a_parameterised_key():
+    """A key whose en-US value contains `{token}` placeholders must always
+    be called with a params object; calling it with none leaves every
+    `{token}` unsubstituted in the rendered output."""
+    en = _load_locale("en-US")
+    violations = []
+    for key in _single_arg_call_keys():
+        tokens = _tokens(en.get(key, ""))
+        if tokens:
+            violations.append(
+                f"{key!r}: called with no params but its en-US value needs "
+                f"{sorted(tokens)}"
+            )
+    assert not violations, "single-arg t() call on a parameterised key:\n" + "\n".join(
+        violations
+    )
