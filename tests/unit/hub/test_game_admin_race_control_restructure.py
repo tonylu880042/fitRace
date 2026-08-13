@@ -263,10 +263,21 @@ def test_team_fields_no_longer_use_is_hidden_toggle():
 
 
 def test_sync_competition_fields_disables_team_selects_for_individual_mode():
+    """Team Scoring still keys on isTeamRace alone -- that literal is still
+    the real contract. The Completion Rule select no longer does: it is
+    now ALSO disabled for time-based race types (time/max_power/watts),
+    where the completion policy is a silent no-op on the backend, so its
+    disabled state is derived from completionFieldState(raceType,
+    isTeamRace) rather than from a bare `!isTeamRace` -- this test now
+    only pins that indirection; the full behavioural matrix (individual
+    vs. team, per race type, and the two disabled-reasons differing) is
+    covered by the executing tests in
+    tests/unit/hub/test_game_admin_race_rule_guidance.py."""
     script = _stripped_script(_read())
     body = _extract_function_body(script, "syncCompetitionFields")
     assert '$("team-scoring-policy").disabled = !isTeamRace;' in body
-    assert '$("team-completion-policy").disabled = !isTeamRace;' in body
+    assert "completionFieldState(" in body
+    assert '$("team-completion-policy").disabled = completion.disabled;' in body
 
 
 def test_team_fields_carry_team_only_note_with_i18n():

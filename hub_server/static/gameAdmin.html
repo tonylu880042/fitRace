@@ -957,6 +957,7 @@
                       <option value="time" data-i18n="option.time">Time Challenge</option>
                       <option value="max_power" data-i18n="option.max_power">Max Power Challenge</option>
                     </select>
+                    <p class="field-note show" id="race-type-note" data-i18n="text.race_note_distance">Set a target distance. First athlete to reach it wins; ties are broken by finish time. The progress bar shows distance over target.</p>
                   </div>
                   <div class="field">
                     <label for="competition-mode" data-i18n="label.competition">Competition</label>
@@ -1266,6 +1267,13 @@
         "pill.applies_immediately": "Applies Immediately",
         "text.local_preference_note": "Affects this browser only.",
         "text.team_field_note": "Applies to team races only.",
+        "text.race_note_distance": "Set a target distance. First athlete to reach it wins; ties are broken by finish time. The progress bar shows distance over target.",
+        "text.race_note_calories": "Set a target calorie count. First athlete to reach it wins. The progress bar shows calories over target.",
+        "text.race_note_time": "Set a challenge duration. When time runs out, the greatest total distance wins. The progress bar shows elapsed time.",
+        "text.race_note_max_power": "Set a challenge duration. When time runs out, the highest single peak wattage wins (peak, not average). The progress bar shows elapsed time.",
+        "text.completion_rule_time_based_note": "Time-based race types do not apply a completion rule; the race ends when the clock runs out.",
+        "text.team_total_overridden_by_everyone_finishes": "Under Everyone Finishes, team score is fixed to average progress, so the Team Total setting has no effect.",
+        "leaderboard.mode_race_track_time_based_detail": "In this race type every lane fills by elapsed time, not performance, so lanes advance identically and the track shows nothing about who is winning. Try Classic or Sprint Board instead.",
         "text.readiness_remedy_summary": "{count} item(s) need attention before you can start.",
         "text.station_status_subtitle": "Pre-race checklist: confirm every station has a live machine and a registered athlete before you start.",
         "text.unbound": "unbound",
@@ -1414,6 +1422,13 @@
       "pill.applies_immediately": "立即套用",
       "text.local_preference_note": "僅影響此瀏覽器。",
       "text.team_field_note": "僅適用於隊伍賽。",
+      "text.race_note_distance": "設定目標距離,率先達成者獲勝,平手依完成時間排序;進度條為距離除以目標。",
+      "text.race_note_calories": "設定目標卡路里,率先達成者獲勝;進度條為卡路里除以目標。",
+      "text.race_note_time": "設定挑戰時限,時間結束時累積距離最多者獲勝;進度條顯示經過時間。",
+      "text.race_note_max_power": "設定挑戰時限,時間結束時單次最高瓦數(峰值,非平均值)者獲勝;進度條顯示經過時間。",
+      "text.completion_rule_time_based_note": "限時類賽制不套用完成規則;比賽於時限結束時結束。",
+      "text.team_total_overridden_by_everyone_finishes": "在「全員完成」規則下,隊伍得分固定為平均進度,因此「隊伍總計」設定不會產生作用。",
+      "leaderboard.mode_race_track_time_based_detail": "此賽制下每條跑道皆依經過時間填滿,而非依表現,因此所有跑道進度一致,無法顯示領先狀況。建議改用經典排行榜或衝刺排行。",
       "text.readiness_remedy_summary": "尚有 {count} 項需要處理才能開始比賽。",
       "text.station_status_subtitle": "賽前檢查清單:確認每個站位都已連上機台並完成選手報名,再開始比賽。",
       "text.unbound": "未綁定",
@@ -1443,7 +1458,11 @@
       renderRace();
       renderReadinessPanel();
       renderStations();
-      updateControlGuidance();
+      // syncRaceFields() re-derives the race-type note and the Completion
+      // Rule field's disabled/note state for the current locale, then ends
+      // by calling syncCompetitionFields() -> updateControlGuidance() --
+      // one refresh path instead of a second, separate guidance call here.
+      syncRaceFields();
     }
 
     function setLanguage(lang) {
@@ -1508,6 +1527,44 @@
       window.setTimeout(closeLogin, 400);
     }
 
+    function raceRuleNoteKey(raceType) {
+      const keys = {
+        distance: "text.race_note_distance",
+        calories: "text.race_note_calories",
+        time: "text.race_note_time",
+        max_power: "text.race_note_max_power",
+      };
+      return keys[raceType] || keys.distance;
+    }
+
+    // Single partition over (raceType, isTeamRace): every branch returns both
+    // whether the Completion Rule field is disabled AND which note explains
+    // why, in one pass -- so there is no separate "is it disabled" check that
+    // could drift out of sync with a separate "which note" check.
+    function completionFieldState(raceType, isTeamRace) {
+      if (!isTeamRace) {
+        return { disabled: true, noteKey: "text.team_field_note" };
+      }
+      if (raceType === "time" || raceType === "max_power" || raceType === "watts") {
+        return { disabled: true, noteKey: "text.completion_rule_time_based_note" };
+      }
+      return { disabled: false, noteKey: null };
+    }
+
+    function leaderboardModeNoteKey(mode, raceType) {
+      const isTimeBased = raceType === "time" || raceType === "max_power" || raceType === "watts";
+      if (mode === "race_track" && isTimeBased) {
+        return "leaderboard.mode_race_track_time_based_detail";
+      }
+      const keys = {
+        classic: "leaderboard.mode_classic_detail",
+        race_track: "leaderboard.mode_race_track_detail",
+        team_battle: "leaderboard.mode_team_battle_detail",
+        sprint_board: "leaderboard.mode_sprint_board_detail",
+      };
+      return keys[mode] || keys.classic;
+    }
+
     function syncRaceFields() {
       const type = $("race-type").value;
       const label = $("race-target-label");
@@ -1515,17 +1572,29 @@
       if (type === "calories") label.textContent = t("label.target_calories");
       if (type === "time") label.textContent = t("label.time_limit");
       if (type === "max_power") label.textContent = t("label.challenge_time");
-      updateControlGuidance();
+      const raceNote = $("race-type-note");
+      const raceNoteKey = raceRuleNoteKey(type);
+      raceNote.dataset.i18n = raceNoteKey;
+      raceNote.textContent = t(raceNoteKey);
+      syncCompetitionFields();
     }
 
     function syncCompetitionFields() {
       const isTeamRace = $("competition-mode").value === "team";
+      const raceType = $("race-type").value;
       $("team-scoring-field").classList.toggle("is-disabled", !isTeamRace);
-      $("team-completion-field").classList.toggle("is-disabled", !isTeamRace);
       $("team-scoring-policy").disabled = !isTeamRace;
-      $("team-completion-policy").disabled = !isTeamRace;
       $("team-scoring-note").classList.toggle("show", !isTeamRace);
-      $("team-completion-note").classList.toggle("show", !isTeamRace);
+
+      const completion = completionFieldState(raceType, isTeamRace);
+      $("team-completion-field").classList.toggle("is-disabled", completion.disabled);
+      $("team-completion-policy").disabled = completion.disabled;
+      const completionNote = $("team-completion-note");
+      completionNote.classList.toggle("show", Boolean(completion.noteKey));
+      if (completion.noteKey) {
+        completionNote.dataset.i18n = completion.noteKey;
+        completionNote.textContent = t(completion.noteKey);
+      }
       updateControlGuidance();
     }
 
@@ -1547,10 +1616,10 @@
       const soundEnabled = $("start-sound-enabled").value !== "false";
       const mode = normalizeLeaderboardDisplayMode($("leaderboard-display-mode").value);
       const modeText = {
-        classic: t("leaderboard.mode_classic_detail"),
-        race_track: t("leaderboard.mode_race_track_detail"),
-        team_battle: t("leaderboard.mode_team_battle_detail"),
-        sprint_board: t("leaderboard.mode_sprint_board_detail"),
+        classic: t(leaderboardModeNoteKey("classic", raceType)),
+        race_track: t(leaderboardModeNoteKey("race_track", raceType)),
+        team_battle: t(leaderboardModeNoteKey("team_battle", raceType)),
+        sprint_board: t(leaderboardModeNoteKey("sprint_board", raceType)),
       };
       const previewRows = {
         classic: [["#1", 92, "92%"], ["#2", 76, "76%"], ["#3", 61, "61%"]],
@@ -1566,7 +1635,14 @@
         const completionText = completion === "all_members"
           ? t("text.everyone_finishes_detail", { targetLabel })
           : t("text.team_target_detail");
-        $("team-rule-summary").textContent = `${scoringText} ${completionText}`;
+        let summary = `${scoringText} ${completionText}`;
+        const scoringOverridden = completion === "all_members"
+          && (raceType === "distance" || raceType === "calories")
+          && scoring === "total";
+        if (scoringOverridden) {
+          summary += ` ${t("text.team_total_overridden_by_everyone_finishes")}`;
+        }
+        $("team-rule-summary").textContent = summary;
       } else {
         $("team-rule-summary").textContent = t("text.individual_race");
       }
