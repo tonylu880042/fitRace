@@ -136,3 +136,17 @@ def test_team_leaderboard_member_chips_calls_node_display_name_helper():
     source = _read_index()
     fn = _strip_js_comments(_extract_function(source, "renderTeamLeaderboard"))
     assert "nodeDisplayName(member)" in fn
+
+
+def _equipment_tag_css_block() -> str:
+    source = _read_index()
+    start = source.index(".equipment-tag {")
+    end = source.index("}", start)
+    return source[start : end + 1]
+
+
+def test_equipment_tag_font_size_is_readable_at_venue_distance():
+    block = _equipment_tag_css_block()
+    match = re.search(r"font-size:\s*([0-9.]+)rem", block)
+    assert match, f"no font-size found in .equipment-tag block: {block}"
+    assert float(match.group(1)) >= 0.9
