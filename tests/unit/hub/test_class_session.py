@@ -291,3 +291,79 @@ def test_old_settings_file_without_session_mode_or_class_plan_defaults(tmp_path)
     manager = RaceManager(settings_store=RaceSettingsStore(tmp_path / "settings.json"))
     assert manager.get_session_mode() == "race"
     assert manager.get_class_plan() is None
+
+
+# -- mutual exclusion: every writer of session_mode must respect RUNNING --
+#
+# session_mode is written from exactly three places: set_session_mode(),
+# configure(), and configure_class(). set_session_mode() has its own
+# explicit RUNNING guard. configure() and configure_class() protect the
+# mode only indirectly -- they assign self._session_mode directly (not
+# through set_session_mode()) after passing the same
+# "state not in (IDLE, READY, STOPPED)" gate that already blocks RUNNING.
+# That state-gate tuple is the ONLY thing stopping a mid-race
+# configure_class()/configure() call from flipping the dashboard's session
+# mode out from under a live race or class. These tests pin the mode
+# itself, not just the raise -- so a future change to that tuple (e.g.
+# re-adding RaceState.RUNNING) is caught even in a version where the call
+# no longer raises.
+
+
+def test_configure_class_while_running_raises_and_leaves_race_mode_untouched():
+    manager = RaceManager()
+    manager.configure(RaceConfig(race_type="distance", target_value=100.0))
+    manager.register_node("node-01", "Runner A")
+    manager.start_race()
+    assert manager.get_state() == RaceState.RUNNING
+    assert manager.get_session_mode() == "race"
+
+    with pytest.raises(ValueError):
+        manager.configure_class(_plan(60, 60))
+
+    # The raise alone is not proof the mode itself didn't move -- assert
+    # that separately, which is the part that actually matters.
+    assert manager.get_session_mode() == "race"
+    assert manager.get_class_plan() is None
+    assert manager.get_state() == RaceState.RUNNING
+
+
+def test_configure_while_class_running_raises_and_leaves_class_mode_untouched():
+    manager = RaceManager()
+    plan = _plan(60, 60)
+    manager.configure_class(plan)
+    manager.start_race()
+    assert manager.get_state() == RaceState.RUNNING
+    assert manager.get_session_mode() == "class"
+
+    with pytest.raises(ValueError):
+        manager.configure(RaceConfig(race_type="distance", target_value=100.0))
+
+    assert manager.get_session_mode() == "class"
+    assert manager.get_class_plan() is plan
+    assert manager.get_state() == RaceState.RUNNING
+
+
+def test_session_mode_has_exactly_three_writers_and_all_three_gate_running():
+    # A direct pin for future readers: set_session_mode() is not the only
+    # path that can move session_mode. configure() and configure_class()
+    # are the other two writers, and each one MUST refuse to run while
+    # RUNNING -- that guard is the entire mutual-exclusion guarantee this
+    # feature depends on. If a fourth writer is ever added, or either of
+    # these two stops checking RUNNING, this test (and the two above) must
+    # be extended to cover it.
+    manager = RaceManager()
+    manager.configure(RaceConfig(race_type="distance", target_value=100.0))
+    manager.register_node("node-01", "Runner A")
+    manager.start_race()
+    assert manager.get_state() == RaceState.RUNNING
+
+    writers_that_must_reject_while_running = [
+        lambda: manager.set_session_mode("class"),
+        lambda: manager.configure_class(_plan(60, 60)),
+        lambda: manager.configure(RaceConfig(race_type="calories", target_value=50.0)),
+    ]
+    for writer in writers_that_must_reject_while_running:
+        with pytest.raises(ValueError):
+            writer()
+        assert manager.get_session_mode() == "race"
+        assert manager.get_state() == RaceState.RUNNING

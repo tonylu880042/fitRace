@@ -1539,3 +1539,45 @@ def test_starting_class_with_no_plan_is_rejected_by_api():
     assert res.status_code == 400
 
     client.post("/api/race/reset")
+
+
+def test_class_configure_endpoint_rejects_while_race_is_running_and_mode_stays_race():
+    client.post("/api/race/reset")
+    prepare_individual_ready_race()
+    start_res = client.post("/api/race/start")
+    assert start_res.status_code == 200
+    assert start_res.json()["session_mode"] == "race"
+
+    res = client.post("/api/class/configure", json=_SHORT_CLASS_PLAN)
+    assert res.status_code == 400
+
+    # Not just the raise -- the running session's mode must not have moved.
+    state = client.get("/api/race/state").json()
+    assert state["session_mode"] == "race"
+    assert state["state"] == "RUNNING"
+    assert state["class_plan"] is None
+
+    client.post("/api/race/stop")
+    client.post("/api/race/reset")
+
+
+def test_race_configure_endpoint_rejects_while_class_is_running_and_mode_stays_class():
+    client.post("/api/race/reset")
+    client.post("/api/class/configure", json=_SHORT_CLASS_PLAN)
+    start_res = client.post("/api/race/start")
+    assert start_res.status_code == 200
+    assert start_res.json()["session_mode"] == "class"
+
+    res = client.post(
+        "/api/race/configure",
+        json={"race_type": "distance", "target_value": 100, "duration_sec": 0},
+    )
+    assert res.status_code == 400
+
+    state = client.get("/api/race/state").json()
+    assert state["session_mode"] == "class"
+    assert state["state"] == "RUNNING"
+    assert state["class_plan"] is not None
+
+    client.post("/api/race/stop")
+    client.post("/api/race/reset")
