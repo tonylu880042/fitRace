@@ -638,3 +638,176 @@ def test_render_edge_nodes_last_seen_prefix_is_translated():
     html = result["listHtml"]
     assert "T[edge.last_seen]" in html
     assert "· last " not in html
+
+
+# -- 6. Placeholder parity guards.
+#
+# Every test above pins that a *key* is used and resolves in every locale.
+# None of them check the `{token}` placeholders INSIDE a key's value, so
+# two mutation classes slip straight through:
+#
+#   (a) a locale VALUE loses a `{token}` during translation. The key still
+#       "exists" in every locale (test_new_keys_exist_in_every_locale is
+#       satisfied), t() never raises, it just returns the string with that
+#       spot un-substituted -- a translator editing a JSON file can do this
+#       with zero code changes, e.g. zh-TW's `time.seconds_short` losing
+#       its `{sec}` token turns "{sec}秒" into a bare "秒" on the venue
+#       screen.
+#   (b) a call site passes the WRONG placeholder name, e.g.
+#       `t("time.seconds_short", { seconds: diffSec })` when the key's
+#       value is `{sec}s`. The key resolves fine and `t()` still runs, but
+#       `String.replaceAll` on `{seconds}` never matches `{sec}` in the
+#       string, so the literal `{sec}` renders unsubstituted.
+#
+# Both are pure-string mutations -- valid, running code, nothing crashes --
+# so only an assertion that actually parses and compares the token sets
+# catches them.
+
+_TOKEN_RE = re.compile(r"\{(\w+)\}")
+_OTHER_LOCALES = ("zh-TW", "de-CH", "fr", "it", "sv")
+
+
+def _tokens(value: str) -> set:
+    return set(_TOKEN_RE.findall(value))
+
+
+def test_placeholder_tokens_match_across_all_locales():
+    """Catches mutation class (a): for every en-US key whose value contains
+    `{token}` placeholders, every other locale's value for that same key
+    must carry the exact same SET of tokens. Order-independent (so
+    reordering a sentence's placeholders is fine) but nothing may be
+    added, dropped, or misspelled."""
+    en = _load_locale("en-US")
+    mismatches = []
+    for key, en_value in en.items():
+        en_tokens = _tokens(en_value)
+        if not en_tokens:
+            continue
+        for locale in _OTHER_LOCALES:
+            other = _load_locale(locale)
+            other_value = other.get(key, "")
+            other_tokens = _tokens(other_value)
+            if other_tokens != en_tokens:
+                mismatches.append(
+                    f"{locale}.json[{key!r}]: expected tokens "
+                    f"{sorted(en_tokens)}, got {sorted(other_tokens)} "
+                    f"(value={other_value!r})"
+                )
+    assert not mismatches, "placeholder token mismatch:\n" + "\n".join(mismatches)
+
+
+def _split_top_level_commas(source: str) -> list:
+    """Splits an object literal's inner source on commas that sit at
+    bracket/brace/paren depth 0 and outside any string literal -- so a
+    nested call like `metricNumber(team.member_count).toFixed(0)` or a
+    nested object/array value doesn't fracture a single property."""
+    depth = 0
+    in_str = None
+    parts = []
+    current = []
+    i = 0
+    while i < len(source):
+        char = source[i]
+        if in_str:
+            current.append(char)
+            if char == "\\":
+                i += 1
+                if i < len(source):
+                    current.append(source[i])
+            elif char == in_str:
+                in_str = None
+            i += 1
+            continue
+        if char in ('"', "'", "`"):
+            in_str = char
+            current.append(char)
+        elif char in "{[(":
+            depth += 1
+            current.append(char)
+        elif char in "}])":
+            depth -= 1
+            current.append(char)
+        elif char == "," and depth == 0:
+            parts.append("".join(current))
+            current = []
+        else:
+            current.append(char)
+        i += 1
+    if "".join(current).strip():
+        parts.append("".join(current))
+    return parts
+
+
+def _object_literal_param_names(obj_source: str) -> set:
+    """`obj_source` is the text strictly between the outer `{` and `}` of an
+    object literal passed as a `t()` call's second argument. Handles both
+    keyed properties (`sec: diffSec`) and ES2015 shorthand properties
+    (`station` alone, as in `{ name: ..., station, equipment: ... }`)."""
+    names = set()
+    for part in _split_top_level_commas(obj_source):
+        part = part.strip()
+        if not part:
+            continue
+        name = part.split(":", 1)[0].strip()
+        if name:
+            names.add(name)
+    return names
+
+
+_T_CALL_WITH_ARG_RE = re.compile(r'(?<![A-Za-z0-9_$])t\(\s*"([^"]+)"\s*(,)?')
+
+
+def _call_sites_with_object_literal_params():
+    """Walks every `t("key", ...)` call in the inline <script> that passes a
+    second argument. Returns `(matched, skipped)`:
+      - `matched`: `(key, param_names)` for every call whose second argument
+        is a plain object literal (brace-matched via `_matching_brace_end`,
+        not regexed to the first `}`, so a nested object/call inside a
+        property value can't truncate extraction early).
+      - `skipped`: `(key, snippet)` for any call whose second argument is
+        NOT a plain object literal (e.g. a bare variable reference). These
+        are never silently treated as passing -- the caller must assert
+        none exist, or account for them explicitly."""
+    script = _stripped_script()
+    matched = []
+    skipped = []
+    for m in _T_CALL_WITH_ARG_RE.finditer(script):
+        key = m.group(1)
+        has_second_arg = m.group(2)
+        if not has_second_arg:
+            continue
+        j = m.end()
+        while j < len(script) and script[j] in " \t\n\r":
+            j += 1
+        if j >= len(script) or script[j] != "{":
+            skipped.append((key, script[m.end() : m.end() + 40]))
+            continue
+        brace_end = _matching_brace_end(script, j)
+        obj_source = script[j + 1 : brace_end]
+        matched.append((key, _object_literal_param_names(obj_source)))
+    return matched, skipped
+
+
+def test_call_site_placeholder_params_match_en_us_locale_tokens():
+    """Catches mutation class (b): for every `t("key", { ... })` call site,
+    the object literal's property NAMES must be exactly the `{token}` set
+    in that key's en-US value. A wrong/misspelled property name means
+    `t()`'s `replaceAll` call on the property name never finds a match, so the raw
+    `{token}` renders unsubstituted on the venue screen."""
+    matched, skipped = _call_sites_with_object_literal_params()
+    assert not skipped, (
+        "t() call sites whose second argument is not a plain object "
+        f"literal were skipped by this guard and NOT checked: {skipped}"
+    )
+    assert matched, "no t(key, {...}) call sites were found -- extraction may be broken"
+
+    en = _load_locale("en-US")
+    mismatches = []
+    for key, params in matched:
+        expected = _tokens(en.get(key, ""))
+        if params != expected:
+            mismatches.append(
+                f"{key!r}: call-site params {sorted(params)} != "
+                f"en-US locale tokens {sorted(expected)}"
+            )
+    assert not mismatches, "call-site placeholder mismatch:\n" + "\n".join(mismatches)
