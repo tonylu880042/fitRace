@@ -428,6 +428,79 @@ def test_sync_race_fields_renders_distance_note_text_on_screen():
 
 
 # ---------------------------------------------------------------------------
+# syncCompetitionFields DOM wiring -- proves the Completion Rule field's
+# explanatory note actually renders its textContent, not merely that
+# completionFieldState() was called or that dataset.i18n was written (a
+# `completionNote.dataset.i18n = completion.noteKey;` assignment with the
+# following `completionNote.textContent = t(completion.noteKey);` line
+# deleted would still call completionFieldState() and satisfy every prior
+# source-text assertion in this module, while leaving the disabled control
+# on screen with no explanation of why -- exactly the bug this test exists
+# to catch). Also asserts the disabled flag itself, and that the two
+# distinct disabled-reasons (individual race vs. time-based team race)
+# render genuinely different note text, not just different keys.
+# ---------------------------------------------------------------------------
+
+
+def _run_sync_competition_fields(race_type: str, is_team_race: bool) -> dict:
+    source = _stripped_script()
+    completion_field_state_fn = _extract_function(source, "completionFieldState")
+    sync_competition_fields_fn = _extract_function(source, "syncCompetitionFields")
+    script = (
+        "const mockElements = {};\n"
+        "function makeEl() {\n"
+        "  return {\n"
+        "    textContent: '',\n"
+        "    dataset: {},\n"
+        "    disabled: false,\n"
+        "    classList: { toggled: {}, toggle: function (cls, force) { this.toggled[cls] = force; } },\n"
+        "  };\n"
+        "}\n"
+        "function $(id) {\n"
+        "  if (!mockElements[id]) mockElements[id] = makeEl();\n"
+        "  return mockElements[id];\n"
+        "}\n"
+        "function t(key) { return `T[${key}]`; }\n"
+        "function updateControlGuidance() {}\n"
+        + completion_field_state_fn
+        + "\n"
+        + sync_competition_fields_fn
+        + "\n"
+        f"mockElements['competition-mode'] = {{ value: {json.dumps('team' if is_team_race else 'individual')} }};\n"
+        f"mockElements['race-type'] = {{ value: {json.dumps(race_type)} }};\n"
+        "syncCompetitionFields();\n"
+        "console.log(JSON.stringify({\n"
+        "  completionNoteText: mockElements['team-completion-note'].textContent,\n"
+        "  completionDisabled: mockElements['team-completion-policy'].disabled,\n"
+        "}));\n"
+    )
+    return json.loads(_run_node(script))
+
+
+def test_sync_competition_fields_renders_completion_note_text_for_individual_race():
+    result = _run_sync_competition_fields("distance", is_team_race=False)
+    assert result["completionNoteText"] == "T[text.team_field_note]"
+    assert result["completionDisabled"] is True
+
+
+def test_sync_competition_fields_renders_completion_note_text_for_time_based_team_race():
+    result = _run_sync_competition_fields("max_power", is_team_race=True)
+    assert result["completionNoteText"] == "T[text.completion_rule_time_based_note]"
+    assert result["completionDisabled"] is True
+
+
+def test_sync_competition_fields_individual_and_time_based_notes_render_different_text():
+    individual = _run_sync_competition_fields("distance", is_team_race=False)
+    time_based = _run_sync_competition_fields("max_power", is_team_race=True)
+    assert individual["completionNoteText"] != time_based["completionNoteText"]
+
+
+def test_sync_competition_fields_enables_completion_for_distance_team_race():
+    result = _run_sync_competition_fields("distance", is_team_race=True)
+    assert result["completionDisabled"] is False
+
+
+# ---------------------------------------------------------------------------
 # i18n: every new key must exist in BOTH inline dictionaries (and, per the
 # existing symmetry/untranslated tests in test_static_page_i18n.py, carry a
 # genuinely different zh-TW value). This module additionally asserts the

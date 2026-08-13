@@ -1635,12 +1635,6 @@
       const targetLabel = raceType === "calories" ? t("label.calorie_target") : raceType === "distance" ? t("label.distance_target") : t("label.challenge_window");
       const soundEnabled = $("start-sound-enabled").value !== "false";
       const mode = normalizeLeaderboardDisplayMode($("leaderboard-display-mode").value);
-      const modeText = {
-        classic: t(leaderboardModeNoteKey("classic", raceType)),
-        race_track: t(leaderboardModeNoteKey("race_track", raceType)),
-        team_battle: t(leaderboardModeNoteKey("team_battle", raceType)),
-        sprint_board: t(leaderboardModeNoteKey("sprint_board", raceType)),
-      };
       const previewRows = {
         classic: [["#1", 92, "92%"], ["#2", 76, "76%"], ["#3", 61, "61%"]],
         race_track: [[`${t("label.lane")} 1`, 92, t("status.finish")], [`${t("label.lane")} 2`, 71, t("status.chase")], [`${t("label.lane")} 3`, 48, t("status.push")]],
@@ -1650,7 +1644,7 @@
 
       $("team-rule-summary").textContent = teamRuleSummaryText({ isTeamRace, scoring, completion, raceType, targetLabel });
 
-      $("leaderboard-mode-summary").textContent = modeText[mode];
+      $("leaderboard-mode-summary").textContent = t(leaderboardModeNoteKey(mode, raceType));
       $("leaderboard-mode-preview").innerHTML = previewRows[mode].map(([label, width, value]) => `
         <div class="mode-preview-row">
           <span>${escapeHtml(label)}</span>
