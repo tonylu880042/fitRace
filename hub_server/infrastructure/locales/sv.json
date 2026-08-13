@@ -165,5 +165,15 @@
   "edge.last_seen": "senast",
   "time.now": "nu",
   "time.seconds_short": "{sec}s",
-  "time.minutes_short": "{min}m"
+  "time.minutes_short": "{min}m",
+  "class.in_progress": "Träning pågår",
+  "class.kind.warmup": "Uppvärmning",
+  "class.kind.work": "Arbetsmängd",
+  "class.kind.rest": "Vila",
+  "class.kind.cooldown": "Avtransport",
+  "class.segment_progress": "Segment {index} av {total}",
+  "class.next_segment": "Nästa: {kind} · {duration}",
+  "class.last_segment": "Sista segmentet",
+  "class.total_remaining": "Träning återstår",
+  "class.time_up": "Tiden är ute"
 }

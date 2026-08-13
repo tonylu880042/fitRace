@@ -165,5 +165,15 @@
   "edge.last_seen": "il y a",
   "time.now": "maintenant",
   "time.seconds_short": "{sec}s",
-  "time.minutes_short": "{min}min"
+  "time.minutes_short": "{min}min",
+  "class.in_progress": "Entraînement en cours",
+  "class.kind.warmup": "Échauffement",
+  "class.kind.work": "Travail",
+  "class.kind.rest": "Repos",
+  "class.kind.cooldown": "Refroidissement",
+  "class.segment_progress": "Segment {index} sur {total}",
+  "class.next_segment": "Suivant : {kind} · {duration}",
+  "class.last_segment": "Dernier segment",
+  "class.total_remaining": "Entraînement restant",
+  "class.time_up": "Temps écoulé"
 }

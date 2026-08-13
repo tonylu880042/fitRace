@@ -165,5 +165,15 @@
   "edge.last_seen": "ultimo",
   "time.now": "adesso",
   "time.seconds_short": "{sec}s",
-  "time.minutes_short": "{min}m"
+  "time.minutes_short": "{min}m",
+  "class.in_progress": "Lezione in corso",
+  "class.kind.warmup": "Riscaldamento",
+  "class.kind.work": "Lavoro",
+  "class.kind.rest": "Recupero",
+  "class.kind.cooldown": "Raffreddamento",
+  "class.segment_progress": "Segmento {index} di {total}",
+  "class.next_segment": "Prossimo: {kind} · {duration}",
+  "class.last_segment": "Ultimo segmento",
+  "class.total_remaining": "Lezione rimanente",
+  "class.time_up": "Tempo scaduto"
 }

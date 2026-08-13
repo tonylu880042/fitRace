@@ -165,5 +165,15 @@
   "edge.last_seen": "最後",
   "time.now": "剛剛",
   "time.seconds_short": "{sec}秒",
-  "time.minutes_short": "{min}分"
+  "time.minutes_short": "{min}分",
+  "class.in_progress": "課程進行中",
+  "class.kind.warmup": "暖身",
+  "class.kind.work": "訓練",
+  "class.kind.rest": "休息",
+  "class.kind.cooldown": "緩和",
+  "class.segment_progress": "第 {index} 段，共 {total} 段",
+  "class.next_segment": "下一段：{kind} · {duration}",
+  "class.last_segment": "最後一段",
+  "class.total_remaining": "課程剩餘",
+  "class.time_up": "時間到"
 }

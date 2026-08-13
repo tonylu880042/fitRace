@@ -16,6 +16,8 @@
       --crimson-red: #f43f5e;
       --text-main: #fafafa;
       --text-muted: #a1a1aa;
+      --mid-grey: #3f3f46;
+      --dim-grey: #52525b;
     }
 
     * {
@@ -2308,6 +2310,9 @@
     let recordWallIndex = 0;
     let recordWallRotateTimer = null;
     let recordWallRefreshTimer = null;
+    let classClockInterval = null;
+    let currentClassPlan = null;
+    let currentClassLeaderboard = {};
     function getBrowserLocale() {
       const saved = localStorage.getItem("fitrace.locale");
       if (saved) return saved;
@@ -2698,6 +2703,70 @@
     function metricNumber(value, fallback = 0) {
       const number = Number(value);
       return Number.isFinite(number) ? number : fallback;
+    }
+
+    function classClockAt(nowMs, startTimeMs, plan) {
+      // Mirrors hub_server/domain/class_models.py::segment_at EXACTLY.
+      let elapsedMs = nowMs - startTimeMs;
+      if (elapsedMs < 0) elapsedMs = 0;
+
+      const segments = plan.segments;
+      const totalMs = segments.reduce((sum, s) => sum + s.duration_sec * 1000, 0);
+      const lastIndex = segments.length - 1;
+
+      if (elapsedMs >= totalMs) {
+        return {
+          index: lastIndex,
+          kind: segments[lastIndex].kind,
+          segmentRemainingMs: 0,
+          totalRemainingMs: 0,
+          finished: true,
+        };
+      }
+
+      let cumulativeMs = 0;
+      for (let index = 0; index < segments.length; index++) {
+        const segment = segments[index];
+        const segmentEndMs = cumulativeMs + segment.duration_sec * 1000;
+        if (elapsedMs < segmentEndMs) {
+          return {
+            index,
+            kind: segment.kind,
+            segmentRemainingMs: segmentEndMs - elapsedMs,
+            totalRemainingMs: totalMs - elapsedMs,
+            finished: false,
+          };
+        }
+        cumulativeMs = segmentEndMs;
+      }
+
+      // Unreachable given the totalMs check above.
+      return {
+        index: lastIndex,
+        kind: segments[lastIndex].kind,
+        segmentRemainingMs: 0,
+        totalRemainingMs: 0,
+        finished: true,
+      };
+    }
+
+    function formatClock(ms) {
+      const safeMs = Math.max(0, metricNumber(ms));
+      const totalSeconds = Math.floor(safeMs / 1000);
+      const seconds = totalSeconds % 60;
+      const minutes = Math.floor(totalSeconds / 60);
+      return (minutes < 10 ? "0" + minutes : String(minutes)) + ":" +
+             (seconds < 10 ? "0" + seconds : String(seconds));
+    }
+
+    function toClockShape(serverClassSegment) {
+      return {
+        index: serverClassSegment.index,
+        kind: serverClassSegment.kind,
+        segmentRemainingMs: serverClassSegment.segment_remaining_ms,
+        totalRemainingMs: serverClassSegment.total_remaining_ms,
+        finished: serverClassSegment.finished,
+      };
     }
 
     function smoothMetricNumber(key, targetValue, smoothingMs = 180) {
@@ -4003,6 +4072,122 @@
       }
     }
 
+    function buildClassBoardHtml(sessionData, clock) {
+      const plan = sessionData.class_plan;
+      const leaderboard = sessionData.leaderboard || {};
+      if (!plan || !plan.segments || plan.segments.length === 0) {
+        return "<div>No class plan</div>";
+      }
+      const stationEntries = Object.entries(leaderboard);
+      const sortedStations = stationEntries.sort(function(a, b) {
+        const aNum = metricNumber(a[1].station_number, Infinity);
+        const bNum = metricNumber(b[1].station_number, Infinity);
+        if (aNum === Infinity && bNum === Infinity) return 0;
+        if (aNum === Infinity) return 1;
+        if (bNum === Infinity) return -1;
+        return aNum - bNum;
+      });
+      const stationCards = [];
+      for (let i = 0; i < sortedStations.length; i++) {
+        const pair = sortedStations[i];
+        const node = pair[1];
+        const athleteName = node.athlete_name || t("stations.athlete");
+        const machineName = nodeDisplayName(node);
+        const stationNum = metricNumber(node.station_number);
+        const power = metricNumber(node.power_watts);
+        const speed = metricNumber(node.instantaneous_speed_kph);
+        const distance = metricNumber(node.distance_m);
+        const numberFormat = new Intl.NumberFormat(currentLocale);
+        const powerStr = numberFormat.format(power);
+        const speedStr = numberFormat.format(speed);
+        const distanceStr = numberFormat.format(distance);
+        const effortPercent = Math.min(100, power / 5);
+        let badge = "";
+        if (stationNum && Number.isFinite(stationNum)) {
+          badge = "<span style=\"display:inline-block;background:var(--volt-yellow);color:var(--bg-color);padding:0.25rem 0.5rem;border-radius:3px;font-size:0.75rem;font-weight:700;margin-right:0.5rem;\">" + escapeHtml(t("stations.station")) + " " + escapeHtml(String(stationNum)) + "</span>";
+        }
+        let card = "<div style=\"border:1px solid var(--steel-border);border-radius:4px;padding:1rem;background:var(--card-bg);\">";
+        card += badge;
+        card += "<div style=\"margin-top:0.5rem;font-weight:600;color:var(--text-main);\">" + escapeHtml(athleteName) + "</div>";
+        card += "<div style=\"font-size:0.85rem;color:var(--text-muted);margin-bottom:0.75rem;\">" + escapeHtml(machineName) + "</div>";
+        card += "<div style=\"display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.5rem;margin-bottom:0.75rem;font-size:0.8rem;\">";
+        card += "<div><div style=\"color:var(--text-muted);\">" + escapeHtml(t("metric.power")) + "</div><div style=\"font-weight:600;\">" + escapeHtml(powerStr) + " W</div></div>";
+        card += "<div><div style=\"color:var(--text-muted);\">" + escapeHtml(t("metric.speed")) + "</div><div style=\"font-weight:600;\">" + escapeHtml(speedStr) + " kph</div></div>";
+        card += "<div><div style=\"color:var(--text-muted);\">" + escapeHtml(t("metric.distance")) + "</div><div style=\"font-weight:600;\">" + escapeHtml(distanceStr) + " m</div></div>";
+        card += "</div>";
+        card += "<div style=\"height:6px;background:var(--steel-border);border-radius:2px;overflow:hidden;\"><div style=\"height:100%;width:" + effortPercent + "%;background:var(--volt-yellow);transition:width 0.3s ease;\"></div></div>";
+        card += "</div>";
+        stationCards.push(card);
+      }
+      const totalDurationMs = plan.segments.reduce(function(sum, s) { return sum + s.duration_sec * 1000; }, 0);
+      const timelineBlocks = [];
+      for (let idx = 0; idx < plan.segments.length; idx++) {
+        const segment = plan.segments[idx];
+        const isCurrentSegment = idx === clock.index;
+        const isCompleted = idx < clock.index;
+        let bgColor = "var(--dim-grey)";
+        if (segment.kind === "work") bgColor = "var(--volt-yellow)";
+        else if (segment.kind === "rest") bgColor = "var(--mid-grey)";
+        const borderStyle = isCurrentSegment ? "2px solid var(--volt-yellow)" : "1px solid var(--steel-border)";
+        const opacity = isCompleted ? "0.4" : "1";
+        const blockStyle = "flex-grow:" + segment.duration_sec + ";background:" + bgColor + ";height:12px;border:" + borderStyle + ";opacity:" + opacity + ";";
+        timelineBlocks.push("<div style=\"" + blockStyle + "\"></div>");
+      }
+      let nextSegmentHtml = "";
+      if (clock.index + 1 < plan.segments.length) {
+        const nextSegment = plan.segments[clock.index + 1];
+        let nextKindLabel = t("class.kind.work");
+        if (nextSegment.kind === "warmup") nextKindLabel = t("class.kind.warmup");
+        else if (nextSegment.kind === "work") nextKindLabel = t("class.kind.work");
+        else if (nextSegment.kind === "rest") nextKindLabel = t("class.kind.rest");
+        else if (nextSegment.kind === "cooldown") nextKindLabel = t("class.kind.cooldown");
+        const nextDurationStr = formatClock(nextSegment.duration_sec * 1000);
+        nextSegmentHtml = "<div style=\"margin-top:0.5rem;font-size:0.85rem;color:var(--text-muted);\">" + escapeHtml(t("class.next_segment", { kind: nextKindLabel, duration: nextDurationStr })) + "</div>";
+      } else {
+        nextSegmentHtml = "<div style=\"margin-top:0.5rem;font-size:0.85rem;color:var(--text-muted);\">" + escapeHtml(t("class.last_segment")) + "</div>";
+      }
+      let kindLabel = t("class.kind.work");
+      if (clock.kind === "warmup") kindLabel = t("class.kind.warmup");
+      else if (clock.kind === "work") kindLabel = t("class.kind.work");
+      else if (clock.kind === "rest") kindLabel = t("class.kind.rest");
+      else if (clock.kind === "cooldown") kindLabel = t("class.kind.cooldown");
+      const countdownStr = clock.finished ? t("class.time_up") : formatClock(clock.segmentRemainingMs);
+      const segmentProgressStr = t("class.segment_progress", { index: clock.index + 1, total: plan.segments.length });
+      const totalRemainingStr = formatClock(clock.totalRemainingMs);
+      let html = "<div style=\"padding:2rem;\"><div style=\"border:2px solid var(--steel-border);border-radius:4px;padding:2rem;background:linear-gradient(135deg,var(--card-bg),rgba(39,39,42,0.5));margin-bottom:2rem;\">";
+      html += "<div style=\"font-size:0.85rem;color:var(--text-muted);margin-bottom:1rem;\">" + escapeHtml(t("class.in_progress")) + "</div>";
+      html += "<div style=\"display:grid;grid-template-columns:1fr auto;gap:2rem;align-items:start;margin-bottom:1.5rem;\">";
+      html += "<div><div style=\"font-family:Oswald,sans-serif;font-size:5rem;font-weight:700;color:var(--volt-yellow);line-height:1;text-transform:uppercase;\">" + escapeHtml(kindLabel) + "</div>";
+      html += "<div style=\"font-family:Oswald,sans-serif;font-size:3.5rem;font-weight:700;color:var(--volt-yellow);margin-top:0.5rem;\">" + escapeHtml(countdownStr) + "</div></div>";
+      html += "<div style=\"text-align:right;\"><div style=\"font-size:0.85rem;color:var(--text-muted);margin-bottom:0.5rem;\">" + escapeHtml(t("class.total_remaining")) + "</div>";
+      html += "<div style=\"font-size:2rem;font-weight:700;color:var(--volt-yellow);\">" + escapeHtml(totalRemainingStr) + "</div></div></div>";
+      html += "<div style=\"margin-bottom:1.5rem;\"><div style=\"font-size:0.85rem;color:var(--text-muted);margin-bottom:0.5rem;\">" + escapeHtml(segmentProgressStr) + "</div>" + nextSegmentHtml + "</div>";
+      html += "<div style=\"display:flex;gap:4px;height:16px;border-radius:2px;overflow:hidden;border:1px solid var(--steel-border);\">" + timelineBlocks.join("") + "</div></div>";
+      html += "<div style=\"display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1rem;\">" + stationCards.join("") + "</div></div>";
+      return html;
+    }
+
+    function renderClassBoard(data) {
+      // DOM wrapper. Computes the clock, then renders.
+      let clock;
+      if (data.class_segment && data.state === "RUNNING") {
+        // Use the server class_segment when available. Convert from snake_case to camelCase.
+        clock = toClockShape(data.class_segment);
+      } else {
+        // Compute locally at elapsed=0
+        clock = classClockAt(0, 0, data.class_plan);
+      }
+
+      document.getElementById("leaderboard-container").innerHTML =
+        buildClassBoardHtml({ class_plan: data.class_plan, leaderboard: data.leaderboard || {} }, clock);
+    }
+
+    function tickClassClock() {
+      if (!raceStartTime || !currentClassPlan) return;
+      const clock = classClockAt(Date.now(), raceStartTime, currentClassPlan);
+      document.getElementById("leaderboard-container").innerHTML = buildClassBoardHtml({ class_plan: currentClassPlan, leaderboard: currentClassLeaderboard }, clock);
+    }
+
     function renderLeaderboard(progressData, teamData = null) {
       detectAthleteFinishes(progressData);
       lastLeaderboardData = progressData || {};
@@ -4267,19 +4452,29 @@
         previousFinishedByNode = new Map();
       }
 
-      if (data.leaderboard) {
+      // Route to class board or race leaderboard
+      if (data.session_mode === "class") {
+        // Class mode: store plan and leaderboard for local ticking
+        currentClassPlan = data.class_plan;
+        currentClassLeaderboard = data.leaderboard || {};
+        renderClassBoard(data);
+      } else if (data.leaderboard) {
+        // Race mode
         renderLeaderboard(data.leaderboard, data.team_leaderboard || null);
       }
 
       // A2: full-screen podium reveal, only on a live RUNNING -> STOPPED
       // transition -- never when the page merely loads into an already-
-      // finished race.
-      if (!isFirstStateUpdate && previousState !== "STOPPED" && currentState === "STOPPED") {
+      // finished race. Gate on race mode only.
+      if (!isFirstStateUpdate && previousState !== "STOPPED" && currentState === "STOPPED" && data.session_mode !== "class") {
         showPodiumOverlay();
       }
 
-      // B2: idle record wall carousel, shown only while IDLE.
-      if (currentState === "IDLE") {
+      // B2: idle record wall carousel, shown only while IDLE and in race mode.
+      if (data.session_mode === "class") {
+        // Class mode never shows idle record wall
+        exitIdleRecordWall();
+      } else if (currentState === "IDLE") {
         enterIdleRecordWall();
       } else {
         exitIdleRecordWall();
@@ -4311,27 +4506,49 @@
       }
       renderRaceStageBanner();
 
-      // Stopwatch Display control
-      if (currentState === "RUNNING") {
-        document.getElementById("stopwatch-lbl").style.display = "block";
-        raceStartTime = data.start_time_epoch_ms;
-        if (!stopwatchInterval && raceStartTime) {
-          stopwatchInterval = setInterval(updateStopwatch, 50);
-        }
-      } else {
-        if (stopwatchInterval) {
-          clearInterval(stopwatchInterval);
-          stopwatchInterval = null;
-        }
-        if (currentState === "STOPPED") {
-          document.getElementById("stopwatch-lbl").style.display = "block";
-          if (raceStartTime) {
-            updateStopwatch();
+      // Class mode interval management
+      if (data.session_mode === "class") {
+        if (currentState === "RUNNING" && currentClassPlan) {
+          if (!classClockInterval) {
+            classClockInterval = setInterval(tickClassClock, 250);
           }
         } else {
-          document.getElementById("stopwatch-lbl").style.display = "none";
-          document.getElementById("stopwatch-lbl").innerText = "00:00.0";
-          raceStartTime = null;
+          if (classClockInterval) {
+            clearInterval(classClockInterval);
+            classClockInterval = null;
+          }
+        }
+      } else {
+        // Race mode: clear class interval if it's running (mode switch)
+        if (classClockInterval) {
+          clearInterval(classClockInterval);
+          classClockInterval = null;
+        }
+      }
+
+      // Stopwatch Display control (race mode only, not shown in class mode)
+      if (data.session_mode !== "class") {
+        if (currentState === "RUNNING") {
+          document.getElementById("stopwatch-lbl").style.display = "block";
+          raceStartTime = data.start_time_epoch_ms;
+          if (!stopwatchInterval && raceStartTime) {
+            stopwatchInterval = setInterval(updateStopwatch, 50);
+          }
+        } else {
+          if (stopwatchInterval) {
+            clearInterval(stopwatchInterval);
+            stopwatchInterval = null;
+          }
+          if (currentState === "STOPPED") {
+            document.getElementById("stopwatch-lbl").style.display = "block";
+            if (raceStartTime) {
+              updateStopwatch();
+            }
+          } else {
+            document.getElementById("stopwatch-lbl").style.display = "none";
+            document.getElementById("stopwatch-lbl").innerText = "00:00.0";
+            raceStartTime = null;
+          }
         }
       }
 

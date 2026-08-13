@@ -165,5 +165,15 @@
   "edge.last_seen": "last",
   "time.now": "now",
   "time.seconds_short": "{sec}s",
-  "time.minutes_short": "{min}m"
+  "time.minutes_short": "{min}m",
+  "class.in_progress": "Class in progress",
+  "class.kind.warmup": "Warmup",
+  "class.kind.work": "Work",
+  "class.kind.rest": "Rest",
+  "class.kind.cooldown": "Cooldown",
+  "class.segment_progress": "Segment {index} of {total}",
+  "class.next_segment": "Next: {kind} · {duration}",
+  "class.last_segment": "Final segment",
+  "class.total_remaining": "Class remaining",
+  "class.time_up": "Time's up"
 }
