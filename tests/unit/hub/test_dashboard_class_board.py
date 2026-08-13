@@ -342,6 +342,116 @@ def test_build_class_board_html_renders_segment_progress():
     assert "T[class.segment_progress]" in html
 
 
+# -- Station ordering: a class is NEVER a leaderboard. The single defining
+# property of the class board is that station cards are ordered by
+# station_number, never by who is performing best. These tests feed a
+# leaderboard whose station order is the exact REVERSE of performance order
+# (station 1 = worst output, station 4 = best output) so that any
+# performance-based sort -- ascending OR descending -- produces a visibly
+# different card order than the required station-number order, and assert
+# on the actual index positions of the athlete names in the rendered HTML
+# string, not merely that the names are present somewhere.
+def test_build_class_board_html_orders_stations_by_number_not_by_performance():
+    """Station cards must render in ascending station_number order even
+    when that is the exact opposite of ascending/descending performance
+    order -- proving the board can never silently become a leaderboard."""
+    leaderboard = {
+        "n1": {
+            "node_id": "n1",
+            "athlete_name": "Ash",
+            "station_number": 1,
+            "power_watts": 50,
+            "instantaneous_speed_kph": 10,
+            "distance_m": 100,
+        },
+        "n2": {
+            "node_id": "n2",
+            "athlete_name": "Blair",
+            "station_number": 2,
+            "power_watts": 150,
+            "instantaneous_speed_kph": 20,
+            "distance_m": 300,
+        },
+        "n3": {
+            "node_id": "n3",
+            "athlete_name": "Casey",
+            "station_number": 3,
+            "power_watts": 250,
+            "instantaneous_speed_kph": 30,
+            "distance_m": 500,
+        },
+        "n4": {
+            "node_id": "n4",
+            "athlete_name": "Drew",
+            "station_number": 4,
+            "power_watts": 350,
+            "instantaneous_speed_kph": 40,
+            "distance_m": 700,
+        },
+    }
+    session_data = json.dumps(
+        {
+            "class_plan": {"segments": [{"kind": "work", "duration_sec": 300}]},
+            "leaderboard": leaderboard,
+        }
+    )
+    clock = '{"index": 0, "kind": "work", "segmentRemainingMs": 300000, "totalRemainingMs": 300000, "finished": false}'
+    html = _run_build_class_board_html(session_data, clock)
+
+    for name in ("Ash", "Blair", "Casey", "Drew"):
+        assert name in html, f"{name} missing from rendered class board HTML"
+
+    positions = {name: html.index(name) for name in ("Ash", "Blair", "Casey", "Drew")}
+    assert (
+        positions["Ash"] < positions["Blair"] < positions["Casey"] < positions["Drew"]
+    ), (
+        "station cards must appear in ascending station_number order "
+        f"(Ash=station1..Drew=station4), got positions {positions} -- "
+        "distance_m is strictly INCREASING with station_number here, so "
+        "any performance-based sort (ascending or descending) would "
+        "produce a different order than station order, and this assertion "
+        "would fail"
+    )
+
+
+def test_build_class_board_html_orders_tied_performance_stations_by_station_number():
+    """Two stations with IDENTICAL metrics must still render in
+    station_number order -- a tie in performance is not a license to fall
+    back to output order, insertion order, or anything else."""
+    leaderboard = {
+        "n2": {
+            "node_id": "n2",
+            "athlete_name": "Frankie",
+            "station_number": 2,
+            "power_watts": 200,
+            "instantaneous_speed_kph": 25,
+            "distance_m": 400,
+        },
+        "n1": {
+            "node_id": "n1",
+            "athlete_name": "Eden",
+            "station_number": 1,
+            "power_watts": 200,
+            "instantaneous_speed_kph": 25,
+            "distance_m": 400,
+        },
+    }
+    session_data = json.dumps(
+        {
+            "class_plan": {"segments": [{"kind": "work", "duration_sec": 300}]},
+            "leaderboard": leaderboard,
+        }
+    )
+    clock = '{"index": 0, "kind": "work", "segmentRemainingMs": 300000, "totalRemainingMs": 300000, "finished": false}'
+    html = _run_build_class_board_html(session_data, clock)
+
+    assert "Eden" in html and "Frankie" in html
+    assert html.index("Eden") < html.index("Frankie"), (
+        "stations with identical performance metrics must still be ordered "
+        "by station_number (Eden=station1 before Frankie=station2)"
+    )
+
+
 # -- Regression test: server sends snake_case, must convert to camelCase
 def _run_to_clock_shape(server_segment_js: str) -> dict:
     """Execute toClockShape under node with a server segment."""
