@@ -904,6 +904,7 @@ CLASS_ADMIN_KEYS = [
     "classAdmin.btn_repeat_group",
     "classAdmin.label_repeat_times",
     "classAdmin.label_repeat_to",
+    "classAdmin.label_repeat_from",
     "classAdmin.label_segment_count",
     "classAdmin.plan_empty",
     "classAdmin.station_col_number",
@@ -1028,6 +1029,33 @@ def test_repeat_to_label_routes_through_i18n_not_hardcoded_english():
     body = _read_class_admin()
     assert '<label for="repeat-to">To row #</label>' not in body
     assert 'data-i18n="classAdmin.label_repeat_to"' in body
+
+
+def _repeat_control_label_key(body: str, input_id: str) -> str:
+    match = re.search(rf'<label for="{input_id}" data-i18n="([^"]+)">', body)
+    assert match, f'no data-i18n label found for for="{input_id}"'
+    return match.group(1)
+
+
+def test_repeat_control_labels_reference_three_distinct_i18n_keys():
+    """The repeat-group toolbar has three inputs (from row, to row, times)
+    each with its own <label>. A prior bug pointed the "from row" label at
+    classAdmin.label_segment_kind -- the segment KIND dropdown's own label,
+    reused by copy-paste -- so the toolbar visibly read "Kind / To row # /
+    Count" instead of describing what the three inputs do. That was a key
+    COLLISION, not a missing key, so a plain "does this key exist in every
+    locale" check would never have caught it: the key existed and was fully
+    translated, just attached to the wrong label. Pin that the three labels
+    resolve to three distinct keys so that class of bug cannot recur."""
+    body = _read_class_admin()
+    from_key = _repeat_control_label_key(body, "repeat-from")
+    to_key = _repeat_control_label_key(body, "repeat-to")
+    times_key = _repeat_control_label_key(body, "repeat-times")
+
+    assert from_key == "classAdmin.label_repeat_from"
+    assert to_key == "classAdmin.label_repeat_to"
+    assert times_key == "classAdmin.label_repeat_times"
+    assert len({from_key, to_key, times_key}) == 3
 
 
 # ---------------------------------------------------------------------------

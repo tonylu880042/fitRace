@@ -200,6 +200,7 @@
   "classAdmin.btn_repeat_group": "Répéter la sélection ×N",
   "classAdmin.label_repeat_times": "Fois",
   "classAdmin.label_repeat_to": "À la ligne n°",
+  "classAdmin.label_repeat_from": "De la ligne n°",
   "classAdmin.label_segment_count": "{count} segments",
   "classAdmin.plan_empty": "Ajoutez au moins un segment pour créer un plan de cours.",
   "classAdmin.station_col_number": "Poste",

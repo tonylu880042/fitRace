@@ -200,6 +200,7 @@
   "classAdmin.btn_repeat_group": "Ripeti selezione ×N",
   "classAdmin.label_repeat_times": "Volte",
   "classAdmin.label_repeat_to": "Alla riga n.",
+  "classAdmin.label_repeat_from": "Dalla riga n.",
   "classAdmin.label_segment_count": "{count} segmenti",
   "classAdmin.plan_empty": "Aggiungi almeno un segmento per creare un piano del corso.",
   "classAdmin.station_col_number": "Postazione",

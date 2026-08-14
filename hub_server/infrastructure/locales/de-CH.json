@@ -200,6 +200,7 @@
   "classAdmin.btn_repeat_group": "Auswahl ×N wiederholen",
   "classAdmin.label_repeat_times": "Anzahl",
   "classAdmin.label_repeat_to": "Bis Zeile Nr.",
+  "classAdmin.label_repeat_from": "Von Zeile Nr.",
   "classAdmin.label_segment_count": "{count} Segmente",
   "classAdmin.plan_empty": "Fügen Sie mindestens ein Segment hinzu, um einen Kursplan zu erstellen.",
   "classAdmin.station_col_number": "Stationsnummer",

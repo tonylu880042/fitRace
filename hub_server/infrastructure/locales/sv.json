@@ -200,6 +200,7 @@
   "classAdmin.btn_repeat_group": "Upprepa markering ×N",
   "classAdmin.label_repeat_times": "Gånger",
   "classAdmin.label_repeat_to": "Till rad nr",
+  "classAdmin.label_repeat_from": "Från rad nr",
   "classAdmin.label_segment_count": "{count} segment",
   "classAdmin.plan_empty": "Lägg till minst ett segment för att skapa en klassplan.",
   "classAdmin.station_col_number": "Stationsnummer",
