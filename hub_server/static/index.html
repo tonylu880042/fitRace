@@ -2699,11 +2699,14 @@
         toast.className = "marquee-toast";
         document.body.appendChild(toast);
       }
-      
+
       const teamSuffix = team ? ` (${team})` : '';
       const eqDisplay = (equipmentType && equipmentType !== 'unknown') ? ` - ${equipmentType.toUpperCase()}` : '';
+      // Anonymous participation: registration_success can carry a null
+      // name -- never render the literal word null, fall back to the station.
+      const displayedName = name || (station ? `${t("stations.station")} ${station}` : t("stations.athlete"));
       const text = t("registration.welcome", {
-        name: `${name}${teamSuffix}`,
+        name: `${displayedName}${teamSuffix}`,
         station,
         equipment: eqDisplay,
       });
@@ -4134,7 +4137,9 @@
       for (let i = 0; i < sortedStations.length; i++) {
         const pair = sortedStations[i];
         const node = pair[1];
-        const athleteName = node.athlete_name || t("stations.athlete");
+        // Anonymous participation: no name does not mean no one is here --
+        // fall back to the station number before the generic athlete label.
+        const athleteName = node.athlete_name || (node.station_number ? `${t("stations.station")} ${node.station_number}` : t("stations.athlete"));
         const machineName = nodeDisplayName(node);
         const stationNum = metricNumber(node.station_number);
         const power = metricNumber(node.power_watts);
@@ -4328,14 +4333,19 @@
           ? `<span class="station-pill">${escapeHtml(t("stations.station"))} ${escapeHtml(node.station_number)}</span>`
           : '';
 
-        const athleteName = escapeHtml(node.athlete_name || t("stations.athlete"));
+        // Anonymous participation: no name does not mean no one is here --
+        // fall back to the station number before the generic athlete label,
+        // so this never renders an empty name or a bare Athlete literal
+        // when a station number is available.
+        const rawAthleteName = node.athlete_name || (node.station_number ? `${t("stations.station")} ${node.station_number}` : t("stations.athlete"));
+        const athleteName = escapeHtml(rawAthleteName);
         const displayName = athleteName + (node.team_name ? ` <span class="team-suffix" style="font-size: 0.8rem; color: var(--volt-yellow); opacity: 0.85; font-weight: 600;">(${escapeHtml(node.team_name)})</span>` : '');
 
         let avatarHtml = '';
         if (node.avatar_url) {
           avatarHtml = `<img class="athlete-avatar" src="${escapeHtml(node.avatar_url)}" style="width: 44px; height: 44px; border-radius: 50%; border: 2px solid var(--steel-border); object-fit: cover; flex-shrink: 0;" alt="">`;
         } else {
-          const initial = escapeHtml((node.athlete_name || '?').charAt(0).toUpperCase());
+          const initial = escapeHtml(rawAthleteName.charAt(0).toUpperCase());
           avatarHtml = `<div class="athlete-avatar fallback-avatar" style="width: 44px; height: 44px; border-radius: 50%; border: 2px solid var(--steel-border); background-color: #3f3f46; color: #fff; display: flex; justify-content: center; align-items: center; font-weight: 800; font-size: 1.2rem; font-family: 'Oswald', sans-serif; flex-shrink: 0;">${initial}</div>`;
         }
 

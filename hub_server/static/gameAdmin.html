@@ -1950,7 +1950,7 @@
             <div class="row-main">
               <div>
                 <div class="row-name">${escapeHtml(t("text.station"))} ${escapeHtml(key)} · ${escapeHtml(station.equipment_type || t("text.unbound"))}</div>
-                <div class="row-meta">${escapeHtml(station.node_display_name || station.equipment_id || station.node_id || t("text.no_telemetry_stream"))} · ${escapeHtml(station.athlete_name || t("text.no_athlete"))}${station.team_name ? ` (${escapeHtml(station.team_name)})` : ""}</div>
+                <div class="row-meta">${escapeHtml(station.node_display_name || station.equipment_id || station.node_id || t("text.no_telemetry_stream"))} · ${escapeHtml(station.athlete_name || (station.registered ? `${t("text.station")} ${key}` : t("text.no_athlete")))}${station.team_name ? ` (${escapeHtml(station.team_name)})` : ""}</div>
                 <div class="row-meta">${escapeHtml(t("label.health"))} ${escapeHtml(health.label || health.health || "--")}${health.edge_node_id ? ` · ${escapeHtml(health.edge_display_name || health.edge_node_id)}` : ""}</div>
                 <div class="row-meta">${escapeHtml(signupUrl)}</div>
               </div>

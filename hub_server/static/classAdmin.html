@@ -725,19 +725,31 @@
       `;
     }
 
-    function buildStationStatusHtml(rows) {
+    function buildStationStatusHtml(rows, stationsById) {
       if (!rows.length) {
         return `<div class="empty">${escapeHtml(t("classAdmin.no_stations"))}</div>`;
       }
-      return rows.map((row) => `
+      const safeStationsById = stationsById || {};
+      return rows.map((row) => {
+        // Anonymous participation: a null athleteName is ambiguous on its
+        // own -- it could mean nobody has registered here (show the
+        // no-athlete placeholder, same as before) or someone registered
+        // without giving a name (show the station instead). The raw
+        // station explicit registered flag, not athleteName truthiness,
+        // tells the two apart.
+        const rawStation = safeStationsById[String(row.stationNumber)] || {};
+        const athleteLabel = row.athleteName
+          || (rawStation.registered ? `${t("stations.station")} ${row.stationNumber}` : t("classAdmin.station_no_athlete"));
+        return `
         <div class="station-row">
           <span class="station-number">${escapeHtml(t("classAdmin.station_col_number"))} ${escapeHtml(String(row.stationNumber))}</span>
-          <span class="station-athlete">${escapeHtml(row.athleteName || t("classAdmin.station_no_athlete"))}</span>
+          <span class="station-athlete">${escapeHtml(athleteLabel)}</span>
           <span class="station-machine">${escapeHtml(row.machineName || t("classAdmin.station_no_machine"))}</span>
           <span class="status-dot ${row.isLive ? "online" : ""}"></span>
           <span class="station-live-label">${escapeHtml(row.isLive ? t("connection.online") : t("connection.offline"))}</span>
         </div>
-      `).join("");
+      `;
+      }).join("");
     }
 
     function buildPlanEditorHtml(rows) {
@@ -771,7 +783,7 @@
 
     function renderStationStatus() {
       const rows = mergeStationStatus(state.stations.stations || {}, state.stationHealth);
-      $("station-list").innerHTML = buildStationStatusHtml(rows);
+      $("station-list").innerHTML = buildStationStatusHtml(rows, state.stations.stations || {});
       $("summary-stations").textContent = new Intl.NumberFormat(currentLocale).format(rows.length);
     }
 
