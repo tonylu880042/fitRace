@@ -635,7 +635,7 @@ class RaceManager:
     def register_athlete(
         self,
         station_number: int,
-        athlete_name: str,
+        athlete_name: Optional[str],
         team_name: Optional[str] = None,
         has_avatar: bool = False,
     ):
@@ -659,6 +659,11 @@ class RaceManager:
                 "node_id": nid,
                 "equipment_type": eq_type,
                 "athlete_name": ath_name,
+                # Explicit "is this station registered?" signal, independent
+                # of whether a name was supplied -- anonymous participation
+                # means athlete_name can be None on a registered station.
+                # Callers must consult this, never athlete_name truthiness.
+                "registered": sn in self._station_registrations,
                 "team_name": self._station_teams.get(sn),
                 "has_avatar": self._station_has_avatar.get(sn, False),
             }
@@ -670,6 +675,7 @@ class RaceManager:
                     "node_id": None,
                     "equipment_type": None,
                     "athlete_name": self._station_registrations[sn],
+                    "registered": True,
                     "team_name": self._station_teams.get(sn),
                     "has_avatar": self._station_has_avatar.get(sn, False),
                 }

@@ -1561,6 +1561,143 @@ def test_class_configure_endpoint_rejects_while_race_is_running_and_mode_stays_r
     client.post("/api/race/reset")
 
 
+# ---------------------------------------------------------------------------
+# Anonymous participation (GDPR): athlete_name is optional at the HTTP layer.
+# Registration in RaceManager._station_registrations (exposed as the
+# explicit "registered" boolean on each station) is the source of truth for
+# "is this station registered?" -- never athlete_name truthiness.
+# ---------------------------------------------------------------------------
+
+
+def test_register_athlete_with_no_name_field_is_accepted_and_marked_registered():
+    client.post("/api/race/reset")
+    set_online_station(1, "node-01")
+
+    res = client.post("/api/race/register", json={"station_number": 1})
+
+    assert res.status_code == 200
+    station = res.json()["stations"]["1"]
+    assert station["athlete_name"] is None
+    assert station["registered"] is True
+
+    client.post("/api/race/reset")
+
+
+def test_register_athlete_with_empty_string_name_normalizes_to_none():
+    client.post("/api/race/reset")
+    set_online_station(1, "node-01")
+
+    res = client.post(
+        "/api/race/register", json={"station_number": 1, "athlete_name": ""}
+    )
+
+    assert res.status_code == 200
+    station = res.json()["stations"]["1"]
+    assert station["athlete_name"] is None
+    assert station["registered"] is True
+
+    client.post("/api/race/reset")
+
+
+def test_register_athlete_with_whitespace_only_name_normalizes_to_none():
+    client.post("/api/race/reset")
+    set_online_station(1, "node-01")
+
+    res = client.post(
+        "/api/race/register", json={"station_number": 1, "athlete_name": "   "}
+    )
+
+    assert res.status_code == 200
+    station = res.json()["stations"]["1"]
+    assert station["athlete_name"] is None
+    assert station["registered"] is True
+
+    client.post("/api/race/reset")
+
+
+def test_register_athlete_with_a_real_name_is_unaffected():
+    client.post("/api/race/reset")
+    set_online_station(1, "node-01")
+
+    res = client.post(
+        "/api/race/register", json={"station_number": 1, "athlete_name": "Runner A"}
+    )
+
+    assert res.status_code == 200
+    station = res.json()["stations"]["1"]
+    assert station["athlete_name"] == "Runner A"
+    assert station["registered"] is True
+
+    client.post("/api/race/reset")
+
+
+def test_register_athlete_name_over_eighty_characters_is_still_rejected():
+    client.post("/api/race/reset")
+    set_online_station(1, "node-01")
+
+    res = client.post(
+        "/api/race/register",
+        json={"station_number": 1, "athlete_name": "x" * 81},
+    )
+
+    assert res.status_code == 422
+
+    client.post("/api/race/reset")
+
+
+def test_team_race_readiness_and_start_succeed_with_a_mix_of_named_and_anonymous_members():
+    from hub_server.infrastructure.fastapi.app import node_registry
+
+    client.post("/api/race/reset")
+    node_registry.clear()
+    set_online_station(1, "node-01")
+    set_online_station(2, "node-02")
+    client.post(
+        "/api/race/register",
+        json={"station_number": 1, "athlete_name": "Runner A", "team_name": "Volt"},
+    )
+    # Second team's only member registers anonymously -- no name, still a
+    # real registration that must count toward "at least two teams".
+    client.post(
+        "/api/race/register",
+        json={"station_number": 2, "team_name": "Apex"},
+    )
+    client.post(
+        "/api/race/configure",
+        json={
+            "race_type": "distance",
+            "target_value": 100,
+            "duration_sec": 0,
+            "competition_mode": "team",
+            "team_scoring_policy": "total",
+            "team_completion_policy": "all_members",
+        },
+    )
+
+    readiness = client.get("/api/race/readiness")
+    assert readiness.status_code == 200
+    payload = readiness.json()
+    assert payload["ready"] is True
+    assert payload["blocking_issues"] == []
+    assert payload["checks"]["registrations"]["status"] == "ok"
+    assert "2 athlete(s) registered" in payload["checks"]["registrations"]["message"]
+    assert payload["checks"]["teams"]["status"] == "ok"
+
+    started = client.post("/api/race/start")
+    assert started.status_code == 200
+    assert started.json()["state"] == "RUNNING"
+
+    state = client.get("/api/race/state").json()
+    team_leaderboard = state["team_leaderboard"]
+    assert {team["team_name"] for team in team_leaderboard} == {"Volt", "Apex"}
+    apex = next(team for team in team_leaderboard if team["team_name"] == "Apex")
+    assert apex["member_count"] == 1
+    assert apex["members"][0]["athlete_name"] is None
+
+    client.post("/api/race/stop")
+    client.post("/api/race/reset")
+
+
 def test_race_configure_endpoint_rejects_while_class_is_running_and_mode_stays_class():
     client.post("/api/race/reset")
     client.post("/api/class/configure", json=_SHORT_CLASS_PLAN)

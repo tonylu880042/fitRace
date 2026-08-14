@@ -13,7 +13,7 @@ import segno
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from hub_server.domain.models import RaceState, RaceConfig
 from hub_server.domain.class_models import ClassPlan
 from hub_server.usecases.race_manager import RaceManager
@@ -168,9 +168,24 @@ class AssignStationPayload(BaseModel):
 
 class RegisterAthletePayload(BaseModel):
     station_number: int = Field(..., ge=1)
-    athlete_name: str = Field(..., min_length=1, max_length=80)
+    # Anonymous participation: a name is no longer required (GDPR posture --
+    # a session with no names and no photos collects no personal data). An
+    # empty or whitespace-only string is normalized to None below so " " and
+    # "" behave identically to omitting the field entirely. Registration
+    # itself (RaceManager._station_registrations) is the source of truth for
+    # "is this station registered?" -- never athlete_name truthiness.
+    athlete_name: Optional[str] = Field(None, max_length=80)
     team_name: Optional[str] = Field(None, max_length=80)
     avatar_base64: Optional[str] = None
+
+    @field_validator("athlete_name", mode="before")
+    @classmethod
+    def _blank_name_is_none(cls, value):
+        if value is None:
+            return None
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
 
 class PowerActionPayload(BaseModel):
@@ -519,7 +534,10 @@ def get_race_readiness_status() -> dict:
     registered_stations = [
         (int(station_number), station)
         for station_number, station in stations.items()
-        if station.get("athlete_name")
+        # "registered?" is an explicit boolean from get_stations_status(),
+        # not athlete_name truthiness -- a station can be legitimately
+        # registered with no name (anonymous participation).
+        if station.get("registered")
     ]
     registered_stations.sort(key=lambda item: item[0])
 
