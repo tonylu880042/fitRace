@@ -1012,6 +1012,10 @@
                     </select>
                   </div>
                 </div>
+                <div class="field">
+                  <button type="button" class="primary" id="btn-switch-to-race-mode" onclick="switchToRaceMode()" data-i18n="button.switch_to_race_mode">Switch Projector to Race Mode</button>
+                  <p class="field-note show" id="switch-to-race-mode-note" data-i18n="text.switch_to_race_mode_note">Switches the dashboard to show the race leaderboard.</p>
+                </div>
               </div>
 
               <div class="control-block control-block-muted" id="local-block">
@@ -1280,7 +1284,11 @@
         "text.no_telemetry_stream": "No telemetry stream",
         "text.no_athlete": "No athlete",
         "label.health": "Health:",
-        "text.unassigned_telemetry": "Unassigned telemetry stream. Configure it in System Admin."
+        "text.unassigned_telemetry": "Unassigned telemetry stream. Configure it in System Admin.",
+        "button.switch_to_race_mode": "Switch Projector to Race Mode",
+        "text.switch_to_race_mode_note": "Switches the dashboard to show the race leaderboard.",
+        "text.switch_to_race_mode_note_disabled": "Stop the current session before switching the projector to race mode.",
+        "message.mode_switched_to_race": "Projector switched to race mode."
       }
     };
 
@@ -1435,7 +1443,11 @@
       "text.no_telemetry_stream": "無遙測串流",
       "text.no_athlete": "尚無選手",
       "label.health": "狀態:",
-      "text.unassigned_telemetry": "未指派遙測串流,請至系統管理設定。"
+      "text.unassigned_telemetry": "未指派遙測串流,請至系統管理設定。",
+      "button.switch_to_race_mode": "切換投影為賽事模式",
+      "text.switch_to_race_mode_note": "將儀表板切換為顯示賽事排行榜。",
+      "text.switch_to_race_mode_note_disabled": "請先停止目前的場次,才能將投影切換為賽事模式。",
+      "message.mode_switched_to_race": "投影已切換為賽事模式。"
     };
 
     function t(key, params = {}) {
@@ -1757,7 +1769,26 @@
       $("countdown-status").classList.toggle("show", state.countdownActive);
       updateControlGuidance();
       renderReadinessPanel();
+      syncSessionModeControl();
 
+    }
+
+    function sessionModeSwitchState(raceState) {
+      const disabled = raceState === "RUNNING";
+      return {
+        disabled,
+        noteKey: disabled ? "text.switch_to_race_mode_note_disabled" : "text.switch_to_race_mode_note",
+      };
+    }
+
+    function syncSessionModeControl() {
+      const raceState = state.race?.state || "IDLE";
+      const modeState = sessionModeSwitchState(raceState);
+      const button = $("btn-switch-to-race-mode");
+      const note = $("switch-to-race-mode-note");
+      button.disabled = modeState.disabled;
+      if (note.dataset) note.dataset.i18n = modeState.noteKey;
+      note.textContent = t(modeState.noteKey);
     }
 
     function renderRaceActionButtons() {
@@ -2067,6 +2098,20 @@
         });
         renderRace();
         setMessage("race-message", successMessage, "ok");
+      } catch (error) {
+        setMessage("race-message", error.message, "error");
+      }
+    }
+
+    async function switchToRaceMode() {
+      try {
+        state.race = await fetchJson("/api/session/mode", {
+          method: "POST",
+          headers: adminHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({ mode: "race" }),
+        });
+        renderRace();
+        setMessage("race-message", t("message.mode_switched_to_race"), "ok");
       } catch (error) {
         setMessage("race-message", error.message, "error");
       }

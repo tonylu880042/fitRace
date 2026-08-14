@@ -44,8 +44,13 @@ TELEMETRY_SPEC.md, OTA_UPDATE.md.
   Start/Stop/Reset.
 - System Admin `/systemAdmin`: technical maintenance — station assignment,
   edge nodes, updates, power.
+- Class Admin `/classAdmin`: class operation — plan editing, start/stop/reset
+  of a class, and switching the projector into class mode.
 - Dashboard behavior changes are driven by backend state / WebSocket events,
   never by local controls on the dashboard page.
+- Game Admin and Class Admin are mutually exclusive session owners — the hub
+  runs one session mode (race or class) at a time, and switching modes is
+  blocked while a session is RUNNING.
 
 ## i18n
 - Locale dicts live in `infrastructure/locales/` (zh_tw.json, en.json).
