@@ -1218,6 +1218,11 @@ def read_game_admin():
     return RedirectResponse(url="/static/gameAdmin.html")
 
 
+@app.get("/classAdmin")
+def read_class_admin():
+    return RedirectResponse(url="/static/classAdmin.html")
+
+
 @app.get("/systemAdmin")
 def read_system_admin():
     return RedirectResponse(url="/static/systemAdmin.html")
