@@ -367,6 +367,17 @@
       return (raceTypeLabels[lang] && raceTypeLabels[lang][type]) || raceType || "--";
     }
 
+    function athleteDisplayName(athlete, lang) {
+      const name = athlete.athlete_name;
+      if (typeof name === "string" && name.trim()) {
+        return name;
+      }
+      if (athlete.station_number) {
+        return lang === "zh" ? `站位 ${athlete.station_number}` : `Station ${athlete.station_number}`;
+      }
+      return lang === "zh" ? "選手" : "Athlete";
+    }
+
     function formatDate(epochMs) {
       if (!Number.isFinite(epochMs) || epochMs <= 0) return "--";
       try {
@@ -456,7 +467,7 @@
       const totalAthletes = data.total_athletes || 0;
       document.getElementById("rank").textContent = `${rank}${totalAthletes ? ` / ${totalAthletes}` : ""}`;
 
-      document.getElementById("athlete-name").textContent = escapeHtml(athlete.athlete_name || "");
+      document.getElementById("athlete-name").textContent = escapeHtml(athleteDisplayName(athlete, lang));
 
       const teamName = athlete.team_name ? `<span class="lang-en">Team: ${escapeHtml(athlete.team_name)}</span><span class="lang-zh">隊伍: ${escapeHtml(athlete.team_name)}</span>` : "";
       const stationNum = athlete.station_number ? `<span class="lang-en">Station ${athlete.station_number}</span><span class="lang-zh">站位 ${athlete.station_number}</span>` : "";

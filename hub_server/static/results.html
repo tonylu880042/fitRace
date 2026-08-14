@@ -373,6 +373,17 @@
       return (raceTypeLabels[lang] && raceTypeLabels[lang][type]) || raceType || "--";
     }
 
+    function athleteDisplayName(athlete, lang) {
+      const name = athlete.athlete_name;
+      if (typeof name === "string" && name.trim()) {
+        return name;
+      }
+      if (athlete.station_number) {
+        return lang === "zh" ? `站位 ${athlete.station_number}` : `Station ${athlete.station_number}`;
+      }
+      return lang === "zh" ? "選手" : "Athlete";
+    }
+
     function formatMetricValue(athlete, raceType) {
       const type = String(raceType || "").toLowerCase();
       let value = "--";
@@ -489,7 +500,7 @@
         card.innerHTML = `
           <div class="card-header">
             <div class="card-rank">#${athlete.rank || 0}</div>
-            <div class="card-name">${escapeHtml(athlete.athlete_name || "")}</div>
+            <div class="card-name">${escapeHtml(athleteDisplayName(athlete, lang))}</div>
           </div>
           ${teamHtml}
           <div class="card-metric">
