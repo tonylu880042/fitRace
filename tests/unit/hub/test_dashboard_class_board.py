@@ -783,3 +783,463 @@ def test_render_class_board_calls_to_clock_shape_with_server_data():
     assert (
         not lines_with_00_00
     ), f"renderClassBoard should not show 00:00 as countdown; found: {lines_with_00_00}"
+
+
+# -- 8. WEBSOCKET MESSAGE PATH regression: the live-hub defect.
+#
+# Every test above exercises buildClassBoardHtml/renderClassBoard directly --
+# never the actual path the projector takes. In production, ws.onmessage's
+# untyped-telemetry branch (populated payloads with no `type` field, sent
+# several times a second by mqtt_subscriber.py's _handle_telemetry) called
+# renderLeaderboard(data) unconditionally, with no session_mode check
+# anywhere in reach, because the raw payload never carries session_mode.
+# Within ~250ms of a class starting, the projector reverted to a ranked
+# race leaderboard (crown/medal emoji, a station "winning") and stayed
+# there for the whole class -- the exact thing a class board exists to
+# prevent.
+#
+# These tests extract the REAL ws.onmessage handler (the same anchor/brace
+# technique tests/unit/hub/test_dashboard_stations_refetch_storm.py uses)
+# and execute it under node with a synthetic untyped-telemetry `event`,
+# proving the class board -- not the leaderboard -- is what ends up on
+# screen when session mode is "class".
+
+
+def _extract_braced(source: str, anchor: str) -> str:
+    """Return the exact `{ ... }` block that immediately follows `anchor`,
+    walking brace depth character-by-character (mirrors the technique in
+    tests/unit/hub/test_dashboard_stations_refetch_storm.py) so a template
+    literal's own braces can't throw off the match."""
+    start = source.index(anchor) + len(anchor)
+    brace_start = source.index("{", start)
+    depth = 0
+    for i in range(brace_start, len(source)):
+        char = source[i]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return source[brace_start : i + 1]
+    raise AssertionError(f"unbalanced braces after anchor {anchor!r}")
+
+
+def _index_onmessage_body() -> str:
+    source = _read_index()
+    start = source.index("<script>") + len("<script>")
+    end = source.index("</script>", start)
+    script = source[start:end]
+    return _strip_js_comments(_extract_braced(script, "ws.onmessage = (event) =>"))
+
+
+def _run_ws_onmessage_untyped_telemetry(
+    telemetry_payload: dict, session_mode, class_plan_js: str
+) -> dict:
+    """Executes the REAL ws.onmessage handler body -- not renderLeaderboard
+    or buildClassBoardHtml in isolation -- with a synthetic untyped
+    telemetry `event`, mirroring exactly what mqtt_subscriber.py's
+    _handle_telemetry broadcasts on every telemetry row. `renderLeaderboard`
+    (the function the untyped branch delegates to) and its class-mode
+    dependencies are the real, unmodified functions extracted from
+    index.html; `detectAthleteFinishes` -- the first call on the race-only
+    path -- is stubbed to record that the race path was reached and to
+    stop execution there (raising a private sentinel), so this doesn't also
+    need every downstream race-rendering helper stubbed just to prove
+    control flow never got that far."""
+    source = _read_index()
+    onmessage_body = _index_onmessage_body()
+    render_leaderboard_fn = _strip_js_comments(
+        _extract_function(source, "renderLeaderboard")
+    )
+    render_class_board_from_state_fn = _strip_js_comments(
+        _extract_function(source, "renderClassBoardFromState")
+    )
+    class_clock_at_fn = _strip_js_comments(_extract_function(source, "classClockAt"))
+    build_class_board_html_fn = _strip_js_comments(
+        _extract_function(source, "buildClassBoardHtml")
+    )
+
+    script = (
+        _t_stub()
+        + _metric_number_stub()
+        + _escape_html_stub()
+        + _node_display_name_stub()
+        + _intl_number_format_stub()
+        + _format_clock_stub()
+        + "const currentLocale = 'en-US';\n"
+        + f"let currentSessionMode = {json.dumps(session_mode)};\n"
+        + f"let currentClassPlan = {class_plan_js};\n"
+        + "let currentClassLeaderboard = {};\n"
+        + "let raceStartTime = Date.now() - 5000;\n"
+        + "let reachedRacePath = false;\n"
+        + "function detectAthleteFinishes() { reachedRacePath = true; throw new Error('__STOP_RACE_PATH__'); }\n"
+        + "let httpCallsMade = [];\n"
+        + "function fetch(url) { httpCallsMade.push(url); return Promise.resolve(); }\n"
+        + class_clock_at_fn
+        + "\n"
+        + build_class_board_html_fn
+        + "\n"
+        + render_class_board_from_state_fn
+        + "\n"
+        + render_leaderboard_fn
+        + "\n"
+        + "const leaderboardContainer = { innerHTML: '<div class=\"leaderboard-list\">STALE RACE MARKUP</div>' };\n"
+        + 'const document = { getElementById: (id) => (id === "leaderboard-container" ? leaderboardContainer : null) };\n'
+        + "const ws = {};\n"
+        + f"ws.onmessage = (event) => {onmessage_body}\n"
+        + f"const event = {{ data: {json.dumps(json.dumps(telemetry_payload))} }};\n"
+        + "try {\n"
+        + "  ws.onmessage(event);\n"
+        + "} catch (e) {\n"
+        + "  if (e.message !== '__STOP_RACE_PATH__') throw e;\n"
+        + "}\n"
+        + "console.log(JSON.stringify({ innerHTML: leaderboardContainer.innerHTML, reachedRacePath, httpCallsMade }));"
+    )
+    result = subprocess.run(
+        ["node", "-e", script], capture_output=True, text=True, timeout=5
+    )
+    if result.returncode != 0:
+        raise AssertionError(f"node failed: {result.stderr}\nScript:\n{script}")
+    return json.loads(result.stdout)
+
+
+_UNTYPED_TELEMETRY_PAYLOAD = {
+    "n1": {
+        "node_id": "n1",
+        "athlete_name": "Sofia",
+        "station_number": 3,
+        "power_watts": 420,
+        "instantaneous_speed_kph": 38,
+        "distance_m": 900,
+    }
+}
+
+_ONE_SEGMENT_PLAN_JS = '{"segments": [{"kind": "work", "duration_sec": 300}]}'
+
+
+def test_ws_onmessage_untyped_telemetry_renders_class_board_when_session_mode_is_class():
+    """The exact live-hub defect: an untyped telemetry broadcast, fed
+    through the real ws.onmessage handler while session mode is "class",
+    must render the class board -- not the race leaderboard promoting
+    Sofia to first place with a crown."""
+    result = _run_ws_onmessage_untyped_telemetry(
+        _UNTYPED_TELEMETRY_PAYLOAD, "class", _ONE_SEGMENT_PLAN_JS
+    )
+    html = result["innerHTML"]
+    assert "Sofia" in html, f"expected the class board station card, got: {html}"
+    assert "T[class.in_progress]" in html, f"expected class board markup, got: {html}"
+    assert "STALE RACE MARKUP" not in html
+
+
+def test_ws_onmessage_untyped_telemetry_never_reaches_race_leaderboard_path_when_class():
+    """The race-only path (detectAthleteFinishes, the first call inside
+    renderLeaderboard's race branch) must never run when session mode is
+    "class" -- proving the routing decision happens before any race-mode
+    logic, not merely that the class board also happens to get rendered
+    afterward."""
+    result = _run_ws_onmessage_untyped_telemetry(
+        _UNTYPED_TELEMETRY_PAYLOAD, "class", _ONE_SEGMENT_PLAN_JS
+    )
+    assert result["reachedRacePath"] is False
+
+
+def test_ws_onmessage_untyped_telemetry_never_contains_rank_markup_when_class():
+    """Negative assertion mirroring section 4 above, but through the real
+    WS path this time: no crown/medal/rank markup may appear."""
+    result = _run_ws_onmessage_untyped_telemetry(
+        _UNTYPED_TELEMETRY_PAYLOAD, "class", _ONE_SEGMENT_PLAN_JS
+    )
+    html = result["innerHTML"]
+    assert "rank-champion" not in html
+    assert "leaderboard-list" not in html
+
+
+def test_ws_onmessage_untyped_telemetry_still_reaches_race_path_when_not_class():
+    """Regression guard on the fix itself: the class-mode routing must not
+    accidentally swallow ordinary race telemetry too. When session mode is
+    anything other than "class", control must still reach the race-only
+    path."""
+    result = _run_ws_onmessage_untyped_telemetry(
+        _UNTYPED_TELEMETRY_PAYLOAD, "race", _ONE_SEGMENT_PLAN_JS
+    )
+    assert result["reachedRacePath"] is True
+
+
+def test_ws_onmessage_untyped_telemetry_makes_no_http_request_when_class():
+    """The class-mode render path must stay exactly as HTTP-free as the
+    race path guarded by test_dashboard_stations_refetch_storm.py -- the
+    fix must not reach for fetchStations()/fetchState() or any other HTTP
+    call to do its routing."""
+    result = _run_ws_onmessage_untyped_telemetry(
+        _UNTYPED_TELEMETRY_PAYLOAD, "class", _ONE_SEGMENT_PLAN_JS
+    )
+    assert result["httpCallsMade"] == []
+
+
+# -- 9. Chrome must never announce a race during a class (Defect 2).
+#
+# getRaceStageDetails/getClassStageDetails drive the stage banner;
+# renderDashboardChrome drives the header type indicator, config
+# description, and leaderboard panel title. All five must describe the
+# class (or be silent) while a class is active, never "Race: Not
+# configured" / "No race configured" / "Ranking updates live".
+
+
+def _run_get_class_stage_details(stage_js: str) -> dict:
+    source = _read_index()
+    fn = _strip_js_comments(_extract_function(source, "getClassStageDetails"))
+    script = (
+        _t_stub()
+        + fn
+        + "\n"
+        + f"console.log(JSON.stringify(getClassStageDetails({stage_js})));"
+    )
+    result = subprocess.run(
+        ["node", "-e", script], capture_output=True, text=True, timeout=5
+    )
+    if result.returncode != 0:
+        raise AssertionError(f"node failed: {result.stderr}\nScript:\n{script}")
+    return json.loads(result.stdout)
+
+
+def test_get_class_stage_details_running_never_claims_live_ranking():
+    result = _run_get_class_stage_details('"RUNNING"')
+    assert result["main"] == "T[class.in_progress]"
+    assert result["kicker"] == "T[class.stage_kicker]"
+    assert result["sub"] == "T[class.stage_sub]"
+    for value in result.values():
+        assert "stage.live_race" not in str(value)
+        assert "stage.running_sub" not in str(value)
+
+
+def test_get_class_stage_details_non_running_states_never_say_unconfigured():
+    for stage in ('"READY"', '"STOPPED"', '"IDLE"'):
+        result = _run_get_class_stage_details(stage)
+        assert result["main"] == "T[class.stage_not_running]"
+        for value in result.values():
+            assert "race.unconfigured" not in str(value)
+            assert "status.no_config" not in str(value)
+            assert "stage.venue_display" not in str(value)
+
+
+def _run_render_dashboard_chrome(
+    session_mode: str, current_config_js: str = "null"
+) -> dict:
+    source = _read_index()
+    render_fn = _strip_js_comments(_extract_function(source, "renderDashboardChrome"))
+    race_stage_fn = _strip_js_comments(
+        _extract_function(source, "renderRaceStageBanner")
+    )
+    get_race_stage_fn = _strip_js_comments(
+        _extract_function(source, "getRaceStageDetails")
+    )
+    get_class_stage_fn = _strip_js_comments(
+        _extract_function(source, "getClassStageDetails")
+    )
+
+    script = (
+        _t_stub()
+        + _metric_number_stub()
+        + f"let currentSessionMode = {json.dumps(session_mode)};\n"
+        + f"let currentConfig = {current_config_js};\n"
+        + "let currentState = 'RUNNING';\n"
+        + "let raceStageOverride = null;\n"
+        + "const configDesc = {};\n"
+        + "const typeIndicator = {};\n"
+        + "const panelTitle = {};\n"
+        + "const document = { getElementById: (id) => ({\n"
+        + '  "current-config-desc": configDesc,\n'
+        + '  "race-type-indicator": typeIndicator,\n'
+        + '  "leaderboard-panel-title": panelTitle,\n'
+        + "}[id] || null) };\n"
+        + get_class_stage_fn
+        + "\n"
+        + get_race_stage_fn
+        + "\n"
+        + race_stage_fn
+        + "\n"
+        + render_fn
+        + "\n"
+        + "renderDashboardChrome();\n"
+        + "console.log(JSON.stringify({ configDesc: configDesc.innerText, typeIndicator: typeIndicator.innerText, panelTitle: panelTitle.innerText }));"
+    )
+    result = subprocess.run(
+        ["node", "-e", script], capture_output=True, text=True, timeout=5
+    )
+    if result.returncode != 0:
+        raise AssertionError(f"node failed: {result.stderr}\nScript:\n{script}")
+    return json.loads(result.stdout)
+
+
+def test_render_dashboard_chrome_never_shows_race_unconfigured_in_class_mode():
+    result = _run_render_dashboard_chrome("class")
+    assert result["configDesc"] == "T[class.config_desc]"
+    assert result["typeIndicator"] == "T[class.type_indicator]"
+    assert "race.unconfigured" not in result["typeIndicator"]
+    assert "status.no_config" not in result["configDesc"]
+
+
+def test_render_dashboard_chrome_sets_class_panel_title():
+    result = _run_render_dashboard_chrome("class")
+    assert result["panelTitle"] == "T[class.leaderboard_title]"
+    assert "leaderboard.title" not in result["panelTitle"]
+
+
+def test_render_dashboard_chrome_leaves_race_mode_unaffected():
+    """Regression guard: an unconfigured RACE session must still show the
+    original race copy -- the class-mode branch must not swallow it."""
+    result = _run_render_dashboard_chrome("race")
+    assert result["configDesc"] == "T[status.no_config]"
+    assert result["typeIndicator"] == "T[race.unconfigured]"
+    assert result["panelTitle"] == "T[leaderboard.title]"
+
+
+# -- 10. Locale-aware metric numbers (Defect 3).
+
+
+def test_build_class_board_html_formats_metric_numbers_with_real_intl_for_de_ch():
+    """Uses the REAL Intl.NumberFormat (not the identity stub the other
+    render-path tests above use) so this actually pins Swiss-locale
+    grouping -- de-CH groups thousands with U+2019, e.g.
+    Intl.NumberFormat('de-CH').format(1250) -- rather than merely
+    confirming numberFormat.format() was called at all."""
+    source = _read_index()
+    fn = _strip_js_comments(_extract_function(source, "buildClassBoardHtml"))
+    session_data = json.dumps(
+        {
+            "class_plan": {"segments": [{"kind": "work", "duration_sec": 300}]},
+            "leaderboard": {
+                "node1": {
+                    "node_id": "node1",
+                    "athlete_name": "Nina",
+                    "station_number": 1,
+                    "power_watts": 1200,
+                    "instantaneous_speed_kph": 30,
+                    "distance_m": 1250,
+                }
+            },
+        }
+    )
+    clock = '{"index": 0, "kind": "work", "segmentRemainingMs": 300000, "totalRemainingMs": 300000, "finished": false}'
+    script = (
+        _t_stub()
+        + _metric_number_stub()
+        + _escape_html_stub()
+        + _node_display_name_stub()
+        + _format_clock_stub()
+        + "const currentLocale = 'de-CH';\n"
+        + fn
+        + "\n"
+        + f"const sessionData = {session_data};\n"
+        + f"const clock = {clock};\n"
+        + "const html = buildClassBoardHtml(sessionData, clock);\n"
+        + "const expectedPower = new Intl.NumberFormat('de-CH').format(1200);\n"
+        + "const expectedDistance = new Intl.NumberFormat('de-CH').format(1250);\n"
+        + "console.log(JSON.stringify({ html, expectedPower, expectedDistance, enUsPower: new Intl.NumberFormat('en-US').format(1200) }));"
+    )
+    result = subprocess.run(
+        ["node", "-e", script], capture_output=True, text=True, timeout=5
+    )
+    if result.returncode != 0:
+        raise AssertionError(f"node failed: {result.stderr}\nScript:\n{script}")
+    payload = json.loads(result.stdout)
+    html = payload["html"]
+    assert payload["expectedPower"] in html, (
+        f"expected real de-CH Intl formatting of 1200 ({payload['expectedPower']!r}) "
+        f"in html, got: {html}"
+    )
+    assert payload["expectedDistance"] in html, (
+        f"expected real de-CH Intl formatting of 1250 ({payload['expectedDistance']!r}) "
+        f"in html, got: {html}"
+    )
+    # de-CH's grouping separator is not a plain comma, so the en-US
+    # formatting must NOT appear -- catches a mutation that hardcodes
+    # 'en-US' regardless of currentLocale.
+    if payload["enUsPower"] != payload["expectedPower"]:
+        assert payload["enUsPower"] not in html
+
+
+def test_set_language_class_branch_calls_render_class_board_from_state():
+    """setLanguage's class-mode branch must re-render the class board
+    immediately from page state, rather than relying on the race-only
+    synthetic updateUIState() call below it (which carries no class_plan/
+    leaderboard and would silently do nothing for a class). Extracted with
+    the same brace-depth matching as the other real-function tests in this
+    module -- not a bare substring search over the whole file -- so this
+    can only pass if the call sits inside setLanguage's own class-mode
+    branch, not merely somewhere else on the page."""
+    script = _read_index()
+    start = script.index("<script>") + len("<script>")
+    end = script.index("</script>", start)
+    body = script[start:end]
+    fn_start = body.index("async function setLanguage(")
+    brace_open = body.index("{", fn_start)
+    brace_end = _matching_brace_end(body, brace_open)
+    fn_source = _strip_js_comments(body[fn_start : brace_end + 1])
+
+    class_branch_start = fn_source.index('currentSessionMode === "class"')
+    class_branch_brace_open = fn_source.index("{", class_branch_start)
+    class_branch_end = _matching_brace_end(fn_source, class_branch_brace_open)
+    class_branch = fn_source[class_branch_brace_open : class_branch_end + 1]
+
+    assert "renderClassBoardFromState()" in class_branch, (
+        "setLanguage's class-mode branch must call renderClassBoardFromState() "
+        f"to re-render immediately; branch was: {class_branch}"
+    )
+    # And the race-mode synthetic updateUIState() call must NOT be reached
+    # for a class -- it has no class_plan/leaderboard, so calling it would
+    # silently no-op instead of refreshing the board.
+    assert "updateUIState(" not in class_branch
+
+
+# -- 11. New i18n keys exist in all six locales and zh-TW is genuinely
+# translated, mirroring section 6 above for the class-mode chrome/banner
+# keys this module adds.
+
+_NEW_CHROME_KEYS = {
+    "class.type_indicator",
+    "class.config_desc",
+    "class.leaderboard_title",
+    "class.stage_kicker",
+    "class.stage_sub",
+    "class.stage_not_running",
+}
+
+
+def test_new_chrome_keys_exist_in_all_locales():
+    locales = ["de-CH", "en-US", "fr", "it", "sv", "zh-TW"]
+    for locale in locales:
+        locales_path = LOCALES_DIR / f"{locale}.json"
+        with open(locales_path, "r", encoding="utf-8") as f:
+            messages = json.load(f)
+        missing = _NEW_CHROME_KEYS - set(messages.keys())
+        assert not missing, f"Missing chrome keys in {locale}: {missing}"
+
+
+def test_new_chrome_keys_in_zh_tw_contain_cjk_characters():
+    locales_path = LOCALES_DIR / "zh-TW.json"
+    with open(locales_path, "r", encoding="utf-8") as f:
+        zh_tw = json.load(f)
+    for key in _NEW_CHROME_KEYS:
+        value = zh_tw[key]
+        assert _CJK_RE.search(
+            value
+        ), f"{key} in zh-TW should contain CJK but is: {value}"
+
+
+def test_new_chrome_keys_are_not_copies_of_english_across_locales():
+    """Catches "key added but left in English" for a locale other than
+    zh-TW (whose CJK check above already guards it) -- e.g. fr/it/sv/de-CH
+    silently keeping the en-US string."""
+    en_us_path = LOCALES_DIR / "en-US.json"
+    with open(en_us_path, "r", encoding="utf-8") as f:
+        en_us = json.load(f)
+    for locale in ("de-CH", "fr", "it", "sv"):
+        locales_path = LOCALES_DIR / f"{locale}.json"
+        with open(locales_path, "r", encoding="utf-8") as f:
+            messages = json.load(f)
+        for key in _NEW_CHROME_KEYS:
+            assert messages[key] != en_us[key], (
+                f"{key} in {locale} is an unmodified copy of the en-US "
+                f"string: {en_us[key]!r}"
+            )

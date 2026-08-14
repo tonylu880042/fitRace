@@ -2189,7 +2189,7 @@
     <main>
       <div class="card accent">
         <div class="card-title">
-          <div data-i18n="leaderboard.title">Live Leaderboard</div>
+          <div id="leaderboard-panel-title" data-i18n="leaderboard.title">Live Leaderboard</div>
           <span id="race-type-indicator" data-i18n="race.unconfigured">Race: Not configured</span>
         </div>
         <div class="race-stage-banner" id="race-stage-banner" aria-live="polite">
@@ -2313,6 +2313,7 @@
     let classClockInterval = null;
     let currentClassPlan = null;
     let currentClassLeaderboard = {};
+    let currentSessionMode = null;
     function getBrowserLocale() {
       const saved = localStorage.getItem("fitrace.locale");
       if (saved) return saved;
@@ -2354,13 +2355,23 @@
     async function setLanguage(locale) {
       await loadLocale(locale);
       toggleConfigFields();
-      updateUIState({
-        state: currentState,
-        config: currentConfig,
-        start_time_epoch_ms: raceStartTime,
-        end_time_epoch_ms: raceEndTime,
-        leaderboard: null,
-      });
+      renderCurrentStateLabel(currentState);
+      renderDashboardChrome();
+      if (currentSessionMode === "class") {
+        // The synthetic updateUIState() call below has no class_plan/
+        // leaderboard of its own, so a class board must be re-rendered
+        // directly from state already held by the page -- otherwise it
+        // keeps its previous-language labels until the next server tick.
+        renderClassBoardFromState();
+      } else {
+        updateUIState({
+          state: currentState,
+          config: currentConfig,
+          start_time_epoch_ms: raceStartTime,
+          end_time_epoch_ms: raceEndTime,
+          leaderboard: null,
+        });
+      }
       renderEdgeNodes(edgeNodes);
     }
 
@@ -2470,7 +2481,29 @@
       );
     }
 
+    function getClassStageDetails(stage) {
+      // A class is never a race: the banner must never claim live ranking.
+      // Reuses the existing className buckets (ready/running/finished/idle)
+      // purely for the banners CSS coloring -- the copy itself always
+      // comes from class.* keys.
+      const kicker = t("class.stage_kicker");
+      const sub = t("class.stage_sub");
+      if (stage === "RUNNING") {
+        return { className: "running", kicker, main: t("class.in_progress"), sub, timer: "" };
+      }
+      if (stage === "STOPPED") {
+        return { className: "finished", kicker, main: t("class.stage_not_running"), sub, timer: "" };
+      }
+      if (stage === "READY") {
+        return { className: "ready", kicker, main: t("class.stage_not_running"), sub, timer: "" };
+      }
+      return { className: "idle", kicker, main: t("class.stage_not_running"), sub, timer: "" };
+    }
+
     function getRaceStageDetails(stage = currentState) {
+      if (currentSessionMode === "class") {
+        return getClassStageDetails(stage);
+      }
       const competition = currentConfig?.competition_mode === "team" ? t("stage.team") : t("stage.individual");
       const raceType = currentConfig?.race_type || "";
       const target = currentConfig
@@ -2615,6 +2648,10 @@
         if (data && Object.keys(data).length > 0) {
           // Populated, untyped payloads are per-athlete telemetry progress.
           // They never carry station registration changes, so no refetch.
+          // They also never carry session_mode -- renderLeaderboard()
+          // itself consults the mode already known to the page, so a
+          // class board does not get promoted into a race leaderboard the
+          // instant telemetry ticks.
           renderLeaderboard(data);
         }
         // Untyped payloads -- whether populated leaderboard progress or the
@@ -3583,7 +3620,13 @@
     }
 
     function renderSmoothLeaderboardFrame() {
-      if (currentState === "RUNNING" && lastLeaderboardData) {
+      // Never in class mode: lastLeaderboardData/lastTeamLeaderboardData
+      // can hold stale race telemetry from a race that ran earlier in the
+      // same page session (renderLeaderboards class-mode branch returns
+      // before touching them), and this runs every animation frame --
+      // feeding that stale data back into renderLeaderboard would
+      // overwrite the live class leaderboard with it 60 times a second.
+      if (currentState === "RUNNING" && currentSessionMode !== "class" && lastLeaderboardData) {
         isSmoothLeaderboardFrame = true;
         renderLeaderboard(lastLeaderboardData, lastTeamLeaderboardData);
         isSmoothLeaderboardFrame = false;
@@ -4182,13 +4225,38 @@
         buildClassBoardHtml({ class_plan: data.class_plan, leaderboard: data.leaderboard || {} }, clock);
     }
 
+    function renderClassBoardFromState() {
+      // Renders the class board purely from state already known to the
+      // page (currentClassPlan / currentClassLeaderboard / raceStartTime)
+      // -- no HTTP request. Shared by the periodic class clock tick and by
+      // untyped telemetry broadcasts on the WS, which never carry
+      // session_mode or class_plan of their own.
+      if (!currentClassPlan) return;
+      const clock = raceStartTime
+        ? classClockAt(Date.now(), raceStartTime, currentClassPlan)
+        : classClockAt(0, 0, currentClassPlan);
+      document.getElementById("leaderboard-container").innerHTML =
+        buildClassBoardHtml({ class_plan: currentClassPlan, leaderboard: currentClassLeaderboard }, clock);
+    }
+
     function tickClassClock() {
       if (!raceStartTime || !currentClassPlan) return;
-      const clock = classClockAt(Date.now(), raceStartTime, currentClassPlan);
-      document.getElementById("leaderboard-container").innerHTML = buildClassBoardHtml({ class_plan: currentClassPlan, leaderboard: currentClassLeaderboard }, clock);
+      renderClassBoardFromState();
     }
 
     function renderLeaderboard(progressData, teamData = null) {
+      // Untyped WS payloads (per-athlete telemetry progress) never carry
+      // session_mode -- only typed state_change messages do. Falling
+      // through to the race leaderboard logic below unconditionally turns
+      // an unranked class into a ranked leaderboard the instant telemetry
+      // ticks, which is exactly the property a class board must never
+      // have. Consult the session mode already known to the page instead,
+      // and route straight to the class board with no HTTP request.
+      if (currentSessionMode === "class") {
+        currentClassLeaderboard = progressData || {};
+        renderClassBoardFromState();
+        return;
+      }
       detectAthleteFinishes(progressData);
       lastLeaderboardData = progressData || {};
       lastTeamLeaderboardData = teamData || null;
@@ -4422,6 +4490,45 @@
       if (el) el.innerText = raceStateLabel(state);
     }
 
+    function renderDashboardChrome() {
+      // Header type indicator, config description, and panel title all
+      // describe a RACE by default. In class mode none of that is true --
+      // a class has no config, no race type, and no ranking, so all three
+      // must be swapped for class copy instead of falling through to
+      // "Race: Not configured" / "No race configured" wording.
+      const configDesc = document.getElementById("current-config-desc");
+      const typeIndicator = document.getElementById("race-type-indicator");
+      const panelTitle = document.getElementById("leaderboard-panel-title");
+
+      if (currentSessionMode === "class") {
+        if (configDesc) configDesc.innerText = t("class.config_desc");
+        if (typeIndicator) typeIndicator.innerText = t("class.type_indicator");
+        if (panelTitle) panelTitle.innerText = t("class.leaderboard_title");
+      } else {
+        if (panelTitle) panelTitle.innerText = t("leaderboard.title");
+        if (currentConfig) {
+          const competitionLabel = currentConfig.competition_mode === "team" ? t("stage.team") : t("stage.individual");
+          if (currentConfig.race_type === "distance") {
+            configDesc.innerText = `${competitionLabel} · ${t("race.distance")}: ${currentConfig.target_value}m`;
+            typeIndicator.innerText = `${competitionLabel} · ${t("race.distance")} (${currentConfig.target_value}m)`;
+          } else if (currentConfig.race_type === "calories") {
+            configDesc.innerText = `${competitionLabel} · ${t("race.calories")}: ${currentConfig.target_value} kcal`;
+            typeIndicator.innerText = `${competitionLabel} · ${t("race.calories")} (${currentConfig.target_value} kcal)`;
+          } else if (currentConfig.race_type === "time") {
+            configDesc.innerText = `${competitionLabel} · ${t("race.time")}: ${currentConfig.duration_sec}s`;
+            typeIndicator.innerText = `${competitionLabel} · ${t("race.time")} (${currentConfig.duration_sec}s)`;
+          } else if (currentConfig.race_type === "max_power" || currentConfig.race_type === "watts") {
+            configDesc.innerText = `${competitionLabel} · ${t("race.max_power")}: ${currentConfig.duration_sec}s`;
+            typeIndicator.innerText = `${competitionLabel} · ${t("race.max_power")} (${currentConfig.duration_sec}s)`;
+          }
+        } else {
+          configDesc.innerText = t("status.no_config");
+          typeIndicator.innerText = t("race.unconfigured");
+        }
+      }
+      renderRaceStageBanner();
+    }
+
     function updateUIState(data) {
       console.log("updateUIState data:", data);
       if (!data || data.state === undefined) {
@@ -4433,6 +4540,7 @@
       const previousState = currentState;
       currentState = data.state;
       currentConfig = data.config;
+      currentSessionMode = data.session_mode || "race";
       raceStartTime = data.start_time_epoch_ms;
       raceEndTime = data.end_time_epoch_ms || null;
       applyLeaderboardDisplayMode(data.leaderboard_display_mode || "classic");
@@ -4481,30 +4589,7 @@
       }
 
       renderCurrentStateLabel(currentState);
-      
-      const configDesc = document.getElementById("current-config-desc");
-      const typeIndicator = document.getElementById("race-type-indicator");
-
-      if (currentConfig) {
-        const competitionLabel = currentConfig.competition_mode === "team" ? t("stage.team") : t("stage.individual");
-        if (currentConfig.race_type === "distance") {
-          configDesc.innerText = `${competitionLabel} · ${t("race.distance")}: ${currentConfig.target_value}m`;
-          typeIndicator.innerText = `${competitionLabel} · ${t("race.distance")} (${currentConfig.target_value}m)`;
-        } else if (currentConfig.race_type === "calories") {
-          configDesc.innerText = `${competitionLabel} · ${t("race.calories")}: ${currentConfig.target_value} kcal`;
-          typeIndicator.innerText = `${competitionLabel} · ${t("race.calories")} (${currentConfig.target_value} kcal)`;
-        } else if (currentConfig.race_type === "time") {
-          configDesc.innerText = `${competitionLabel} · ${t("race.time")}: ${currentConfig.duration_sec}s`;
-          typeIndicator.innerText = `${competitionLabel} · ${t("race.time")} (${currentConfig.duration_sec}s)`;
-        } else if (currentConfig.race_type === "max_power" || currentConfig.race_type === "watts") {
-          configDesc.innerText = `${competitionLabel} · ${t("race.max_power")}: ${currentConfig.duration_sec}s`;
-          typeIndicator.innerText = `${competitionLabel} · ${t("race.max_power")} (${currentConfig.duration_sec}s)`;
-        }
-      } else {
-        configDesc.innerText = t("status.no_config");
-        typeIndicator.innerText = t("race.unconfigured");
-      }
-      renderRaceStageBanner();
+      renderDashboardChrome();
 
       // Class mode interval management
       if (data.session_mode === "class") {
@@ -4549,6 +4634,18 @@
             document.getElementById("stopwatch-lbl").innerText = "00:00.0";
             raceStartTime = null;
           }
+        }
+      } else {
+        // Class mode: no stopwatch. Stop any running interval and hide the
+        // label instead of leaving it frozen at whatever it last showed.
+        if (stopwatchInterval) {
+          clearInterval(stopwatchInterval);
+          stopwatchInterval = null;
+        }
+        const stopwatchLbl = document.getElementById("stopwatch-lbl");
+        if (stopwatchLbl) {
+          stopwatchLbl.style.display = "none";
+          stopwatchLbl.innerText = "00:00.0";
         }
       }
 
