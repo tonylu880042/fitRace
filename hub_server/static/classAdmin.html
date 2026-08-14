@@ -385,7 +385,7 @@
             <input type="number" id="repeat-from" min="1" value="1">
           </div>
           <div class="field">
-            <label for="repeat-to">To row #</label>
+            <label for="repeat-to" data-i18n="classAdmin.label_repeat_to">To row #</label>
             <input type="number" id="repeat-to" min="1" value="1">
           </div>
           <div class="field">
@@ -457,15 +457,21 @@
   </div>
 
   <script>
+    // Shown only until the first GET /api/race/state reply tells us what is
+    // actually saved on the hub. applyRaceState() below falls back to this
+    // ONLY when the incoming class_plan is null -- never once a real plan
+    // has arrived, or a coach reload would silently revert to it.
+    const DEFAULT_PLAN_ROWS = [
+      { kind: "warmup", durationSec: 300 },
+      { kind: "work", durationSec: 1200 },
+      { kind: "cooldown", durationSec: 300 },
+    ];
+
     const state = {
       race: {},
       stations: {},
       stationHealth: [],
-      rows: [
-        { kind: "warmup", durationSec: 300 },
-        { kind: "work", durationSec: 1200 },
-        { kind: "cooldown", durationSec: 300 },
-      ],
+      rows: DEFAULT_PLAN_ROWS.map((row) => ({ ...row })),
       adminToken: localStorage.getItem("fitrace.adminPassword") || localStorage.getItem("fitrace.adminToken") || "",
       refreshTimer: null,
     };
@@ -683,6 +689,21 @@
       };
     }
 
+    // Converts the class_plan stored on the hub (GET /api/race/state) into
+    // editor rows. Falls back to DEFAULT_PLAN_ROWS only when class_plan is
+    // null/missing/empty -- never once a real plan has been returned, so a
+    // save can never be overwritten by the default just by reloading.
+    function rowsFromClassPlan(classPlan) {
+      const segments = classPlan && Array.isArray(classPlan.segments) ? classPlan.segments : [];
+      if (!segments.length) {
+        return DEFAULT_PLAN_ROWS.map((row) => ({ ...row }));
+      }
+      return segments.map((segment) => ({
+        kind: segment.kind,
+        durationSec: metricNumber(segment.duration_sec, 0),
+      }));
+    }
+
     // ------------------------------------------------------------------
     // Render-path helpers -- pure string builders that use t()/escapeHtml()
     // /Intl but do not touch the DOM themselves. Executed under `node -e`
@@ -790,6 +811,19 @@
       applyTranslations();
     }
 
+    // The single entry point for a fresh GET /api/race/state reply: stores
+    // it, re-derives the editor rows from its class_plan (see
+    // rowsFromClassPlan), and re-renders the editor, preview and summary
+    // tiles so the coach never sees a stale or default plan next to the
+    // real one on the hub.
+    function applyRaceState(raceState) {
+      state.race = raceState || {};
+      state.rows = rowsFromClassPlan(state.race.class_plan);
+      renderPlanEditor();
+      renderPlanPreview();
+      renderSummaryState();
+    }
+
     // ------------------------------------------------------------------
     // Row mutation handlers.
     // ------------------------------------------------------------------
@@ -839,8 +873,8 @@
     }
 
     async function refreshState() {
-      state.race = await fetchJson(`/api/race/state?t=${Date.now()}`);
-      renderSummaryState();
+      const raceState = await fetchJson(`/api/race/state?t=${Date.now()}`);
+      applyRaceState(raceState);
     }
 
     async function refreshStations() {

@@ -98,6 +98,48 @@ def _extract_function(source: str, name: str) -> str:
     return source[start : brace_end + 1]
 
 
+_BRACKET_PAIRS = {"{": "}", "[": "]", "(": ")"}
+_BRACKET_CLOSERS = {close: open_ for open_, close in _BRACKET_PAIRS.items()}
+
+
+def _matching_close(source: str, open_idx: int) -> int:
+    """Like _matching_brace_end, but tracks a stack of {}/[]/() so it can
+    close whichever bracket kind opens at open_idx -- used to pull the
+    `const DEFAULT_PLAN_ROWS = [...]` array literal out of the page, since
+    _matching_brace_end only understands curly braces."""
+    stack = []
+    i = open_idx
+    in_str = None
+    while i < len(source):
+        char = source[i]
+        if in_str:
+            if char == "\\":
+                i += 2
+                continue
+            if char == in_str:
+                in_str = None
+        elif char in ('"', "'", "`"):
+            in_str = char
+        elif char in _BRACKET_PAIRS:
+            stack.append(_BRACKET_PAIRS[char])
+        elif char in _BRACKET_CLOSERS:
+            if not stack or stack[-1] != char:
+                raise ValueError("mismatched bracket while scanning for close")
+            stack.pop()
+            if not stack:
+                return i
+        i += 1
+    raise ValueError("no matching close found")
+
+
+def _extract_const(source: str, name: str) -> str:
+    marker = f"const {name} = "
+    start = source.index(marker)
+    value_start = start + len(marker)
+    close_idx = _matching_close(source, value_start)
+    return source[start : close_idx + 1] + ";"
+
+
 def _run_node(script: str) -> str:
     result = subprocess.run(
         ["node", "-e", script], capture_output=True, text=True, timeout=5
@@ -620,6 +662,224 @@ def test_sync_session_mode_control_enables_button_and_shows_default_note_when_id
 
 
 # ---------------------------------------------------------------------------
+# 8b. applyRaceState -- the LOAD PATH. This is the function refreshState()
+# calls with every fresh GET /api/race/state reply. It must derive the
+# editor rows from the reply's class_plan and push them all the way into
+# the rendered DOM (plan-rows innerHTML, summary-total-duration text), not
+# just compute them and leave the result unused. Falls back to
+# DEFAULT_PLAN_ROWS only when class_plan is null.
+# ---------------------------------------------------------------------------
+
+
+def _run_apply_race_state(race_state_js: str) -> dict:
+    source = _read_class_admin()
+    default_plan_rows_const = _strip_js_comments(
+        _extract_const(source, "DEFAULT_PLAN_ROWS")
+    )
+    segment_kind_key_fn = _strip_js_comments(
+        _extract_function(source, "segmentKindKey")
+    )
+    format_duration_fn = _strip_js_comments(
+        _extract_function(source, "formatDurationClock")
+    )
+    compute_plan_summary_fn = _strip_js_comments(
+        _extract_function(source, "computePlanSummary")
+    )
+    build_plan_editor_html_fn = _strip_js_comments(
+        _extract_function(source, "buildPlanEditorHtml")
+    )
+    build_plan_preview_html_fn = _strip_js_comments(
+        _extract_function(source, "buildPlanPreviewHtml")
+    )
+    state_display_key_fn = _strip_js_comments(
+        _extract_function(source, "stateDisplayKey")
+    )
+    session_mode_switch_state_fn = _strip_js_comments(
+        _extract_function(source, "sessionModeSwitchState")
+    )
+    sync_session_mode_control_fn = _strip_js_comments(
+        _extract_function(source, "syncSessionModeControl")
+    )
+    render_plan_editor_fn = _strip_js_comments(
+        _extract_function(source, "renderPlanEditor")
+    )
+    render_plan_preview_fn = _strip_js_comments(
+        _extract_function(source, "renderPlanPreview")
+    )
+    render_summary_state_fn = _strip_js_comments(
+        _extract_function(source, "renderSummaryState")
+    )
+    rows_from_class_plan_fn = _strip_js_comments(
+        _extract_function(source, "rowsFromClassPlan")
+    )
+    apply_race_state_fn = _strip_js_comments(
+        _extract_function(source, "applyRaceState")
+    )
+
+    script = (
+        _t_stub()
+        + _metric_number_stub()
+        + _escape_html_stub()
+        + _intl_number_format_stub()
+        + "const currentLocale = 'en-US';\n"
+        + "const mockElements = {};\n"
+        + "function makeEl() {\n"
+        + "  return { textContent: '', innerHTML: '', className: '', dataset: {}, disabled: false };\n"
+        + "}\n"
+        + "function $(id) {\n"
+        + "  if (!mockElements[id]) mockElements[id] = makeEl();\n"
+        + "  return mockElements[id];\n"
+        + "}\n"
+        + default_plan_rows_const
+        + "\n"
+        + "const state = { race: {}, rows: [] };\n"
+        + segment_kind_key_fn
+        + "\n"
+        + format_duration_fn
+        + "\n"
+        + compute_plan_summary_fn
+        + "\n"
+        + build_plan_editor_html_fn
+        + "\n"
+        + build_plan_preview_html_fn
+        + "\n"
+        + state_display_key_fn
+        + "\n"
+        + session_mode_switch_state_fn
+        + "\n"
+        + sync_session_mode_control_fn
+        + "\n"
+        + render_plan_editor_fn
+        + "\n"
+        + render_plan_preview_fn
+        + "\n"
+        + render_summary_state_fn
+        + "\n"
+        + rows_from_class_plan_fn
+        + "\n"
+        + apply_race_state_fn
+        + "\n"
+        + f"const raceState = {race_state_js};\n"
+        + "applyRaceState(raceState);\n"
+        + "console.log(JSON.stringify({\n"
+        + "  rows: state.rows,\n"
+        + "  totalDurationText: mockElements['summary-total-duration'].textContent,\n"
+        + "  planRowsHtml: mockElements['plan-rows'].innerHTML,\n"
+        + "}));\n"
+    )
+    return json.loads(_run_node(script))
+
+
+def test_apply_race_state_loads_the_saved_plan_into_the_editor_not_the_default():
+    # Mirrors the reported reproduction: POST /api/class/configure with
+    # segments totalling 210s (03:30), then a fresh GET /api/race/state
+    # reply carrying that class_plan.
+    race_state = json.dumps(
+        {
+            "state": "IDLE",
+            "class_plan": {
+                "segments": [
+                    {"kind": "warmup", "duration_sec": 90},
+                    {"kind": "work", "duration_sec": 45},
+                    {"kind": "rest", "duration_sec": 15},
+                    {"kind": "cooldown", "duration_sec": 60},
+                ]
+            },
+        }
+    )
+    result = _run_apply_race_state(race_state)
+    assert result["rows"] == [
+        {"kind": "warmup", "durationSec": 90},
+        {"kind": "work", "durationSec": 45},
+        {"kind": "rest", "durationSec": 15},
+        {"kind": "cooldown", "durationSec": 60},
+    ]
+    assert result["totalDurationText"] == "03:30"
+    assert 'value="90"' in result["planRowsHtml"]
+    assert 'value="45"' in result["planRowsHtml"]
+    assert 'value="15"' in result["planRowsHtml"]
+    assert 'value="60"' in result["planRowsHtml"]
+    # The stale hardcoded default must not survive the load.
+    assert 'value="300"' not in result["planRowsHtml"]
+    assert 'value="1200"' not in result["planRowsHtml"]
+
+
+def test_apply_race_state_null_class_plan_falls_back_to_default():
+    race_state = json.dumps({"state": "IDLE", "class_plan": None})
+    result = _run_apply_race_state(race_state)
+    assert result["rows"] == [
+        {"kind": "warmup", "durationSec": 300},
+        {"kind": "work", "durationSec": 1200},
+        {"kind": "cooldown", "durationSec": 300},
+    ]
+    assert result["totalDurationText"] == "30:00"
+    assert 'value="300"' in result["planRowsHtml"]
+    assert 'value="1200"' in result["planRowsHtml"]
+
+
+def test_apply_race_state_missing_class_plan_key_falls_back_to_default():
+    # GET /api/race/state before any class has ever been configured may omit
+    # the key entirely rather than sending it as null.
+    race_state = json.dumps({"state": "IDLE"})
+    result = _run_apply_race_state(race_state)
+    assert result["rows"] == [
+        {"kind": "warmup", "durationSec": 300},
+        {"kind": "work", "durationSec": 1200},
+        {"kind": "cooldown", "durationSec": 300},
+    ]
+
+
+# ---------------------------------------------------------------------------
+# 8c. rowsFromClassPlan -- the pure conversion at the core of the load path.
+# ---------------------------------------------------------------------------
+
+
+def _run_rows_from_class_plan(class_plan_js: str) -> list:
+    source = _read_class_admin()
+    default_plan_rows_const = _strip_js_comments(
+        _extract_const(source, "DEFAULT_PLAN_ROWS")
+    )
+    fn = _strip_js_comments(_extract_function(source, "rowsFromClassPlan"))
+    script = (
+        _metric_number_stub()
+        + default_plan_rows_const
+        + "\n"
+        + fn
+        + "\n"
+        + f"const classPlan = {class_plan_js};\n"
+        + "console.log(JSON.stringify(rowsFromClassPlan(classPlan)));"
+    )
+    return json.loads(_run_node(script))
+
+
+def test_rows_from_class_plan_converts_segments_to_rows():
+    class_plan = '{"segments": [{"kind": "work", "duration_sec": 45}, {"kind": "rest", "duration_sec": 15}]}'
+    result = _run_rows_from_class_plan(class_plan)
+    assert result == [
+        {"kind": "work", "durationSec": 45},
+        {"kind": "rest", "durationSec": 15},
+    ]
+
+
+def test_rows_from_class_plan_null_yields_default_rows():
+    result = _run_rows_from_class_plan("null")
+    assert result == [
+        {"kind": "warmup", "durationSec": 300},
+        {"kind": "work", "durationSec": 1200},
+        {"kind": "cooldown", "durationSec": 300},
+    ]
+
+
+def test_rows_from_class_plan_empty_segments_yields_default_rows():
+    result = _run_rows_from_class_plan('{"segments": []}')
+    assert result == [
+        {"kind": "warmup", "durationSec": 300},
+        {"kind": "work", "durationSec": 1200},
+        {"kind": "cooldown", "durationSec": 300},
+    ]
+
+
+# ---------------------------------------------------------------------------
 # 9. i18n: classAdmin.* keys exist symmetrically in all six locales, zh-TW
 # carries genuine CJK translations, and the parameterised key's placeholder
 # survives translation.
@@ -643,6 +903,7 @@ CLASS_ADMIN_KEYS = [
     "classAdmin.btn_delete_segment",
     "classAdmin.btn_repeat_group",
     "classAdmin.label_repeat_times",
+    "classAdmin.label_repeat_to",
     "classAdmin.label_segment_count",
     "classAdmin.plan_empty",
     "classAdmin.station_col_number",
@@ -757,6 +1018,16 @@ def test_class_admin_page_fetches_locales_via_api_not_inline_dictionaries():
 def test_class_admin_page_never_hardcodes_admin_token_header_name_wrong():
     body = _read_class_admin()
     assert "X-FitRace-Admin-Token" in body
+
+
+def test_repeat_to_label_routes_through_i18n_not_hardcoded_english():
+    """The repeat-group toolbar's "to row #" label used to render a literal
+    English string with no data-i18n attribute at all, so it stayed English
+    in every locale. It must now carry a data-i18n key like every other
+    label on the page."""
+    body = _read_class_admin()
+    assert '<label for="repeat-to">To row #</label>' not in body
+    assert 'data-i18n="classAdmin.label_repeat_to"' in body
 
 
 # ---------------------------------------------------------------------------

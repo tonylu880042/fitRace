@@ -199,6 +199,7 @@
   "classAdmin.btn_delete_segment": "Delete",
   "classAdmin.btn_repeat_group": "Repeat Selected ×N",
   "classAdmin.label_repeat_times": "Times",
+  "classAdmin.label_repeat_to": "To row #",
   "classAdmin.label_segment_count": "{count} Segments",
   "classAdmin.plan_empty": "Add at least one segment to build a class plan.",
   "classAdmin.station_col_number": "Station",
