@@ -229,5 +229,22 @@
   "classAdmin.label_access_code": "Codice di accesso",
   "classAdmin.btn_save": "Salva",
   "classAdmin.btn_cancel": "Annulla",
-  "classAdmin.error_generic": "Qualcosa è andato storto. Riprova."
+  "classAdmin.error_generic": "Qualcosa è andato storto. Riprova.",
+  "race_type.distance": "Distanza",
+  "race_type.time": "Tempo",
+  "race_type.calories": "Calorie",
+  "race_type.max_power": "Potenza max",
+  "race_type.watts": "Potenza",
+  "result.error_title": "Risultato non trovato",
+  "result.error_hint": "Il codice potrebbe essere scaduto o non valido.",
+  "result.back_button": "Torna al cruscotto",
+  "result.loading": "Caricamento...",
+  "result.team_label": "Squadra",
+  "result.station_label": "Postazione",
+  "results.page_title": "Risultati",
+  "results.subtitle": "Muro di QR code · Classifica live",
+  "results.meta_athletes": "Atleti",
+  "results.updating": "Aggiornamento",
+  "results.empty_title": "Nessuna gara ancora",
+  "results.empty_hint": "I risultati appariranno qui al termine di una gara."
 }

@@ -229,5 +229,22 @@
   "classAdmin.label_access_code": "Access Code",
   "classAdmin.btn_save": "Save",
   "classAdmin.btn_cancel": "Cancel",
-  "classAdmin.error_generic": "Something went wrong. Please try again."
+  "classAdmin.error_generic": "Something went wrong. Please try again.",
+  "race_type.distance": "Distance",
+  "race_type.time": "Time",
+  "race_type.calories": "Calories",
+  "race_type.max_power": "Max Power",
+  "race_type.watts": "Power",
+  "result.error_title": "Result not found",
+  "result.error_hint": "The token may have expired or is invalid.",
+  "result.back_button": "Back to Dashboard",
+  "result.loading": "Loading...",
+  "result.team_label": "Team",
+  "result.station_label": "Station",
+  "results.page_title": "Results",
+  "results.subtitle": "QR Wall · Live Leaderboard",
+  "results.meta_athletes": "Athletes",
+  "results.updating": "Updating",
+  "results.empty_title": "No Races Yet",
+  "results.empty_hint": "Results will appear here when a race finishes"
 }

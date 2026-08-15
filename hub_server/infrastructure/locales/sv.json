@@ -229,5 +229,22 @@
   "classAdmin.label_access_code": "Åtkomstkod",
   "classAdmin.btn_save": "Spara",
   "classAdmin.btn_cancel": "Avbryt",
-  "classAdmin.error_generic": "Något gick fel. Försök igen."
+  "classAdmin.error_generic": "Något gick fel. Försök igen.",
+  "race_type.distance": "Distans",
+  "race_type.time": "Tid",
+  "race_type.calories": "Kalorier",
+  "race_type.max_power": "Maxeffekt",
+  "race_type.watts": "Effekt",
+  "result.error_title": "Resultatet hittades inte",
+  "result.error_hint": "Koden kan ha gått ut eller vara ogiltig.",
+  "result.back_button": "Tillbaka till instrumentpanelen",
+  "result.loading": "Laddar...",
+  "result.team_label": "Lag",
+  "result.station_label": "Station",
+  "results.page_title": "Resultat",
+  "results.subtitle": "QR-vägg · Live-resultattavla",
+  "results.meta_athletes": "Idrottare",
+  "results.updating": "Uppdaterar",
+  "results.empty_title": "Inga tävlingar än",
+  "results.empty_hint": "Resultat visas här när en tävling är avslutad."
 }

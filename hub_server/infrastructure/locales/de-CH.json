@@ -229,5 +229,22 @@
   "classAdmin.label_access_code": "Zugangscode",
   "classAdmin.btn_save": "Speichern",
   "classAdmin.btn_cancel": "Abbrechen",
-  "classAdmin.error_generic": "Etwas ist schiefgelaufen. Bitte versuchen Sie es erneut."
+  "classAdmin.error_generic": "Etwas ist schiefgelaufen. Bitte versuchen Sie es erneut.",
+  "race_type.distance": "Distanz",
+  "race_type.time": "Zeit",
+  "race_type.calories": "Kalorien",
+  "race_type.max_power": "Max. Leistung",
+  "race_type.watts": "Leistung",
+  "result.error_title": "Ergebnis nicht gefunden",
+  "result.error_hint": "Der Code ist möglicherweise abgelaufen oder ungültig.",
+  "result.back_button": "Zurück zur Übersicht",
+  "result.loading": "Wird geladen...",
+  "result.team_label": "Team",
+  "result.station_label": "Station",
+  "results.page_title": "Ergebnisse",
+  "results.subtitle": "QR-Wand · Live-Leaderboard",
+  "results.meta_athletes": "Athleten",
+  "results.updating": "Wird aktualisiert",
+  "results.empty_title": "Noch keine Rennen",
+  "results.empty_hint": "Ergebnisse erscheinen hier, sobald ein Rennen beendet ist."
 }

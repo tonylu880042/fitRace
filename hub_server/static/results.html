@@ -31,9 +31,6 @@
       padding: 24px;
     }
 
-    html[data-lang="en"] .lang-zh { display: none; }
-    html[data-lang="zh"] .lang-en { display: none; }
-
     .shell {
       width: min(1400px, 100%);
       margin: 0 auto;
@@ -67,7 +64,7 @@
       text-transform: uppercase;
     }
 
-    .header h1 span { color: var(--accent); }
+    .header h1 span.accent { color: var(--accent); }
 
     .header p {
       margin: 0;
@@ -107,12 +104,10 @@
 
     .lang-toggle {
       display: flex;
-      gap: 4px;
     }
 
-    .lang-toggle button {
+    #language-select {
       min-height: 38px;
-      min-width: 50px;
       border: 1px solid var(--border-strong);
       background: var(--surface-2);
       color: var(--text);
@@ -120,20 +115,13 @@
       font-family: "Oswald", sans-serif;
       font-weight: 700;
       letter-spacing: 0.04em;
-      text-transform: uppercase;
-      padding: 0 12px;
+      padding: 0 10px;
       font-size: 12px;
     }
 
-    .lang-toggle button:hover {
+    #language-select:hover {
       border-color: var(--accent);
       color: var(--accent);
-    }
-
-    .lang-toggle button.active {
-      background: var(--accent);
-      border-color: var(--accent);
-      color: #0a0a0a;
     }
 
     .results-grid {
@@ -288,58 +276,72 @@
   <div class="shell">
     <header class="topbar">
       <div class="header">
-        <h1><span class="lang-en">FitRace</span><span class="lang-zh">FitRace</span><span>Studio</span> · <span class="lang-en">Results</span><span class="lang-zh">成績</span></h1>
-        <p><span class="lang-en">QR Wall · Live Leaderboard</span><span class="lang-zh">成績牆 · 即時排行榜</span></p>
+        <h1><span>FitRace</span> <span class="accent">Studio</span> &middot; <span data-i18n="results.page_title">Results</span></h1>
+        <p data-i18n="results.subtitle">QR Wall &middot; Live Leaderboard</p>
       </div>
 
       <div class="race-meta" id="race-meta" style="display: none;">
         <div class="meta-item">
-          <span class="meta-label"><span class="lang-en">Race Type</span><span class="lang-zh">賽型</span></span>
+          <span class="meta-label" data-i18n="race_type.label">Race Type</span>
           <span class="meta-value" id="race-type-display"></span>
         </div>
         <div class="meta-item">
-          <span class="meta-label"><span class="lang-en">Athletes</span><span class="lang-zh">選手數</span></span>
+          <span class="meta-label" data-i18n="results.meta_athletes">Athletes</span>
           <span class="meta-value" id="athlete-count-display"></span>
         </div>
         <div class="meta-item" id="update-status" style="display: none;">
           <span class="status-indicator">
             <span class="status-dot updating"></span>
-            <span><span class="lang-en">Updating</span><span class="lang-zh">更新中</span></span>
+            <span data-i18n="results.updating">Updating</span>
           </span>
         </div>
       </div>
 
       <div class="lang-toggle">
-        <button type="button" id="lang-en" onclick="setLang('en')">EN</button>
-        <button type="button" id="lang-zh" onclick="setLang('zh')">中文</button>
+        <select id="language-select" onchange="setLang(this.value)"></select>
       </div>
     </header>
 
     <main id="results-container">
       <div class="empty-state">
-        <div class="empty-title"><span class="lang-en">No Races Yet</span><span class="lang-zh">尚無比賽</span></div>
-        <div class="empty-hint"><span class="lang-en">Results will appear here when a race finishes</span><span class="lang-zh">比賽結束後結果會在這裡出現</span></div>
+        <div class="empty-title" data-i18n="results.empty_title">No Races Yet</div>
+        <div class="empty-hint" data-i18n="results.empty_hint">Results will appear here when a race finishes</div>
       </div>
     </main>
   </div>
 
   <script>
-    const raceTypeLabels = {
-      en: {
-        distance: "Distance",
-        time: "Time",
-        calories: "Calories",
-        max_power: "Max Power",
-        watts: "Power"
-      },
-      zh: {
-        distance: "距離",
-        time: "限時",
-        calories: "卡路里",
-        max_power: "最大功率",
-        watts: "功率"
+    // Shared race-type / metric axis labels (race_type.*): result.html and
+    // results.html both keyed the same distance/time/calories/max_power/
+    // watts wording under three separate hardcoded tables. All three now
+    // resolve through getRaceTypeLabel()/getMetricLabel() below, which both
+    // read the same locale keys instead of carrying their own copy.
+    function getBrowserLocale() {
+      const saved = localStorage.getItem("fitrace.locale");
+      if (saved) return saved;
+      const browserLang = navigator.language || navigator.userLanguage;
+      if (browserLang) {
+        const lower = browserLang.toLowerCase();
+        if (lower.startsWith("zh")) return "zh-TW";
+        if (lower.startsWith("it")) return "it";
+        if (lower.startsWith("fr")) return "fr";
+        if (lower.startsWith("de")) return "de-CH";
+        if (lower.startsWith("sv")) return "sv";
+        if (lower.startsWith("en")) return "en-US";
       }
-    };
+      return "en-US";
+    }
+
+    let currentLocale = getBrowserLocale();
+    let messages = {};
+
+    function t(key, params = {}) {
+      let value = messages[key] || key;
+      Object.entries(params).forEach(([name, replacement]) => {
+        value = value.replaceAll(`{${name}}`, String(replacement));
+      });
+      return value;
+    }
 
     const state = {
       currentResultId: null,
@@ -347,13 +349,42 @@
       qrCodes: new Map()
     };
 
-    function setLang(lang) {
-      document.documentElement.dataset.lang = lang;
-      document.documentElement.lang = lang === "zh" ? "zh-TW" : "en-US";
-      localStorage.setItem("fitrace.locale", lang === "zh" ? "zh-TW" : "en-US");
-      document.getElementById("lang-en").classList.toggle("active", lang === "en");
-      document.getElementById("lang-zh").classList.toggle("active", lang === "zh");
+    async function loadLocaleList() {
+      try {
+        const response = await fetch("/api/locales");
+        const payload = await response.json();
+        const select = document.getElementById("language-select");
+        select.innerHTML = (payload.locales || []).map((entry) =>
+          `<option value="${escapeHtml(entry.code)}">${escapeHtml(entry.label)}</option>`
+        ).join("");
+        select.value = currentLocale;
+      } catch (error) {
+        console.error("Failed to load locale list:", error);
+      }
+    }
+
+    async function loadLocale(locale = currentLocale) {
+      const response = await fetch(`/api/locales/${encodeURIComponent(locale)}?t=${Date.now()}`);
+      const payload = await response.json();
+      currentLocale = payload.locale || "en-US";
+      messages = payload.messages || {};
+      localStorage.setItem("fitrace.locale", currentLocale);
+      document.documentElement.lang = currentLocale;
+      document.documentElement.dataset.lang = currentLocale;
+      const select = document.getElementById("language-select");
+      if (select) select.value = currentLocale;
+      applyTranslations();
+    }
+
+    async function setLang(locale) {
+      await loadLocale(locale);
       refreshResults();
+    }
+
+    function applyTranslations() {
+      document.querySelectorAll("[data-i18n]").forEach((element) => {
+        element.textContent = t(element.dataset.i18n);
+      });
     }
 
     function escapeHtml(str) {
@@ -368,20 +399,43 @@
     }
 
     function getRaceTypeLabel(raceType) {
-      const lang = document.documentElement.dataset.lang || "en";
       const type = String(raceType || "").toLowerCase();
-      return (raceTypeLabels[lang] && raceTypeLabels[lang][type]) || raceType || "--";
+      const key = { distance: "race_type.distance", time: "race_type.time", calories: "race_type.calories", max_power: "race_type.max_power", watts: "race_type.watts" }[type];
+      return key ? t(key) : (raceType || "--");
     }
 
+    // Anonymous-finisher name fallback. Self-contained (no t()/messages
+    // dependency) because tests/unit/hub/test_result_pages_anonymous_display.py
+    // extracts and runs this function alone -- referencing the page-global
+    // t() there would throw ReferenceError. lang accepts both the legacy
+    // two-letter shorthand (en or zh) the existing tests pass, and the
+    // full six-locale codes used elsewhere on this page.
     function athleteDisplayName(athlete, lang) {
       const name = athlete.athlete_name;
       if (typeof name === "string" && name.trim()) {
         return name;
       }
+      const stationWord = {
+        en: "Station", "en-US": "Station",
+        zh: "站位", "zh-TW": "站位",
+        "de-CH": "Station",
+        fr: "Poste",
+        it: "Postazione",
+        sv: "Station"
+      };
+      const athleteWord = {
+        en: "Athlete", "en-US": "Athlete",
+        zh: "選手", "zh-TW": "選手",
+        "de-CH": "Athlet",
+        fr: "Athlète",
+        it: "Atleta",
+        sv: "Idrottare"
+      };
       if (athlete.station_number) {
-        return lang === "zh" ? `站位 ${athlete.station_number}` : `Station ${athlete.station_number}`;
+        const word = stationWord[lang] || stationWord.en;
+        return `${word} ${athlete.station_number}`;
       }
-      return lang === "zh" ? "選手" : "Athlete";
+      return athleteWord[lang] || athleteWord.en;
     }
 
     function formatMetricValue(athlete, raceType) {
@@ -394,13 +448,14 @@
           value = Math.round(athlete.distance_m || 0).toLocaleString();
           unit = "m";
           break;
-        case "time":
+        case "time": {
           const ms = athlete.finished_time_ms || athlete.elapsed_time_ms || 0;
           const totalSec = Math.floor(ms / 1000);
           const min = Math.floor(totalSec / 60);
           const sec = totalSec % 60;
           value = `${min}:${String(sec).padStart(2, '0')}`;
           break;
+        }
         case "calories":
           value = Math.round(athlete.calories || 0).toLocaleString();
           unit = "kcal";
@@ -416,25 +471,7 @@
     }
 
     function getMetricLabel(raceType) {
-      const lang = document.documentElement.dataset.lang || "en";
-      const type = String(raceType || "").toLowerCase();
-      const labels = {
-        en: {
-          distance: "Distance",
-          time: "Time",
-          calories: "Calories",
-          max_power: "Max Power",
-          watts: "Power"
-        },
-        zh: {
-          distance: "距離",
-          time: "時間",
-          calories: "卡路里",
-          max_power: "最大功率",
-          watts: "功率"
-        }
-      };
-      return (labels[lang] && labels[lang][type]) || type || "--";
+      return getRaceTypeLabel(raceType);
     }
 
     async function fetchLatestRace() {
@@ -461,23 +498,25 @@
       }
     }
 
+    function emptyStateHtml() {
+      return '<div class="empty-state">'
+        + '<div class="empty-title" data-i18n="results.empty_title">No Races Yet</div>'
+        + '<div class="empty-hint" data-i18n="results.empty_hint">Results will appear here when a race finishes</div>'
+        + '</div>';
+    }
+
     function renderResults(data) {
       const container = document.getElementById("results-container");
 
       if (!data || !data.results || data.results.length === 0) {
-        container.innerHTML = `
-          <div class="empty-state">
-            <div class="empty-title"><span class="lang-en">No Races Yet</span><span class="lang-zh">尚無比賽</span></div>
-            <div class="empty-hint"><span class="lang-en">Results will appear here when a race finishes</span><span class="lang-zh">比賽結束後結果會在這裡出現</span></div>
-          </div>
-        `;
+        container.innerHTML = emptyStateHtml();
         document.getElementById("race-meta").style.display = "none";
         return;
       }
 
       const race = data;
       const athletes = data.results || [];
-      const lang = document.documentElement.dataset.lang || "en";
+      const lang = document.documentElement.dataset.lang || "en-US";
 
       document.getElementById("race-type-display").textContent = getRaceTypeLabel(race.race_type);
       document.getElementById("athlete-count-display").textContent = race.athlete_count || athletes.length;
@@ -542,13 +581,8 @@
 
       const race = await fetchLatestRace();
       if (!race) {
-        document.getElementById("results-container").innerHTML = `
-          <div class="empty-state">
-            <div class="empty-title"><span class="lang-en">No Races Yet</span><span class="lang-zh">尚無比賽</span></div>
-            <div class="empty-hint"><span class="lang-en">Results will appear here when a race finishes</span><span class="lang-zh">比賽結束後結果會在這裡出現</span></div>
-          </div>
-        `;
-        document.getElementById("race-meta").style.display = "none";
+        renderResults(null);
+        applyTranslations();
         document.getElementById("update-status").style.display = "none";
         scheduleNextRefresh();
         return;
@@ -559,6 +593,7 @@
         const detail = await fetchRaceDetail(race.result_id);
         if (detail) {
           renderResults(detail);
+          applyTranslations();
         }
       }
 
@@ -573,22 +608,10 @@
       state.pollTimer = setTimeout(refreshResults, 10000);
     }
 
-    function getCurrentLang() {
-      const saved = localStorage.getItem("fitrace.locale");
-      if (saved === "en-US" || saved === "zh-TW") {
-        return saved;
-      }
-      const browserLang = navigator.language || navigator.userLanguage;
-      if (browserLang && browserLang.toLowerCase().startsWith("zh")) {
-        return "zh-TW";
-      }
-      return "en-US";
-    }
-
     // Initialize
-    (function() {
-      const saved = getCurrentLang();
-      setLang(saved.toLowerCase().startsWith("zh") ? "zh" : "en");
+    (async function() {
+      await loadLocaleList();
+      await setLang(currentLocale);
     })();
   </script>
 </body>

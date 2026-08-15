@@ -229,5 +229,22 @@
   "classAdmin.label_access_code": "存取碼",
   "classAdmin.btn_save": "儲存",
   "classAdmin.btn_cancel": "取消",
-  "classAdmin.error_generic": "發生錯誤，請再試一次。"
+  "classAdmin.error_generic": "發生錯誤，請再試一次。",
+  "race_type.distance": "距離",
+  "race_type.time": "時間",
+  "race_type.calories": "卡路里",
+  "race_type.max_power": "最大功率",
+  "race_type.watts": "功率",
+  "result.error_title": "找不到成績",
+  "result.error_hint": "該成績碼可能已過期或無效。",
+  "result.back_button": "回儀表板",
+  "result.loading": "載入中...",
+  "result.team_label": "隊伍",
+  "result.station_label": "站位",
+  "results.page_title": "成績",
+  "results.subtitle": "成績牆 · 即時排行榜",
+  "results.meta_athletes": "選手數",
+  "results.updating": "更新中",
+  "results.empty_title": "尚無比賽",
+  "results.empty_hint": "比賽結束後結果會在這裡出現"
 }

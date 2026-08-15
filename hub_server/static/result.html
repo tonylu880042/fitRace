@@ -34,9 +34,6 @@
       justify-content: center;
     }
 
-    html[data-lang="en"] .lang-zh { display: none; }
-    html[data-lang="zh"] .lang-en { display: none; }
-
     .container {
       width: 100%;
       max-width: 420px;
@@ -51,14 +48,12 @@
 
     .lang-toggle {
       display: flex;
-      gap: 6px;
       justify-content: center;
       margin-bottom: 24px;
     }
 
-    .lang-toggle button {
+    #language-select {
       min-height: 34px;
-      min-width: 50px;
       border: 1px solid var(--border-strong);
       background: var(--surface-2);
       color: var(--text);
@@ -66,20 +61,13 @@
       font-family: "Oswald", sans-serif;
       font-weight: 700;
       letter-spacing: 0.04em;
-      text-transform: uppercase;
-      padding: 0 12px;
+      padding: 0 10px;
       font-size: 12px;
     }
 
-    .lang-toggle button:hover {
+    #language-select:hover {
       border-color: var(--accent);
       color: var(--accent);
-    }
-
-    .lang-toggle button.active {
-      background: var(--accent);
-      border-color: var(--accent);
-      color: #0a0a0a;
     }
 
     .avatar {
@@ -123,6 +111,14 @@
       margin-bottom: 24px;
       font-size: 13px;
       color: var(--muted);
+    }
+
+    .athlete-info .info-row {
+      display: none;
+    }
+
+    .athlete-info .info-row.visible {
+      display: block;
     }
 
     .race-info {
@@ -247,8 +243,7 @@
 <body>
   <div class="container">
     <div class="lang-toggle">
-      <button type="button" id="lang-en" onclick="setLang('en')">EN</button>
-      <button type="button" id="lang-zh" onclick="setLang('zh')">中文</button>
+      <select id="language-select" onchange="setLang(this.value)"></select>
     </div>
 
     <div class="card" id="result-card" style="display: none;">
@@ -258,8 +253,8 @@
       <h1 class="athlete-name" id="athlete-name"></h1>
 
       <div class="athlete-info">
-        <div id="athlete-team"></div>
-        <div id="athlete-station"></div>
+        <div id="athlete-team" class="info-row"></div>
+        <div id="athlete-station" class="info-row"></div>
       </div>
 
       <div class="race-info">
@@ -271,53 +266,85 @@
     </div>
 
     <div class="error-state" id="error-state" style="display: none;">
-      <div class="error-message">
-        <span class="lang-en">Result not found</span>
-        <span class="lang-zh">找不到成績</span>
-      </div>
-      <div class="error-hint">
-        <span class="lang-en">The token may have expired or is invalid.</span>
-        <span class="lang-zh">該成績碼可能已過期或無效。</span>
-      </div>
-      <button class="back-button" onclick="window.location.href='/'">
-        <span class="lang-en">Back to Dashboard</span>
-        <span class="lang-zh">回儀表板</span>
-      </button>
+      <div class="error-message" data-i18n="result.error_title">Result not found</div>
+      <div class="error-hint" data-i18n="result.error_hint">The token may have expired or is invalid.</div>
+      <button class="back-button" onclick="window.location.href='/'" data-i18n="result.back_button">Back to Dashboard</button>
     </div>
 
     <div class="loading-state" id="loading-state">
-      <div class="error-hint">
-        <span class="lang-en">Loading...</span>
-        <span class="lang-zh">載入中...</span>
-      </div>
+      <div class="error-hint" data-i18n="result.loading">Loading...</div>
     </div>
   </div>
 
   <script>
-    const raceTypeLabels = {
-      en: {
-        distance: "Distance Race",
-        time: "Time Race",
-        calories: "Calorie Race",
-        max_power: "Max Power",
-        watts: "Power Race"
-      },
-      zh: {
-        distance: "距離賽",
-        time: "限時賽",
-        calories: "卡路里賽",
-        max_power: "最大功率賽",
-        watts: "功率賽"
+    // Race-type / metric axis labels are one shared i18n keyset (race_type.*)
+    // used for both the race-type heading and the four metric-grid labels
+    // below -- previously this was two separate hardcoded en/zh tables in
+    // this file plus a third one in results.html.
+    function getBrowserLocale() {
+      const saved = localStorage.getItem("fitrace.locale");
+      if (saved) return saved;
+      const browserLang = navigator.language || navigator.userLanguage;
+      if (browserLang) {
+        const lower = browserLang.toLowerCase();
+        if (lower.startsWith("zh")) return "zh-TW";
+        if (lower.startsWith("it")) return "it";
+        if (lower.startsWith("fr")) return "fr";
+        if (lower.startsWith("de")) return "de-CH";
+        if (lower.startsWith("sv")) return "sv";
+        if (lower.startsWith("en")) return "en-US";
       }
-    };
+      return "en-US";
+    }
 
-    function setLang(lang) {
-      document.documentElement.dataset.lang = lang;
-      document.documentElement.lang = lang === "zh" ? "zh-TW" : "en-US";
-      localStorage.setItem("fitrace.locale", lang === "zh" ? "zh-TW" : "en-US");
-      document.getElementById("lang-en").classList.toggle("active", lang === "en");
-      document.getElementById("lang-zh").classList.toggle("active", lang === "zh");
+    let currentLocale = getBrowserLocale();
+    let messages = {};
+
+    function t(key, params = {}) {
+      let value = messages[key] || key;
+      Object.entries(params).forEach(([name, replacement]) => {
+        value = value.replaceAll(`{${name}}`, String(replacement));
+      });
+      return value;
+    }
+
+    async function loadLocaleList() {
+      try {
+        const response = await fetch("/api/locales");
+        const payload = await response.json();
+        const select = document.getElementById("language-select");
+        select.innerHTML = (payload.locales || []).map((entry) =>
+          `<option value="${escapeHtml(entry.code)}">${escapeHtml(entry.label)}</option>`
+        ).join("");
+        select.value = currentLocale;
+      } catch (error) {
+        console.error("Failed to load locale list:", error);
+      }
+    }
+
+    async function loadLocale(locale = currentLocale) {
+      const response = await fetch(`/api/locales/${encodeURIComponent(locale)}?t=${Date.now()}`);
+      const payload = await response.json();
+      currentLocale = payload.locale || "en-US";
+      messages = payload.messages || {};
+      localStorage.setItem("fitrace.locale", currentLocale);
+      document.documentElement.lang = currentLocale;
+      document.documentElement.dataset.lang = currentLocale;
+      const select = document.getElementById("language-select");
+      if (select) select.value = currentLocale;
+      applyTranslations();
+    }
+
+    async function setLang(locale) {
+      await loadLocale(locale);
       renderResult();
+      applyTranslations();
+    }
+
+    function applyTranslations() {
+      document.querySelectorAll("[data-i18n]").forEach((element) => {
+        element.textContent = t(element.dataset.i18n);
+      });
     }
 
     function escapeHtml(str) {
@@ -349,33 +376,48 @@
       return params.get(name);
     }
 
-    function getCurrentLang() {
-      const saved = localStorage.getItem("fitrace.locale");
-      if (saved === "en-US" || saved === "zh-TW") {
-        return saved;
-      }
-      const browserLang = navigator.language || navigator.userLanguage;
-      if (browserLang && browserLang.toLowerCase().startsWith("zh")) {
-        return "zh-TW";
-      }
-      return "en-US";
-    }
-
+    // Race-type heading label. Kept as its own function (rather than an
+    // inline lookup inside renderResult) so it can be exercised directly
+    // under node with a stubbed t() -- see test_result_pages_i18n.py.
     function getRaceTypeLabel(raceType) {
-      const lang = document.documentElement.dataset.lang || "en";
       const type = String(raceType || "").toLowerCase();
-      return (raceTypeLabels[lang] && raceTypeLabels[lang][type]) || raceType || "--";
+      const key = { distance: "race_type.distance", time: "race_type.time", calories: "race_type.calories", max_power: "race_type.max_power", watts: "race_type.watts" }[type];
+      return key ? t(key) : (raceType || "--");
     }
 
+    // Anonymous-finisher name fallback. This is intentionally
+    // self-contained (no t()/messages dependency) because it is executed
+    // in isolation by tests/unit/hub/test_result_pages_anonymous_display.py
+    // with only the function itself extracted -- calling the page-global
+    // t() there would throw ReferenceError. lang accepts both the legacy
+    // two-letter shorthand (en or zh) the existing tests pass, and the
+    // full six-locale codes used elsewhere on this page.
     function athleteDisplayName(athlete, lang) {
       const name = athlete.athlete_name;
       if (typeof name === "string" && name.trim()) {
         return name;
       }
+      const stationWord = {
+        en: "Station", "en-US": "Station",
+        zh: "站位", "zh-TW": "站位",
+        "de-CH": "Station",
+        fr: "Poste",
+        it: "Postazione",
+        sv: "Station"
+      };
+      const athleteWord = {
+        en: "Athlete", "en-US": "Athlete",
+        zh: "選手", "zh-TW": "選手",
+        "de-CH": "Athlet",
+        fr: "Athlète",
+        it: "Atleta",
+        sv: "Idrottare"
+      };
       if (athlete.station_number) {
-        return lang === "zh" ? `站位 ${athlete.station_number}` : `Station ${athlete.station_number}`;
+        const word = stationWord[lang] || stationWord.en;
+        return `${word} ${athlete.station_number}`;
       }
-      return lang === "zh" ? "選手" : "Athlete";
+      return athleteWord[lang] || athleteWord.en;
     }
 
     function formatDate(epochMs) {
@@ -389,13 +431,19 @@
       }
     }
 
-    function createMetric(label, value, unit = "") {
+    // Metric-grid label/value cell. labelKey is one of the shared
+    // race_type.* i18n keys (see getRaceTypeLabel above) -- t() is only
+    // called from here, never from renderResult() directly, because
+    // createMetric is the one dependency test_result_pages_anonymous_display.py
+    // already stubs out when it executes renderResult() in isolation.
+    function createMetric(labelKey, value, unit = "") {
       const html = document.createElement("div");
       html.className = "metric";
+      const unitHtml = unit ? '<div class="metric-unit">' + escapeHtml(unit) + '</div>' : "";
       html.innerHTML = `
-        <div class="metric-label">${escapeHtml(label)}</div>
+        <div class="metric-label">${escapeHtml(t(labelKey))}</div>
         <div class="metric-value">${escapeHtml(value)}</div>
-        ${unit ? `<div class="metric-unit">${escapeHtml(unit)}</div>` : ""}
+        ${unitHtml}
       `;
       return html;
     }
@@ -415,6 +463,7 @@
         }
         const data = await response.json();
         renderResult(data);
+        applyTranslations();
       } catch (error) {
         console.error("Failed to load result:", error);
         showError();
@@ -452,7 +501,7 @@
 
       const athlete = data.athlete;
       const race = data.race;
-      const lang = document.documentElement.dataset.lang || "en";
+      const lang = document.documentElement.dataset.lang || "en-US";
 
       if (athlete.avatar_url) {
         const avatar = document.getElementById("athlete-avatar");
@@ -465,20 +514,34 @@
 
       const rank = athlete.rank || 0;
       const totalAthletes = data.total_athletes || 0;
-      document.getElementById("rank").textContent = `${rank}${totalAthletes ? ` / ${totalAthletes}` : ""}`;
+      const rankSuffix = totalAthletes ? " / " + totalAthletes : "";
+      document.getElementById("rank").textContent = `${rank}${rankSuffix}`;
 
       document.getElementById("athlete-name").textContent = escapeHtml(athleteDisplayName(athlete, lang));
 
-      const teamName = athlete.team_name ? `<span class="lang-en">Team: ${escapeHtml(athlete.team_name)}</span><span class="lang-zh">隊伍: ${escapeHtml(athlete.team_name)}</span>` : "";
-      const stationNum = athlete.station_number ? `<span class="lang-en">Station ${athlete.station_number}</span><span class="lang-zh">站位 ${athlete.station_number}</span>` : "";
-
-      if (teamName) {
-        document.getElementById("athlete-team").innerHTML = teamName;
+      // athlete-team / athlete-station use static data-i18n spans for the
+      // prefix word rather than calling t() here -- renderResult() must
+      // stay callable with only createMetric/getRaceTypeLabel/formatDate
+      // stubbed (see test_result_pages_anonymous_display.py), so any
+      // label text needing translation is filled in afterwards by the
+      // outer applyTranslations() pass, not inline in this function.
+      const teamEl = document.getElementById("athlete-team");
+      if (athlete.team_name) {
+        teamEl.innerHTML = `<span data-i18n="result.team_label">Team</span>: ${escapeHtml(athlete.team_name)}`;
+        teamEl.classList.add("visible");
       } else {
-        document.getElementById("athlete-team").textContent = "";
+        teamEl.innerHTML = "";
+        teamEl.classList.remove("visible");
       }
 
-      document.getElementById("athlete-station").innerHTML = stationNum;
+      const stationEl = document.getElementById("athlete-station");
+      if (athlete.station_number) {
+        stationEl.innerHTML = `<span data-i18n="result.station_label">Station</span> ${escapeHtml(athlete.station_number)}`;
+        stationEl.classList.add("visible");
+      } else {
+        stationEl.innerHTML = "";
+        stationEl.classList.remove("visible");
+      }
 
       document.getElementById("race-type").textContent = getRaceTypeLabel(race.race_type);
       document.getElementById("race-date").textContent = formatDate(race.end_time_epoch_ms);
@@ -486,28 +549,16 @@
       const metricsGrid = document.getElementById("metrics-grid");
       metricsGrid.innerHTML = "";
 
-      const metrics = [];
-      if (lang === "en") {
-        metrics.push(["Distance", formatNumber(athlete.distance_m), "m"]);
-        metrics.push(["Time", formatTime(athlete.finished_time_ms || athlete.elapsed_time_ms), ""]);
-        metrics.push(["Calories", formatNumber(athlete.calories), ""]);
-        metrics.push(["Max Power", formatNumber(athlete.max_power_watts), "W"]);
-      } else {
-        metrics.push(["距離", formatNumber(athlete.distance_m), "m"]);
-        metrics.push(["時間", formatTime(athlete.finished_time_ms || athlete.elapsed_time_ms), ""]);
-        metrics.push(["卡路里", formatNumber(athlete.calories), ""]);
-        metrics.push(["最大功率", formatNumber(athlete.max_power_watts), "W"]);
-      }
-
-      metrics.forEach(([label, value, unit]) => {
-        metricsGrid.appendChild(createMetric(label, value, unit));
-      });
+      metricsGrid.appendChild(createMetric("race_type.distance", formatNumber(athlete.distance_m), "m"));
+      metricsGrid.appendChild(createMetric("race_type.time", formatTime(athlete.finished_time_ms || athlete.elapsed_time_ms), ""));
+      metricsGrid.appendChild(createMetric("race_type.calories", formatNumber(athlete.calories), ""));
+      metricsGrid.appendChild(createMetric("race_type.max_power", formatNumber(athlete.max_power_watts), "W"));
     }
 
     // Initialize
-    (function() {
-      const saved = getCurrentLang();
-      setLang(saved.toLowerCase().startsWith("zh") ? "zh" : "en");
+    (async function() {
+      await loadLocaleList();
+      await setLang(currentLocale);
       loadResult();
     })();
   </script>

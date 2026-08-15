@@ -229,5 +229,22 @@
   "classAdmin.label_access_code": "Code d'accès",
   "classAdmin.btn_save": "Enregistrer",
   "classAdmin.btn_cancel": "Annuler",
-  "classAdmin.error_generic": "Une erreur s'est produite. Veuillez réessayer."
+  "classAdmin.error_generic": "Une erreur s'est produite. Veuillez réessayer.",
+  "race_type.distance": "Distance",
+  "race_type.time": "Temps",
+  "race_type.calories": "Calories",
+  "race_type.max_power": "Puissance max",
+  "race_type.watts": "Puissance",
+  "result.error_title": "Résultat introuvable",
+  "result.error_hint": "Le code a peut-être expiré ou n'est pas valide.",
+  "result.back_button": "Retour au tableau de bord",
+  "result.loading": "Chargement...",
+  "result.team_label": "Équipe",
+  "result.station_label": "Poste",
+  "results.page_title": "Résultats",
+  "results.subtitle": "Mur de QR codes · Classement en direct",
+  "results.meta_athletes": "Athlètes",
+  "results.updating": "Mise à jour",
+  "results.empty_title": "Aucune course pour le moment",
+  "results.empty_hint": "Les résultats apparaîtront ici une fois une course terminée."
 }
