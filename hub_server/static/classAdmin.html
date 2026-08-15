@@ -306,6 +306,23 @@
     .station-athlete, .station-machine { color: var(--muted); }
     .station-live-label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
 
+    .history-list { display: grid; gap: 8px; }
+
+    .history-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr);
+      align-items: center;
+      gap: 12px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: rgba(0,0,0,0.22);
+      padding: 10px 12px;
+      font-size: 13px;
+    }
+
+    .history-when { font-weight: 800; color: var(--text); }
+    .history-duration, .history-count { color: var(--muted); }
+
     .empty { color: var(--muted); font-size: 13px; padding: 14px; text-align: center; border: 1px dashed var(--border); border-radius: 4px; }
 
     .login {
@@ -337,6 +354,7 @@
       .repeat-toolbar { grid-template-columns: 1fr; }
       .segment-row { grid-template-columns: 1fr; }
       .station-row { grid-template-columns: 1fr; }
+      .history-row { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -437,6 +455,13 @@
         </div>
         <div class="station-list" id="station-list"></div>
       </section>
+
+      <section class="panel" aria-labelledby="history-title">
+        <div class="panel-header">
+          <h2 class="panel-title" id="history-title" data-i18n="classAdmin.panel_history">Class History</h2>
+        </div>
+        <div class="history-list" id="class-history-list"></div>
+      </section>
     </main>
   </div>
 
@@ -471,6 +496,7 @@
       race: {},
       stations: {},
       stationHealth: [],
+      classHistory: [],
       rows: DEFAULT_PLAN_ROWS.map((row) => ({ ...row })),
       adminToken: localStorage.getItem("fitrace.adminPassword") || localStorage.getItem("fitrace.adminToken") || "",
       refreshTimer: null,
@@ -704,6 +730,24 @@
       }));
     }
 
+    // Formats a finished class run date/time. Deliberately UTC and built
+    // from plain Date getters -- no locale-string or twelve-hour-clock API
+    // of any kind -- so the value is both deterministic under test and
+    // consistent with the rest of this page, which only ever renders a
+    // twenty-four-hour clock (see formatDurationClock above).
+    function formatClassRunAt(epochMs) {
+      const ms = metricNumber(epochMs, NaN);
+      if (!Number.isFinite(ms) || ms <= 0) return "--";
+      const d = new Date(ms);
+      const pad = (n) => (n < 10 ? "0" + n : String(n));
+      const year = d.getUTCFullYear();
+      const month = pad(d.getUTCMonth() + 1);
+      const day = pad(d.getUTCDate());
+      const hours = pad(d.getUTCHours());
+      const minutes = pad(d.getUTCMinutes());
+      return `${year}-${month}-${day} ${hours}:${minutes} UTC`;
+    }
+
     // ------------------------------------------------------------------
     // Render-path helpers -- pure string builders that use t()/escapeHtml()
     // /Intl but do not touch the DOM themselves. Executed under `node -e`
@@ -752,6 +796,31 @@
       }).join("");
     }
 
+    // Compact list only -- date/time, duration, participant count. No
+    // charts, no per-athlete rows, no drill-down: a half-built history view
+    // is worse than none.
+    function buildClassHistoryHtml(classes) {
+      if (!classes.length) {
+        return `<div class="empty">${escapeHtml(t("classAdmin.no_history"))}</div>`;
+      }
+      const numberFormat = new Intl.NumberFormat(currentLocale);
+      return classes.map((entry) => {
+        const when = formatClassRunAt(entry.start_time_epoch_ms);
+        const durationSec = Math.round(metricNumber(entry.duration_ms, 0) / 1000);
+        const duration = formatDurationClock(durationSec);
+        const participants = t("classAdmin.history_participants", {
+          count: numberFormat.format(metricNumber(entry.participant_count, 0)),
+        });
+        return `
+        <div class="history-row">
+          <span class="history-when">${escapeHtml(when)}</span>
+          <span class="history-duration">${escapeHtml(duration)}</span>
+          <span class="history-count">${escapeHtml(participants)}</span>
+        </div>
+      `;
+      }).join("");
+    }
+
     function buildPlanEditorHtml(rows) {
       if (!rows.length) {
         return `<div class="empty">${escapeHtml(t("classAdmin.plan_empty"))}</div>`;
@@ -787,6 +856,10 @@
       $("summary-stations").textContent = new Intl.NumberFormat(currentLocale).format(rows.length);
     }
 
+    function renderClassHistory() {
+      $("class-history-list").innerHTML = buildClassHistoryHtml(state.classHistory || []);
+    }
+
     function stateDisplayKey(raceState) {
       const keys = { IDLE: "state.idle", READY: "state.ready", RUNNING: "state.running", STOPPED: "state.stopped" };
       return keys[raceState] || "state.idle";
@@ -819,6 +892,7 @@
       renderPlanEditor();
       renderPlanPreview();
       renderStationStatus();
+      renderClassHistory();
       renderSummaryState();
       applyTranslations();
     }
@@ -905,6 +979,17 @@
       }
     }
 
+    async function refreshClassHistory() {
+      try {
+        const history = await fetchJson(`/api/class/history?limit=10&t=${Date.now()}`);
+        state.classHistory = history.classes || [];
+        renderClassHistory();
+      } catch (_) {
+        // Non-fatal: the coach still sees the plan editor and station
+        // status even if the history fetch fails.
+      }
+    }
+
     async function refreshHealth() {
       try {
         await fetchJson(`/health?t=${Date.now()}`);
@@ -922,6 +1007,7 @@
         refreshState(),
         refreshStations(),
         refreshReadiness(),
+        refreshClassHistory(),
       ]);
     }
 

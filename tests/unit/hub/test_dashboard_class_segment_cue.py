@@ -166,9 +166,7 @@ def _run_update_class_segment_cue(
 
 
 def test_update_class_segment_cue_does_not_fire_on_first_render():
-    result = _run_update_class_segment_cue(
-        "class", "RUNNING", None, '[{"index": 0}]'
-    )
+    result = _run_update_class_segment_cue("class", "RUNNING", None, '[{"index": 0}]')
     assert result["playCallCount"] == 0
     assert result["lastClassSegmentIndex"] == 0
 
@@ -204,9 +202,7 @@ def test_update_class_segment_cue_resets_tracking_when_not_running():
     # A class stops (or the page is not on a running class); the next time
     # it starts again must be treated as a fresh first render, not compared
     # against whatever segment was last shown.
-    result = _run_update_class_segment_cue(
-        "class", "STOPPED", None, '[{"index": 2}]'
-    )
+    result = _run_update_class_segment_cue("class", "STOPPED", None, '[{"index": 2}]')
     assert result["playCallCount"] == 0
     assert result["lastClassSegmentIndex"] is None
 
@@ -245,9 +241,7 @@ def test_ws_onclose_resets_last_class_segment_index():
 
 def test_play_class_segment_change_cue_respects_sound_disabled():
     source = _read_index()
-    fn = _strip_js_comments(
-        _extract_function(source, "playClassSegmentChangeCue")
-    )
+    fn = _strip_js_comments(_extract_function(source, "playClassSegmentChangeCue"))
     script = (
         "let currentSoundEnabled = false;\n"
         "let audioPlayCalled = false;\n"
@@ -266,9 +260,7 @@ def test_play_class_segment_change_cue_respects_sound_disabled():
 
 def test_play_class_segment_change_cue_plays_when_sound_enabled():
     source = _read_index()
-    fn = _strip_js_comments(
-        _extract_function(source, "playClassSegmentChangeCue")
-    )
+    fn = _strip_js_comments(_extract_function(source, "playClassSegmentChangeCue"))
     script = (
         "let currentSoundEnabled = true;\n"
         "let audioPlayCalled = false;\n"
@@ -294,9 +286,7 @@ def test_play_class_segment_change_cue_tolerates_blocked_autoplay():
     blocked autoplay must never break the caller (and therefore never break
     board rendering, since updateClassSegmentCue calls this fire-and-forget)."""
     source = _read_index()
-    fn = _strip_js_comments(
-        _extract_function(source, "playClassSegmentChangeCue")
-    )
+    fn = _strip_js_comments(_extract_function(source, "playClassSegmentChangeCue"))
     script = (
         "let currentSoundEnabled = true;\n"
         "const stubAudio = {\n"
@@ -307,9 +297,9 @@ def test_play_class_segment_change_cue_tolerates_blocked_autoplay():
         + fn
         + "\n"
         + "playClassSegmentChangeCue().then(() => {\n"
-        + '  console.log(JSON.stringify({ resolved: true }));\n'
+        + "  console.log(JSON.stringify({ resolved: true }));\n"
         + "}).catch((err) => {\n"
-        + '  console.log(JSON.stringify({ resolved: false, error: String(err) }));\n'
+        + "  console.log(JSON.stringify({ resolved: false, error: String(err) }));\n"
         + "});\n"
     )
     result = json.loads(_run_node(script))

@@ -5,9 +5,16 @@ from typing import Any
 
 
 class RaceResultStore:
-    def __init__(self, path: str | Path):
+    def __init__(self, path: str | Path, session_mode: str = "race"):
         self._path = Path(path)
         self._saved_keys: set[str] = set()
+        # Which session kind this instance files: "race" (the historical,
+        # default behaviour every existing caller relies on) or "class". A
+        # single class parameterised this way -- rather than a second,
+        # copy-pasted store class -- keeps the append-only file format, the
+        # dedup-by-result_id logic, and list_results() identical for both
+        # kinds; only the filter below differs.
+        self._session_mode = session_mode
 
     @property
     def path(self) -> Path:
@@ -16,10 +23,12 @@ class RaceResultStore:
     def save_finished_snapshot(self, snapshot: dict[str, Any]) -> dict[str, Any] | None:
         if snapshot.get("state") != "STOPPED":
             return None
-        # A training class has no RaceConfig and must never be filed as a
-        # race result. Snapshots written before class mode existed have no
-        # session_mode key at all -- absent must mean "race", not "class".
-        if snapshot.get("session_mode") == "class":
+        # Snapshots written before class mode existed have no session_mode
+        # key at all -- absent must mean "race", not "class", for either
+        # store: a race-mode store must keep filing those old snapshots,
+        # and a class-mode store must keep rejecting them.
+        snapshot_session_mode = snapshot.get("session_mode") or "race"
+        if snapshot_session_mode != self._session_mode:
             return None
         result_key = self._result_key(snapshot)
         if result_key in self._saved_keys or self._key_exists(result_key):

@@ -112,6 +112,15 @@ race_result_store = RaceResultStore(
     os.getenv("FITRACE_RACE_RESULTS_PATH", "data/race_results.jsonl")
 )
 race_results_query = RaceResultsQuery(race_result_store)
+# A finished class is persisted the same way a race is -- same store class,
+# same append-only jsonl mechanics -- but to its own file and its own env
+# var, so a class record can never mix into race results, the records wall,
+# or the podium (see RaceResultStore.save_finished_snapshot's session_mode
+# filter).
+class_result_store = RaceResultStore(
+    os.getenv("FITRACE_CLASS_RESULTS_PATH", "data/class_results.jsonl"),
+    session_mode="class",
+)
 race_start_countdown_lock = asyncio.Lock()
 update_checker = UpdateChecker(
     manifest_url=os.getenv(
@@ -373,9 +382,66 @@ def get_stations_status_data() -> dict:
     )
 
 
+def summarize_class_record(record: Any) -> Optional[dict]:
+    """A finished class kept SMALL: when it ran, total duration, the plan
+    that was used, and per-station totals -- nothing more (no ranking, no
+    tokens, no per-athlete detail page; a class was never a leaderboard).
+
+    Reuses RaceResultsQuery._is_participant rather than a name-truthiness
+    check, so an anonymous finisher (no name, real station_number) is kept
+    here exactly as it is on the race side -- see that predicate's own
+    docstring for why `if not name` would silently drop them again.
+    """
+    if not isinstance(record, dict):
+        return None
+    result_id = record.get("result_id")
+    snapshot = record.get("snapshot")
+    if not result_id or not isinstance(snapshot, dict):
+        return None
+
+    start = snapshot.get("start_time_epoch_ms")
+    end = snapshot.get("end_time_epoch_ms")
+    duration_ms = None
+    if (
+        isinstance(start, (int, float))
+        and isinstance(end, (int, float))
+        and end >= start
+    ):
+        duration_ms = end - start
+
+    leaderboard = snapshot.get("leaderboard")
+    leaderboard = leaderboard if isinstance(leaderboard, dict) else {}
+    stations = []
+    for row in leaderboard.values():
+        if not RaceResultsQuery._is_participant(row):
+            continue
+        stations.append(
+            {
+                "station_number": row.get("station_number"),
+                "athlete_name": row.get("athlete_name"),
+                "distance_m": row.get("distance_m"),
+                "calories": row.get("calories"),
+                "max_power_watts": row.get("max_power_watts"),
+                "active_time_ms": row.get("elapsed_time_ms"),
+            }
+        )
+    stations.sort(key=lambda s: (s["station_number"] is None, s["station_number"]))
+
+    return {
+        "result_id": result_id,
+        "start_time_epoch_ms": start,
+        "end_time_epoch_ms": end,
+        "duration_ms": duration_ms,
+        "class_plan": snapshot.get("class_plan"),
+        "participant_count": len(stations),
+        "stations": stations,
+    }
+
+
 async def broadcast_race_state():
     state_data = await get_race_state_data()
     race_result_store.save_finished_snapshot(state_data)
+    class_result_store.save_finished_snapshot(state_data)
     ws_data = dict(state_data)
     ws_data["type"] = "state_change"
     await ws_manager.broadcast(ws_data)
@@ -675,6 +741,20 @@ def get_race_results(limit: int = 50):
 @app.get("/api/results/races")
 def list_race_results(limit: int = 20):
     return {"races": race_results_query.list_races(limit=limit)}
+
+
+@app.get("/api/class/history")
+def list_class_history(limit: int = 20):
+    # Newest-first, mirroring RaceResultsQuery._load_records: the jsonl file
+    # is append-only in chronological order, so reversing gives the required
+    # order without a separate timestamp sort.
+    records = list(reversed(class_result_store.list_results(limit=limit)))
+    classes = [
+        summary
+        for summary in (summarize_class_record(record) for record in records)
+        if summary is not None
+    ]
+    return {"classes": classes}
 
 
 @app.get("/api/results/records")
@@ -1045,6 +1125,7 @@ async def stop_race(request: Request):
         race_manager.stop_race()
         state_data = await broadcast_race_state()
         race_result_store.save_finished_snapshot(state_data)
+        class_result_store.save_finished_snapshot(state_data)
         return state_data
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -1057,6 +1138,7 @@ async def close_race(request: Request):
         race_manager.close_race()
         state_data = await broadcast_race_state()
         race_result_store.save_finished_snapshot(state_data)
+        class_result_store.save_finished_snapshot(state_data)
         return state_data
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
