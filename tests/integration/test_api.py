@@ -1698,6 +1698,59 @@ def test_team_race_readiness_and_start_succeed_with_a_mix_of_named_and_anonymous
     client.post("/api/race/reset")
 
 
+def test_stopped_class_is_not_filed_as_a_race_result_but_a_real_race_still_is(
+    monkeypatch, tmp_path
+):
+    import hub_server.infrastructure.fastapi.app as hub_app
+    from hub_server.usecases.race_result_store import RaceResultStore
+    from hub_server.usecases.race_results_query import RaceResultsQuery
+
+    monkeypatch.setenv("TESTING", "1")
+    store = RaceResultStore(tmp_path / "race_results.jsonl")
+    monkeypatch.setattr(hub_app, "race_result_store", store)
+    monkeypatch.setattr(hub_app, "race_results_query", RaceResultsQuery(store))
+
+    # Run a training class end to end.
+    client.post("/api/race/reset")
+    client.post("/api/class/configure", json=_SHORT_CLASS_PLAN)
+    start_res = client.post("/api/race/start")
+    assert start_res.status_code == 200
+    assert start_res.json()["session_mode"] == "class"
+
+    client.post(
+        "/api/test/telemetry",
+        json={
+            "node_id": "class-node-01",
+            "distance_m": 500.0,
+            "elapsed_time_ms": 60_000,
+        },
+    )
+
+    stop_res = client.post("/api/race/stop")
+    assert stop_res.status_code == 200
+    client.post("/api/race/reset")
+
+    races_after_class = client.get("/api/results/races").json()["races"]
+    assert races_after_class == []
+
+    # Now run a real race -- it must still be filed as usual.
+    set_online_station(1, "node-01")
+    client.post(
+        "/api/race/register",
+        json={"station_number": 1, "athlete_name": "Runner A"},
+    )
+    client.post(
+        "/api/race/configure",
+        json={"race_type": "time", "target_value": 0, "duration_sec": 120},
+    )
+    client.post("/api/race/start")
+    client.post("/api/race/stop")
+    client.post("/api/race/reset")
+
+    races_after_real_race = client.get("/api/results/races").json()["races"]
+    assert len(races_after_real_race) == 1
+
+
 def test_race_configure_endpoint_rejects_while_class_is_running_and_mode_stays_class():
     client.post("/api/race/reset")
     client.post("/api/class/configure", json=_SHORT_CLASS_PLAN)

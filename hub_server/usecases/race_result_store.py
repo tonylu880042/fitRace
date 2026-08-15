@@ -16,6 +16,11 @@ class RaceResultStore:
     def save_finished_snapshot(self, snapshot: dict[str, Any]) -> dict[str, Any] | None:
         if snapshot.get("state") != "STOPPED":
             return None
+        # A training class has no RaceConfig and must never be filed as a
+        # race result. Snapshots written before class mode existed have no
+        # session_mode key at all -- absent must mean "race", not "class".
+        if snapshot.get("session_mode") == "class":
+            return None
         result_key = self._result_key(snapshot)
         if result_key in self._saved_keys or self._key_exists(result_key):
             self._saved_keys.add(result_key)
