@@ -2962,7 +2962,7 @@
               <span class="medal-mark ${medal.className}" title="${medal.title}">${medal.label}</span>
               <span>#${rank} ${medal.title}</span>
             </div>
-            <div class="podium-name">${escapeHtml(node.athlete_name || t("stations.athlete"))}${teamSuffix}</div>
+            <div class="podium-name">${escapeHtml(node.athlete_name || (node.station_number ? `${t("stations.station")} ${node.station_number}` : t("stations.athlete")))}${teamSuffix}</div>
             <div class="podium-score">${score.value}</div>
             <div class="podium-sub">${score.label} · ${escapeHtml(nodeDisplayName(node))}</div>
           </div>
@@ -3338,7 +3338,10 @@
           return buildPodiumOverlayCard(rank, entry.team_name, null, score.value, null);
         }
         const score = formatResultScore(entry, raceType);
-        return buildPodiumOverlayCard(rank, entry.athlete_name, entry.team_name, score.value, entry.avatar_url);
+        // Anonymous participation: no name does not mean no one is here --
+        // fall back to the station number before the generic athlete label.
+        const overlayName = entry.athlete_name || (entry.station_number ? `${t("stations.station")} ${entry.station_number}` : t("stations.athlete"));
+        return buildPodiumOverlayCard(rank, overlayName, entry.team_name, score.value, entry.avatar_url);
       });
       // Visual order matches the classic podium layout (2nd, 1st, 3rd);
       // the CSS `order` property re-stacks these regardless of DOM order.
@@ -3397,7 +3400,7 @@
           <div class="record-wall-row rank-${rank}">
             <div class="record-wall-rank">#${rank}</div>
             <div>
-              <div class="record-wall-name">${escapeHtml(entry.athlete_name || t("stations.athlete"))}</div>
+              <div class="record-wall-name">${escapeHtml(entry.athlete_name || (entry.station_number ? `${t("stations.station")} ${entry.station_number}` : t("stations.athlete")))}</div>
               ${teamHtml}
             </div>
             <div class="record-wall-value">${formatRecordEntryValue(raceType, entry.value)}</div>
@@ -3422,6 +3425,7 @@
       if (latestRace && Array.isArray(latestRace.results) && latestRace.results.length) {
         const topThree = latestRace.results.slice(0, 3).map((row) => ({
           athlete_name: row.athlete_name,
+          station_number: row.station_number,
           team_name: row.team_name,
           value: row.finished_time_ms != null
             ? row.finished_time_ms
@@ -3699,7 +3703,7 @@
         return `
           <span class="${className} ${finished ? "finished" : ""}">
             ${station}
-            <strong>${escapeHtml(member.athlete_name || t("stations.athlete"))}</strong>
+            <strong>${escapeHtml(member.athlete_name || (member.station_number ? `${t("stations.station")} ${member.station_number}` : t("stations.athlete")))}</strong>
             ${machineText}
             ${metricNumber(member.progress_percent).toFixed(0)}%
           </span>
@@ -3743,7 +3747,7 @@
             const teamSuffix = node.team_name ? ` · ${node.team_name}` : "";
             return {
               id: node.node_id,
-              name: node.athlete_name || t("stations.athlete"),
+              name: node.athlete_name || (node.station_number ? `${t("stations.station")} ${node.station_number}` : t("stations.athlete")),
               meta: `${station || t("fallback.node")}${teamSuffix}`,
               score,
               progress: metricNumber(node.progress_percent),
@@ -3942,7 +3946,7 @@
         : individualRows.map((node) => ({
             id: node.node_id,
             kind: "individual",
-            name: node.athlete_name || t("stations.athlete"),
+            name: node.athlete_name || (node.station_number ? `${t("stations.station")} ${node.station_number}` : t("stations.athlete")),
             meta: `${stationLabel(node)}${node.team_name ? ` · ${node.team_name}` : ""}`,
             progress: metricNumber(node.progress_percent),
             score: formatResultScore(node, raceType),
@@ -4076,7 +4080,7 @@
           return `
             <span class="team-member-chip">
               ${station}
-              <strong>${escapeHtml(member.athlete_name || t("stations.athlete"))}</strong>
+              <strong>${escapeHtml(member.athlete_name || (member.station_number ? `${t("stations.station")} ${member.station_number}` : t("stations.athlete")))}</strong>
               ${machineText}
               ${smoothMetricNumber(`${teamKey}:${member.node_id || member.athlete_name}:progress`, member.progress_percent).toFixed(0)}%
             </span>
