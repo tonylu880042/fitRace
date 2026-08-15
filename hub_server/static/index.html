@@ -2274,6 +2274,7 @@
 
   </div>
   <audio id="race-start-countdown-audio" preload="auto" src="/static/audio/countdown_start.wav"></audio>
+  <audio id="class-segment-cue-audio" preload="auto" src="/static/audio/checkpoint.wav"></audio>
 
   <script>
     let ws;
@@ -2314,6 +2315,8 @@
     let currentClassPlan = null;
     let currentClassLeaderboard = {};
     let currentSessionMode = null;
+    let lastClassSegmentIndex = null;
+    let currentSoundEnabled = true;
     function getBrowserLocale() {
       const saved = localStorage.getItem("fitrace.locale");
       if (saved) return saved;
@@ -2467,6 +2470,43 @@
       }
     }
 
+    function shouldPlayClassSegmentCue(sessionMode, state, previousIndex, newIndex) {
+      // Pure decision, no DOM/Audio access, so this is executed directly
+      // under node in tests. previousIndex is null on the very first render
+      // of a running class (page load, reconnect, or a fresh class start),
+      // and the guard below refuses to fire in that case -- there is no
+      // prior segment to have changed FROM.
+      if (sessionMode !== "class") return false;
+      if (state !== "RUNNING") return false;
+      if (previousIndex === null || previousIndex === undefined) return false;
+      if (newIndex === null || newIndex === undefined) return false;
+      return newIndex !== previousIndex;
+    }
+
+    async function playClassSegmentChangeCue() {
+      if (currentSoundEnabled === false) return;
+      const audio = document.getElementById("class-segment-cue-audio") || new Audio("/static/audio/checkpoint.wav");
+      audio.currentTime = 0;
+      try {
+        await audio.play();
+      } catch (err) {
+        console.warn("Class segment cue audio was blocked by the browser:", err);
+      }
+    }
+
+    function updateClassSegmentCue(clock) {
+      // Shared by every class board render path (typed state_change,
+      // untyped telemetry ticks, and the periodic local clock) so the
+      // segment-changed decision is made in exactly one place. A rejected
+      // play() promise must never stop the board from having already
+      // updated -- playClassSegmentChangeCue() is fire-and-forget here.
+      const newIndex = clock ? clock.index : null;
+      if (shouldPlayClassSegmentCue(currentSessionMode, currentState, lastClassSegmentIndex, newIndex)) {
+        playClassSegmentChangeCue();
+      }
+      lastClassSegmentIndex = (currentSessionMode === "class" && currentState === "RUNNING") ? newIndex : null;
+    }
+
     function formatElapsedTime(elapsed) {
       const safeElapsed = Math.max(0, metricNumber(elapsed));
       const totalTenths = Math.floor(safeElapsed / 100);
@@ -2603,6 +2643,9 @@
         wsConnected = false;
         document.getElementById("ws-dot").className = "status-dot";
         document.getElementById("ws-status").innerText = t("connection.offline");
+        // The first state fetch after a reconnect must never be mistaken
+        // for a live segment change -- see shouldPlayClassSegmentCue.
+        lastClassSegmentIndex = null;
         startFallbackRefresh();
         setTimeout(connectWebSocket, 3000);
       };
@@ -4232,6 +4275,7 @@
 
       document.getElementById("leaderboard-container").innerHTML =
         buildClassBoardHtml({ class_plan: data.class_plan, leaderboard: data.leaderboard || {} }, clock);
+      if (typeof updateClassSegmentCue === "function") updateClassSegmentCue(clock);
     }
 
     function renderClassBoardFromState() {
@@ -4246,6 +4290,7 @@
         : classClockAt(0, 0, currentClassPlan);
       document.getElementById("leaderboard-container").innerHTML =
         buildClassBoardHtml({ class_plan: currentClassPlan, leaderboard: currentClassLeaderboard }, clock);
+      if (typeof updateClassSegmentCue === "function") updateClassSegmentCue(clock);
     }
 
     function tickClassClock() {
@@ -4555,6 +4600,7 @@
       currentState = data.state;
       currentConfig = data.config;
       currentSessionMode = data.session_mode || "race";
+      currentSoundEnabled = data.start_countdown_sound_enabled !== false;
       raceStartTime = data.start_time_epoch_ms;
       raceEndTime = data.end_time_epoch_ms || null;
       applyLeaderboardDisplayMode(data.leaderboard_display_mode || "classic");
