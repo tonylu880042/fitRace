@@ -438,14 +438,15 @@
       return athleteWord[lang] || athleteWord.en;
     }
 
-    function formatMetricValue(athlete, raceType) {
+    function formatMetricValue(athlete, raceType, locale) {
       const type = String(raceType || "").toLowerCase();
+      const numberFormat = new Intl.NumberFormat(locale);
       let value = "--";
       let unit = "";
 
       switch (type) {
         case "distance":
-          value = Math.round(athlete.distance_m || 0).toLocaleString();
+          value = numberFormat.format(Math.round(athlete.distance_m || 0));
           unit = "m";
           break;
         case "time": {
@@ -457,12 +458,12 @@
           break;
         }
         case "calories":
-          value = Math.round(athlete.calories || 0).toLocaleString();
+          value = numberFormat.format(Math.round(athlete.calories || 0));
           unit = "kcal";
           break;
         case "max_power":
         case "watts":
-          value = Math.round(athlete.max_power_watts || 0).toLocaleString();
+          value = numberFormat.format(Math.round(athlete.max_power_watts || 0));
           unit = "W";
           break;
       }
@@ -519,7 +520,7 @@
       const lang = document.documentElement.dataset.lang || "en-US";
 
       document.getElementById("race-type-display").textContent = getRaceTypeLabel(race.race_type);
-      document.getElementById("athlete-count-display").textContent = race.athlete_count || athletes.length;
+      document.getElementById("athlete-count-display").textContent = new Intl.NumberFormat(lang).format(race.athlete_count || athletes.length);
       document.getElementById("race-meta").style.display = "flex";
 
       const grid = document.createElement("div");
@@ -530,7 +531,7 @@
         card.className = "athlete-card";
         card.id = `athlete-${athlete.token || athlete.station_number}`;
 
-        const { value: metricValue, unit: metricUnit } = formatMetricValue(athlete, race.race_type);
+        const { value: metricValue, unit: metricUnit } = formatMetricValue(athlete, race.race_type, lang);
         const metricLabel = getMetricLabel(race.race_type);
         const teamHtml = athlete.team_name ? `<div class="card-team">${escapeHtml(athlete.team_name)}</div>` : "";
 
@@ -538,7 +539,7 @@
 
         card.innerHTML = `
           <div class="card-header">
-            <div class="card-rank">#${athlete.rank || 0}</div>
+            <div class="card-rank">#${new Intl.NumberFormat(lang).format(athlete.rank || 0)}</div>
             <div class="card-name">${escapeHtml(athleteDisplayName(athlete, lang))}</div>
           </div>
           ${teamHtml}

@@ -366,9 +366,13 @@
       return `${minutes}:${String(seconds).padStart(2, '0')}`;
     }
 
-    function formatNumber(value) {
+    function formatNumber(value, locale, decimals = 0) {
       if (!Number.isFinite(value)) return "--";
-      return Math.round(value).toLocaleString();
+      const numberFormat = new Intl.NumberFormat(locale, {
+        minimumFractionDigits: decimals,
+        maximumFractionDigits: decimals
+      });
+      return numberFormat.format(value);
     }
 
     function getQueryParam(name) {
@@ -514,8 +518,8 @@
 
       const rank = athlete.rank || 0;
       const totalAthletes = data.total_athletes || 0;
-      const rankSuffix = totalAthletes ? " / " + totalAthletes : "";
-      document.getElementById("rank").textContent = `${rank}${rankSuffix}`;
+      const rankSuffix = totalAthletes ? " / " + formatNumber(totalAthletes, lang) : "";
+      document.getElementById("rank").textContent = `${formatNumber(rank, lang)}${rankSuffix}`;
 
       document.getElementById("athlete-name").textContent = escapeHtml(athleteDisplayName(athlete, lang));
 
@@ -549,10 +553,10 @@
       const metricsGrid = document.getElementById("metrics-grid");
       metricsGrid.innerHTML = "";
 
-      metricsGrid.appendChild(createMetric("race_type.distance", formatNumber(athlete.distance_m), "m"));
+      metricsGrid.appendChild(createMetric("race_type.distance", formatNumber(athlete.distance_m, lang), "m"));
       metricsGrid.appendChild(createMetric("race_type.time", formatTime(athlete.finished_time_ms || athlete.elapsed_time_ms), ""));
-      metricsGrid.appendChild(createMetric("race_type.calories", formatNumber(athlete.calories), ""));
-      metricsGrid.appendChild(createMetric("race_type.max_power", formatNumber(athlete.max_power_watts), "W"));
+      metricsGrid.appendChild(createMetric("race_type.calories", formatNumber(athlete.calories, lang), ""));
+      metricsGrid.appendChild(createMetric("race_type.max_power", formatNumber(athlete.max_power_watts, lang), "W"));
     }
 
     // Initialize
