@@ -4201,6 +4201,42 @@
         return power >= target ? "on" : "under";
       }
 
+      // Pure -- input is one target watts value (or null/undefined) per
+      // segment, output is one height percent per segment. Mirrors
+      // classAdmin.html's computeBlockHeightPercents (nested inside
+      // computePlanSummary there) byte-for-byte so the coach's plan
+      // preview and this projector wall can never disagree about the
+      // shape of the same plan. Declared here (rather than top-level) for
+      // the same reason classTargetStatus above is nested inside
+      // buildClassBoardHtml: several tests extract buildClassBoardHtml
+      // alone by its function-name marker and run it standalone under
+      // node -e, so a helper it calls has to live inside it rather than
+      // as a sibling top-level declaration.
+      function computeBlockHeightPercents(targets) {
+        const list = targets || [];
+        const baselinePercent = 20;
+        const fullPercent = 100;
+        const positiveTargets = list.filter(
+          (value) => typeof value === "number" && Number.isFinite(value) && value > 0
+        );
+        const maxTarget = positiveTargets.length ? Math.max(...positiveTargets) : 0;
+        if (maxTarget <= 0) {
+          // No segment in this plan carries a target at all -- keep the
+          // strip exactly as it rendered before this feature: one uniform
+          // full-height profile, no scaling applied.
+          return list.map(() => fullPercent);
+        }
+        return list.map((value) => {
+          if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+            // No prescribed intensity for this segment -- a low baseline
+            // keeps it visible without implying maximum effort.
+            return baselinePercent;
+          }
+          const ratio = Math.min(1, value / maxTarget);
+          return baselinePercent + ratio * (fullPercent - baselinePercent);
+        });
+      }
+
       const plan = sessionData.class_plan;
       const leaderboard = sessionData.leaderboard || {};
       if (!plan || !plan.segments || plan.segments.length === 0) {
@@ -4262,6 +4298,9 @@
         stationCards.push(card);
       }
       const totalDurationMs = plan.segments.reduce(function(sum, s) { return sum + s.duration_sec * 1000; }, 0);
+      const timelineHeightPercents = computeBlockHeightPercents(
+        plan.segments.map(function(s) { return s.target_watts; })
+      );
       const timelineBlocks = [];
       for (let idx = 0; idx < plan.segments.length; idx++) {
         const segment = plan.segments[idx];
@@ -4272,7 +4311,8 @@
         else if (segment.kind === "rest") bgColor = "var(--mid-grey)";
         const borderStyle = isCurrentSegment ? "2px solid var(--volt-yellow)" : "1px solid var(--steel-border)";
         const opacity = isCompleted ? "0.4" : "1";
-        const blockStyle = "flex-grow:" + segment.duration_sec + ";background:" + bgColor + ";height:12px;border:" + borderStyle + ";opacity:" + opacity + ";";
+        const heightPercent = timelineHeightPercents[idx];
+        const blockStyle = "flex-grow:" + segment.duration_sec + ";background:" + bgColor + ";height:" + heightPercent + "%;border:" + borderStyle + ";opacity:" + opacity + ";";
         timelineBlocks.push("<div style=\"" + blockStyle + "\"></div>");
       }
       let nextSegmentHtml = "";
@@ -4313,7 +4353,7 @@
       html += "<div style=\"text-align:right;\"><div style=\"font-size:0.85rem;color:var(--text-muted);margin-bottom:0.5rem;\">" + escapeHtml(t("class.total_remaining")) + "</div>";
       html += "<div style=\"font-size:2rem;font-weight:700;color:var(--volt-yellow);\">" + escapeHtml(totalRemainingStr) + "</div></div></div>";
       html += "<div style=\"margin-bottom:1.5rem;\"><div style=\"font-size:0.85rem;color:var(--text-muted);margin-bottom:0.5rem;\">" + escapeHtml(segmentProgressStr) + "</div>" + nextSegmentHtml + "</div>";
-      html += "<div style=\"display:flex;gap:4px;height:16px;border-radius:2px;overflow:hidden;border:1px solid var(--steel-border);\">" + timelineBlocks.join("") + "</div></div>";
+      html += "<div style=\"display:flex;align-items:flex-end;gap:4px;height:64px;border-radius:2px;overflow:hidden;border:1px solid var(--steel-border);\">" + timelineBlocks.join("") + "</div></div>";
       html += "<div style=\"display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1rem;\">" + stationCards.join("") + "</div></div>";
       return html;
     }
