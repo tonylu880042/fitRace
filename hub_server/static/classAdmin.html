@@ -498,6 +498,12 @@
       stationHealth: [],
       classHistory: [],
       rows: DEFAULT_PLAN_ROWS.map((row) => ({ ...row })),
+      // The plan editor is operator-owned once the coach has touched it.
+      // rowsDirty starts false so the first load and every poll before any
+      // edit still pull the saved plan in. Any row mutation handler sets
+      // it true; only a successful save or a reset clears it again. See
+      // applyRaceState below for the read side of this flag.
+      rowsDirty: false,
       adminToken: localStorage.getItem("fitrace.adminPassword") || localStorage.getItem("fitrace.adminToken") || "",
       refreshTimer: null,
     };
@@ -849,8 +855,8 @@
           <select onchange="updateSegmentKind(${index}, this.value)">
             ${["warmup", "work", "rest", "cooldown"].map((kind) => `<option value="${kind}" ${row.kind === kind ? "selected" : ""}>${escapeHtml(t(segmentKindKey(kind)))}</option>`).join("")}
           </select>
-          <input type="number" min="5" max="3600" value="${escapeHtml(String(row.durationSec))}" onchange="updateSegmentDuration(${index}, this.value)">
-          <input type="number" min="1" max="2000" placeholder="${wattsLabel}" title="${wattsLabel}" value="${wattsValue}" onchange="updateSegmentTargetWatts(${index}, this.value)">
+          <input type="number" min="5" max="3600" value="${escapeHtml(String(row.durationSec))}" oninput="updateSegmentDuration(${index}, this.value)" onchange="updateSegmentDuration(${index}, this.value)">
+          <input type="number" min="1" max="2000" placeholder="${wattsLabel}" title="${wattsLabel}" value="${wattsValue}" oninput="updateSegmentTargetWatts(${index}, this.value)" onchange="updateSegmentTargetWatts(${index}, this.value)">
           <button type="button" class="danger" onclick="deleteSegmentRow(${index})">${escapeHtml(t("classAdmin.btn_delete_segment"))}</button>
         </div>
       `;
@@ -918,17 +924,31 @@
       applyTranslations();
     }
 
-    // The single entry point for a fresh GET /api/race/state reply: stores
-    // it, re-derives the editor rows from its class_plan (see
-    // rowsFromClassPlan), and re-renders the editor, preview and summary
-    // tiles so the coach never sees a stale or default plan next to the
-    // real one on the hub.
+    // The single entry point for a fresh GET /api/race/state reply. Backs
+    // BOTH the very first load and every four-second poll (see
+    // scheduleRefresh/refreshAll/refreshState below), so it must not treat
+    // those two callers the same way once the coach has started editing.
+    // state.race, the plan preview, and the summary tiles always track the
+    // server. The editor rows only get re-derived from class_plan (see
+    // rowsFromClassPlan) while state.rowsDirty is false -- once a row
+    // mutation handler sets it, a poll reply leaves state.rows and the
+    // rendered plan-rows DOM alone, no matter what the server has saved.
     function applyRaceState(raceState) {
       state.race = raceState || {};
-      state.rows = rowsFromClassPlan(state.race.class_plan);
-      renderPlanEditor();
+      if (!state.rowsDirty) {
+        state.rows = rowsFromClassPlan(state.race.class_plan);
+        renderPlanEditor();
+      }
       renderPlanPreview();
       renderSummaryState();
+    }
+
+    // Legitimate points where the server becomes authoritative over the
+    // plan editor again: a successful save and a reset. Clears the dirty
+    // flag first so the reply is applied exactly like a fresh load.
+    function loadRaceStateAndRows(raceState) {
+      state.rowsDirty = false;
+      applyRaceState(raceState);
     }
 
     // ------------------------------------------------------------------
@@ -936,29 +956,34 @@
     // ------------------------------------------------------------------
 
     function addSegmentRow() {
+      state.rowsDirty = true;
       state.rows.push({ kind: "work", durationSec: 300, targetWatts: null });
       renderAll();
     }
 
     function deleteSegmentRow(index) {
+      state.rowsDirty = true;
       state.rows.splice(index, 1);
       renderAll();
     }
 
     function updateSegmentKind(index, kind) {
       if (!state.rows[index]) return;
+      state.rowsDirty = true;
       state.rows[index].kind = kind;
       renderAll();
     }
 
     function updateSegmentDuration(index, value) {
       if (!state.rows[index]) return;
+      state.rowsDirty = true;
       state.rows[index].durationSec = metricNumber(value, state.rows[index].durationSec);
       renderAll();
     }
 
     function updateSegmentTargetWatts(index, value) {
       if (!state.rows[index]) return;
+      state.rowsDirty = true;
       const trimmed = String(value ?? "").trim();
       state.rows[index].targetWatts = trimmed === "" ? null : metricNumber(trimmed, null);
       renderAll();
@@ -968,6 +993,7 @@
       const fromIndex = metricNumber($("repeat-from").value, 1) - 1;
       const toIndex = metricNumber($("repeat-to").value, 1) - 1;
       const times = metricNumber($("repeat-times").value, 2);
+      state.rowsDirty = true;
       state.rows = repeatSegmentGroup(state.rows, fromIndex, toIndex, times);
       renderAll();
     }
@@ -1050,12 +1076,12 @@
 
     async function savePlan() {
       try {
-        state.race = await fetchJson("/api/class/configure", {
+        const raceState = await fetchJson("/api/class/configure", {
           method: "POST",
           headers: adminHeaders({ "Content-Type": "application/json" }),
           body: JSON.stringify(buildSegmentsPayload(state.rows)),
         });
-        renderSummaryState();
+        loadRaceStateAndRows(raceState);
         setMessage("class-message", t("classAdmin.message_plan_saved"), "ok");
       } catch (error) {
         setMessage("class-message", error.message, "error");
@@ -1085,8 +1111,8 @@
     async function resetClass() {
       if (!window.confirm(t("classAdmin.confirm_reset"))) return;
       try {
-        state.race = await fetchJson("/api/race/reset", { method: "POST", headers: adminHeaders() });
-        renderSummaryState();
+        const raceState = await fetchJson("/api/race/reset", { method: "POST", headers: adminHeaders() });
+        loadRaceStateAndRows(raceState);
         setMessage("class-message", t("classAdmin.message_class_reset"), "ok");
       } catch (error) {
         setMessage("class-message", error.message, "error");
