@@ -2286,11 +2286,17 @@
     let leaderboardRankByNode = new Map();
     let teamLeaderboardRows = [];
     let leaderboardDisplayMode = "classic";
-    let lastLeaderboardData = null;
-    let lastTeamLeaderboardData = null;
     let celebrationShownForRaceKey = null;
     let leaderboardSmoothValues = new Map();
-    let isSmoothLeaderboardFrame = false;
+    // Coalescing state for the untyped-telemetry WS branch: a venue can
+    // fire several telemetry broadcasts between two painted frames, and
+    // rendering each one separately is the runaway-reflow defect this
+    // guards against. pendingLeaderboardData always holds the latest
+    // payload; leaderboardRenderScheduled is true from the moment a frame
+    // has been requested until it fires, so a burst collapses into one
+    // render of the newest data rather than one render per message.
+    let leaderboardRenderScheduled = false;
+    let pendingLeaderboardData = null;
     let raceStageOverride = null;
     let raceStageOverrideTimer = null;
     let autoResetInterval = null;
@@ -2695,7 +2701,25 @@
           // itself consults the mode already known to the page, so a
           // class board does not get promoted into a race leaderboard the
           // instant telemetry ticks.
-          renderLeaderboard(data);
+          //
+          // A venue with several machines can fire many of these between
+          // two painted frames. requestAnimationFrame coalesces a burst
+          // into one render of the newest payload instead of one render
+          // per message. A plain Node context (as used by tests) has no
+          // animation frame concept at all, so this falls back to
+          // rendering the payload right away in that case.
+          pendingLeaderboardData = data;
+          if (typeof requestAnimationFrame !== "function") {
+            renderLeaderboard(data);
+          } else if (!leaderboardRenderScheduled) {
+            leaderboardRenderScheduled = true;
+            requestAnimationFrame(() => {
+              leaderboardRenderScheduled = false;
+              const data = pendingLeaderboardData;
+              pendingLeaderboardData = null;
+              renderLeaderboard(data);
+            });
+          }
         }
         // Untyped payloads -- whether populated leaderboard progress or the
         // empty {} tick sent whenever no race is running -- never carry
@@ -3650,7 +3674,6 @@
     }
 
     function animateLeaderboardReorder(previousRects) {
-      if (isSmoothLeaderboardFrame) return;
       const items = document.querySelectorAll(".leaderboard-item, .team-leaderboard-item, .race-track-item, .team-battle-card, .sprint-board-card");
       items.forEach((item) => {
         const nodeId = item.dataset.nodeId;
@@ -3683,21 +3706,6 @@
 
     function applyLeaderboardDisplayMode(mode) {
       leaderboardDisplayMode = normalizeLeaderboardDisplayMode(mode);
-    }
-
-    function renderSmoothLeaderboardFrame() {
-      // Never in class mode: lastLeaderboardData/lastTeamLeaderboardData
-      // can hold stale race telemetry from a race that ran earlier in the
-      // same page session (renderLeaderboards class-mode branch returns
-      // before touching them), and this runs every animation frame --
-      // feeding that stale data back into renderLeaderboard would
-      // overwrite the live class leaderboard with it 60 times a second.
-      if (currentState === "RUNNING" && currentSessionMode !== "class" && lastLeaderboardData) {
-        isSmoothLeaderboardFrame = true;
-        renderLeaderboard(lastLeaderboardData, lastTeamLeaderboardData);
-        isSmoothLeaderboardFrame = false;
-      }
-      requestAnimationFrame(renderSmoothLeaderboardFrame);
     }
 
     function getRankedTeamRows(progressData, teamData, raceType) {
@@ -4431,8 +4439,6 @@
         return;
       }
       detectAthleteFinishes(progressData);
-      lastLeaderboardData = progressData || {};
-      lastTeamLeaderboardData = teamData || null;
 
       if (leaderboardDisplayMode === "race_track") {
         renderRaceTrackLeaderboard(progressData, teamData);
@@ -5130,7 +5136,6 @@
       toggleConfigFields();
       loadHubVersion();
       connectWebSocket();
-      requestAnimationFrame(renderSmoothLeaderboardFrame);
       fetchNodes();
 
       // Initialize QR codes on the right side of the hero bar and admin card
