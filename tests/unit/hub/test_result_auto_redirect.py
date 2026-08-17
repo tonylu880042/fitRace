@@ -1,19 +1,26 @@
-"""Unattended auto-return-to-dashboard timer on the two public results pages.
+"""Unattended auto-return-to-dashboard timer -- result.html ONLY.
 
-result.html (personal QR-scan result) and results.html (venue results wall)
-now redirect back to `/` after AUTO_REDIRECT_SECONDS (60) seconds of nobody
-touching the manual back control, with a visible countdown next to that
-control (`result.auto_redirect`, a six-locale key taking a `{seconds}`
-placeholder).
+result.html (the personal QR-scan result page) redirects back to `/` after
+AUTO_REDIRECT_SECONDS (60) seconds of nobody touching the manual back
+control, with a visible countdown next to that control
+(`result.auto_redirect`, a six-locale key taking a `{seconds}` placeholder).
 
-This module extracts the real timer-setup code (the contiguous block from
-`const AUTO_REDIRECT_SECONDS = 60;` through the end of `goToDashboard()`)
-with the same brace-depth technique as
-tests/unit/hub/test_result_pages_anonymous_display.py and runs it under
-`node -e` against a stubbed `setInterval`/`clearInterval`/`document`/
-`window`/`t`, so a failure here means the real page stopped scheduling the
-redirect (or stopped writing the countdown into the DOM), not that a
-function with the right name still exists somewhere in the file.
+results.html (the venue QR wall athletes queue up at to find their card and
+scan their own token) does NOT get this timer: bouncing the wall to the
+dashboard every 60 seconds would leave the next person in the queue looking
+at the dashboard instead of the wall. It keeps only the manual back control
+added alongside the original fix -- see
+tests/unit/hub/test_result_back_navigation.py for that. This module pins
+the split is real: result.html schedules the redirect and results.html
+carries none of the machinery for it (not just an unused function -- no
+`setInterval` call anywhere in its script at all), so a later edit that
+"restores symmetry" between the two pages by re-adding a wall redirect
+fails here.
+
+Extraction mirrors the brace-depth technique already used by
+tests/unit/hub/test_result_pages_anonymous_display.py and runs the real
+functions under `node -e` against a stubbed `setInterval`/`clearInterval`/
+`document`/`window`/`t`.
 """
 
 import json
@@ -37,6 +44,13 @@ def _strip_js_comments(code: str) -> str:
 
 def _read(page: str) -> str:
     return (STATIC_DIR / page).read_text(encoding="utf-8")
+
+
+def _stripped_script(page: str) -> str:
+    source = _read(page)
+    start = source.index("<script>") + len("<script>")
+    end = source.index("</script>", start)
+    return _strip_js_comments(source[start:end])
 
 
 def _matching_brace_end(source: str, open_idx: int) -> int:
@@ -63,10 +77,18 @@ def _matching_brace_end(source: str, open_idx: int) -> int:
     raise ValueError("no matching closing brace found")
 
 
+def _extract_function(source: str, name: str) -> str:
+    marker = f"function {name}("
+    start = source.index(marker)
+    brace_open = source.index("{", start)
+    brace_end = _matching_brace_end(source, brace_open)
+    return source[start : brace_end + 1]
+
+
 def _extract_auto_redirect_block(source: str) -> str:
-    """Pull the whole self-contained auto-redirect unit -- the
-    AUTO_REDIRECT_SECONDS constant, its two `let` state variables, and the
-    three functions (updateAutoRedirectNotice / startAutoRedirect /
+    """Pull the whole self-contained auto-redirect unit from result.html --
+    the AUTO_REDIRECT_SECONDS constant, its two `let` state variables, and
+    the three functions (updateAutoRedirectNotice / startAutoRedirect /
     stopAutoRedirect / goToDashboard) -- as one slice, brace-matched off the
     LAST function in the block so it is robust to reordering the
     declarations in between."""
@@ -114,8 +136,8 @@ const window = { location: { href: "" } };
 """
 
 
-def _run(page: str, driver_js: str) -> dict:
-    source = _read(page)
+def _run(driver_js: str) -> dict:
+    source = _read("result.html")
     block = _strip_js_comments(_extract_auto_redirect_block(source))
     script = _HARNESS_STUBS + block + "\n" + driver_js
     result = subprocess.run(
@@ -143,20 +165,7 @@ console.log(JSON.stringify({ before, at59, at60 }));
 
 
 def test_result_html_auto_redirect_fires_at_exactly_sixty_ticks_of_a_one_second_interval():
-    out = _run("result.html", _TICK_DRIVER)
-    assert out["before"]["ms"] == 1000
-    assert out["before"]["notice"] == "Returning in 60s"
-    assert out["before"]["href"] == ""
-
-    assert out["at59"]["notice"] == "Returning in 1s"
-    assert out["at59"]["href"] == "", "must not redirect before the 60th tick"
-
-    assert out["at60"]["href"] == "/"
-    assert out["at60"]["cleared"] is True
-
-
-def test_results_html_auto_redirect_fires_at_exactly_sixty_ticks_of_a_one_second_interval():
-    out = _run("results.html", _TICK_DRIVER)
+    out = _run(_TICK_DRIVER)
     assert out["before"]["ms"] == 1000
     assert out["before"]["notice"] == "Returning in 60s"
     assert out["before"]["href"] == ""
@@ -180,35 +189,34 @@ console.log(JSON.stringify({
 
 
 def test_result_html_manual_back_control_clears_the_pending_timer():
-    out = _run("result.html", _MANUAL_BACK_DRIVER)
-    assert out["href"] == "/"
-    assert out["cleared"] is True
-
-
-def test_results_html_manual_back_control_clears_the_pending_timer():
-    out = _run("results.html", _MANUAL_BACK_DRIVER)
+    out = _run(_MANUAL_BACK_DRIVER)
     assert out["href"] == "/"
     assert out["cleared"] is True
 
 
 # -- the 60-second delay is a single named constant, not a scattered magic
-# number -- both the interval tick count test above and this direct read
-# pin the same value.
+# number.
 
 
-def test_auto_redirect_seconds_constant_is_sixty_on_both_pages():
-    for page in ("result.html", "results.html"):
-        source = _read(page)
-        assert "const AUTO_REDIRECT_SECONDS = 60;" in source
-        # the constant must be the only literal 60 driving the delay -- no
-        # second hardcoded copy inside the timer functions themselves.
-        block = _extract_auto_redirect_block(source)
-        after_const = block[len("const AUTO_REDIRECT_SECONDS = 60;") :]
-        assert "60" not in after_const
+def test_auto_redirect_seconds_constant_is_sixty_on_result_html():
+    source = _read("result.html")
+    assert "const AUTO_REDIRECT_SECONDS = 60;" in source
+    # the constant must be the only literal 60 driving the delay -- no
+    # second hardcoded copy inside the timer functions themselves.
+    block = _extract_auto_redirect_block(source)
+    after_const = block[len("const AUTO_REDIRECT_SECONDS = 60;") :]
+    assert "60" not in after_const
+
+
+def test_result_html_calls_t_with_a_seconds_param_for_the_auto_redirect_key():
+    source = _strip_js_comments(_read("result.html"))
+    assert 't("result.auto_redirect", { seconds: autoRedirectRemaining })' in source
 
 
 # -- i18n: the countdown key exists with a genuine, differing translation --
 # in all six locales and the {seconds} placeholder survives everywhere.
+# result.html is still the only page that renders it, but the key itself
+# must not be deleted from any locale file while result.html depends on it.
 
 
 def test_auto_redirect_key_exists_with_seconds_placeholder_in_every_locale():
@@ -227,7 +235,37 @@ def test_auto_redirect_key_zh_tw_value_is_genuinely_translated():
     assert re.search(r"[一-鿿]", zh)
 
 
-def test_both_pages_call_t_with_a_seconds_param_for_the_auto_redirect_key():
-    for page in ("result.html", "results.html"):
-        source = _strip_js_comments(_read(page))
-        assert 't("result.auto_redirect", { seconds: autoRedirectRemaining })' in source
+# -- results.html (the QR wall) must carry NONE of this machinery. These --
+# are the tests that would fail if someone later "restores symmetry" between
+# the two pages by re-adding a redirect timer to the wall.
+
+
+def test_results_html_has_no_redirect_timer_at_all():
+    script = _stripped_script("results.html")
+    assert "setInterval" not in script, (
+        "results.html must never schedule a redirect timer -- athletes "
+        "queueing at the QR wall must not get bounced to the dashboard "
+        "while they are still looking for their card"
+    )
+    assert "AUTO_REDIRECT_SECONDS" not in script
+    assert "startAutoRedirect" not in script
+    assert "stopAutoRedirect" not in script
+    assert "clearInterval" not in script
+
+
+def test_results_html_never_references_the_auto_redirect_i18n_key():
+    script = _stripped_script("results.html")
+    assert "result.auto_redirect" not in script
+
+
+def test_results_html_has_no_countdown_element_in_the_markup():
+    html = _read("results.html")
+    assert "auto-redirect-notice" not in html
+
+
+def test_results_html_goto_dashboard_just_navigates_with_no_timer_wiring():
+    script = _stripped_script("results.html")
+    fn = _extract_function(script, "goToDashboard")
+    assert "clearInterval" not in fn
+    assert "stopAutoRedirect" not in fn
+    assert 'window.location.href = "/"' in fn

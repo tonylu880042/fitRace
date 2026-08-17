@@ -128,12 +128,6 @@
       color: var(--accent);
     }
 
-    .auto-redirect-notice {
-      font-size: 11px;
-      color: var(--muted);
-      font-family: var(--mono);
-    }
-
     .lang-toggle {
       display: flex;
     }
@@ -331,7 +325,6 @@
 
       <div class="back-nav">
         <button type="button" class="back-button" onclick="goToDashboard()" data-i18n="result.back_button">Back to Dashboard</button>
-        <div class="auto-redirect-notice" id="auto-redirect-notice"></div>
       </div>
 
       <div class="lang-toggle">
@@ -380,50 +373,11 @@
       return value;
     }
 
-    // Unattended venue phones/kiosks left on this page never navigate back
-    // on their own, so the QR-scan result screen would sit there forever.
-    // AUTO_REDIRECT_SECONDS is the single source of truth for that delay --
-    // it feeds both the setInterval tick count and the countdown text, so
-    // there is no second copy of 60 to drift out of sync.
-    const AUTO_REDIRECT_SECONDS = 60;
-    let autoRedirectTimer = null;
-    let autoRedirectRemaining = AUTO_REDIRECT_SECONDS;
-
-    function updateAutoRedirectNotice() {
-      const notice = document.getElementById("auto-redirect-notice");
-      if (notice) {
-        notice.textContent = t("result.auto_redirect", { seconds: autoRedirectRemaining });
-      }
-    }
-
-    // Extracted and run directly under node by
-    // tests/unit/hub/test_result_auto_redirect.py with a stubbed
-    // setInterval/window.location/document, so this stays a standalone
-    // top-level function -- it must not depend on anything the fixed-stub
-    // i18n/anonymous-display/number-format test modules do not also stub.
-    function startAutoRedirect() {
-      autoRedirectRemaining = AUTO_REDIRECT_SECONDS;
-      updateAutoRedirectNotice();
-      autoRedirectTimer = setInterval(() => {
-        autoRedirectRemaining -= 1;
-        if (autoRedirectRemaining <= 0) {
-          stopAutoRedirect();
-          window.location.href = "/";
-          return;
-        }
-        updateAutoRedirectNotice();
-      }, 1000);
-    }
-
-    function stopAutoRedirect() {
-      if (autoRedirectTimer) {
-        clearInterval(autoRedirectTimer);
-        autoRedirectTimer = null;
-      }
-    }
-
+    // The QR wall is where athletes queue up to find their card and scan
+    // their own token -- unlike result.html this page must never redirect
+    // itself away on a timer, or the next person in the queue would find
+    // the dashboard instead of the wall. Manual back navigation only.
     function goToDashboard() {
-      stopAutoRedirect();
       window.location.href = "/";
     }
 
@@ -697,7 +651,6 @@
     (async function() {
       await loadLocaleList();
       await setLang(currentLocale);
-      startAutoRedirect();
     })();
   </script>
 </body>
