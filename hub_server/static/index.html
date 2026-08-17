@@ -4237,6 +4237,26 @@
         });
       }
 
+      // Pure -- overall progress through the WHOLE plan, as a percent from
+      // 0 to 100. Derived from the same clock fields the big countdown
+      // above already renders (totalRemainingMs, finished) plus the plan
+      // total duration, so this bar can never disagree with the numbers
+      // already on screen. finished is pinned at 100 forever rather than
+      // recomputed from totalRemainingMs, since the class does not
+      // auto-stop and the bar must never wrap or reset once the plan ends.
+      // Nested for the same reason computeBlockHeightPercents above is
+      // nested: several tests extract buildClassBoardHtml alone by its
+      // function-name marker and run it standalone under node -e.
+      function computeClassProgressPercent(planTotalMs, totalRemainingMs, finished) {
+        if (finished) return 100;
+        const safeTotalMs = metricNumber(planTotalMs);
+        if (safeTotalMs <= 0) return 0;
+        const safeRemainingMs = Math.max(0, Math.min(safeTotalMs, metricNumber(totalRemainingMs, safeTotalMs)));
+        const elapsedMs = safeTotalMs - safeRemainingMs;
+        const percent = (elapsedMs / safeTotalMs) * 100;
+        return Math.max(0, Math.min(100, percent));
+      }
+
       const plan = sessionData.class_plan;
       const leaderboard = sessionData.leaderboard || {};
       if (!plan || !plan.segments || plan.segments.length === 0) {
@@ -4298,6 +4318,7 @@
         stationCards.push(card);
       }
       const totalDurationMs = plan.segments.reduce(function(sum, s) { return sum + s.duration_sec * 1000; }, 0);
+      const progressPercent = computeClassProgressPercent(totalDurationMs, clock.totalRemainingMs, clock.finished);
       const timelineHeightPercents = computeBlockHeightPercents(
         plan.segments.map(function(s) { return s.target_watts; })
       );
@@ -4353,7 +4374,9 @@
       html += "<div style=\"text-align:right;\"><div style=\"font-size:0.85rem;color:var(--text-muted);margin-bottom:0.5rem;\">" + escapeHtml(t("class.total_remaining")) + "</div>";
       html += "<div style=\"font-size:2rem;font-weight:700;color:var(--volt-yellow);\">" + escapeHtml(totalRemainingStr) + "</div></div></div>";
       html += "<div style=\"margin-bottom:1.5rem;\"><div style=\"font-size:0.85rem;color:var(--text-muted);margin-bottom:0.5rem;\">" + escapeHtml(segmentProgressStr) + "</div>" + nextSegmentHtml + "</div>";
-      html += "<div style=\"display:flex;align-items:flex-end;gap:4px;height:64px;border-radius:2px;overflow:hidden;border:1px solid var(--steel-border);\">" + timelineBlocks.join("") + "</div></div>";
+      html += "<div style=\"display:flex;align-items:flex-end;height:64px;border-radius:2px;overflow:hidden;border:1px solid var(--steel-border);\">" + timelineBlocks.join("") + "</div>";
+      html += "<div class=\"class-progress-track\" style=\"margin-top:4px;height:20px;border-radius:2px;overflow:hidden;border:1px solid var(--steel-border);background:var(--dim-grey);\"><div class=\"class-progress-fill\" style=\"height:100%;width:" + progressPercent + "%;background:var(--volt-yellow);\"></div></div>";
+      html += "</div>";
       html += "<div style=\"display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1rem;\">" + stationCards.join("") + "</div></div>";
       return html;
     }
