@@ -1,7 +1,10 @@
 import json
+import logging
 import time
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger("hub_server.race_result_store")
 
 
 class RaceResultStore:
@@ -40,11 +43,23 @@ class RaceResultStore:
             "saved_epoch_ms": int(time.time() * 1000),
             "snapshot": snapshot,
         }
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        with self._path.open("a", encoding="utf-8") as f:
-            f.write(
-                json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n"
+        # Ending a session is the critical path; persisting its history record
+        # is not. A storage failure here (read-only shared dir, missing
+        # mount, full disk -- see the venue incident this guards against)
+        # must never propagate and break the stop/reset flow that called us.
+        # Only OS/IO failures are swallowed -- a bug in record construction
+        # above should still surface as a real exception.
+        try:
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+            with self._path.open("a", encoding="utf-8") as f:
+                f.write(
+                    json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n"
+                )
+        except OSError as exc:
+            logger.warning(
+                "Failed to persist finished snapshot to %s: %s", self._path, exc
             )
+            return None
         self._saved_keys.add(result_key)
         return record
 

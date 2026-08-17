@@ -108,17 +108,23 @@ race_manager = RaceManager(
 ws_manager = WebSocketManager()
 node_registry = NodeRegistry()
 race_event_engine = RaceEventEngine()
-race_result_store = RaceResultStore(
-    os.getenv("FITRACE_RACE_RESULTS_PATH", "data/race_results.jsonl")
-)
+_race_results_path = os.getenv("FITRACE_RACE_RESULTS_PATH", "data/race_results.jsonl")
+race_result_store = RaceResultStore(_race_results_path)
 race_results_query = RaceResultsQuery(race_result_store)
 # A finished class is persisted the same way a race is -- same store class,
 # same append-only jsonl mechanics -- but to its own file and its own env
 # var, so a class record can never mix into race results, the records wall,
 # or the podium (see RaceResultStore.save_finished_snapshot's session_mode
-# filter).
+# filter). Its default sits beside the race results default (same parent
+# directory) rather than hardcoding its own "data/" relative path: a
+# deployment that sets FITRACE_RACE_RESULTS_PATH to a stable shared location
+# but forgets FITRACE_CLASS_RESULTS_PATH still lands the class store next to
+# it instead of falling back into the (often unwritable) release directory.
 class_result_store = RaceResultStore(
-    os.getenv("FITRACE_CLASS_RESULTS_PATH", "data/class_results.jsonl"),
+    os.getenv(
+        "FITRACE_CLASS_RESULTS_PATH",
+        str(Path(_race_results_path).parent / "class_results.jsonl"),
+    ),
     session_mode="class",
 )
 race_start_countdown_lock = asyncio.Lock()

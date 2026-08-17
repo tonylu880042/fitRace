@@ -39,7 +39,7 @@ already survive plain restarts). Once per hub:
 ```bash
 sudo mkdir -p /opt/fitracestudio/shared && sudo chown "$USER":"$USER" /opt/fitracestudio/shared
 sudo mkdir -p /etc/systemd/system/fitracestudio-hub.service.d
-printf '[Service]\nEnvironment=FITRACE_RACE_SETTINGS_PATH=/opt/fitracestudio/shared/race_settings.json\nEnvironment=FITRACE_RACE_RESULTS_PATH=/opt/fitracestudio/shared/race_results.jsonl\n' \
+printf '[Service]\nEnvironment=FITRACE_RACE_SETTINGS_PATH=/opt/fitracestudio/shared/race_settings.json\nEnvironment=FITRACE_RACE_RESULTS_PATH=/opt/fitracestudio/shared/race_results.jsonl\nEnvironment=FITRACE_CLASS_RESULTS_PATH=/opt/fitracestudio/shared/class_results.jsonl\n' \
   | sudo tee /etc/systemd/system/fitracestudio-hub.service.d/stable-data.conf
 sudo systemctl daemon-reload && sudo systemctl restart fitracestudio-hub.service
 ```
@@ -697,6 +697,14 @@ reboot, shutdown, arbitrary `systemctl`, or arbitrary service access.
 `FITRACE_RACE_RESULTS_PATH` controls where completed race snapshots are stored.
 If it is not set, the Hub writes `data/race_results.jsonl` relative to its
 working directory.
+
+`FITRACE_CLASS_RESULTS_PATH` controls where completed class snapshots are
+stored (see "Persistent data must live outside the release dir" above). If it
+is not set, the Hub writes next to whatever `FITRACE_RACE_RESULTS_PATH`
+resolves to. Either way, this path must point somewhere outside the release
+directory: a release is replaced on every deploy, and the release's own
+`data/` is not guaranteed writable by the service user. Recommended value:
+`/opt/fitracestudio/shared/class_results.jsonl`.
 
 `FITRACE_EDGE_MONITOR_PATH` controls where Edge Nodes write recent UART RX/TX
 and MQTT publish monitor events for the local setup page. If it is not set, the

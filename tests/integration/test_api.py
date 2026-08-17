@@ -1,5 +1,7 @@
+import os
 import time
 
+import pytest
 from fastapi.testclient import TestClient
 from fitrace_common.version import APP_VERSION
 from hub_server.infrastructure.fastapi.app import app
@@ -1890,3 +1892,102 @@ def test_class_history_endpoint_respects_limit():
     response = client.get("/api/class/history?limit=1")
     assert response.status_code == 200
     assert "classes" in response.json()
+
+
+# ---------------------------------------------------------------------------
+# Venue regression: an unwritable results path must not turn a routine stop
+# into an HTTP 500. race_manager.stop_race() runs before the result store is
+# touched, so the session itself always stops -- but a store write failure
+# used to propagate out of broadcast_race_state() and fail the whole
+# request, leaving the coach staring at an error with no idea whether the
+# class actually ended. See DEPLOYMENT.md / FITRACE_CLASS_RESULTS_PATH.
+# ---------------------------------------------------------------------------
+
+
+def _unwritable_result_store_path(tmp_path, filename):
+    """Builds a store path inside a read-only directory and returns
+    (path, restore) -- restore must be called so tmp_path cleanup can remove
+    the tree afterward."""
+    readonly_dir = tmp_path / "unwritable"
+    readonly_dir.mkdir()
+    readonly_dir.chmod(0o500)
+
+    def restore():
+        readonly_dir.chmod(0o700)
+
+    return readonly_dir / "nested" / filename, restore
+
+
+def _skip_if_root_bypasses_permissions():
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        pytest.skip(
+            "running as root: chmod does not block writes, test would be a no-op"
+        )
+
+
+def test_stopping_a_class_with_an_unwritable_history_path_still_returns_200(
+    monkeypatch, tmp_path
+):
+    _skip_if_root_bypasses_permissions()
+    import hub_server.infrastructure.fastapi.app as hub_app
+    from hub_server.usecases.race_result_store import RaceResultStore
+
+    monkeypatch.setenv("TESTING", "1")
+    unwritable_path, restore = _unwritable_result_store_path(
+        tmp_path, "class_results.jsonl"
+    )
+    try:
+        broken_class_store = RaceResultStore(unwritable_path, session_mode="class")
+        monkeypatch.setattr(hub_app, "class_result_store", broken_class_store)
+
+        client.post("/api/race/reset")
+        client.post("/api/class/configure", json=_SHORT_CLASS_PLAN)
+        start_res = client.post("/api/race/start")
+        assert start_res.status_code == 200
+        assert start_res.json()["session_mode"] == "class"
+
+        stop_res = client.post("/api/race/stop")
+
+        assert stop_res.status_code == 200
+        assert stop_res.json()["state"] == "STOPPED"
+        assert client.get("/api/race/state").json()["state"] == "STOPPED"
+
+        client.post("/api/race/reset")
+    finally:
+        restore()
+
+
+def test_stopping_a_race_with_an_unwritable_results_path_still_returns_200(
+    monkeypatch, tmp_path
+):
+    _skip_if_root_bypasses_permissions()
+    import hub_server.infrastructure.fastapi.app as hub_app
+    from hub_server.usecases.race_result_store import RaceResultStore
+
+    unwritable_path, restore = _unwritable_result_store_path(
+        tmp_path, "race_results.jsonl"
+    )
+    try:
+        broken_race_store = RaceResultStore(unwritable_path)
+        monkeypatch.setattr(hub_app, "race_result_store", broken_race_store)
+
+        client.post("/api/race/reset")
+        set_online_station(1, "unwritable-node-01")
+        client.post(
+            "/api/race/register",
+            json={"station_number": 1, "athlete_name": "Runner A"},
+        )
+        client.post(
+            "/api/race/configure",
+            json={"race_type": "time", "target_value": 0, "duration_sec": 120},
+        )
+        client.post("/api/race/start")
+
+        stop_res = client.post("/api/race/stop")
+
+        assert stop_res.status_code == 200
+        assert stop_res.json()["state"] == "STOPPED"
+
+        client.post("/api/race/reset")
+    finally:
+        restore()
