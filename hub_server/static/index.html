@@ -2297,6 +2297,19 @@
     // render of the newest data rather than one render per message.
     let leaderboardRenderScheduled = false;
     let pendingLeaderboardData = null;
+    // Per-card DOM cache for the classic individual leaderboard: node_id
+    // to the specific elements inside its already-rendered row (the three
+    // metric-value spans and the progress-fill bar). When a render arrives
+    // whose station set, order, and identity fields exactly match the last
+    // full render (tracked by leaderboardCardSignature), only these cached
+    // elements get new text/width -- no markup regeneration, no DOM query
+    // for a full rebuild, no reorder-animation position reads. A full
+    // rebuild stays the fallback whenever the signature does not match
+    // (first render, a station joined/left, a rank changed, someone
+    // finished, or the race became final) -- see
+    // buildLeaderboardCardSignature.
+    let leaderboardCardRefs = new Map();
+    let leaderboardCardSignature = null;
     let raceStageOverride = null;
     let raceStageOverrideTimer = null;
     let autoResetInterval = null;
@@ -3736,6 +3749,7 @@
     }
 
     function renderLeaderboardEmptyState(message = t("leaderboard.waiting_data")) {
+      resetLeaderboardCardCache();
       const container = document.getElementById("leaderboard-container");
       container.innerHTML = renderRegistrationEmptyState(message);
       leaderboardNodes = [];
@@ -3779,6 +3793,7 @@
     }
 
     function renderRaceTrackLeaderboard(progressData, teamData = null) {
+      resetLeaderboardCardCache();
       const container = document.getElementById("leaderboard-container");
       const previousRects = new Map();
       container.querySelectorAll(".race-track-item").forEach((item) => {
@@ -3906,6 +3921,7 @@
     }
 
     function renderTeamBattleLeaderboard(progressData, teamData = null) {
+      resetLeaderboardCardCache();
       const container = document.getElementById("leaderboard-container");
       const previousRects = new Map();
       container.querySelectorAll(".team-battle-card").forEach((item) => {
@@ -3984,6 +4000,7 @@
     }
 
     function renderSprintBoardLeaderboard(progressData, teamData = null) {
+      resetLeaderboardCardCache();
       const container = document.getElementById("leaderboard-container");
       const previousRects = new Map();
       container.querySelectorAll(".sprint-board-card").forEach((item) => {
@@ -4091,6 +4108,7 @@
     }
 
     function renderTeamLeaderboard(progressData, teamData = null) {
+      resetLeaderboardCardCache();
       const container = document.getElementById("leaderboard-container");
       const previousRects = new Map();
       container.querySelectorAll(".team-leaderboard-item").forEach((item) => {
@@ -4391,6 +4409,11 @@
 
     function renderClassBoard(data) {
       // DOM wrapper. Computes the clock, then renders.
+      // The classic-leaderboard card cache below belongs to a different
+      // renderer entirely -- if it survived a switch into class mode, the
+      // classic leaderboard fast path could later patch text into rows
+      // that are no longer attached to the visible container.
+      resetLeaderboardCardCache();
       let clock;
       if (data.class_segment && data.state === "RUNNING") {
         // Use the server class_segment when available. Convert from snake_case to camelCase.
@@ -4412,6 +4435,7 @@
       // untyped telemetry broadcasts on the WS, which never carry
       // session_mode or class_plan of their own.
       if (!currentClassPlan) return;
+      resetLeaderboardCardCache();
       const clock = raceStartTime
         ? classClockAt(Date.now(), raceStartTime, currentClassPlan)
         : classClockAt(0, 0, currentClassPlan);
@@ -4423,6 +4447,93 @@
     function tickClassClock() {
       if (!raceStartTime || !currentClassPlan) return;
       renderClassBoardFromState();
+    }
+
+    function resetLeaderboardCardCache() {
+      leaderboardCardRefs = new Map();
+      leaderboardCardSignature = null;
+    }
+
+    // A string that changes exactly when the classic leaderboard would
+    // need a full markup rebuild: the race type (different columns), the
+    // podium/final state, and per node the identity fields that are baked
+    // into markup rather than patched in place (name, team, station,
+    // machine name, avatar, and whether this node has finished -- which
+    // swaps a percent for a finish time). Deliberately excludes the live
+    // numeric fields (power/speed/distance/progress/calories) -- those are
+    // exactly what the fast path in updateLeaderboardCardValues patches
+    // without a rebuild. Order matters here: nodes is already sorted by
+    // rank, so a reorder changes this string too, without a separate
+    // check.
+    function buildLeaderboardCardSignature(nodes, raceType, leaderboardFinal) {
+      const identity = nodes.map((node) => [
+        node.node_id,
+        node.athlete_name || "",
+        node.team_name || "",
+        node.station_number || "",
+        nodeDisplayName(node),
+        node.avatar_url || "",
+        node.finished_time_ms ? "1" : "0",
+      ].join(":"));
+      return raceType + "|" + (leaderboardFinal ? "F" : "R") + "|" + identity.join(",");
+    }
+
+    // Reads the metric-value and progress-fill elements out of a
+    // just-rendered classic leaderboard so future ordinary ticks can patch
+    // them directly. querySelectorAll and dataset reads never force
+    // layout -- only geometry methods like getBoundingClientRect do, and
+    // none are used here.
+    function captureLeaderboardCardRefs(container, nodes) {
+      const refs = new Map();
+      if (!container || typeof container.querySelectorAll !== "function") return refs;
+      container.querySelectorAll(".leaderboard-item").forEach((row) => {
+        const metricEls = row.querySelectorAll(".metric-val");
+        refs.set(row.dataset.nodeId, {
+          metricA: metricEls[0] || null,
+          metricB: metricEls[1] || null,
+          metricC: metricEls[2] || null,
+          progressFill: row.querySelector(".progress-fill"),
+        });
+      });
+      return refs;
+    }
+
+    function setSmoothedCardText(el, key, target, decimals, suffix) {
+      if (!el) return;
+      el.textContent = smoothMetricNumber(key, target).toFixed(decimals) + suffix;
+    }
+
+    // The fast path itself: patches the three metric-value cells and the
+    // progress-fill width of every already-rendered row from cached
+    // element references. No markup is generated, no innerHTML is
+    // touched, and no getBoundingClientRect is called -- this is what
+    // keeps an ordinary telemetry tick cheap regardless of station count.
+    function updateLeaderboardCardValues(nodes, raceType) {
+      nodes.forEach((node) => {
+        const refs = leaderboardCardRefs.get(node.node_id);
+        if (!refs) return;
+        if (raceType === "calories") {
+          setSmoothedCardText(refs.metricA, `${node.node_id}:power`, node.power_watts, 0, "");
+          setSmoothedCardText(refs.metricB, `${node.node_id}:calories`, node.calories, 1, "");
+          if (!node.finished_time_ms) setSmoothedCardText(refs.metricC, `${node.node_id}:progress`, node.progress_percent, 1, "%");
+        } else if (raceType === "max_power" || raceType === "watts") {
+          setSmoothedCardText(refs.metricA, `${node.node_id}:power`, node.power_watts, 0, "");
+          setSmoothedCardText(refs.metricB, `${node.node_id}:max_power`, node.max_power_watts, 0, "");
+          setSmoothedCardText(refs.metricC, `${node.node_id}:progress`, node.progress_percent, 1, "%");
+        } else if (raceType === "time") {
+          setSmoothedCardText(refs.metricA, `${node.node_id}:speed`, node.instantaneous_speed_kph, 1, "");
+          setSmoothedCardText(refs.metricB, `${node.node_id}:distance`, node.distance_m, 0, "");
+          setSmoothedCardText(refs.metricC, `${node.node_id}:progress`, node.progress_percent, 1, "%");
+        } else {
+          setSmoothedCardText(refs.metricA, `${node.node_id}:speed`, node.instantaneous_speed_kph, 1, "");
+          setSmoothedCardText(refs.metricB, `${node.node_id}:distance`, node.distance_m, 0, "");
+          if (!node.finished_time_ms) setSmoothedCardText(refs.metricC, `${node.node_id}:progress`, node.progress_percent, 1, "%");
+        }
+        if (refs.progressFill) {
+          const width = Math.min(100, smoothMetricNumber(`${node.node_id}:progress`, node.progress_percent));
+          refs.progressFill.style.width = width + "%";
+        }
+      });
     }
 
     function renderLeaderboard(progressData, teamData = null) {
@@ -4461,14 +4572,10 @@
       }
 
       const container = document.getElementById("leaderboard-container");
-      const previousRects = new Map();
-      container.querySelectorAll(".leaderboard-item").forEach((item) => {
-        previousRects.set(item.dataset.nodeId, item.getBoundingClientRect());
-      });
-
       const nodes = Object.values(progressData);
-      
+
       if (nodes.length === 0) {
+        resetLeaderboardCardCache();
         container.innerHTML = renderRegistrationEmptyState(t("leaderboard.waiting_data"));
         leaderboardNodes = [];
         teamLeaderboardRows = [];
@@ -4480,6 +4587,22 @@
       sortLeaderboardNodes(nodes, raceType);
       leaderboardNodes = nodes;
       const leaderboardFinal = isLeaderboardFinal(raceType, nodes);
+
+      // Fast path: the station set, rank order, and every identity field
+      // baked into markup are exactly what they were on the last full
+      // render -- only live numeric values changed. Patch those in place
+      // and skip building HTML, writing innerHTML, and reading any
+      // element position entirely.
+      const cardSignature = buildLeaderboardCardSignature(nodes, raceType, leaderboardFinal);
+      if (cardSignature === leaderboardCardSignature && leaderboardCardRefs.size === nodes.length) {
+        updateLeaderboardCardValues(nodes, raceType);
+        return;
+      }
+
+      const previousRects = new Map();
+      container.querySelectorAll(".leaderboard-item").forEach((item) => {
+        previousRects.set(item.dataset.nodeId, item.getBoundingClientRect());
+      });
 
       let html = leaderboardFinal ? renderPodium(nodes, raceType) : '';
       html += '<div class="leaderboard-list">';
@@ -4629,6 +4752,8 @@
       container.innerHTML = html;
       leaderboardRankByNode = new Map(nodes.map((node, index) => [node.node_id, index + 1]));
       animateLeaderboardReorder(previousRects);
+      leaderboardCardRefs = captureLeaderboardCardRefs(container, nodes);
+      leaderboardCardSignature = cardSignature;
       if (leaderboardFinal) {
         triggerFinishCelebration(nodes);
       }
