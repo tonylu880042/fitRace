@@ -2798,13 +2798,17 @@
       const lastIndex = segments.length - 1;
 
       if (elapsedMs >= totalMs) {
-        return {
+        const result = {
           index: lastIndex,
           kind: segments[lastIndex].kind,
           segmentRemainingMs: 0,
           totalRemainingMs: 0,
           finished: true,
         };
+        if (segments[lastIndex].target_watts !== null && segments[lastIndex].target_watts !== undefined) {
+          result.targetWatts = segments[lastIndex].target_watts;
+        }
+        return result;
       }
 
       let cumulativeMs = 0;
@@ -2812,25 +2816,33 @@
         const segment = segments[index];
         const segmentEndMs = cumulativeMs + segment.duration_sec * 1000;
         if (elapsedMs < segmentEndMs) {
-          return {
+          const result = {
             index,
             kind: segment.kind,
             segmentRemainingMs: segmentEndMs - elapsedMs,
             totalRemainingMs: totalMs - elapsedMs,
             finished: false,
           };
+          if (segment.target_watts !== null && segment.target_watts !== undefined) {
+            result.targetWatts = segment.target_watts;
+          }
+          return result;
         }
         cumulativeMs = segmentEndMs;
       }
 
       // Unreachable given the totalMs check above.
-      return {
+      const fallbackResult = {
         index: lastIndex,
         kind: segments[lastIndex].kind,
         segmentRemainingMs: 0,
         totalRemainingMs: 0,
         finished: true,
       };
+      if (segments[lastIndex].target_watts !== null && segments[lastIndex].target_watts !== undefined) {
+        fallbackResult.targetWatts = segments[lastIndex].target_watts;
+      }
+      return fallbackResult;
     }
 
     function formatClock(ms) {
@@ -2843,13 +2855,17 @@
     }
 
     function toClockShape(serverClassSegment) {
-      return {
+      const clock = {
         index: serverClassSegment.index,
         kind: serverClassSegment.kind,
         segmentRemainingMs: serverClassSegment.segment_remaining_ms,
         totalRemainingMs: serverClassSegment.total_remaining_ms,
         finished: serverClassSegment.finished,
       };
+      if (serverClassSegment.target_watts !== null && serverClassSegment.target_watts !== undefined) {
+        clock.targetWatts = serverClassSegment.target_watts;
+      }
+      return clock;
     }
 
     function smoothMetricNumber(key, targetValue, smoothingMs = 180) {
@@ -4166,11 +4182,31 @@
     }
 
     function buildClassBoardHtml(sessionData, clock) {
+      // Pure decision for whether a station is meeting the segment's
+      // prescribed power. No target -> "none". Target present but the
+      // station reports no power at all (null/undefined, e.g. a
+      // treadmill, which never reports watts) -> "none" too, since
+      // absent power is not the same as under-target. Only a station
+      // that actually reports a number gets scored "on" (>= target) or
+      // "under" (< target). Declared here (rather than top-level) so it
+      // is captured automatically whenever buildClassBoardHtml itself is
+      // extracted for testing, while still being independently
+      // extractable and testable by its own function-name marker.
+      function classTargetStatus(powerWatts, targetWatts) {
+        if (targetWatts === null || targetWatts === undefined) return "none";
+        if (powerWatts === null || powerWatts === undefined) return "none";
+        const power = Number(powerWatts);
+        const target = Number(targetWatts);
+        if (!Number.isFinite(power) || !Number.isFinite(target)) return "none";
+        return power >= target ? "on" : "under";
+      }
+
       const plan = sessionData.class_plan;
       const leaderboard = sessionData.leaderboard || {};
       if (!plan || !plan.segments || plan.segments.length === 0) {
         return "<div>No class plan</div>";
       }
+      const numberFormat = new Intl.NumberFormat(currentLocale);
       const stationEntries = Object.entries(leaderboard);
       const sortedStations = stationEntries.sort(function(a, b) {
         const aNum = metricNumber(a[1].station_number, Infinity);
@@ -4192,7 +4228,6 @@
         const power = metricNumber(node.power_watts);
         const speed = metricNumber(node.instantaneous_speed_kph);
         const distance = metricNumber(node.distance_m);
-        const numberFormat = new Intl.NumberFormat(currentLocale);
         const powerStr = numberFormat.format(power);
         const speedStr = numberFormat.format(speed);
         const distanceStr = numberFormat.format(distance);
@@ -4201,12 +4236,24 @@
         if (stationNum && Number.isFinite(stationNum)) {
           badge = "<span style=\"display:inline-block;background:var(--volt-yellow);color:var(--bg-color);padding:0.25rem 0.5rem;border-radius:3px;font-size:0.75rem;font-weight:700;margin-right:0.5rem;\">" + escapeHtml(t("stations.station")) + " " + escapeHtml(String(stationNum)) + "</span>";
         }
+        // Meeting-target indicator: never shown when the segment has no
+        // target, and never shown as "under" for a station reporting no
+        // power at all (raw node.power_watts, not the zero-defaulted
+        // `power` above -- a treadmill never reports watts and must not
+        // be flagged under-target forever).
+        const targetStatus = classTargetStatus(node.power_watts, clock.targetWatts);
+        let targetIndicatorHtml = "";
+        if (targetStatus === "on") {
+          targetIndicatorHtml = "<span class=\"class-target-indicator class-target-on\" title=\"" + escapeHtml(t("class.target_met")) + "\" style=\"margin-left:0.4rem;color:var(--volt-yellow);\">&#9679;</span>";
+        } else if (targetStatus === "under") {
+          targetIndicatorHtml = "<span class=\"class-target-indicator class-target-under\" title=\"" + escapeHtml(t("class.target_under")) + "\" style=\"margin-left:0.4rem;color:var(--hazard-amber);\">&#9679;</span>";
+        }
         let card = "<div style=\"border:1px solid var(--steel-border);border-radius:4px;padding:1rem;background:var(--card-bg);\">";
         card += badge;
         card += "<div style=\"margin-top:0.5rem;font-weight:600;color:var(--text-main);\">" + escapeHtml(athleteName) + "</div>";
         card += "<div style=\"font-size:0.85rem;color:var(--text-muted);margin-bottom:0.75rem;\">" + escapeHtml(machineName) + "</div>";
         card += "<div style=\"display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.5rem;margin-bottom:0.75rem;font-size:0.8rem;\">";
-        card += "<div><div style=\"color:var(--text-muted);\">" + escapeHtml(t("metric.power")) + "</div><div style=\"font-weight:600;\">" + escapeHtml(powerStr) + " W</div></div>";
+        card += "<div><div style=\"color:var(--text-muted);\">" + escapeHtml(t("metric.power")) + "</div><div style=\"font-weight:600;\">" + escapeHtml(powerStr) + " W" + targetIndicatorHtml + "</div></div>";
         card += "<div><div style=\"color:var(--text-muted);\">" + escapeHtml(t("metric.speed")) + "</div><div style=\"font-weight:600;\">" + escapeHtml(speedStr) + " kph</div></div>";
         card += "<div><div style=\"color:var(--text-muted);\">" + escapeHtml(t("metric.distance")) + "</div><div style=\"font-weight:600;\">" + escapeHtml(distanceStr) + " m</div></div>";
         card += "</div>";
@@ -4249,10 +4296,19 @@
       const countdownStr = clock.finished ? t("class.time_up") : formatClock(clock.segmentRemainingMs);
       const segmentProgressStr = t("class.segment_progress", { index: clock.index + 1, total: plan.segments.length });
       const totalRemainingStr = formatClock(clock.totalRemainingMs);
+      // Prescribed intensity for the CURRENT segment, shown near the
+      // segment name -- the number athletes look up at. Absent entirely
+      // when this segment has no target, so the hero band looks exactly
+      // as it did before this field existed.
+      let targetWattsHtml = "";
+      if (clock.targetWatts !== null && clock.targetWatts !== undefined) {
+        const targetWattsStr = numberFormat.format(clock.targetWatts);
+        targetWattsHtml = "<div class=\"class-hero-target\" style=\"font-family:Oswald,sans-serif;font-size:1.5rem;font-weight:700;color:var(--volt-yellow);margin-top:0.35rem;\">" + escapeHtml(t("class.target_watts", { watts: targetWattsStr })) + "</div>";
+      }
       let html = "<div style=\"padding:2rem;\"><div style=\"border:2px solid var(--steel-border);border-radius:4px;padding:2rem;background:linear-gradient(135deg,var(--card-bg),rgba(39,39,42,0.5));margin-bottom:2rem;\">";
       html += "<div style=\"font-size:0.85rem;color:var(--text-muted);margin-bottom:1rem;\">" + escapeHtml(t("class.in_progress")) + "</div>";
       html += "<div style=\"display:grid;grid-template-columns:1fr auto;gap:2rem;align-items:start;margin-bottom:1.5rem;\">";
-      html += "<div><div style=\"font-family:Oswald,sans-serif;font-size:5rem;font-weight:700;color:var(--volt-yellow);line-height:1;text-transform:uppercase;\">" + escapeHtml(kindLabel) + "</div>";
+      html += "<div><div style=\"font-family:Oswald,sans-serif;font-size:5rem;font-weight:700;color:var(--volt-yellow);line-height:1;text-transform:uppercase;\">" + escapeHtml(kindLabel) + "</div>" + targetWattsHtml;
       html += "<div style=\"font-family:Oswald,sans-serif;font-size:3.5rem;font-weight:700;color:var(--volt-yellow);margin-top:0.5rem;\">" + escapeHtml(countdownStr) + "</div></div>";
       html += "<div style=\"text-align:right;\"><div style=\"font-size:0.85rem;color:var(--text-muted);margin-bottom:0.5rem;\">" + escapeHtml(t("class.total_remaining")) + "</div>";
       html += "<div style=\"font-size:2rem;font-weight:700;color:var(--volt-yellow);\">" + escapeHtml(totalRemainingStr) + "</div></div></div>";
