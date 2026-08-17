@@ -851,7 +851,7 @@
         const wattsValue = row.targetWatts === null || row.targetWatts === undefined ? "" : escapeHtml(String(row.targetWatts));
         const wattsLabel = escapeHtml(t("classAdmin.placeholder_target_watts"));
         return `
-        <div class="segment-row segment-row-${escapeHtml(row.kind)}">
+        <div class="segment-row segment-row-${escapeHtml(row.kind)}" id="segment-row-${index}">
           <select onchange="updateSegmentKind(${index}, this.value)">
             ${["warmup", "work", "rest", "cooldown"].map((kind) => `<option value="${kind}" ${row.kind === kind ? "selected" : ""}>${escapeHtml(t(segmentKindKey(kind)))}</option>`).join("")}
           </select>
@@ -967,18 +967,33 @@
       renderAll();
     }
 
+    // A <select> change, not a text input -- but the row it belongs to is
+    // still live under the coach's pointer, so this must not regenerate
+    // plan-rows either. The only thing a kind change visually owns outside
+    // state.rows is the row's own left-border colour stripe
+    // (segment-row-${kind}), so that one row element gets its className
+    // patched directly instead of the whole editor being rebuilt.
     function updateSegmentKind(index, kind) {
       if (!state.rows[index]) return;
       state.rowsDirty = true;
       state.rows[index].kind = kind;
-      renderAll();
+      const rowElement = $(`segment-row-${index}`);
+      if (rowElement) {
+        rowElement.className = `segment-row segment-row-${kind}`;
+      }
+      renderPlanPreview();
     }
 
+    // Value edits (duration, target watts) must not touch plan-rows -- the
+    // input the coach is typing into lives there, and regenerating it
+    // destroys focus/caret. state.rows is the source of truth for the
+    // saved value; only the views derived from it (preview timeline, total
+    // duration, segment count) get refreshed.
     function updateSegmentDuration(index, value) {
       if (!state.rows[index]) return;
       state.rowsDirty = true;
       state.rows[index].durationSec = metricNumber(value, state.rows[index].durationSec);
-      renderAll();
+      renderPlanPreview();
     }
 
     function updateSegmentTargetWatts(index, value) {
@@ -986,7 +1001,7 @@
       state.rowsDirty = true;
       const trimmed = String(value ?? "").trim();
       state.rows[index].targetWatts = trimmed === "" ? null : metricNumber(trimmed, null);
-      renderAll();
+      renderPlanPreview();
     }
 
     function applyRepeatGroup() {

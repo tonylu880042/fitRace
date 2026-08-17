@@ -357,10 +357,21 @@ def test_poll_updates_rows_when_editor_has_not_been_touched():
 
 
 # ---------------------------------------------------------------------------
-# 3. The reported bug: a typed value survives a poll landing mid-edit, and
-# the rendered rows are genuinely not rebuilt (the coach's in-progress
-# 250 stays on screen, the server's stale 150 -- or the newer poll's 999 --
-# never overwrites it).
+# 3. The reported bug: a typed value survives a poll landing mid-edit. Under
+# the classAdmin.html fix that stops the plan editor rebuilding while the
+# coach is typing, updateSegmentTargetWatts() no longer rebuilds plan-rows
+# at all -- not even for its own edit -- so this stubbed harness now
+# intentionally lags behind the model during typing: planRowsHtml stays on
+# the PLAN_A pre-edit render (watts of 150) rather than picking up the
+# newly typed 250. A real browser is unaffected -- the input element the
+# coach is typing into is untouched DOM and keeps showing exactly what was
+# typed; this string-based harness simply has no way to observe a live
+# input value it never re-serializes. What this test still pins, and what
+# actually matters, is that the model (state.rows) holds the typed 250,
+# rowsDirty is set, and the polled value of 999 never appears anywhere in
+# the rendered rows -- the real anti-clobber property this file exists to
+# guard. Do not restore a value=250 assertion here by reintroducing a rows
+# rebuild on typing.
 # ---------------------------------------------------------------------------
 
 
@@ -375,7 +386,11 @@ def test_typed_value_survives_a_poll_that_lands_mid_edit():
     )
     assert result["rowsDirty"] is True
     assert result["rows"][1]["targetWatts"] == 250
-    assert 'value="250"' in result["planRowsHtml"]
+    # plan-rows was never rewritten by the edit or by the poll, so it still
+    # shows the PLAN_A pre-edit render (150) -- not the newly typed 250
+    # (that now lives only in state.rows and the real input DOM) and,
+    # critically, not the polled 999.
+    assert 'value="150"' in result["planRowsHtml"]
     assert 'value="999"' not in result["planRowsHtml"]
 
 
@@ -384,10 +399,14 @@ def test_typed_value_survives_a_poll_that_lands_mid_edit():
 # rows -- proving the fix does not work by disabling or slowing the
 # refresh. renderSummaryState() reads state.race directly (never
 # state.rows), so the race-state pill must move on to PLAN_B's RUNNING
-# even while the rows stay frozen on the coach's edit. The plan-preview
-# timeline is derived from state.rows on purpose (it previews what is
-# about to be saved), so it correctly stays on the frozen 06:30 rather
-# than jumping to the server's unrelated PLAN_B duration.
+# even while the rows stay frozen. The plan-preview timeline is derived
+# from state.rows on purpose (it previews what is about to be saved), so
+# it correctly stays on the frozen 06:30 rather than jumping to PLAN_B
+# duration from the server. Frozen here means plan-rows itself is never
+# rewritten past its PLAN_A pre-edit render -- updateSegmentTargetWatts
+# stopped rebuilding it entirely (see test 3 above), so the container
+# keeps showing watts of 150 even though state.rows now holds the typed
+# 250.
 # ---------------------------------------------------------------------------
 
 
@@ -397,9 +416,10 @@ def test_poll_still_updates_summary_state_tile_while_rows_are_frozen():
         "updateSegmentTargetWatts(1, '250');\n"
         f"applyRaceState({PLAN_B});\n"
     )
-    # Rows -- and the preview derived from them -- stayed frozen on the
-    # coach's edit (PLAN_A's 90+300=390s, not PLAN_B's 1800s).
-    assert 'value="250"' in result["planRowsHtml"]
+    # plan-rows was never rewritten by the edit itself, so it still shows
+    # the PLAN_A pre-edit render (watts of 150), not the newly typed 250
+    # and not the polled PLAN_B value of 999 either.
+    assert 'value="150"' in result["planRowsHtml"]
     assert result["totalDurationText"] == "06:30"
     # But the summary tile, which reads state.race directly, moved on to
     # PLAN_B's RUNNING -- proving the poll itself was not disabled.
@@ -641,11 +661,18 @@ def test_poll_path_refreshstate_cannot_clear_the_dirty_flag():
         PLAN_B,
     )
     # Asserting the flag survived is the part that actually catches a
-    # loadRaceStateAndRows swap -- a rebuild that happened to reproduce the
-    # same 250 markup by coincidence would still pass a rows-only check.
+    # loadRaceStateAndRows swap -- a swap would call rowsFromClassPlan and
+    # rebuild plan-rows straight from the poll reply, showing PLAN_B watts
+    # of 999 instead of leaving the PLAN_A pre-edit render (150) in place.
+    # state.rows asserts alone are not enough, since a rebuild that
+    # happened to reproduce state.rows correctly by coincidence would still
+    # pass a rows-only check.
     assert result["rowsDirty"] is True
     assert result["rows"][1]["targetWatts"] == 250
-    assert 'value="250"' in result["planRowsHtml"]
+    # plan-rows was never rewritten by the edit or by the poll, so it still
+    # shows the PLAN_A pre-edit render (150) -- not the newly typed 250 and
+    # not the polled 999.
+    assert 'value="150"' in result["planRowsHtml"]
     assert 'value="999"' not in result["planRowsHtml"]
 
 
