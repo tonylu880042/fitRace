@@ -401,3 +401,96 @@ def test_apply_repeat_group_still_rewrites_plan_rows():
     assert result["rowsRenderCount"] == 1
     assert result["rowsDirty"] is True
     assert len(result["rows"]) == 4
+
+
+# ---------------------------------------------------------------------------
+# 4. Markup wiring: none of the tests above catch a missing oninput
+# attribute, because every one of them calls the handlers directly
+# (updateSegmentTargetWatts(1, "250")) rather than going through the
+# rendered <input> element. oninput is load-bearing, not decorative: it is
+# what puts a keystroke into state.rows the instant it happens. With only
+# onchange wired, a value the coach is mid-typing never reaches state.rows
+# (and so never sets rowsDirty) until the input loses focus. If the 4s
+# refresh poll lands before that blur, applyRaceState() sees rowsDirty
+# still false, treats the editor as untouched, and rebuilds plan-rows from
+# the server plan -- wiping exactly what the coach was typing. That is the
+# original reported bug, reachable again through a single event-attribute
+# deletion even though every state-level test in this file (and the sibling
+# dirty-flag file) stays green, because none of them render real markup and
+# fire a real input event.
+#
+# These tests execute the real renderPlanEditor()/buildPlanEditorHtml()
+# under node against a stubbed DOM, take the markup it actually produced,
+# and assert on THAT string -- not on the page source -- since a source
+# grep would also match a commented-out attribute (this repo has already
+# been bitten by exactly that failure mode).
+# ---------------------------------------------------------------------------
+
+
+def _run_render_plan_editor_markup(rows_js: str) -> str:
+    source = _read_class_admin()
+    segment_kind_key_fn = _strip_js_comments(
+        _extract_function(source, "segmentKindKey")
+    )
+    build_plan_editor_html_fn = _strip_js_comments(
+        _extract_function(source, "buildPlanEditorHtml")
+    )
+    render_plan_editor_fn = _strip_js_comments(
+        _extract_function(source, "renderPlanEditor")
+    )
+
+    script = (
+        _t_stub()
+        + _escape_html_stub()
+        + "const mockElements = {};\n"
+        + "function makeEl() { return { innerHTML: '' }; }\n"
+        + "function $(id) {\n"
+        + "  if (!mockElements[id]) mockElements[id] = makeEl();\n"
+        + "  return mockElements[id];\n"
+        + "}\n"
+        + f"const state = {{ rows: {rows_js} }};\n"
+        + segment_kind_key_fn
+        + "\n"
+        + build_plan_editor_html_fn
+        + "\n"
+        + render_plan_editor_fn
+        + "\n"
+        + "renderPlanEditor();\n"
+        + "console.log(mockElements['plan-rows'].innerHTML);\n"
+    )
+    return _run_node(script)
+
+
+WIRING_ROWS = json.dumps(
+    [
+        {"kind": "work", "durationSec": 300, "targetWatts": 150},
+    ]
+)
+
+
+def _find_input_tag(html: str, handler_call: str) -> str:
+    for tag in re.findall(r"<input[^>]*>", html):
+        if handler_call in tag:
+            return tag
+    raise AssertionError(f"no <input> tag found calling {handler_call!r} in: {html}")
+
+
+def test_duration_input_is_wired_to_oninput_and_onchange():
+    html = _run_render_plan_editor_markup(WIRING_ROWS)
+    tag = _find_input_tag(html, "updateSegmentDuration(0")
+    assert 'oninput="updateSegmentDuration(0, this.value)"' in tag
+    assert 'onchange="updateSegmentDuration(0, this.value)"' in tag
+
+
+def test_target_watts_input_is_wired_to_oninput_and_onchange():
+    html = _run_render_plan_editor_markup(WIRING_ROWS)
+    tag = _find_input_tag(html, "updateSegmentTargetWatts(0")
+    assert 'oninput="updateSegmentTargetWatts(0, this.value)"' in tag
+    assert 'onchange="updateSegmentTargetWatts(0, this.value)"' in tag
+
+
+def test_segment_kind_select_is_wired_to_onchange():
+    html = _run_render_plan_editor_markup(WIRING_ROWS)
+    select_match = re.search(r"<select[^>]*>", html)
+    assert select_match, f"no <select> tag found in: {html}"
+    assert 'onchange="updateSegmentKind(0, this.value)"' in select_match.group(0)
