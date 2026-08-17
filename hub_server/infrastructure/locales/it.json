@@ -242,6 +242,7 @@
   "result.error_hint": "Il codice potrebbe essere scaduto o non valido.",
   "result.back_button": "Torna al cruscotto",
   "result.loading": "Caricamento...",
+  "result.auto_redirect": "Ritorno al cruscotto tra {seconds}s",
   "result.team_label": "Squadra",
   "result.station_label": "Postazione",
   "results.page_title": "Risultati",

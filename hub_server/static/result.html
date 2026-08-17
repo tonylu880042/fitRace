@@ -196,8 +196,12 @@
       line-height: 1.5;
     }
 
-    .back-button {
+    .back-nav {
       margin-top: 20px;
+      text-align: center;
+    }
+
+    .back-button {
       display: inline-block;
       padding: 10px 20px;
       border: 1px solid var(--border-strong);
@@ -215,6 +219,13 @@
     .back-button:hover {
       border-color: var(--accent);
       color: var(--accent);
+    }
+
+    .auto-redirect-notice {
+      margin-top: 10px;
+      font-size: 11px;
+      color: var(--muted);
+      font-family: var(--mono);
     }
 
     @media (max-width: 480px) {
@@ -268,11 +279,15 @@
     <div class="error-state" id="error-state" style="display: none;">
       <div class="error-message" data-i18n="result.error_title">Result not found</div>
       <div class="error-hint" data-i18n="result.error_hint">The token may have expired or is invalid.</div>
-      <button class="back-button" onclick="window.location.href='/'" data-i18n="result.back_button">Back to Dashboard</button>
     </div>
 
     <div class="loading-state" id="loading-state">
       <div class="error-hint" data-i18n="result.loading">Loading...</div>
+    </div>
+
+    <div class="back-nav">
+      <button class="back-button" onclick="goToDashboard()" data-i18n="result.back_button">Back to Dashboard</button>
+      <div class="auto-redirect-notice" id="auto-redirect-notice"></div>
     </div>
   </div>
 
@@ -306,6 +321,53 @@
         value = value.replaceAll(`{${name}}`, String(replacement));
       });
       return value;
+    }
+
+    // Unattended venue phones/kiosks left on this page never navigate back
+    // on their own, so the QR-scan result screen would sit there forever.
+    // AUTO_REDIRECT_SECONDS is the single source of truth for that delay --
+    // it feeds both the setInterval tick count and the countdown text, so
+    // there is no second copy of 60 to drift out of sync.
+    const AUTO_REDIRECT_SECONDS = 60;
+    let autoRedirectTimer = null;
+    let autoRedirectRemaining = AUTO_REDIRECT_SECONDS;
+
+    function updateAutoRedirectNotice() {
+      const notice = document.getElementById("auto-redirect-notice");
+      if (notice) {
+        notice.textContent = t("result.auto_redirect", { seconds: autoRedirectRemaining });
+      }
+    }
+
+    // Extracted and run directly under node by
+    // tests/unit/hub/test_result_auto_redirect.py with a stubbed
+    // setInterval/window.location/document, so this stays a standalone
+    // top-level function -- it must not depend on anything the fixed-stub
+    // i18n/anonymous-display/number-format test modules do not also stub.
+    function startAutoRedirect() {
+      autoRedirectRemaining = AUTO_REDIRECT_SECONDS;
+      updateAutoRedirectNotice();
+      autoRedirectTimer = setInterval(() => {
+        autoRedirectRemaining -= 1;
+        if (autoRedirectRemaining <= 0) {
+          stopAutoRedirect();
+          window.location.href = "/";
+          return;
+        }
+        updateAutoRedirectNotice();
+      }, 1000);
+    }
+
+    function stopAutoRedirect() {
+      if (autoRedirectTimer) {
+        clearInterval(autoRedirectTimer);
+        autoRedirectTimer = null;
+      }
+    }
+
+    function goToDashboard() {
+      stopAutoRedirect();
+      window.location.href = "/";
     }
 
     async function loadLocaleList() {
@@ -564,6 +626,7 @@
       await loadLocaleList();
       await setLang(currentLocale);
       loadResult();
+      startAutoRedirect();
     })();
   </script>
 </body>

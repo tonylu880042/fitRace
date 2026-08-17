@@ -242,6 +242,7 @@
   "result.error_hint": "Koden kan ha gått ut eller vara ogiltig.",
   "result.back_button": "Tillbaka till instrumentpanelen",
   "result.loading": "Laddar...",
+  "result.auto_redirect": "Återgår till instrumentpanelen om {seconds}s",
   "result.team_label": "Lag",
   "result.station_label": "Station",
   "results.page_title": "Resultat",

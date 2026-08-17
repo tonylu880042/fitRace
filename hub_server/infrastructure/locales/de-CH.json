@@ -242,6 +242,7 @@
   "result.error_hint": "Der Code ist möglicherweise abgelaufen oder ungültig.",
   "result.back_button": "Zurück zur Übersicht",
   "result.loading": "Wird geladen...",
+  "result.auto_redirect": "Rückkehr zur Übersicht in {seconds}s",
   "result.team_label": "Team",
   "result.station_label": "Station",
   "results.page_title": "Ergebnisse",

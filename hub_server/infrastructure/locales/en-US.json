@@ -242,6 +242,7 @@
   "result.error_hint": "The token may have expired or is invalid.",
   "result.back_button": "Back to Dashboard",
   "result.loading": "Loading...",
+  "result.auto_redirect": "Returning to dashboard in {seconds}s",
   "result.team_label": "Team",
   "result.station_label": "Station",
   "results.page_title": "Results",

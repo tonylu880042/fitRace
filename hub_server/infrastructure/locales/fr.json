@@ -242,6 +242,7 @@
   "result.error_hint": "Le code a peut-être expiré ou n'est pas valide.",
   "result.back_button": "Retour au tableau de bord",
   "result.loading": "Chargement...",
+  "result.auto_redirect": "Retour au tableau de bord dans {seconds}s",
   "result.team_label": "Équipe",
   "result.station_label": "Poste",
   "results.page_title": "Résultats",

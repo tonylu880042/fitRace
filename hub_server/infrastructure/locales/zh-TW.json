@@ -242,6 +242,7 @@
   "result.error_hint": "該成績碼可能已過期或無效。",
   "result.back_button": "回儀表板",
   "result.loading": "載入中...",
+  "result.auto_redirect": "{seconds} 秒後將自動返回儀表板",
   "result.team_label": "隊伍",
   "result.station_label": "站位",
   "results.page_title": "成績",
