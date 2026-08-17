@@ -247,7 +247,7 @@
 
     .segment-row {
       display: grid;
-      grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto;
+      grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) auto;
       gap: 10px;
       align-items: center;
       border: 1px solid var(--border);
@@ -639,10 +639,19 @@
 
     function buildSegmentsPayload(rows) {
       return {
-        segments: (rows || []).map((row) => ({
-          kind: row.kind,
-          duration_sec: metricNumber(row.durationSec, 0),
-        })),
+        segments: (rows || []).map((row) => {
+          const segment = {
+            kind: row.kind,
+            duration_sec: metricNumber(row.durationSec, 0),
+          };
+          // Blank means no prescribed intensity -- omit the key entirely
+          // rather than force a number or send a stray zero.
+          if (row.targetWatts !== null && row.targetWatts !== undefined && row.targetWatts !== "") {
+            const watts = metricNumber(row.targetWatts, null);
+            if (watts !== null) segment.target_watts = watts;
+          }
+          return segment;
+        }),
       };
     }
 
@@ -724,10 +733,17 @@
       if (!segments.length) {
         return DEFAULT_PLAN_ROWS.map((row) => ({ ...row }));
       }
-      return segments.map((segment) => ({
-        kind: segment.kind,
-        durationSec: metricNumber(segment.duration_sec, 0),
-      }));
+      return segments.map((segment) => {
+        const row = { kind: segment.kind, durationSec: metricNumber(segment.duration_sec, 0) };
+        // Only carry a targetWatts key when the saved segment actually has
+        // one -- a target-less plan (every segment saved before this field
+        // existed, or a coach who left it blank) must round-trip to
+        // exactly the row shape rowsFromClassPlan has always produced.
+        if (segment.target_watts !== null && segment.target_watts !== undefined) {
+          row.targetWatts = segment.target_watts;
+        }
+        return row;
+      });
     }
 
     // Formats a finished class run date/time. Deliberately UTC and built
@@ -825,15 +841,20 @@
       if (!rows.length) {
         return `<div class="empty">${escapeHtml(t("classAdmin.plan_empty"))}</div>`;
       }
-      return rows.map((row, index) => `
+      return rows.map((row, index) => {
+        const wattsValue = row.targetWatts === null || row.targetWatts === undefined ? "" : escapeHtml(String(row.targetWatts));
+        const wattsLabel = escapeHtml(t("classAdmin.placeholder_target_watts"));
+        return `
         <div class="segment-row segment-row-${escapeHtml(row.kind)}">
           <select onchange="updateSegmentKind(${index}, this.value)">
             ${["warmup", "work", "rest", "cooldown"].map((kind) => `<option value="${kind}" ${row.kind === kind ? "selected" : ""}>${escapeHtml(t(segmentKindKey(kind)))}</option>`).join("")}
           </select>
           <input type="number" min="5" max="3600" value="${escapeHtml(String(row.durationSec))}" onchange="updateSegmentDuration(${index}, this.value)">
+          <input type="number" min="1" max="2000" placeholder="${wattsLabel}" title="${wattsLabel}" value="${wattsValue}" onchange="updateSegmentTargetWatts(${index}, this.value)">
           <button type="button" class="danger" onclick="deleteSegmentRow(${index})">${escapeHtml(t("classAdmin.btn_delete_segment"))}</button>
         </div>
-      `).join("");
+      `;
+      }).join("");
     }
 
     // ------------------------------------------------------------------
@@ -915,7 +936,7 @@
     // ------------------------------------------------------------------
 
     function addSegmentRow() {
-      state.rows.push({ kind: "work", durationSec: 300 });
+      state.rows.push({ kind: "work", durationSec: 300, targetWatts: null });
       renderAll();
     }
 
@@ -933,6 +954,13 @@
     function updateSegmentDuration(index, value) {
       if (!state.rows[index]) return;
       state.rows[index].durationSec = metricNumber(value, state.rows[index].durationSec);
+      renderAll();
+    }
+
+    function updateSegmentTargetWatts(index, value) {
+      if (!state.rows[index]) return;
+      const trimmed = String(value ?? "").trim();
+      state.rows[index].targetWatts = trimmed === "" ? null : metricNumber(trimmed, null);
       renderAll();
     }
 

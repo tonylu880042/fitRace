@@ -195,6 +195,7 @@
   "classAdmin.panel_station_status": "Stationsstatus",
   "classAdmin.label_segment_kind": "Art",
   "classAdmin.label_segment_duration": "Dauer (Sek.)",
+  "classAdmin.placeholder_target_watts": "Zielwatt (optional)",
   "classAdmin.btn_add_segment": "Segment hinzufügen",
   "classAdmin.btn_delete_segment": "Löschen",
   "classAdmin.btn_repeat_group": "Auswahl ×N wiederholen",

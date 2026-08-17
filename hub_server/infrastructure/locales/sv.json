@@ -195,6 +195,7 @@
   "classAdmin.panel_station_status": "Stationsstatus",
   "classAdmin.label_segment_kind": "Typ",
   "classAdmin.label_segment_duration": "Varaktighet (sek)",
+  "classAdmin.placeholder_target_watts": "Målwatt (valfritt)",
   "classAdmin.btn_add_segment": "Lägg till segment",
   "classAdmin.btn_delete_segment": "Ta bort",
   "classAdmin.btn_repeat_group": "Upprepa markering ×N",

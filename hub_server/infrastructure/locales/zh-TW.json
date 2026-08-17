@@ -195,6 +195,7 @@
   "classAdmin.panel_station_status": "站點狀態",
   "classAdmin.label_segment_kind": "種類",
   "classAdmin.label_segment_duration": "時長（秒）",
+  "classAdmin.placeholder_target_watts": "目標瓦數（選填）",
   "classAdmin.btn_add_segment": "新增區段",
   "classAdmin.btn_delete_segment": "刪除",
   "classAdmin.btn_repeat_group": "重複所選 ×N",

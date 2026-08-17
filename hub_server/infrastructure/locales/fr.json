@@ -195,6 +195,7 @@
   "classAdmin.panel_station_status": "État des postes",
   "classAdmin.label_segment_kind": "Type",
   "classAdmin.label_segment_duration": "Durée (s)",
+  "classAdmin.placeholder_target_watts": "Puissance cible (facultatif)",
   "classAdmin.btn_add_segment": "Ajouter un segment",
   "classAdmin.btn_delete_segment": "Supprimer",
   "classAdmin.btn_repeat_group": "Répéter la sélection ×N",
