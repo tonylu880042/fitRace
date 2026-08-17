@@ -264,15 +264,16 @@
 
     .timeline {
       display: flex;
+      align-items: flex-end;
       width: 100%;
-      height: 32px;
+      height: 120px;
       border: 1px solid var(--border);
       border-radius: 4px;
       overflow: hidden;
       background: rgba(0,0,0,0.3);
     }
 
-    .timeline-block { height: 100%; border-right: 1px solid rgba(0,0,0,0.4); }
+    .timeline-block { border-right: 1px solid rgba(0,0,0,0.4); }
     .timeline-block:last-child { border-right: none; }
     .timeline-warmup { background: var(--warn); }
     .timeline-work { background: var(--accent); }
@@ -677,16 +678,62 @@
       return [...before, ...repeated, ...after];
     }
 
+    // Pure -- input is one target watts value (or null/undefined) per
+    // segment, output is one height percent per segment. Declared INSIDE
+    // computePlanSummary so the two stay a single self-contained unit: the
+    // sibling class-admin test files already extract computePlanSummary
+    // alone (by brace-depth from the function computePlanSummary( marker)
+    // and run it standalone under node -e, so a helper this function calls
+    // has to be nested here rather than a sibling top-level declaration,
+    // or those extractions would call an undefined name. This file
+    // extracts it directly too, by searching for the nested function
+    // computeBlockHeightPercents( marker -- the extraction technique
+    // matches braces from wherever the marker is found, nesting does not
+    // matter.
     function computePlanSummary(rows) {
+      function computeBlockHeightPercents(targets) {
+        const list = targets || [];
+        const baselinePercent = 20;
+        const fullPercent = 100;
+        const positiveTargets = list.filter(
+          (value) => typeof value === "number" && Number.isFinite(value) && value > 0
+        );
+        const maxTarget = positiveTargets.length ? Math.max(...positiveTargets) : 0;
+        if (maxTarget <= 0) {
+          // No segment in this plan carries a target at all -- keep the
+          // bar exactly as it rendered before this feature: one uniform
+          // full-height bar, no scaling applied.
+          return list.map(() => fullPercent);
+        }
+        return list.map((value) => {
+          if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+            // No prescribed intensity for this segment -- a low baseline
+            // keeps it visible without implying maximum effort.
+            return baselinePercent;
+          }
+          const ratio = Math.min(1, value / maxTarget);
+          return baselinePercent + ratio * (fullPercent - baselinePercent);
+        });
+      }
+
       const segments = (rows || []).map((row) => ({
         kind: row.kind,
         durationSec: Math.max(0, metricNumber(row.durationSec, 0)),
+        targetWatts:
+          row.targetWatts === null || row.targetWatts === undefined
+            ? null
+            : metricNumber(row.targetWatts, null),
       }));
       const totalDurationSec = segments.reduce((sum, segment) => sum + segment.durationSec, 0);
-      const blocks = segments.map((segment) => ({
+      const heightPercents = computeBlockHeightPercents(
+        segments.map((segment) => segment.targetWatts)
+      );
+      const blocks = segments.map((segment, index) => ({
         kind: segment.kind,
         durationSec: segment.durationSec,
+        targetWatts: segment.targetWatts,
         widthPercent: totalDurationSec > 0 ? (segment.durationSec / totalDurationSec) * 100 : 0,
+        heightPercent: heightPercents[index],
       }));
       return { totalDurationSec, segmentCount: segments.length, blocks };
     }
@@ -779,9 +826,25 @@
 
     function buildPlanPreviewHtml(summary) {
       const numberFormat = new Intl.NumberFormat(currentLocale);
-      const blocksHtml = summary.blocks.map((block) => `
-        <span class="timeline-block timeline-${escapeHtml(block.kind)}" style="width:${block.widthPercent}%" title="${escapeHtml(t(segmentKindKey(block.kind)))}"></span>
-      `).join("");
+      const blocksHtml = summary.blocks.map((block) => {
+        // heightPercent is missing only for callers passing a hand-built
+        // block object that predates this field -- fall back to the old
+        // always-full-height look rather than rendering height:undefined%.
+        const heightPercent = block.heightPercent === undefined || block.heightPercent === null
+          ? 100
+          : block.heightPercent;
+        const kindLabel = t(segmentKindKey(block.kind));
+        const hasTarget = block.targetWatts !== undefined && block.targetWatts !== null;
+        const title = hasTarget
+          ? t("classAdmin.preview_block_title_with_target", {
+              kind: kindLabel,
+              watts: numberFormat.format(block.targetWatts),
+            })
+          : kindLabel;
+        return `
+        <span class="timeline-block timeline-${escapeHtml(block.kind)}" style="width:${block.widthPercent}%;height:${heightPercent}%" title="${escapeHtml(title)}"></span>
+      `;
+      }).join("");
       return `
         <div class="timeline">${blocksHtml}</div>
         <div class="plan-summary-row">

@@ -199,6 +199,7 @@
   "classAdmin.label_segment_kind": "Typ",
   "classAdmin.label_segment_duration": "Varaktighet (sek)",
   "classAdmin.placeholder_target_watts": "Målwatt (valfritt)",
+  "classAdmin.preview_block_title_with_target": "{kind} — Mål {watts} W",
   "classAdmin.btn_add_segment": "Lägg till segment",
   "classAdmin.btn_delete_segment": "Ta bort",
   "classAdmin.btn_repeat_group": "Upprepa markering ×N",

@@ -199,6 +199,7 @@
   "classAdmin.label_segment_kind": "Tipo",
   "classAdmin.label_segment_duration": "Durata (sec)",
   "classAdmin.placeholder_target_watts": "Potenza target (opzionale)",
+  "classAdmin.preview_block_title_with_target": "{kind} — Obiettivo {watts} W",
   "classAdmin.btn_add_segment": "Aggiungi segmento",
   "classAdmin.btn_delete_segment": "Elimina",
   "classAdmin.btn_repeat_group": "Ripeti selezione ×N",

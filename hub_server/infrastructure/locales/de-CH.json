@@ -199,6 +199,7 @@
   "classAdmin.label_segment_kind": "Art",
   "classAdmin.label_segment_duration": "Dauer (Sek.)",
   "classAdmin.placeholder_target_watts": "Zielwatt (optional)",
+  "classAdmin.preview_block_title_with_target": "{kind} — Ziel {watts} W",
   "classAdmin.btn_add_segment": "Segment hinzufügen",
   "classAdmin.btn_delete_segment": "Löschen",
   "classAdmin.btn_repeat_group": "Auswahl ×N wiederholen",

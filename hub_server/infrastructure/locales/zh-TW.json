@@ -199,6 +199,7 @@
   "classAdmin.label_segment_kind": "種類",
   "classAdmin.label_segment_duration": "時長（秒）",
   "classAdmin.placeholder_target_watts": "目標瓦數（選填）",
+  "classAdmin.preview_block_title_with_target": "{kind} — 目標 {watts} 瓦",
   "classAdmin.btn_add_segment": "新增區段",
   "classAdmin.btn_delete_segment": "刪除",
   "classAdmin.btn_repeat_group": "重複所選 ×N",
