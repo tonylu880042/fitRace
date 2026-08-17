@@ -25,6 +25,17 @@ class ClassSegment(BaseModel):
         le=3600,
         description="Segment duration in seconds, 5..3600 inclusive",
     )
+    target_watts: int | None = Field(
+        default=None,
+        ge=1,
+        le=2000,
+        description=(
+            "Prescribed target power in watts, 1..2000 inclusive when "
+            "present. None means no prescribed intensity -- a plain timer "
+            "segment, which is how every plan saved before this field "
+            "existed reads back."
+        ),
+    )
 
 
 class ClassPlan(BaseModel):
@@ -50,6 +61,42 @@ class ClassPlan(BaseModel):
         return sum(segment.duration_sec for segment in self.segments)
 
 
+def _pinned_to_last(plan: ClassPlan) -> dict:
+    last_index = len(plan.segments) - 1
+    return _segment_result(
+        index=last_index,
+        segment=plan.segments[last_index],
+        segment_remaining_ms=0,
+        total_remaining_ms=0,
+        finished=True,
+    )
+
+
+def _segment_result(
+    *,
+    index: int,
+    segment: ClassSegment,
+    segment_remaining_ms: int,
+    total_remaining_ms: int,
+    finished: bool,
+) -> dict:
+    # `target_watts` is only added to the result when the segment actually
+    # prescribes one. Plans saved before this field existed have every
+    # segment's target_watts at None, so their segment_at() output keeps
+    # the exact key set it always had -- callers that already destructure a
+    # fixed shape (or assert one with equality) see no change at all.
+    result = {
+        "index": index,
+        "kind": segment.kind,
+        "segment_remaining_ms": segment_remaining_ms,
+        "total_remaining_ms": total_remaining_ms,
+        "finished": finished,
+    }
+    if segment.target_watts is not None:
+        result["target_watts"] = segment.target_watts
+    return result
+
+
 def segment_at(elapsed_ms: int, plan: ClassPlan) -> dict:
     """Pure lookup: which segment is active at `elapsed_ms` into `plan`.
 
@@ -63,36 +110,23 @@ def segment_at(elapsed_ms: int, plan: ClassPlan) -> dict:
         elapsed_ms = 0
 
     total_ms = plan.total_duration_sec * 1000
-    last_index = len(plan.segments) - 1
 
     if elapsed_ms >= total_ms:
-        return {
-            "index": last_index,
-            "kind": plan.segments[last_index].kind,
-            "segment_remaining_ms": 0,
-            "total_remaining_ms": 0,
-            "finished": True,
-        }
+        return _pinned_to_last(plan)
 
     cumulative_ms = 0
     for index, segment in enumerate(plan.segments):
         segment_end_ms = cumulative_ms + segment.duration_sec * 1000
         if elapsed_ms < segment_end_ms:
-            return {
-                "index": index,
-                "kind": segment.kind,
-                "segment_remaining_ms": segment_end_ms - elapsed_ms,
-                "total_remaining_ms": total_ms - elapsed_ms,
-                "finished": False,
-            }
+            return _segment_result(
+                index=index,
+                segment=segment,
+                segment_remaining_ms=segment_end_ms - elapsed_ms,
+                total_remaining_ms=total_ms - elapsed_ms,
+                finished=False,
+            )
         cumulative_ms = segment_end_ms
 
     # Unreachable given the total_ms check above, but keeps the function
     # total rather than falling off the end.
-    return {
-        "index": last_index,
-        "kind": plan.segments[last_index].kind,
-        "segment_remaining_ms": 0,
-        "total_remaining_ms": 0,
-        "finished": True,
-    }
+    return _pinned_to_last(plan)
