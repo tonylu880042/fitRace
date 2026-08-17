@@ -107,11 +107,7 @@ def _run_burst(payloads, flush: bool) -> dict:
         f"ws.onmessage = (event) => {onmessage_body}\n"
         f"const events = {events_js};\n"
         "events.forEach((raw) => ws.onmessage({ data: raw }));\n"
-        + (
-            "while (rafCallbacks.length) { rafCallbacks.shift()(); }\n"
-            if flush
-            else ""
-        )
+        + ("while (rafCallbacks.length) { rafCallbacks.shift()(); }\n" if flush else "")
         + "console.log(JSON.stringify({ renderLeaderboardCalls, rafCallCount }));"
     )
     result = subprocess.run(

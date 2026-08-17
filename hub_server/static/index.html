@@ -2334,6 +2334,13 @@
     let currentClassPlan = null;
     let currentClassLeaderboard = {};
     let currentSessionMode = null;
+    // Per-station DOM cache for the class board, mirroring
+    // leaderboardCardRefs above but for the station cards and hero
+    // countdown/total-remaining text that buildClassBoardHtml renders.
+    // Null whenever no fast path is currently valid (first render, or the
+    // last render was a different renderer entirely). See
+    // applyClassBoardIncrementalUpdate.
+    let classBoardCardRefs = null;
     let lastClassSegmentIndex = null;
     let currentSoundEnabled = true;
     function getBrowserLocale() {
@@ -3750,6 +3757,7 @@
 
     function renderLeaderboardEmptyState(message = t("leaderboard.waiting_data")) {
       resetLeaderboardCardCache();
+      if (typeof resetClassBoardCardCache === "function") resetClassBoardCardCache();
       const container = document.getElementById("leaderboard-container");
       container.innerHTML = renderRegistrationEmptyState(message);
       leaderboardNodes = [];
@@ -3794,6 +3802,7 @@
 
     function renderRaceTrackLeaderboard(progressData, teamData = null) {
       resetLeaderboardCardCache();
+      if (typeof resetClassBoardCardCache === "function") resetClassBoardCardCache();
       const container = document.getElementById("leaderboard-container");
       const previousRects = new Map();
       container.querySelectorAll(".race-track-item").forEach((item) => {
@@ -3922,6 +3931,7 @@
 
     function renderTeamBattleLeaderboard(progressData, teamData = null) {
       resetLeaderboardCardCache();
+      if (typeof resetClassBoardCardCache === "function") resetClassBoardCardCache();
       const container = document.getElementById("leaderboard-container");
       const previousRects = new Map();
       container.querySelectorAll(".team-battle-card").forEach((item) => {
@@ -4001,6 +4011,7 @@
 
     function renderSprintBoardLeaderboard(progressData, teamData = null) {
       resetLeaderboardCardCache();
+      if (typeof resetClassBoardCardCache === "function") resetClassBoardCardCache();
       const container = document.getElementById("leaderboard-container");
       const previousRects = new Map();
       container.querySelectorAll(".sprint-board-card").forEach((item) => {
@@ -4109,6 +4120,7 @@
 
     function renderTeamLeaderboard(progressData, teamData = null) {
       resetLeaderboardCardCache();
+      if (typeof resetClassBoardCardCache === "function") resetClassBoardCardCache();
       const container = document.getElementById("leaderboard-container");
       const previousRects = new Map();
       container.querySelectorAll(".team-leaderboard-item").forEach((item) => {
@@ -4208,14 +4220,14 @@
     }
 
     function buildClassBoardHtml(sessionData, clock) {
-      // Pure decision for whether a station is meeting the segment's
-      // prescribed power. No target -> "none". Target present but the
-      // station reports no power at all (null/undefined, e.g. a
-      // treadmill, which never reports watts) -> "none" too, since
+      // Pure decision for whether a station is meeting the prescribed
+      // power for its segment. No target -> status none. Target present
+      // but the station reports no power at all (null/undefined, e.g. a
+      // treadmill, which never reports watts) -> status none too, since
       // absent power is not the same as under-target. Only a station
-      // that actually reports a number gets scored "on" (>= target) or
-      // "under" (< target). Declared here (rather than top-level) so it
-      // is captured automatically whenever buildClassBoardHtml itself is
+      // that actually reports a number gets scored status on (>= target)
+      // or status under (< target). Declared here (rather than top-level)
+      // so it is captured automatically whenever buildClassBoardHtml itself is
       // extracted for testing, while still being independently
       // extractable and testable by its own function-name marker.
       function classTargetStatus(powerWatts, targetWatts) {
@@ -4229,8 +4241,8 @@
 
       // Pure -- input is one target watts value (or null/undefined) per
       // segment, output is one height percent per segment. Mirrors
-      // classAdmin.html's computeBlockHeightPercents (nested inside
-      // computePlanSummary there) byte-for-byte so the coach's plan
+      // classAdmin.html computeBlockHeightPercents (nested inside
+      // computePlanSummary there) byte-for-byte so the coach plan
       // preview and this projector wall can never disagree about the
       // shape of the same plan. Declared here (rather than top-level) for
       // the same reason classTargetStatus above is nested inside
@@ -4330,16 +4342,22 @@
         } else if (targetStatus === "under") {
           targetIndicatorHtml = "<span class=\"class-target-indicator class-target-under\" title=\"" + escapeHtml(t("class.target_under")) + "\" style=\"margin-left:0.4rem;color:var(--hazard-amber);\">&#9679;</span>";
         }
-        let card = "<div style=\"border:1px solid var(--steel-border);border-radius:4px;padding:1rem;background:var(--card-bg);\">";
+        // data-node-id and the class-metric-*/class-effort-fill classes
+        // below carry no visual meaning -- they exist purely so a
+        // telemetry-driven tick can find and patch this cards numbers in
+        // place afterwards (see captureClassBoardRefs /
+        // applyClassBoardIncrementalUpdate) instead of rebuilding the
+        // whole board.
+        let card = "<div data-node-id=\"" + escapeHtml(String(node.node_id || "")) + "\" style=\"border:1px solid var(--steel-border);border-radius:4px;padding:1rem;background:var(--card-bg);\">";
         card += badge;
         card += "<div style=\"margin-top:0.5rem;font-weight:600;color:var(--text-main);\">" + escapeHtml(athleteName) + "</div>";
         card += "<div style=\"font-size:0.85rem;color:var(--text-muted);margin-bottom:0.75rem;\">" + escapeHtml(machineName) + "</div>";
         card += "<div style=\"display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.5rem;margin-bottom:0.75rem;font-size:0.8rem;\">";
-        card += "<div><div style=\"color:var(--text-muted);\">" + escapeHtml(t("metric.power")) + "</div><div style=\"font-weight:600;\">" + escapeHtml(powerStr) + " W" + targetIndicatorHtml + "</div></div>";
-        card += "<div><div style=\"color:var(--text-muted);\">" + escapeHtml(t("metric.speed")) + "</div><div style=\"font-weight:600;\">" + escapeHtml(speedStr) + " kph</div></div>";
-        card += "<div><div style=\"color:var(--text-muted);\">" + escapeHtml(t("metric.distance")) + "</div><div style=\"font-weight:600;\">" + escapeHtml(distanceStr) + " m</div></div>";
+        card += "<div><div style=\"color:var(--text-muted);\">" + escapeHtml(t("metric.power")) + "</div><div style=\"font-weight:600;\"><span class=\"class-metric-power\">" + escapeHtml(powerStr) + " W</span>" + targetIndicatorHtml + "</div></div>";
+        card += "<div><div style=\"color:var(--text-muted);\">" + escapeHtml(t("metric.speed")) + "</div><div class=\"class-metric-speed\" style=\"font-weight:600;\">" + escapeHtml(speedStr) + " kph</div></div>";
+        card += "<div><div style=\"color:var(--text-muted);\">" + escapeHtml(t("metric.distance")) + "</div><div class=\"class-metric-distance\" style=\"font-weight:600;\">" + escapeHtml(distanceStr) + " m</div></div>";
         card += "</div>";
-        card += "<div style=\"height:6px;background:var(--steel-border);border-radius:2px;overflow:hidden;\"><div style=\"height:100%;width:" + effortPercent + "%;background:var(--volt-yellow);transition:width 0.3s ease;\"></div></div>";
+        card += "<div style=\"height:6px;background:var(--steel-border);border-radius:2px;overflow:hidden;\"><div class=\"class-effort-fill\" style=\"height:100%;width:" + effortPercent + "%;background:var(--volt-yellow);transition:width 0.3s ease;\"></div></div>";
         card += "</div>";
         stationCards.push(card);
       }
@@ -4396,9 +4414,9 @@
       html += "<div style=\"font-size:0.85rem;color:var(--text-muted);margin-bottom:1rem;\">" + escapeHtml(t("class.in_progress")) + "</div>";
       html += "<div style=\"display:grid;grid-template-columns:1fr auto;gap:2rem;align-items:start;margin-bottom:1.5rem;\">";
       html += "<div><div style=\"font-family:Oswald,sans-serif;font-size:5rem;font-weight:700;color:var(--volt-yellow);line-height:1;text-transform:uppercase;\">" + escapeHtml(kindLabel) + "</div>" + targetWattsHtml;
-      html += "<div style=\"font-family:Oswald,sans-serif;font-size:3.5rem;font-weight:700;color:var(--volt-yellow);margin-top:0.5rem;\">" + escapeHtml(countdownStr) + "</div></div>";
+      html += "<div class=\"class-hero-countdown\" style=\"font-family:Oswald,sans-serif;font-size:3.5rem;font-weight:700;color:var(--volt-yellow);margin-top:0.5rem;\">" + escapeHtml(countdownStr) + "</div></div>";
       html += "<div style=\"text-align:right;\"><div style=\"font-size:0.85rem;color:var(--text-muted);margin-bottom:0.5rem;\">" + escapeHtml(t("class.total_remaining")) + "</div>";
-      html += "<div style=\"font-size:2rem;font-weight:700;color:var(--volt-yellow);\">" + escapeHtml(totalRemainingStr) + "</div></div></div>";
+      html += "<div class=\"class-hero-total-remaining\" style=\"font-size:2rem;font-weight:700;color:var(--volt-yellow);\">" + escapeHtml(totalRemainingStr) + "</div></div></div>";
       html += "<div style=\"margin-bottom:1.5rem;\"><div style=\"font-size:0.85rem;color:var(--text-muted);margin-bottom:0.5rem;\">" + escapeHtml(segmentProgressStr) + "</div>" + nextSegmentHtml + "</div>";
       html += "<div style=\"display:flex;align-items:flex-end;height:64px;border-radius:2px;overflow:hidden;border:1px solid var(--steel-border);\">" + timelineBlocks.join("") + "</div>";
       html += "<div class=\"class-progress-track\" style=\"margin-top:4px;height:20px;border-radius:2px;overflow:hidden;border:1px solid var(--steel-border);background:var(--dim-grey);\"><div class=\"class-progress-fill\" style=\"height:100%;width:" + progressPercent + "%;background:var(--volt-yellow);\"></div></div>";
@@ -4407,13 +4425,135 @@
       return html;
     }
 
+    function resetClassBoardCardCache() {
+      classBoardCardRefs = null;
+    }
+
+    // Twin of classTargetStatus nested inside buildClassBoardHtml -- kept
+    // as a standalone top-level copy (not shared) for the same reason
+    // that one stays nested: several tests extract buildClassBoardHtml
+    // alone by its function-name marker and run it standalone under
+    // node -e, so it cannot depend on a sibling declared elsewhere. This
+    // copy lets the incremental patch path below decide whether a station
+    // target-met indicator would change without a full rebuild.
+    function classTargetStatusForPatch(powerWatts, targetWatts) {
+      if (targetWatts === null || targetWatts === undefined) return "none";
+      if (powerWatts === null || powerWatts === undefined) return "none";
+      const power = Number(powerWatts);
+      const target = Number(targetWatts);
+      if (!Number.isFinite(power) || !Number.isFinite(target)) return "none";
+      return power >= target ? "on" : "under";
+    }
+
+    // Twin of computeClassProgressPercent nested inside buildClassBoardHtml,
+    // for the same reason as classTargetStatusForPatch above.
+    function computeClassProgressPercentForPatch(planTotalMs, totalRemainingMs, finished) {
+      if (finished) return 100;
+      const safeTotalMs = metricNumber(planTotalMs);
+      if (safeTotalMs <= 0) return 0;
+      const safeRemainingMs = Math.max(0, Math.min(safeTotalMs, metricNumber(totalRemainingMs, safeTotalMs)));
+      const elapsedMs = safeTotalMs - safeRemainingMs;
+      const percent = (elapsedMs / safeTotalMs) * 100;
+      return Math.max(0, Math.min(100, percent));
+    }
+
+    // A string that changes exactly when a station card needs new MARKUP:
+    // identity (name, machine name, station number) and target-met status
+    // (whose indicator element only exists in the DOM at all when the
+    // status is on-target or under-target -- see buildClassBoardHtml --
+    // so a status change is a markup change, not a patchable number). Sorted so
+    // Object.entries iteration order can never cause a false cache miss.
+    // Deliberately excludes power/speed/distance -- those are exactly
+    // what the fast path patches without a rebuild.
+    function buildClassStationSignature(leaderboard, clock) {
+      const entries = Object.entries(leaderboard || {});
+      return entries.map(function (pair) {
+        const node = pair[1];
+        return [
+          node.node_id,
+          node.station_number,
+          node.athlete_name || "",
+          nodeDisplayName(node),
+          classTargetStatusForPatch(node.power_watts, clock.targetWatts),
+        ].join(":");
+      }).sort().join(",");
+    }
+
+    // Reads the per-station metric/effort elements and the hero countdown/
+    // total-remaining/progress-fill elements out of a just-rendered class
+    // board, so future ordinary ticks can patch them directly. Defensive
+    // against containers with no querySelectorAll (some tests use plain
+    // object stubs for the container) -- in that case there is simply no
+    // fast path available next time, which is safe, just not fast.
+    function captureClassBoardRefs(container, sessionData, clock) {
+      if (!container || typeof container.querySelectorAll !== "function") {
+        classBoardCardRefs = null;
+        return;
+      }
+      const stations = new Map();
+      container.querySelectorAll("[data-node-id]").forEach(function (card) {
+        stations.set(card.dataset.nodeId, {
+          power: card.querySelector(".class-metric-power"),
+          speed: card.querySelector(".class-metric-speed"),
+          distance: card.querySelector(".class-metric-distance"),
+          effortFill: card.querySelector(".class-effort-fill"),
+        });
+      });
+      classBoardCardRefs = {
+        container: container,
+        signature: buildClassStationSignature(sessionData.leaderboard, clock),
+        segmentIndex: clock.index,
+        finished: clock.finished,
+        stations: stations,
+        countdown: container.querySelector(".class-hero-countdown"),
+        totalRemaining: container.querySelector(".class-hero-total-remaining"),
+        progressFill: container.querySelector(".class-progress-fill"),
+      };
+    }
+
+    // The fast path: true if it successfully patched numbers in place (no
+    // markup change needed), false if the caller must fall back to a full
+    // buildClassBoardHtml rebuild. No markup is generated, no innerHTML is
+    // touched, and no position/geometry method is called anywhere here.
+    function applyClassBoardIncrementalUpdate(container, sessionData, clock) {
+      if (!classBoardCardRefs || classBoardCardRefs.container !== container) return false;
+      if (clock.index !== classBoardCardRefs.segmentIndex || clock.finished !== classBoardCardRefs.finished) return false;
+      const signature = buildClassStationSignature(sessionData.leaderboard, clock);
+      if (signature !== classBoardCardRefs.signature) return false;
+
+      const numberFormat = new Intl.NumberFormat(currentLocale);
+      Object.values(sessionData.leaderboard || {}).forEach(function (node) {
+        const refs = classBoardCardRefs.stations.get(node.node_id);
+        if (!refs) return;
+        const power = metricNumber(node.power_watts);
+        if (refs.power) refs.power.textContent = numberFormat.format(power) + " W";
+        if (refs.speed) refs.speed.textContent = numberFormat.format(metricNumber(node.instantaneous_speed_kph)) + " kph";
+        if (refs.distance) refs.distance.textContent = numberFormat.format(metricNumber(node.distance_m)) + " m";
+        if (refs.effortFill) refs.effortFill.style.width = Math.min(100, power / 5) + "%";
+      });
+
+      if (classBoardCardRefs.countdown) {
+        classBoardCardRefs.countdown.textContent = clock.finished ? t("class.time_up") : formatClock(clock.segmentRemainingMs);
+      }
+      if (classBoardCardRefs.totalRemaining) {
+        classBoardCardRefs.totalRemaining.textContent = formatClock(clock.totalRemainingMs);
+      }
+      if (classBoardCardRefs.progressFill && sessionData.class_plan && sessionData.class_plan.segments) {
+        const totalDurationMs = sessionData.class_plan.segments.reduce(function (sum, s) { return sum + s.duration_sec * 1000; }, 0);
+        classBoardCardRefs.progressFill.style.width = computeClassProgressPercentForPatch(totalDurationMs, clock.totalRemainingMs, clock.finished) + "%";
+      }
+      return true;
+    }
+
     function renderClassBoard(data) {
       // DOM wrapper. Computes the clock, then renders.
       // The classic-leaderboard card cache below belongs to a different
       // renderer entirely -- if it survived a switch into class mode, the
       // classic leaderboard fast path could later patch text into rows
-      // that are no longer attached to the visible container.
-      resetLeaderboardCardCache();
+      // that are no longer attached to the visible container. Guarded
+      // because narrow single-function tests extract renderClassBoard
+      // without its sibling caches defined.
+      if (typeof resetLeaderboardCardCache === "function") resetLeaderboardCardCache();
       let clock;
       if (data.class_segment && data.state === "RUNNING") {
         // Use the server class_segment when available. Convert from snake_case to camelCase.
@@ -4423,8 +4563,15 @@
         clock = classClockAt(0, 0, data.class_plan);
       }
 
-      document.getElementById("leaderboard-container").innerHTML =
-        buildClassBoardHtml({ class_plan: data.class_plan, leaderboard: data.leaderboard || {} }, clock);
+      // state_change is comparatively rare (a real session transition, not
+      // a telemetry tick), so this always does a full rebuild -- but it
+      // still primes the per-station cache afterwards so the very next
+      // ordinary tick (via renderClassBoardFromState) can take the fast
+      // path instead of rebuilding again.
+      const sessionData = { class_plan: data.class_plan, leaderboard: data.leaderboard || {} };
+      const container = document.getElementById("leaderboard-container");
+      container.innerHTML = buildClassBoardHtml(sessionData, clock);
+      if (typeof captureClassBoardRefs === "function") captureClassBoardRefs(container, sessionData, clock);
       if (typeof updateClassSegmentCue === "function") updateClassSegmentCue(clock);
     }
 
@@ -4433,14 +4580,28 @@
       // page (currentClassPlan / currentClassLeaderboard / raceStartTime)
       // -- no HTTP request. Shared by the periodic class clock tick and by
       // untyped telemetry broadcasts on the WS, which never carry
-      // session_mode or class_plan of their own.
+      // session_mode or class_plan of their own. At twenty stations a
+      // full buildClassBoardHtml rebuild on every one of those calls is
+      // the same O(station count) cost the classic leaderboard used to
+      // pay on every tick -- see applyClassBoardIncrementalUpdate, which
+      // patches station numbers and the countdown in place whenever the
+      // station set, segment, and target-met status have not changed.
       if (!currentClassPlan) return;
-      resetLeaderboardCardCache();
+      if (typeof resetLeaderboardCardCache === "function") resetLeaderboardCardCache();
       const clock = raceStartTime
         ? classClockAt(Date.now(), raceStartTime, currentClassPlan)
         : classClockAt(0, 0, currentClassPlan);
-      document.getElementById("leaderboard-container").innerHTML =
-        buildClassBoardHtml({ class_plan: currentClassPlan, leaderboard: currentClassLeaderboard }, clock);
+      const sessionData = { class_plan: currentClassPlan, leaderboard: currentClassLeaderboard };
+      const container = document.getElementById("leaderboard-container");
+      if (
+        typeof applyClassBoardIncrementalUpdate === "function" &&
+        applyClassBoardIncrementalUpdate(container, sessionData, clock)
+      ) {
+        if (typeof updateClassSegmentCue === "function") updateClassSegmentCue(clock);
+        return;
+      }
+      container.innerHTML = buildClassBoardHtml(sessionData, clock);
+      if (typeof captureClassBoardRefs === "function") captureClassBoardRefs(container, sessionData, clock);
       if (typeof updateClassSegmentCue === "function") updateClassSegmentCue(clock);
     }
 
@@ -4550,6 +4711,11 @@
         return;
       }
       detectAthleteFinishes(progressData);
+      // Every branch below writes race markup into #leaderboard-container.
+      // The class board is a different renderer entirely -- if its cache
+      // survived getting here, a later class-mode tick could patch text
+      // into station cards that are no longer attached to the page.
+      if (typeof resetClassBoardCardCache === "function") resetClassBoardCardCache();
 
       if (leaderboardDisplayMode === "race_track") {
         renderRaceTrackLeaderboard(progressData, teamData);
