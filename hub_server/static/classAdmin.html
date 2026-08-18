@@ -401,6 +401,18 @@
           <span class="pill race-state" id="class-state-pill" data-i18n="state.idle">IDLE</span>
         </div>
 
+        <div class="repeat-toolbar" id="saved-plan-toolbar" style="grid-template-columns: 1fr 1fr auto;">
+          <div class="field">
+            <label for="saved-class-picker" data-i18n="classAdmin.label_saved_class_picker">Saved Class</label>
+            <select id="saved-class-picker" onchange="onSavedClassPickerChange(this.value)"></select>
+          </div>
+          <div class="field">
+            <label for="class-name" data-i18n="classAdmin.label_class_name">Class Name</label>
+            <input type="text" id="class-name" maxlength="60">
+          </div>
+          <button type="button" class="danger" id="btn-delete-saved-class" onclick="deleteSavedClass()" disabled data-i18n="classAdmin.btn_delete_saved_class">Delete Saved Class</button>
+        </div>
+
         <div class="repeat-toolbar">
           <div class="field">
             <label for="repeat-from" data-i18n="classAdmin.label_repeat_from">From row #</label>
@@ -510,6 +522,11 @@
       rowsDirty: false,
       adminToken: localStorage.getItem("fitrace.adminPassword") || localStorage.getItem("fitrace.adminToken") || "",
       refreshTimer: null,
+      // Named class plan library (durable venue configuration -- see
+      // GET/POST/DELETE /api/class/plans). Populated on load and after any
+      // save/delete, never by the 4s poll.
+      savedPlans: [],
+      selectedSavedClassName: null,
     };
 
     function $(id) {
@@ -663,6 +680,38 @@
           return segment;
         }),
       };
+    }
+
+    // Pure, DOM-free -- builds the POST /api/class/plans body from the
+    // current editor state. Returns null for a blank/whitespace-only name
+    // so callers can treat "no name typed" as "don't save to the library"
+    // without duplicating the trim/blank check themselves.
+    function buildNamedPlanPayload(name, rows) {
+      const trimmedName = String(name ?? "").trim();
+      if (!trimmedName) return null;
+      return { name: trimmedName, plan: buildSegmentsPayload(rows) };
+    }
+
+    // Pure, DOM-free -- the saved-class <select>'s option list as plain
+    // data ({value, label, selected}), NOT rendered HTML. The first entry
+    // is always the "new class" placeholder (empty value); its `label` is
+    // deliberately left blank here rather than translated, because
+    // translating would make this helper depend on t()/the loaded
+    // messages dict -- buildSavedClassPickerHtml (the render-path sibling,
+    // next to buildPlanPreviewHtml/buildStationStatusHtml) is what
+    // supplies the translated "new class" text, exactly like
+    // segmentKindKey returning a bare key for buildPlanPreviewHtml to
+    // translate.
+    function savedPlanOptions(plans, selectedName) {
+      const options = [{ value: "", label: "", selected: !selectedName }];
+      (plans || []).forEach((entry) => {
+        options.push({
+          value: entry.name,
+          label: entry.name,
+          selected: entry.name === selectedName,
+        });
+      });
+      return options;
     }
 
     function repeatSegmentGroup(rows, startIndex, endIndex, times) {
@@ -910,6 +959,17 @@
       }).join("");
     }
 
+    // Render-path sibling of savedPlanOptions above -- turns its pure
+    // {value, label, selected} data into <option> HTML, translating the
+    // "new class" placeholder (empty value) via t() here rather than in
+    // the pure helper.
+    function buildSavedClassPickerHtml(options) {
+      return (options || []).map((option) => {
+        const label = option.value === "" ? t("classAdmin.saved_class_picker_new_option") : option.label;
+        return `<option value="${escapeHtml(option.value)}" ${option.selected ? "selected" : ""}>${escapeHtml(label)}</option>`;
+      }).join("");
+    }
+
     function buildPlanEditorHtml(rows) {
       if (!rows.length) {
         return `<div class="empty">${escapeHtml(t("classAdmin.plan_empty"))}</div>`;
@@ -954,6 +1014,12 @@
       $("class-history-list").innerHTML = buildClassHistoryHtml(state.classHistory || []);
     }
 
+    function renderSavedClassPicker() {
+      const options = savedPlanOptions(state.savedPlans, state.selectedSavedClassName);
+      $("saved-class-picker").innerHTML = buildSavedClassPickerHtml(options);
+      $("btn-delete-saved-class").disabled = !state.selectedSavedClassName;
+    }
+
     function stateDisplayKey(raceState) {
       const keys = { IDLE: "state.idle", READY: "state.ready", RUNNING: "state.running", STOPPED: "state.stopped" };
       return keys[raceState] || "state.idle";
@@ -988,6 +1054,7 @@
       renderStationStatus();
       renderClassHistory();
       renderSummaryState();
+      renderSavedClassPicker();
       applyTranslations();
     }
 
@@ -1080,6 +1147,37 @@
       renderAll();
     }
 
+    // Picking a saved class from the dropdown loads it into the editor.
+    // Picking the blank "new class" option just clears the name field and
+    // leaves whatever rows are already on screen alone.
+    function onSavedClassPickerChange(name) {
+      state.selectedSavedClassName = name || null;
+      if (!name) {
+        $("class-name").value = "";
+        renderSavedClassPicker();
+        return;
+      }
+      const entry = (state.savedPlans || []).find((item) => item.name === name);
+      if (!entry) {
+        renderSavedClassPicker();
+        return;
+      }
+      $("class-name").value = entry.name;
+      state.rows = rowsFromClassPlan(entry.plan);
+      // This looks like the save/reset case (an explicit operator action
+      // that should hand server authority back), so clearing rowsDirty
+      // here would seem consistent -- but it is NOT: the hub-side
+      // race.class_plan has not been told about this load (only the
+      // library entry was pulled in locally), so the very next 4s poll
+      // would call applyRaceState -> rowsFromClassPlan(state.race.class_plan)
+      // and silently overwrite the rows just loaded. Keeping rowsDirty
+      // true freezes the editor, exactly like a manual edit, until the
+      // coach saves or starts the class and the server becomes
+      // authoritative for real.
+      state.rowsDirty = true;
+      renderAll();
+    }
+
     // ------------------------------------------------------------------
     // Networking.
     // ------------------------------------------------------------------
@@ -1126,6 +1224,20 @@
       }
     }
 
+    // Deliberately NOT part of refreshAll()/scheduleRefresh() -- the saved
+    // library is venue configuration, not something that changes on its
+    // own every 4s. Called on load and after any save/delete instead.
+    async function refreshSavedClassPlans() {
+      try {
+        const payload = await fetchJson(`/api/class/plans?t=${Date.now()}`, { headers: adminHeaders() });
+        state.savedPlans = payload.plans || [];
+      } catch (_) {
+        // Non-fatal: keep whatever was last known rather than wiping the
+        // picker on a transient failure.
+      }
+      renderSavedClassPicker();
+    }
+
     async function refreshHealth() {
       try {
         await fetchJson(`/health?t=${Date.now()}`);
@@ -1158,6 +1270,24 @@
 
     async function savePlan() {
       try {
+        // Guarding the whole named-save block on the raw input value (not
+        // just relying on the blank check inside buildNamedPlanPayload)
+        // means a coach who never typed a name takes exactly the same path
+        // as before this feature existed: configure only, nothing posted
+        // to the library.
+        const nameValue = $("class-name").value;
+        if (nameValue) {
+          const namedPayload = buildNamedPlanPayload(nameValue, state.rows);
+          if (namedPayload) {
+            await fetchJson("/api/class/plans", {
+              method: "POST",
+              headers: adminHeaders({ "Content-Type": "application/json" }),
+              body: JSON.stringify(namedPayload),
+            });
+            state.selectedSavedClassName = namedPayload.name;
+            await refreshSavedClassPlans();
+          }
+        }
         const raceState = await fetchJson("/api/class/configure", {
           method: "POST",
           headers: adminHeaders({ "Content-Type": "application/json" }),
@@ -1165,6 +1295,23 @@
         });
         loadRaceStateAndRows(raceState);
         setMessage("class-message", t("classAdmin.message_plan_saved"), "ok");
+      } catch (error) {
+        setMessage("class-message", error.message, "error");
+      }
+    }
+
+    async function deleteSavedClass() {
+      const name = state.selectedSavedClassName;
+      if (!name) return;
+      if (!window.confirm(t("classAdmin.confirm_delete_saved_class", { name }))) return;
+      try {
+        await fetchJson(`/api/class/plans/${encodeURIComponent(name)}`, {
+          method: "DELETE",
+          headers: adminHeaders(),
+        });
+        state.selectedSavedClassName = null;
+        await refreshSavedClassPlans();
+        setMessage("class-message", t("classAdmin.message_saved_class_deleted"), "ok");
       } catch (error) {
         setMessage("class-message", error.message, "error");
       }
@@ -1224,6 +1371,7 @@
       await loadLocale(currentLocale);
       renderAll();
       await refreshAll();
+      await refreshSavedClassPlans();
       scheduleRefresh();
     }
 
