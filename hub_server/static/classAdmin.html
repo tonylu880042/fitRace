@@ -640,11 +640,19 @@
       setMessage("login-message", "");
     }
 
-    function saveAdminToken() {
+    async function saveAdminToken() {
       state.adminToken = $("admin-token").value.trim();
       localStorage.setItem("fitrace.adminToken", state.adminToken);
       localStorage.setItem("fitrace.adminPassword", state.adminToken);
       closeLogin();
+      // GET /api/class/plans is admin-gated, and refreshSavedClassPlans()
+      // is deliberately excluded from the 4s poll (it is venue
+      // configuration, not something that changes on its own) -- so a
+      // coach who unlocks mid-setup after an earlier 401 left the picker
+      // empty would otherwise see it stay empty until a full page reload.
+      // Unlocking is the one moment every other panel on this page
+      // self-heals; this makes the picker do the same.
+      await refreshSavedClassPlans();
     }
 
     // ------------------------------------------------------------------

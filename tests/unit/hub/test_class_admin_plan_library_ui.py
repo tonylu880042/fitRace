@@ -960,3 +960,155 @@ def test_confirm_reset_no_longer_implies_the_plan_is_lost():
     en_us_value = _load_locale("en-US")["classAdmin.confirm_reset"]
     assert "clears the plan progress" not in en_us_value
     assert "kept" in en_us_value.lower()
+
+
+# ---------------------------------------------------------------------------
+# 9. The picker must self-heal after an operator unlock.
+#
+# GET /api/class/plans is admin-gated, and require_admin only enforces when
+# FITRACE_ADMIN_TOKEN is set -- exactly the live venue setup. A coach who
+# opens /classAdmin before unlocking gets a 401 from
+# refreshSavedClassPlans() on load (swallowed by its own try/catch, so the
+# picker just stays empty); refreshSavedClassPlans() is deliberately kept
+# OUT of refreshAll()/scheduleRefresh() (it is venue configuration, not
+# something that changes every 4s), so nothing else on the page will ever
+# retry that fetch. Without saveAdminToken() itself triggering a refresh,
+# the saved-class dropdown stays empty until a full page reload -- the one
+# thing a coach mid-setup will not think to do.
+#
+# saveAdminToken() is made `async` and awaits refreshSavedClassPlans()
+# directly (rather than a bare fire-and-forget call) for the same reason
+# every other network-triggering handler on this page (savePlan,
+# deleteSavedClass) is async: consistency, and a script harness like this
+# one can `await saveAdminToken()` and observe the fetch actually
+# completed rather than racing an unawaited promise. No existing test
+# extracts/drives saveAdminToken(), so making it async does not touch any
+# other test's assumptions.
+# ---------------------------------------------------------------------------
+
+
+def _run_save_admin_token_scenario(
+    fetch_response_js: str, admin_token_input: str = "secret-token"
+) -> dict:
+    source = _read_class_admin()
+    saved_plan_options_fn = _strip_js_comments(
+        _extract_function(source, "savedPlanOptions")
+    )
+    build_saved_class_picker_html_fn = _strip_js_comments(
+        _extract_function(source, "buildSavedClassPickerHtml")
+    )
+    render_saved_class_picker_fn = _strip_js_comments(
+        _extract_function(source, "renderSavedClassPicker")
+    )
+    admin_headers_fn = _strip_js_comments(_extract_function(source, "adminHeaders"))
+    set_message_fn = _strip_js_comments(_extract_function(source, "setMessage"))
+    fetch_json_fn = "async " + _strip_js_comments(
+        _extract_function(source, "fetchJson")
+    )
+    refresh_saved_class_plans_fn = "async " + _strip_js_comments(
+        _extract_function(source, "refreshSavedClassPlans")
+    )
+    close_login_fn = _strip_js_comments(_extract_function(source, "closeLogin"))
+    # The real page declares `async function saveAdminToken() {...}` (after
+    # this fix) -- _extract_function's marker starts at "function", so
+    # "async " is stripped and must be reattached, exactly like
+    # fetchJson/refreshState/savePlan/resetClass are handled in
+    # tests/unit/hub/test_class_admin_plan_editor_dirty.py. Before the fix
+    # saveAdminToken() is a plain (non-async) function, so prepending
+    # "async " here still produces valid, runnable JS either way -- this
+    # harness works whether or not the fix has landed, which is exactly
+    # what a TDD red/green cycle needs.
+    save_admin_token_fn = "async " + _strip_js_comments(
+        _extract_function(source, "saveAdminToken")
+    )
+
+    script = (
+        _t_stub()
+        + _escape_html_stub()
+        + "const calls = [];\n"
+        + "async function fetch(url, options) {\n"
+        + "  calls.push({ url, method: (options && options.method) || 'GET' });\n"
+        + f"  return {{ ok: true, text: async () => JSON.stringify({fetch_response_js}) }};\n"
+        + "}\n"
+        + "const localStorage = {\n"
+        + "  data: {},\n"
+        + "  setItem(key, value) { this.data[key] = value; },\n"
+        + "  getItem(key) { return this.data[key] || null; },\n"
+        + "};\n"
+        + "const mockElements = {};\n"
+        + "function makeEl() {\n"
+        + "  return {\n"
+        + "    value: "
+        + json.dumps(admin_token_input)
+        + ",\n"
+        + "    innerHTML: '', disabled: false, className: '', textContent: '',\n"
+        + "    classList: { add() {}, remove() {} },\n"
+        + "  };\n"
+        + "}\n"
+        + "function $(id) {\n"
+        + "  if (!mockElements[id]) mockElements[id] = makeEl();\n"
+        + "  return mockElements[id];\n"
+        + "}\n"
+        + "const state = { adminToken: '', savedPlans: [], selectedSavedClassName: null };\n"
+        + saved_plan_options_fn
+        + "\n"
+        + build_saved_class_picker_html_fn
+        + "\n"
+        + render_saved_class_picker_fn
+        + "\n"
+        + admin_headers_fn
+        + "\n"
+        + set_message_fn
+        + "\n"
+        + fetch_json_fn
+        + "\n"
+        + refresh_saved_class_plans_fn
+        + "\n"
+        + close_login_fn
+        + "\n"
+        + save_admin_token_fn
+        + "\n"
+        + "(async () => {\n"
+        + "await saveAdminToken();\n"
+        + "console.log(JSON.stringify({\n"
+        + "  calls,\n"
+        + "  adminToken: state.adminToken,\n"
+        + "  storedToken: localStorage.data['fitrace.adminToken'],\n"
+        + "  pickerHtml: mockElements['saved-class-picker']\n"
+        + "    ? mockElements['saved-class-picker'].innerHTML\n"
+        + "    : null,\n"
+        + "}));\n"
+        + "})();\n"
+    )
+    return json.loads(_run_node(script))
+
+
+def test_saving_the_admin_token_refetches_the_saved_class_plan_list():
+    # Real behaviour, not a substring check: the token save must actually
+    # trigger a network call to GET /api/class/plans.
+    result = _run_save_admin_token_scenario(
+        '{"plans": [{"name": "Spin 45", "plan": {"segments": []}}]}'
+    )
+    plan_calls = [c for c in result["calls"] if c["url"].startswith("/api/class/plans")]
+    assert len(plan_calls) == 1
+    assert plan_calls[0]["method"] == "GET"
+
+
+def test_saving_the_admin_token_still_stores_the_token_and_closes_the_login():
+    result = _run_save_admin_token_scenario("{}")
+    assert result["adminToken"] == "secret-token"
+    assert result["storedToken"] == "secret-token"
+
+
+def test_saving_the_admin_token_repopulates_the_previously_empty_picker():
+    # End-to-end proof of the fix, not just that a fetch fired: the newly
+    # fetched plan actually reaches the rendered <select>.
+    result = _run_save_admin_token_scenario(
+        '{"plans": [{"name": "Spin 45", "plan": {"segments": []}}]}'
+    )
+    assert '<option value="Spin 45"' in result["pickerHtml"]
+
+
+def test_save_admin_token_button_still_wired_in_the_login_modal():
+    body = _read_class_admin()
+    assert 'onclick="saveAdminToken()"' in body
