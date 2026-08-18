@@ -988,8 +988,26 @@ def test_confirm_reset_no_longer_implies_the_plan_is_lost():
 
 
 def _run_save_admin_token_scenario(
-    fetch_response_js: str, admin_token_input: str = "secret-token"
+    fetch_response_js: str,
+    admin_token_input: str = "admin-secret",
+    required_token: str = "admin-secret",
 ) -> dict:
+    """Drives the real saveAdminToken() end to end against a fetch stub
+    that models require_admin() on a venue with FITRACE_ADMIN_TOKEN set:
+    a GET /api/class/plans call only succeeds when its
+    X-FitRace-Admin-Token header equals `required_token`; anything else
+    (missing header, stale header) gets a 401-shaped response. This is
+    the piece the first version of this test was missing -- a request
+    firing at all is not proof of anything, since state.adminToken is
+    still stale/empty until saveAdminToken() actually assigns it. Moving
+    the refetch ahead of that assignment (a real bug a reviewer caught)
+    would make refreshSavedClassPlans() send no auth header at all, get
+    401'd, and silently leave the picker empty -- exactly the original
+    defect. Only checking "did a fetch to /api/class/plans happen" can
+    not tell that apart from the fix actually working; checking the
+    header on that call, and that the picker only fills in when the
+    header was correct, can.
+    """
     source = _read_class_admin()
     saved_plan_options_fn = _strip_js_comments(
         _extract_function(source, "savedPlanOptions")
@@ -1027,8 +1045,20 @@ def _run_save_admin_token_scenario(
         + _escape_html_stub()
         + "const calls = [];\n"
         + "async function fetch(url, options) {\n"
-        + "  calls.push({ url, method: (options && options.method) || 'GET' });\n"
-        + f"  return {{ ok: true, text: async () => JSON.stringify({fetch_response_js}) }};\n"
+        + "  const headers = (options && options.headers) || {};\n"
+        + "  calls.push({ url, method: (options && options.method) || 'GET', headers });\n"
+        + "  if (url.startsWith('/api/class/plans')) {\n"
+        + f"    if (headers['X-FitRace-Admin-Token'] !== {json.dumps(required_token)}) {{\n"
+        + "      return {\n"
+        + "        ok: false,\n"
+        + "        status: 401,\n"
+        + "        statusText: 'Unauthorized',\n"
+        + "        text: async () => JSON.stringify({ detail: 'Admin token required' }),\n"
+        + "      };\n"
+        + "    }\n"
+        + f"    return {{ ok: true, text: async () => JSON.stringify({fetch_response_js}) }};\n"
+        + "  }\n"
+        + "  return { ok: true, text: async () => JSON.stringify({}) };\n"
         + "}\n"
         + "const localStorage = {\n"
         + "  data: {},\n"
@@ -1094,15 +1124,41 @@ def test_saving_the_admin_token_refetches_the_saved_class_plan_list():
     assert plan_calls[0]["method"] == "GET"
 
 
+def test_saving_the_admin_token_authenticates_the_refetch_with_the_freshly_typed_token():
+    # The trap a reviewer caught: a request firing at all is not proof the
+    # fix works. saveAdminToken() must assign state.adminToken BEFORE
+    # calling refreshSavedClassPlans() -- moving the refetch first would
+    # still fire a request (this test alone would not catch that), but
+    # adminHeaders() would read the STALE (empty) state.adminToken and
+    # send no X-FitRace-Admin-Token header at all, since that header is
+    # only added when state.adminToken is truthy. Pin the header directly,
+    # using a token value distinct from every other test's default so a
+    # stale/hardcoded value could not accidentally match.
+    result = _run_save_admin_token_scenario(
+        '{"plans": [{"name": "Spin 45", "plan": {"segments": []}}]}',
+        admin_token_input="freshly-typed-token",
+        required_token="freshly-typed-token",
+    )
+    plan_calls = [c for c in result["calls"] if c["url"].startswith("/api/class/plans")]
+    assert len(plan_calls) == 1
+    assert (
+        plan_calls[0]["headers"].get("X-FitRace-Admin-Token") == "freshly-typed-token"
+    )
+
+
 def test_saving_the_admin_token_still_stores_the_token_and_closes_the_login():
     result = _run_save_admin_token_scenario("{}")
-    assert result["adminToken"] == "secret-token"
-    assert result["storedToken"] == "secret-token"
+    assert result["adminToken"] == "admin-secret"
+    assert result["storedToken"] == "admin-secret"
 
 
 def test_saving_the_admin_token_repopulates_the_previously_empty_picker():
     # End-to-end proof of the fix, not just that a fetch fired: the newly
-    # fetched plan actually reaches the rendered <select>.
+    # fetched plan only reaches the rendered <select> when the refetch
+    # carried the correct, freshly-stored token. The fetch stub 401s any
+    # /api/class/plans call missing that header (see
+    # _run_save_admin_token_scenario's docstring), so this only passes
+    # when saveAdminToken() stores the token before refetching.
     result = _run_save_admin_token_scenario(
         '{"plans": [{"name": "Spin 45", "plan": {"segments": []}}]}'
     )
