@@ -173,6 +173,7 @@
   "class.kind.cooldown": "Nedvarvning",
   "class.segment_progress": "Segment {index} av {total}",
   "class.next_segment": "Nästa: {kind} · {duration}",
+  "class.next_segment_announcement": "Snart: {kind}",
   "class.last_segment": "Sista segmentet",
   "class.total_remaining": "Träning återstår",
   "class.time_up": "Tiden är ute",

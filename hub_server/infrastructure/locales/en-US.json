@@ -173,6 +173,7 @@
   "class.kind.cooldown": "Cooldown",
   "class.segment_progress": "Segment {index} of {total}",
   "class.next_segment": "Next: {kind} · {duration}",
+  "class.next_segment_announcement": "Coming up: {kind}",
   "class.last_segment": "Final segment",
   "class.total_remaining": "Class remaining",
   "class.time_up": "Time's up",

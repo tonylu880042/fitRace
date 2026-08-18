@@ -4239,6 +4239,38 @@
         return power >= target ? "on" : "under";
       }
 
+      // Pure -- decides whether the NEXT segment should get a large,
+      // hard-to-miss announcement on the projector board, and what it
+      // should say. Athletes get no warning otherwise: the muted
+      // nextSegmentHtml line built further below stays legible from the
+      // front row but is easy to miss from across a gym, so the last
+      // ANNOUNCEMENT_LEAD_MS of the CURRENT segment promotes the same
+      // information into a headline instead. Returns null once there is
+      // no next segment to announce (the final segment in the plan) or
+      // once the plan has already finished -- there is nothing left to
+      // brace for. ANNOUNCEMENT_LEAD_MS is declared here rather than
+      // top-level for the same reason classTargetStatus above is nested:
+      // several tests extract buildClassBoardHtml alone by its
+      // function-name marker and run it standalone under node -e. See
+      // computeUpcomingSegmentAnnouncementForPatch further below for the
+      // top-level twin the incremental patch path uses -- same constant,
+      // same decision, duplicated once for that same extractability
+      // constraint.
+      function computeUpcomingSegmentAnnouncement(currentClock, currentPlan) {
+        const ANNOUNCEMENT_LEAD_MS = 10000;
+        if (!currentClock || currentClock.finished) return null;
+        if (!currentPlan || !currentPlan.segments) return null;
+        if (currentClock.segmentRemainingMs > ANNOUNCEMENT_LEAD_MS) return null;
+        const nextIndex = currentClock.index + 1;
+        if (nextIndex >= currentPlan.segments.length) return null;
+        const nextSegment = currentPlan.segments[nextIndex];
+        const announcement = { kind: nextSegment.kind, targetWatts: null };
+        if (nextSegment.target_watts !== null && nextSegment.target_watts !== undefined) {
+          announcement.targetWatts = nextSegment.target_watts;
+        }
+        return announcement;
+      }
+
       // Pure -- input is one target watts value (or null/undefined) per
       // segment, output is one height percent per segment. Mirrors
       // classAdmin.html computeBlockHeightPercents (nested inside
@@ -4410,6 +4442,35 @@
         const targetWattsStr = numberFormat.format(clock.targetWatts);
         targetWattsHtml = "<div class=\"class-hero-target\" style=\"font-family:Oswald,sans-serif;font-size:1.5rem;font-weight:700;color:var(--volt-yellow);margin-top:0.35rem;\">" + escapeHtml(t("class.target_watts", { watts: targetWattsStr })) + "</div>";
       }
+      // Large last-ten-seconds announcement of the NEXT segment. Rendered
+      // every time (not only when active) so its container/kind/watts
+      // elements are always present in the markup for
+      // captureClassBoardRefs to find -- applyClassBoardIncrementalUpdate
+      // then flips its display and rewrites its text on every ordinary
+      // tick without a rebuild. Sized well below the 5rem current-segment
+      // name and the 3.5rem countdown above, and well above the 0.85rem
+      // muted nextSegmentHtml line, so it reads as a loud complement, not
+      // a replacement or a competitor for attention.
+      let announcementDisplay = "none";
+      let announcementKindText = "";
+      let announcementWattsText = "";
+      const upcomingAnnouncement = computeUpcomingSegmentAnnouncement(clock, plan);
+      if (upcomingAnnouncement) {
+        announcementDisplay = "block";
+        let announcementKindLabel = t("class.kind.work");
+        if (upcomingAnnouncement.kind === "warmup") announcementKindLabel = t("class.kind.warmup");
+        else if (upcomingAnnouncement.kind === "work") announcementKindLabel = t("class.kind.work");
+        else if (upcomingAnnouncement.kind === "rest") announcementKindLabel = t("class.kind.rest");
+        else if (upcomingAnnouncement.kind === "cooldown") announcementKindLabel = t("class.kind.cooldown");
+        announcementKindText = t("class.next_segment_announcement", { kind: announcementKindLabel });
+        if (upcomingAnnouncement.targetWatts !== null) {
+          announcementWattsText = t("class.target_watts", { watts: numberFormat.format(upcomingAnnouncement.targetWatts) });
+        }
+      }
+      const announcementHtml = "<div class=\"class-next-announcement\" style=\"display:" + announcementDisplay + ";margin-top:1rem;padding:1rem 1.5rem;border:2px solid var(--hazard-amber);border-radius:4px;background:rgba(245,158,11,0.12);\">" +
+        "<div class=\"class-next-announcement-kind\" style=\"font-family:Oswald,sans-serif;font-size:2.5rem;font-weight:700;color:var(--hazard-amber);text-transform:uppercase;line-height:1.1;\">" + escapeHtml(announcementKindText) + "</div>" +
+        "<div class=\"class-next-announcement-watts\" style=\"font-family:Oswald,sans-serif;font-size:1.75rem;font-weight:700;color:var(--hazard-amber);margin-top:0.25rem;\">" + escapeHtml(announcementWattsText) + "</div>" +
+        "</div>";
       let html = "<div style=\"padding:2rem;\"><div style=\"border:2px solid var(--steel-border);border-radius:4px;padding:2rem;background:linear-gradient(135deg,var(--card-bg),rgba(39,39,42,0.5));margin-bottom:2rem;\">";
       html += "<div style=\"font-size:0.85rem;color:var(--text-muted);margin-bottom:1rem;\">" + escapeHtml(t("class.in_progress")) + "</div>";
       html += "<div style=\"display:grid;grid-template-columns:1fr auto;gap:2rem;align-items:start;margin-bottom:1.5rem;\">";
@@ -4418,6 +4479,7 @@
       html += "<div style=\"text-align:right;\"><div style=\"font-size:0.85rem;color:var(--text-muted);margin-bottom:0.5rem;\">" + escapeHtml(t("class.total_remaining")) + "</div>";
       html += "<div class=\"class-hero-total-remaining\" style=\"font-size:2rem;font-weight:700;color:var(--volt-yellow);\">" + escapeHtml(totalRemainingStr) + "</div></div></div>";
       html += "<div style=\"margin-bottom:1.5rem;\"><div style=\"font-size:0.85rem;color:var(--text-muted);margin-bottom:0.5rem;\">" + escapeHtml(segmentProgressStr) + "</div>" + nextSegmentHtml + "</div>";
+      html += announcementHtml;
       html += "<div style=\"display:flex;align-items:flex-end;height:64px;border-radius:2px;overflow:hidden;border:1px solid var(--steel-border);\">" + timelineBlocks.join("") + "</div>";
       html += "<div class=\"class-progress-track\" style=\"margin-top:4px;height:20px;border-radius:2px;overflow:hidden;border:1px solid var(--steel-border);background:var(--dim-grey);\"><div class=\"class-progress-fill\" style=\"height:100%;width:" + progressPercent + "%;background:var(--volt-yellow);\"></div></div>";
       html += "</div>";
@@ -4455,6 +4517,39 @@
       const elapsedMs = safeTotalMs - safeRemainingMs;
       const percent = (elapsedMs / safeTotalMs) * 100;
       return Math.max(0, Math.min(100, percent));
+    }
+
+    // Twin of computeUpcomingSegmentAnnouncement nested inside
+    // buildClassBoardHtml, for the same reason as
+    // computeClassProgressPercentForPatch above: the incremental patch
+    // path below needs the exact same show/hide-and-what decision on
+    // every ordinary tick, without forcing buildClassBoardHtml to depend
+    // on anything declared outside it.
+    function computeUpcomingSegmentAnnouncementForPatch(clock, plan) {
+      const ANNOUNCEMENT_LEAD_MS = 10000;
+      if (!clock || clock.finished) return null;
+      if (!plan || !plan.segments) return null;
+      if (clock.segmentRemainingMs > ANNOUNCEMENT_LEAD_MS) return null;
+      const nextIndex = clock.index + 1;
+      if (nextIndex >= plan.segments.length) return null;
+      const nextSegment = plan.segments[nextIndex];
+      const announcement = { kind: nextSegment.kind, targetWatts: null };
+      if (nextSegment.target_watts !== null && nextSegment.target_watts !== undefined) {
+        announcement.targetWatts = nextSegment.target_watts;
+      }
+      return announcement;
+    }
+
+    // Maps a segment kind to its localized label, for the announcement
+    // patch path only. buildClassBoardHtml keeps its own inline copies of
+    // this same mapping (see classTargetStatus/classTargetStatusForPatch
+    // above for why the two paths cannot share one copy).
+    function classSegmentKindLabelForPatch(kind) {
+      if (kind === "warmup") return t("class.kind.warmup");
+      if (kind === "work") return t("class.kind.work");
+      if (kind === "rest") return t("class.kind.rest");
+      if (kind === "cooldown") return t("class.kind.cooldown");
+      return t("class.kind.work");
     }
 
     // A string that changes exactly when a station card needs new MARKUP:
@@ -4508,6 +4603,9 @@
         countdown: container.querySelector(".class-hero-countdown"),
         totalRemaining: container.querySelector(".class-hero-total-remaining"),
         progressFill: container.querySelector(".class-progress-fill"),
+        announcementContainer: container.querySelector(".class-next-announcement"),
+        announcementKind: container.querySelector(".class-next-announcement-kind"),
+        announcementWatts: container.querySelector(".class-next-announcement-watts"),
       };
     }
 
@@ -4541,6 +4639,20 @@
       if (classBoardCardRefs.progressFill && sessionData.class_plan && sessionData.class_plan.segments) {
         const totalDurationMs = sessionData.class_plan.segments.reduce(function (sum, s) { return sum + s.duration_sec * 1000; }, 0);
         classBoardCardRefs.progressFill.style.width = computeClassProgressPercentForPatch(totalDurationMs, clock.totalRemainingMs, clock.finished) + "%";
+      }
+      if (classBoardCardRefs.announcementContainer) {
+        const announcement = computeUpcomingSegmentAnnouncementForPatch(clock, sessionData.class_plan);
+        classBoardCardRefs.announcementContainer.style.display = announcement ? "block" : "none";
+        if (classBoardCardRefs.announcementKind) {
+          classBoardCardRefs.announcementKind.textContent = announcement
+            ? t("class.next_segment_announcement", { kind: classSegmentKindLabelForPatch(announcement.kind) })
+            : "";
+        }
+        if (classBoardCardRefs.announcementWatts) {
+          classBoardCardRefs.announcementWatts.textContent = announcement && announcement.targetWatts !== null
+            ? t("class.target_watts", { watts: numberFormat.format(announcement.targetWatts) })
+            : "";
+        }
       }
       return true;
     }

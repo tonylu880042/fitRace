@@ -173,6 +173,7 @@
   "class.kind.cooldown": "Auslaufen",
   "class.segment_progress": "Segment {index} von {total}",
   "class.next_segment": "Nächstes: {kind} · {duration}",
+  "class.next_segment_announcement": "Gleich kommt: {kind}",
   "class.last_segment": "Letztes Segment",
   "class.total_remaining": "Training verbleibend",
   "class.time_up": "Zeit vorbei",

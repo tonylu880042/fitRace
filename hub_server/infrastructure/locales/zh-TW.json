@@ -173,6 +173,7 @@
   "class.kind.cooldown": "緩和",
   "class.segment_progress": "第 {index} 段，共 {total} 段",
   "class.next_segment": "下一段：{kind} · {duration}",
+  "class.next_segment_announcement": "即將開始：{kind}",
   "class.last_segment": "最後一段",
   "class.total_remaining": "課程剩餘",
   "class.time_up": "時間到",

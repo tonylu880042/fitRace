@@ -173,6 +173,7 @@
   "class.kind.cooldown": "Defaticamento",
   "class.segment_progress": "Segmento {index} di {total}",
   "class.next_segment": "Prossimo: {kind} · {duration}",
+  "class.next_segment_announcement": "Tra poco: {kind}",
   "class.last_segment": "Ultimo segmento",
   "class.total_remaining": "Lezione rimanente",
   "class.time_up": "Tempo scaduto",

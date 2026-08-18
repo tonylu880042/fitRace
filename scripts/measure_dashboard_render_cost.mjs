@@ -31,6 +31,22 @@ const FRAME_MS = 1000 / 60;
 const TELEMETRY_HZ = 4;
 const STATION_COUNTS = [6, 20];
 
+// A longer window with several short segments, for the dedicated
+// segment-boundary-crossing measurement further below. Total plan
+// duration (58s) is deliberately shorter than the window (60s) so the
+// window also covers the plan finishing -- proving that tail, too, settles
+// onto the incremental path instead of rebuilding every tick.
+const SEGMENT_BOUNDARY_SIMULATED_SECONDS = 60;
+const SEGMENT_BOUNDARY_PLAN = {
+  segments: [
+    { kind: "warmup", duration_sec: 10 },
+    { kind: "work", duration_sec: 12, target_watts: 220 },
+    { kind: "rest", duration_sec: 12 },
+    { kind: "work", duration_sec: 12, target_watts: 260 },
+    { kind: "cooldown", duration_sec: 12 },
+  ],
+};
+
 // --- source extraction (same brace-depth technique the Python test
 // suite uses throughout tests/unit/hub/, ported to JS for this script) --
 
@@ -307,8 +323,9 @@ function tickStation(station, tickIndex) {
 // 250) in index.html), plus one "frame" event every 1000/60 ms (the
 // browsers paint cadence -- used to drive the OLD unconditional rAF loop
 // and, for AFTER, to flush whatever the coalescing scheduler queued).
-function buildSchedule(stationCount) {
-  const totalMs = SIMULATED_SECONDS * 1000;
+function buildSchedule(stationCount, totalSeconds) {
+  const windowSeconds = totalSeconds || SIMULATED_SECONDS;
+  const totalMs = windowSeconds * 1000;
   const events = [];
   const telemetryIntervalMs = 1000 / TELEMETRY_HZ;
   for (let s = 0; s < stationCount; s += 1) {
@@ -617,10 +634,109 @@ globalThis.__run = function (events, stations) {
   return runInSandbox(script, counters, stationCount, {});
 }
 
+// --- AFTER: class mode, crossing several segment boundaries -- proves the
+// last-ten-seconds NEXT-segment announcement (computeUpcomingSegmentAnnouncementForPatch,
+// wired through applyClassBoardIncrementalUpdate) does not reintroduce
+// per-second full rebuilds. Segment changes themselves are expected to
+// rebuild (new markup: hero band, timeline, station target indicators)
+// -- what must NOT happen is the announcement crossing its own threshold,
+// mid-segment, triggering an extra rebuild on top of that. -------------
+
+function runAfterClassSegmentBoundaries(afterSource, stationCount) {
+  const counters = { fullRebuilds: 0, cardWrites: 0, boundingRectCalls: 0 };
+  const coalesceBranch = extractBraced(
+    afterSource,
+    "if (data && Object.keys(data).length > 0)"
+  );
+  const fns = [
+    "resetLeaderboardCardCache",
+    "resetClassBoardCardCache",
+    "classTargetStatusForPatch",
+    "computeClassProgressPercentForPatch",
+    "computeUpcomingSegmentAnnouncementForPatch",
+    "classSegmentKindLabelForPatch",
+    "buildClassStationSignature",
+    "captureClassBoardRefs",
+    "applyClassBoardIncrementalUpdate",
+    "classClockAt",
+    "toClockShape",
+    "buildClassBoardHtml",
+    "renderClassBoardFromState",
+    "renderLeaderboard",
+  ]
+    .map((name) => extractFunction(afterSource, name))
+    .join("\n");
+  const script = `
+${SHARED_STUBS}
+const Intl = { NumberFormat: function () { return { format: (n) => String(n) }; } };
+function formatClock(ms) { const s = Math.max(0, Math.floor(metricNumber(ms) / 1000)); return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0"); }
+${makeClassBoardFakeDom()}
+function detectAthleteFinishes() {}
+function smoothMetricNumber(key, target) { return Number(target) || 0; }
+function updateClassSegmentCue() {}
+let leaderboardNodes = [];
+let teamLeaderboardRows = [];
+let leaderboardRankByNode = new Map();
+let leaderboardCardRefs = new Map();
+let leaderboardCardSignature = null;
+let classBoardCardRefs = null;
+let leaderboardDisplayMode = "classic";
+let currentSessionMode = "class";
+let currentState = "RUNNING";
+let currentConfig = null;
+let currentLocale = "en-US";
+let currentClassPlan = ${JSON.stringify(SEGMENT_BOUNDARY_PLAN)};
+let currentClassLeaderboard = {};
+// Controllable simulated clock, overriding Date.now() -- the only
+// wall-clock read among the functions extracted above is inside
+// renderClassBoardFromState. Driving it from the event schedule (below)
+// instead of real elapsed wall-clock time keeps the several
+// segment-boundary crossings in this window deterministic.
+let raceStartTime = 1000000;
+let __simulatedNowMs = raceStartTime;
+const Date = { now: () => __simulatedNowMs };
+let leaderboardRenderScheduled = false;
+let pendingLeaderboardData = null;
+let __wallNs = 0n;
+const __hrtime = process.hrtime;
+function __timed(fn) {
+  const start = __hrtime.bigint();
+  fn();
+  __wallNs += __hrtime.bigint() - start;
+}
+let __rafCallbacks = [];
+function requestAnimationFrame(cb) { __rafCallbacks.push(cb); }
+${fns}
+function handleTelemetryPayload(data) ${coalesceBranch}
+globalThis.__run = function (events, stations) {
+  const byStation = stations.map((s) => s);
+  for (const ev of events) {
+    __simulatedNowMs = raceStartTime + ev.t;
+    if (ev.type === "telemetry") {
+      byStation[ev.station] = __tickStation(byStation[ev.station], ev.tick);
+      const payload = {};
+      byStation.forEach((s) => { payload[s.node_id] = s; });
+      __timed(() => handleTelemetryPayload(payload));
+    } else if (ev.type === "classClock") {
+      __timed(() => renderClassBoardFromState());
+    } else if (ev.type === "frame") {
+      const due = __rafCallbacks;
+      __rafCallbacks = [];
+      due.forEach((cb) => __timed(() => cb()));
+    }
+  }
+  return { fullRebuilds: __counters.fullRebuilds, cardWrites: __counters.cardWrites, boundingRectCalls: __counters.boundingRectCalls, wallNs: __wallNs.toString() };
+};
+`;
+  return runInSandbox(script, counters, stationCount, {
+    totalSeconds: SEGMENT_BOUNDARY_SIMULATED_SECONDS,
+  });
+}
+
 // --- sandbox execution --------------------------------------------------
 
 function runInSandbox(script, counters, stationCount, opts) {
-  const events = buildSchedule(stationCount).filter((ev) => {
+  const events = buildSchedule(stationCount, opts.totalSeconds).filter((ev) => {
     if (opts.skipClassClock && ev.type === "classClock") return false;
     if (opts.skipFrames && ev.type === "frame") return false;
     return true;
@@ -652,15 +768,17 @@ function runInSandbox(script, counters, stationCount, opts) {
 
 // --- reporting ------------------------------------------------------------
 
-function perSecond(raw) {
-  return raw / SIMULATED_SECONDS;
+function perSecond(raw, windowSeconds) {
+  return raw / (windowSeconds || SIMULATED_SECONDS);
 }
 
-function formatRow(label, result) {
-  const rebuildsPerSec = perSecond(result.fullRebuilds).toFixed(2);
-  const writesPerSec = perSecond(result.cardWrites).toFixed(1);
-  const rectsPerSec = perSecond(result.boundingRectCalls).toFixed(2);
-  const msPerSec = (Number(result.wallNs) / 1e6 / SIMULATED_SECONDS).toFixed(3);
+function formatRow(label, result, windowSeconds) {
+  const rebuildsPerSec = perSecond(result.fullRebuilds, windowSeconds).toFixed(2);
+  const writesPerSec = perSecond(result.cardWrites, windowSeconds).toFixed(1);
+  const rectsPerSec = perSecond(result.boundingRectCalls, windowSeconds).toFixed(2);
+  const msPerSec = (
+    Number(result.wallNs) / 1e6 / (windowSeconds || SIMULATED_SECONDS)
+  ).toFixed(3);
   return `${label.padEnd(28)} rebuilds/s=${rebuildsPerSec.padStart(8)}  cardWrites/s=${writesPerSec.padStart(9)}  getBoundingClientRect/s=${rectsPerSec.padStart(8)}  renderMs/s=${msPerSec.padStart(9)}`;
 }
 
@@ -686,6 +804,25 @@ function main() {
     console.log(`=== ${stationCount} stations, CLASS mode ===`);
     console.log(formatRow("before", runBeforeClass(beforeSource, stationCount)));
     console.log(formatRow("after", runAfterClass(afterSource, stationCount)));
+    console.log("");
+  }
+
+  console.log(
+    `Segment-boundary window: ${SEGMENT_BOUNDARY_SIMULATED_SECONDS}s, ` +
+      `plan segments: ${SEGMENT_BOUNDARY_PLAN.segments.map((s) => s.duration_sec).join("+")}s ` +
+      `(total ${SEGMENT_BOUNDARY_PLAN.segments.reduce((sum, s) => sum + s.duration_sec, 0)}s, plan finishes inside the window).\n`
+  );
+  for (const stationCount of STATION_COUNTS) {
+    console.log(
+      `=== ${stationCount} stations, CLASS mode, crossing segment boundaries ===`
+    );
+    console.log(
+      formatRow(
+        "after",
+        runAfterClassSegmentBoundaries(afterSource, stationCount),
+        SEGMENT_BOUNDARY_SIMULATED_SECONDS
+      )
+    );
     console.log("");
   }
 }

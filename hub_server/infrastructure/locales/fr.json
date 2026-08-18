@@ -173,6 +173,7 @@
   "class.kind.cooldown": "Récupération",
   "class.segment_progress": "Segment {index} sur {total}",
   "class.next_segment": "Suivant : {kind} · {duration}",
+  "class.next_segment_announcement": "Bientôt : {kind}",
   "class.last_segment": "Dernier segment",
   "class.total_remaining": "Entraînement restant",
   "class.time_up": "Temps écoulé",
