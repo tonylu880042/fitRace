@@ -4256,7 +4256,12 @@
       // computeUpcomingSegmentAnnouncementForPatch further below for the
       // top-level twin the incremental patch path uses -- same constant,
       // same decision, duplicated once for that same extractability
-      // constraint.
+      // constraint. Changing ANNOUNCEMENT_LEAD_MS (or anything else about
+      // this decision) here without making the identical change in the
+      // twin is caught by
+      // tests/unit/hub/test_dashboard_announcement_duplication_guard.py,
+      // which extracts both copies and asserts they agree on a shared
+      // table of inputs, including this exact 10000ms boundary.
       function computeUpcomingSegmentAnnouncement(currentClock, currentPlan) {
         const ANNOUNCEMENT_LEAD_MS = 10000;
         if (!currentClock || currentClock.finished) return null;
@@ -4540,7 +4545,11 @@
     // computeClassProgressPercentForPatch above: the incremental patch
     // path below needs the exact same show/hide-and-what decision on
     // every ordinary tick, without forcing buildClassBoardHtml to depend
-    // on anything declared outside it.
+    // on anything declared outside it. See the comment on the nested
+    // twin above for why a single shared definition is not possible here,
+    // and tests/unit/hub/test_dashboard_announcement_duplication_guard.py
+    // for the test that keeps the two copies (and their two
+    // ANNOUNCEMENT_LEAD_MS constants) from drifting apart.
     function computeUpcomingSegmentAnnouncementForPatch(clock, plan) {
       const ANNOUNCEMENT_LEAD_MS = 10000;
       if (!clock || clock.finished) return null;
