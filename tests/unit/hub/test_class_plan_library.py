@@ -17,10 +17,14 @@ reset_race()); this file is only the new library surface.
 """
 
 import pytest
+from fastapi.testclient import TestClient
 
 from hub_server.domain.class_models import ClassPlan
+from hub_server.infrastructure.fastapi import app as app_module
 from hub_server.usecases.race_manager import RaceManager
 from hub_server.usecases.race_settings_store import RaceSettingsStore
+
+client = TestClient(app_module.app)
 
 
 def _plan(*durations):
@@ -263,3 +267,143 @@ def test_class_plans_round_trip_multiple_entries(tmp_path):
     assert set(plans.keys()) == {"Spin 45", "Leg Day"}
     assert plans["Spin 45"].total_duration_sec == 1800
     assert plans["Leg Day"].total_duration_sec == 120
+
+
+# ---------------------------------------------------------------------------
+# 6. Admin API: GET/POST/DELETE /api/class/plans.
+#
+# The shared module-level race_manager is process-wide (see
+# tests/integration/test_api.py's isolation fix in the previous commit), so
+# every test here saves/deletes only names it created, and an autouse
+# fixture wipes the whole library before AND after each test -- belt and
+# braces against leaking a saved name into an unrelated test elsewhere in
+# the suite.
+# ---------------------------------------------------------------------------
+
+_SEGMENTS_A = {"segments": [{"kind": "work", "duration_sec": 60}]}
+_SEGMENTS_B = {
+    "segments": [
+        {"kind": "warmup", "duration_sec": 90},
+        {"kind": "work", "duration_sec": 300, "target_watts": 150},
+    ]
+}
+
+
+@pytest.fixture(autouse=True)
+def _clean_class_plan_library():
+    def _wipe():
+        for name in list(app_module.race_manager.list_class_plans().keys()):
+            app_module.race_manager.delete_class_plan(name)
+
+    _wipe()
+    yield
+    _wipe()
+
+
+def test_get_class_plans_empty_by_default():
+    res = client.get("/api/class/plans")
+    assert res.status_code == 200
+    assert res.json() == {"plans": []}
+
+
+def test_post_class_plans_saves_and_returns_the_list():
+    res = client.post("/api/class/plans", json={"name": "Spin 45", "plan": _SEGMENTS_A})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["plans"] == [{"name": "Spin 45", "plan": _expected_plan(_SEGMENTS_A)}]
+
+
+def test_get_class_plans_reflects_a_previous_save():
+    client.post("/api/class/plans", json={"name": "Spin 45", "plan": _SEGMENTS_A})
+    res = client.get("/api/class/plans")
+    assert res.status_code == 200
+    assert [entry["name"] for entry in res.json()["plans"]] == ["Spin 45"]
+
+
+def test_post_class_plans_upserts_same_name():
+    client.post("/api/class/plans", json={"name": "Spin 45", "plan": _SEGMENTS_A})
+    res = client.post("/api/class/plans", json={"name": "Spin 45", "plan": _SEGMENTS_B})
+    assert res.status_code == 200
+    body = res.json()
+    assert len(body["plans"]) == 1
+    assert body["plans"][0]["plan"] == _expected_plan(_SEGMENTS_B)
+
+
+def test_post_class_plans_response_sorted_by_name():
+    client.post("/api/class/plans", json={"name": "Zumba", "plan": _SEGMENTS_A})
+    res = client.post(
+        "/api/class/plans", json={"name": "Ab Blast", "plan": _SEGMENTS_A}
+    )
+    assert res.status_code == 200
+    names = [entry["name"] for entry in res.json()["plans"]]
+    assert names == ["Ab Blast", "Zumba"]
+
+
+def test_post_class_plans_whitespace_only_name_is_400_not_500():
+    res = client.post("/api/class/plans", json={"name": "   ", "plan": _SEGMENTS_A})
+    assert res.status_code == 400
+    assert client.get("/api/class/plans").json() == {"plans": []}
+
+
+def test_post_class_plans_empty_string_name_is_422_from_pydantic_min_length():
+    # min_length=1 on the payload model itself rejects an outright empty
+    # string before the manager (and its strip-then-validate ValueError)
+    # ever runs -- this is FastAPI's own request validation, hence 422 not
+    # 400.
+    res = client.post("/api/class/plans", json={"name": "", "plan": _SEGMENTS_A})
+    assert res.status_code == 422
+
+
+def test_post_class_plans_name_over_60_chars_is_422():
+    res = client.post("/api/class/plans", json={"name": "x" * 61, "plan": _SEGMENTS_A})
+    assert res.status_code == 422
+
+
+def test_delete_class_plans_removes_and_returns_the_list():
+    client.post("/api/class/plans", json={"name": "Spin 45", "plan": _SEGMENTS_A})
+    res = client.delete("/api/class/plans/Spin 45")
+    assert res.status_code == 200
+    assert res.json() == {"plans": []}
+    assert app_module.race_manager.list_class_plans() == {}
+
+
+def test_delete_class_plans_missing_name_is_404():
+    res = client.delete("/api/class/plans/Nonexistent")
+    assert res.status_code == 404
+
+
+def test_class_plans_endpoints_require_admin_token_when_configured(monkeypatch):
+    monkeypatch.setenv("FITRACE_ADMIN_TOKEN", "admin-secret")
+
+    assert client.get("/api/class/plans").status_code == 401
+    assert (
+        client.post(
+            "/api/class/plans", json={"name": "Spin 45", "plan": _SEGMENTS_A}
+        ).status_code
+        == 401
+    )
+
+    ok_headers = {"X-FitRace-Admin-Token": "admin-secret"}
+    res = client.post(
+        "/api/class/plans",
+        json={"name": "Spin 45", "plan": _SEGMENTS_A},
+        headers=ok_headers,
+    )
+    assert res.status_code == 200
+
+    assert (
+        client.delete("/api/class/plans/Spin 45", headers=ok_headers).status_code == 200
+    )
+    assert client.get("/api/class/plans", headers=ok_headers).status_code == 200
+
+
+def test_class_plans_endpoint_does_not_appear_in_race_state_snapshot():
+    # /api/race/state is broadcast on every tick -- the library must not
+    # ride along on it.
+    client.post("/api/class/plans", json={"name": "Spin 45", "plan": _SEGMENTS_A})
+    state = client.get("/api/race/state").json()
+    assert "class_plans" not in state
+
+
+def _expected_plan(segments_payload: dict) -> dict:
+    return ClassPlan.model_validate(segments_payload).model_dump()

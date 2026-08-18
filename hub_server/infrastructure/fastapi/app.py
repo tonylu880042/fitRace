@@ -172,6 +172,11 @@ class SessionModePayload(BaseModel):
     mode: str
 
 
+class SaveClassPlanPayload(BaseModel):
+    name: str = Field(..., min_length=1, max_length=60)
+    plan: ClassPlan
+
+
 class StartCountdownSoundPayload(BaseModel):
     enabled: bool
 
@@ -1065,6 +1070,43 @@ async def configure_class(payload: ClassPlan, request: Request):
         return await broadcast_race_state()
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+def _class_plans_response() -> Dict[str, Any]:
+    # Sorted by name -- a stable, predictable order for the operator-facing
+    # picker, independent of dict insertion order.
+    plans = race_manager.list_class_plans()
+    return {
+        "plans": [
+            {"name": name, "plan": plan.model_dump()}
+            for name, plan in sorted(plans.items())
+        ]
+    }
+
+
+@app.get("/api/class/plans")
+async def list_class_plans(request: Request):
+    require_admin(request)
+    return _class_plans_response()
+
+
+@app.post("/api/class/plans")
+async def save_class_plan(payload: SaveClassPlanPayload, request: Request):
+    require_admin(request)
+    try:
+        race_manager.save_class_plan(payload.name, payload.plan)
+        return _class_plans_response()
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.delete("/api/class/plans/{name}")
+async def delete_class_plan(name: str, request: Request):
+    require_admin(request)
+    removed = race_manager.delete_class_plan(name)
+    if not removed:
+        raise HTTPException(status_code=404, detail="Class plan not found")
+    return _class_plans_response()
 
 
 @app.post("/api/session/mode")
