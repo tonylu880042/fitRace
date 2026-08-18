@@ -20,6 +20,7 @@
       --danger: #f43f5e;
       --ok: #34d399;
       --rest-grey: #71717a;
+      --changeover-violet: #a78bfa;
     }
 
     * { box-sizing: border-box; }
@@ -261,6 +262,7 @@
     .segment-row-rest { border-left-color: var(--rest-grey); }
     .segment-row-warmup { border-left-color: var(--warn); }
     .segment-row-cooldown { border-left-color: #60a5fa; }
+    .segment-row-changeover { border-left-color: var(--changeover-violet); }
 
     .timeline {
       display: flex;
@@ -279,6 +281,7 @@
     .timeline-work { background: var(--accent); }
     .timeline-rest { background: var(--rest-grey); }
     .timeline-cooldown { background: #60a5fa; }
+    .timeline-changeover { background: var(--changeover-violet); }
 
     .plan-summary-row {
       display: flex;
@@ -765,6 +768,7 @@
         work: "class.kind.work",
         rest: "class.kind.rest",
         cooldown: "class.kind.cooldown",
+        changeover: "class.kind.changeover",
       };
       return keys[kind] || keys.warmup;
     }
@@ -916,7 +920,7 @@
         return `
         <div class="segment-row segment-row-${escapeHtml(row.kind)}" id="segment-row-${index}">
           <select onchange="updateSegmentKind(${index}, this.value)">
-            ${["warmup", "work", "rest", "cooldown"].map((kind) => `<option value="${kind}" ${row.kind === kind ? "selected" : ""}>${escapeHtml(t(segmentKindKey(kind)))}</option>`).join("")}
+            ${["warmup", "work", "rest", "cooldown", "changeover"].map((kind) => `<option value="${kind}" ${row.kind === kind ? "selected" : ""}>${escapeHtml(t(segmentKindKey(kind)))}</option>`).join("")}
           </select>
           <input type="number" min="5" max="3600" value="${escapeHtml(String(row.durationSec))}" oninput="updateSegmentDuration(${index}, this.value)" onchange="updateSegmentDuration(${index}, this.value)">
           <input type="number" min="1" max="2000" placeholder="${wattsLabel}" title="${wattsLabel}" value="${wattsValue}" oninput="updateSegmentTargetWatts(${index}, this.value)" onchange="updateSegmentTargetWatts(${index}, this.value)">

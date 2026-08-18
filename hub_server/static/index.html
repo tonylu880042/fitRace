@@ -18,6 +18,7 @@
       --text-muted: #a1a1aa;
       --mid-grey: #3f3f46;
       --dim-grey: #52525b;
+      --changeover-violet: #a78bfa;
     }
 
     * {
@@ -4406,6 +4407,7 @@
         let bgColor = "var(--dim-grey)";
         if (segment.kind === "work") bgColor = "var(--volt-yellow)";
         else if (segment.kind === "rest") bgColor = "var(--mid-grey)";
+        else if (segment.kind === "changeover") bgColor = "var(--changeover-violet)";
         const borderStyle = isCurrentSegment ? "2px solid var(--volt-yellow)" : "1px solid var(--steel-border)";
         const opacity = isCompleted ? "0.4" : "1";
         const heightPercent = timelineHeightPercents[idx];
@@ -4420,6 +4422,7 @@
         else if (nextSegment.kind === "work") nextKindLabel = t("class.kind.work");
         else if (nextSegment.kind === "rest") nextKindLabel = t("class.kind.rest");
         else if (nextSegment.kind === "cooldown") nextKindLabel = t("class.kind.cooldown");
+        else if (nextSegment.kind === "changeover") nextKindLabel = t("class.kind.changeover");
         const nextDurationStr = formatClock(nextSegment.duration_sec * 1000);
         nextSegmentHtml = "<div style=\"margin-top:0.5rem;font-size:0.85rem;color:var(--text-muted);\">" + escapeHtml(t("class.next_segment", { kind: nextKindLabel, duration: nextDurationStr })) + "</div>";
       } else {
@@ -4430,6 +4433,18 @@
       else if (clock.kind === "work") kindLabel = t("class.kind.work");
       else if (clock.kind === "rest") kindLabel = t("class.kind.rest");
       else if (clock.kind === "cooldown") kindLabel = t("class.kind.cooldown");
+      else if (clock.kind === "changeover") kindLabel = t("class.kind.changeover");
+      // A one-line instruction under the segment name -- read at a glance
+      // from across a gym. Only rest (catch your breath where you are)
+      // and changeover (move to the next machine) need to tell athletes
+      // something beyond the segment name; work/warmup/cooldown stay as
+      // they were before this field existed.
+      let instructionHtml = "";
+      if (clock.kind === "rest") {
+        instructionHtml = "<div class=\"class-hero-instruction\" style=\"font-size:1.1rem;color:var(--text-muted);margin-top:0.35rem;\">" + escapeHtml(t("class.instruction_rest")) + "</div>";
+      } else if (clock.kind === "changeover") {
+        instructionHtml = "<div class=\"class-hero-instruction\" style=\"font-size:1.1rem;color:var(--text-muted);margin-top:0.35rem;\">" + escapeHtml(t("class.instruction_changeover")) + "</div>";
+      }
       const countdownStr = clock.finished ? t("class.time_up") : formatClock(clock.segmentRemainingMs);
       const segmentProgressStr = t("class.segment_progress", { index: clock.index + 1, total: plan.segments.length });
       const totalRemainingStr = formatClock(clock.totalRemainingMs);
@@ -4462,6 +4477,7 @@
         else if (upcomingAnnouncement.kind === "work") announcementKindLabel = t("class.kind.work");
         else if (upcomingAnnouncement.kind === "rest") announcementKindLabel = t("class.kind.rest");
         else if (upcomingAnnouncement.kind === "cooldown") announcementKindLabel = t("class.kind.cooldown");
+        else if (upcomingAnnouncement.kind === "changeover") announcementKindLabel = t("class.kind.changeover");
         announcementKindText = t("class.next_segment_announcement", { kind: announcementKindLabel });
         if (upcomingAnnouncement.targetWatts !== null) {
           announcementWattsText = t("class.target_watts", { watts: numberFormat.format(upcomingAnnouncement.targetWatts) });
@@ -4474,7 +4490,7 @@
       let html = "<div style=\"padding:2rem;\"><div style=\"border:2px solid var(--steel-border);border-radius:4px;padding:2rem;background:linear-gradient(135deg,var(--card-bg),rgba(39,39,42,0.5));margin-bottom:2rem;\">";
       html += "<div style=\"font-size:0.85rem;color:var(--text-muted);margin-bottom:1rem;\">" + escapeHtml(t("class.in_progress")) + "</div>";
       html += "<div style=\"display:grid;grid-template-columns:1fr auto;gap:2rem;align-items:start;margin-bottom:1.5rem;\">";
-      html += "<div><div style=\"font-family:Oswald,sans-serif;font-size:5rem;font-weight:700;color:var(--volt-yellow);line-height:1;text-transform:uppercase;\">" + escapeHtml(kindLabel) + "</div>" + targetWattsHtml;
+      html += "<div><div style=\"font-family:Oswald,sans-serif;font-size:5rem;font-weight:700;color:var(--volt-yellow);line-height:1;text-transform:uppercase;\">" + escapeHtml(kindLabel) + "</div>" + instructionHtml + targetWattsHtml;
       html += "<div class=\"class-hero-countdown\" style=\"font-family:Oswald,sans-serif;font-size:3.5rem;font-weight:700;color:var(--volt-yellow);margin-top:0.5rem;\">" + escapeHtml(countdownStr) + "</div></div>";
       html += "<div style=\"text-align:right;\"><div style=\"font-size:0.85rem;color:var(--text-muted);margin-bottom:0.5rem;\">" + escapeHtml(t("class.total_remaining")) + "</div>";
       html += "<div class=\"class-hero-total-remaining\" style=\"font-size:2rem;font-weight:700;color:var(--volt-yellow);\">" + escapeHtml(totalRemainingStr) + "</div></div></div>";
@@ -4549,6 +4565,7 @@
       if (kind === "work") return t("class.kind.work");
       if (kind === "rest") return t("class.kind.rest");
       if (kind === "cooldown") return t("class.kind.cooldown");
+      if (kind === "changeover") return t("class.kind.changeover");
       return t("class.kind.work");
     }
 

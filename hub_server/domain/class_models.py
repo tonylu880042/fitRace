@@ -1,9 +1,12 @@
 """Training class domain model.
 
 A training class is a coach-run, timed sequence of segments (warm-up /
-work / rest / cool-down) that runs on the same hardware, stations, and
-telemetry pipeline as a race -- but has no ranking, no finish detection,
-and no auto-stop. The coach ends it manually.
+work / rest / cool-down / changeover) that runs on the same hardware,
+stations, and telemetry pipeline as a race -- but has no ranking, no
+finish detection, and no auto-stop. The coach ends it manually.
+`changeover` is a circuit-training rotation between machines: distinct
+from `rest` (catch your breath where you are), it tells athletes to move
+to the next station.
 
 This module is pure domain: no I/O, no FastAPI/MQTT/bleak imports, no
 wall-clock access. `segment_at` in particular takes an already-computed
@@ -18,7 +21,7 @@ MAX_TOTAL_DURATION_SEC = 4 * 3600  # 4 hours
 
 
 class ClassSegment(BaseModel):
-    kind: Literal["warmup", "work", "rest", "cooldown"]
+    kind: Literal["warmup", "work", "rest", "cooldown", "changeover"]
     duration_sec: int = Field(
         ...,
         ge=5,
