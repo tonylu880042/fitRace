@@ -103,24 +103,29 @@ def test_start_race_succeeds_for_class_with_plan_configured():
     assert manager.get_state() == RaceState.RUNNING
 
 
-def test_reset_race_clears_plan_and_returns_session_mode_to_race():
+def test_reset_race_keeps_plan_and_returns_session_mode_to_race():
+    # A class plan is venue configuration, not session state: reset clears
+    # progress and returns the session to "race" mode, but must NOT delete
+    # the plan the coach built -- only an explicit delete does that.
     manager = RaceManager()
-    manager.configure_class(_plan(60, 60))
+    plan = _plan(60, 60)
+    manager.configure_class(plan)
     manager.start_race()
     manager.reset_race()
     assert manager.get_state() == RaceState.IDLE
     assert manager.get_session_mode() == "race"
-    assert manager.get_class_plan() is None
+    assert manager.get_class_plan() is plan
 
 
-def test_reset_race_clears_class_plan_on_disk_so_it_does_not_survive_a_restart(
+def test_reset_race_keeps_class_plan_on_disk_so_it_survives_a_restart(
     tmp_path,
 ):
     # A same-instance assertion after reset would pass even if reset_race()
-    # never persisted -- the in-memory fields are cleared either way. The
-    # bug this pins is that race_settings.json kept the old plan, so a
-    # fresh RaceManager built from the SAME store (simulating a hub
-    # restart) would resurrect it. Construct a genuinely new instance.
+    # never persisted the (unchanged) plan at all -- the in-memory field is
+    # untouched either way. What actually matters is that race_settings.json
+    # still carries the plan, so a fresh RaceManager built from the SAME
+    # store (simulating a hub restart) still has it. Construct a genuinely
+    # new instance.
     store = RaceSettingsStore(tmp_path / "settings.json")
     manager = RaceManager(settings_store=store)
     manager.configure_class(_plan(300, 1200, 300, 300, 300, 300))  # 6 segments
@@ -129,7 +134,8 @@ def test_reset_race_clears_class_plan_on_disk_so_it_does_not_survive_a_restart(
     restarted = RaceManager(
         settings_store=RaceSettingsStore(tmp_path / "settings.json")
     )
-    assert restarted.get_class_plan() is None
+    assert restarted.get_class_plan() is not None
+    assert restarted.get_class_plan().total_duration_sec == 2700
     assert restarted.get_session_mode() == "race"
 
 

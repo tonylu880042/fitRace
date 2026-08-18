@@ -21,6 +21,12 @@ class RaceManager:
         self._settings_store = settings_store
         self._session_mode: str = "race"
         self._class_plan: Optional[ClassPlan] = None
+        # Durable, named library of class plans -- venue configuration, like
+        # station assignment. Distinct from _class_plan above (the plan
+        # currently loaded into the editor/about to run): entries here
+        # survive reset_race() and are only removed by an explicit
+        # delete_class_plan() call. Keyed by the operator-chosen name.
+        self._class_plans: Dict[str, ClassPlan] = {}
         self._registered_nodes: Dict[str, str] = (
             {}
         )  # node_id -> athlete_name (for legacy backward compatibility)
@@ -86,6 +92,22 @@ class RaceManager:
                 self._class_plan = ClassPlan.model_validate(class_plan)
             except Exception:
                 self._class_plan = None
+        # class_plans: same "must load cleanly" contract as everything else
+        # above -- a settings file written before this feature (key absent)
+        # loads as an empty library, and one bad entry (fails
+        # ClassPlan.model_validate) is skipped individually rather than
+        # discarding the whole library or crashing startup.
+        class_plans = data.get("class_plans")
+        if isinstance(class_plans, dict):
+            loaded_plans: Dict[str, ClassPlan] = {}
+            for name, plan_dict in class_plans.items():
+                if not isinstance(plan_dict, dict):
+                    continue
+                try:
+                    loaded_plans[name] = ClassPlan.model_validate(plan_dict)
+                except Exception:
+                    continue
+            self._class_plans = loaded_plans
 
     def _persist_settings(self) -> None:
         if not self._settings_store:
@@ -100,6 +122,9 @@ class RaceManager:
                 "class_plan": (
                     self._class_plan.model_dump() if self._class_plan else None
                 ),
+                "class_plans": {
+                    name: plan.model_dump() for name, plan in self._class_plans.items()
+                },
             }
         )
 
@@ -141,6 +166,32 @@ class RaceManager:
 
     def get_class_plan(self) -> Optional[ClassPlan]:
         return self._class_plan
+
+    # -- named class plan library ---------------------------------------
+    # Durable venue configuration (see the field comment in __init__):
+    # untouched by reset_race(), only changed by an explicit save/delete.
+
+    def list_class_plans(self) -> Dict[str, ClassPlan]:
+        return dict(self._class_plans)
+
+    def save_class_plan(self, name: str, plan: ClassPlan) -> None:
+        cleaned_name = name.strip()
+        if not cleaned_name or len(cleaned_name) > 60:
+            raise ValueError(
+                "Class plan name must be 1..60 characters after stripping "
+                "leading/trailing whitespace"
+            )
+        # Upsert: an existing entry with the same (stripped) name is
+        # overwritten, not duplicated.
+        self._class_plans[cleaned_name] = plan
+        self._persist_settings()
+
+    def delete_class_plan(self, name: str) -> bool:
+        if name not in self._class_plans:
+            return False
+        del self._class_plans[name]
+        self._persist_settings()
+        return True
 
     def get_start_countdown_sound_enabled(self) -> bool:
         return self._start_countdown_sound_enabled
@@ -774,7 +825,13 @@ class RaceManager:
     def reset_race(self):
         self._state = RaceState.IDLE
         self._config = None
-        self._class_plan = None
+        # self._class_plan (the currently configured/active plan) is
+        # DELIBERATELY not cleared here. A class plan is venue configuration
+        # -- like station assignment -- not session state: it must only
+        # disappear when the operator deletes it explicitly (see
+        # delete_class_plan / the named library above), never as a side
+        # effect of resetting progress. self._class_plans (the named
+        # library) was never touched by reset_race() and still isn't.
         self._session_mode = "race"
         self._start_time_epoch_ms = None
         self._end_time_epoch_ms = None
@@ -786,10 +843,11 @@ class RaceManager:
         self._station_has_avatar.clear()
         self._active_nodes.clear()
         # Reset must actually stick: without this, race_settings.json still
-        # holds the cleared config/class_plan, and the next hub restart
-        # resurrects them via _load_settings(). Station mapping, display
-        # mode, and sound setting are untouched by the clears above, so
-        # persisting here only writes back the None-ed out config/plan.
+        # holds the cleared config, and the next hub restart resurrects it
+        # via _load_settings(). Station mapping, display mode, sound
+        # setting, the class plan, and the class plan library are untouched
+        # by the clears above, so persisting here only writes back the
+        # None-ed out config.
         self._persist_settings()
 
     def update_telemetry(self, payload: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:

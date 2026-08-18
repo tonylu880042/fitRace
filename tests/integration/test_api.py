@@ -4,7 +4,9 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 from fitrace_common.version import APP_VERSION
+from hub_server.infrastructure.fastapi import app as app_module
 from hub_server.infrastructure.fastapi.app import app
+from hub_server.usecases.race_manager import RaceManager
 
 client = TestClient(app)
 
@@ -1531,7 +1533,16 @@ def test_race_configure_resets_session_mode_back_to_race():
     client.post("/api/race/reset")
 
 
-def test_starting_class_with_no_plan_is_rejected_by_api():
+def test_starting_class_with_no_plan_is_rejected_by_api(monkeypatch):
+    # A class plan is venue configuration now: reset_race() deliberately no
+    # longer clears it (see hub_server/usecases/race_manager.py), so once
+    # ANY earlier test in this shared, process-wide race_manager has ever
+    # configured a class, "/api/race/reset" can no longer be relied on to
+    # get back to a genuinely plan-less state. Swap in a brand-new
+    # RaceManager for just this test so "no plan has ever been configured"
+    # is actually true, independent of test execution order.
+    monkeypatch.setattr(app_module, "race_manager", RaceManager())
+
     client.post("/api/race/reset")
     prepare_individual_ready_race()
     # Flip to class mode without ever configuring a plan.
@@ -1543,7 +1554,16 @@ def test_starting_class_with_no_plan_is_rejected_by_api():
     client.post("/api/race/reset")
 
 
-def test_class_configure_endpoint_rejects_while_race_is_running_and_mode_stays_race():
+def test_class_configure_endpoint_rejects_while_race_is_running_and_mode_stays_race(
+    monkeypatch,
+):
+    # Same isolation concern as the test above: this assertion cares that a
+    # REJECTED configure_class() call leaves class_plan untouched, which
+    # only reads as "still None" if nothing earlier in the shared
+    # race_manager ever configured a class. A fresh RaceManager makes that
+    # true regardless of what ran before it.
+    monkeypatch.setattr(app_module, "race_manager", RaceManager())
+
     client.post("/api/race/reset")
     prepare_individual_ready_race()
     start_res = client.post("/api/race/start")
