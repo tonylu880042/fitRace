@@ -4447,6 +4447,11 @@
         if (bNum === Infinity) return -1;
         return aNum - bNum;
       });
+      // Density tier -- see the .class-board--* / .class-station-grid--*
+      // rules for what each tier gives back. Known before the loop because
+      // the cards themselves change at ultra: the station badge goes, and
+      // the name carries the station instead.
+      const stationDensity = sortedStations.length > 20 ? "ultra" : (sortedStations.length > 12 ? "dense" : "");
       const stationCards = [];
       for (let i = 0; i < sortedStations.length; i++) {
         const pair = sortedStations[i];
@@ -4456,6 +4461,20 @@
         const athleteName = node.athlete_name || (node.station_number ? `${t("stations.station")} ${node.station_number}` : t("stations.athlete"));
         const machineName = nodeDisplayName(node);
         const stationNum = metricNumber(node.station_number);
+        // An unregistered class station arrives labelled "Station 3 - Vmax26_35B"
+        // (race_manager._default_participant_name). The badge below already says
+        // which station, in the page locale, so the English half is stripped off
+        // the name rather than printed a second time. If the hub ever stops
+        // prefixing, nothing matches and the whole name is kept as-is.
+        const hubStationPrefix = stationNum ? `Station ${stationNum} - ` : "";
+        const machineHalf = hubStationPrefix && athleteName.startsWith(hubStationPrefix)
+          ? athleteName.slice(hubStationPrefix.length)
+          : athleteName;
+        // At ultra the badge is dropped for height, so the name is the only
+        // place left that can carry the station.
+        const cardTitle = stationDensity === "ultra" && stationNum
+          ? `${t("stations.station")} ${stationNum} - ${machineHalf}`
+          : machineHalf;
         const power = metricNumber(node.power_watts);
         const speed = metricNumber(node.instantaneous_speed_kph);
         const distance = metricNumber(node.distance_m);
@@ -4464,8 +4483,8 @@
         const distanceStr = numberFormat.format(distance);
         const effortPercent = Math.min(100, power / 5);
         let badge = "";
-        if (stationNum && Number.isFinite(stationNum)) {
-          badge = "<span style=\"display:inline-block;background:var(--volt-yellow);color:var(--bg-color);padding:0.25rem 0.5rem;border-radius:3px;font-size:0.75rem;font-weight:700;margin-right:0.5rem;\">" + escapeHtml(t("stations.station")) + " " + escapeHtml(String(stationNum)) + "</span>";
+        if (stationDensity !== "ultra" && stationNum && Number.isFinite(stationNum)) {
+          badge = "<span class=\"class-station-badge\" style=\"display:inline-block;background:var(--volt-yellow);color:var(--bg-color);padding:0.25rem 0.5rem;border-radius:3px;font-size:0.75rem;font-weight:700;margin-right:0.5rem;\">" + escapeHtml(t("stations.station")) + " " + escapeHtml(String(stationNum)) + "</span>";
         }
         // Meeting-target indicator: never shown when the segment has no
         // target, and never shown as "under" for a station reporting no
@@ -4489,7 +4508,7 @@
         // the card-cache tests parse this markup with a positional regex.
         let card = "<div data-node-id=\"" + escapeHtml(String(node.node_id || "")) + "\" style=\"border:1px solid var(--steel-border);border-radius:4px;padding:1rem;background:var(--card-bg);\" class=\"class-station-card\">";
         card += badge;
-        card += "<div class=\"class-station-name\" style=\"margin-top:0.5rem;font-weight:600;color:var(--text-main);\">" + escapeHtml(athleteName) + "</div>";
+        card += "<div class=\"class-station-name\" style=\"margin-top:0.5rem;font-weight:600;color:var(--text-main);\">" + escapeHtml(cardTitle) + "</div>";
         card += "<div class=\"class-station-machine\" style=\"font-size:0.85rem;color:var(--text-muted);margin-bottom:0.75rem;\">" + escapeHtml(machineName) + "</div>";
         card += "<div class=\"class-card-metrics\" style=\"display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.5rem;margin-bottom:0.75rem;font-size:0.8rem;\">";
         card += "<div><div class=\"class-metric-label\" style=\"color:var(--text-muted);\">" + escapeHtml(t("metric.power")) + "</div><div style=\"font-weight:600;\"><span class=\"class-metric-power\">" + escapeHtml(powerStr) + " W</span>" + targetIndicatorHtml + "</div></div>";
@@ -4593,9 +4612,6 @@
         "<div class=\"class-next-announcement-kind\" style=\"font-family:Oswald,sans-serif;font-size:2.5rem;font-weight:700;color:var(--hazard-amber);text-transform:uppercase;line-height:1.1;\">" + escapeHtml(announcementKindText) + "</div>" +
         "<div class=\"class-next-announcement-watts\" style=\"font-family:Oswald,sans-serif;font-size:1.75rem;font-weight:700;color:var(--hazard-amber);margin-top:0.25rem;\">" + escapeHtml(announcementWattsText) + "</div>" +
         "</div>";
-      // Density tier from the station count -- see the .class-board--*
-      // and .class-station-grid--* rules for what each tier gives back.
-      const stationDensity = stationCards.length > 20 ? "ultra" : (stationCards.length > 12 ? "dense" : "");
       const boardClass = "class-board" + (stationDensity ? " class-board--" + stationDensity : "");
       const gridClass = "class-station-grid" + (stationDensity ? " class-station-grid--" + stationDensity : "");
       let html = "<div class=\"" + boardClass + "\" style=\"padding:2rem;\"><div class=\"class-board-hero\" style=\"border:2px solid var(--steel-border);border-radius:4px;padding:2rem;background:linear-gradient(135deg,var(--card-bg),rgba(39,39,42,0.5));margin-bottom:2rem;\">";
@@ -5789,6 +5805,19 @@
         }, 3000);
       }
     }
+
+    // The class grid takes its height from window.innerHeight when it
+    // renders, so a display that settles on its real resolution after the
+    // page loaded (HDMI renegotiation, a kiosk window that opens small)
+    // would keep rotating through stations that now fit on one screen.
+    let classBoardResizeTimer = null;
+    window.addEventListener("resize", function() {
+      if (classBoardResizeTimer) window.clearTimeout(classBoardResizeTimer);
+      classBoardResizeTimer = window.setTimeout(function() {
+        classBoardResizeTimer = null;
+        updateClassBoardRotation(document.getElementById("leaderboard-container"));
+      }, 250);
+    });
 
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", initializeDashboard, { once: true });
