@@ -229,14 +229,27 @@ class RaceManager:
 
     def _default_participant_name(self, node_id: str) -> str:
         # A class ranks nobody and usually nobody self-registers, so this
-        # default is what the coach actually reads on the board. The BLE
-        # name remembered from telemetry is printed on the machine itself,
-        # which beats a node id; before any sample has carried one we fall
-        # through to the race defaults below.
+        # default is what the coach actually reads on the board -- and both
+        # halves identify a participant in the room: the station says where
+        # they are, the BLE name (printed on the machine itself) says which
+        # machine. Either half alone when the other is unknown; only a
+        # stream with neither falls through to the race defaults below.
         if self._session_mode == "class":
             remembered_equipment_id = self._node_equipment_ids.get(node_id)
+            station_number = next(
+                (
+                    assigned_station
+                    for assigned_station, assigned_node_id in self._stations.items()
+                    if assigned_node_id == node_id
+                ),
+                None,
+            )
+            if station_number is not None and remembered_equipment_id:
+                return f"Station {station_number} - {remembered_equipment_id}"
             if remembered_equipment_id:
                 return remembered_equipment_id
+            if station_number is not None:
+                return f"Station {station_number}"
         if not self._config or self._config.competition_mode != "individual":
             return f"Athlete {node_id}"
         for station_number, assigned_node_id in self._stations.items():
