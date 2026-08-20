@@ -2143,6 +2143,103 @@
         transform: none !important;
       }
     }
+
+    /* Class board density. A full studio is ~24 machines, and the projector
+       screen never scrolls -- so the station grid tightens (and the hero
+       band gives back height) as the roster grows. Count-driven, no
+       measurement: the tiers below are what fits 1080p. */
+    .class-station-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 1rem;
+    }
+
+    .class-station-grid--dense {
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 0.6rem;
+    }
+
+    .class-station-grid--ultra {
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 0.4rem;
+    }
+
+    /* !important throughout: the cards carry inline styles from the
+       renderer, which a plain class rule cannot outrank. */
+    .class-station-grid--dense .class-station-card { padding: 0.6rem !important; }
+
+    .class-station-grid--ultra .class-station-card {
+      padding: 0.3rem !important;
+      font-size: 0.85rem;
+    }
+
+    .class-station-grid--ultra .class-station-machine { display: none; }
+
+    /* At 24 stations the units carry the meaning, so the labels go and the
+       card body collapses to name + three numbers + effort bar. */
+    .class-station-grid--ultra .class-metric-label { display: none; }
+    .class-station-grid--ultra .class-station-name {
+      margin-top: 0.1rem !important;
+      font-size: 0.8rem;
+      line-height: 1.15;
+      /* One line, ellipsised: a wrapped name costs a whole extra row of
+         stations across the board. */
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .class-station-grid--ultra .class-card-metrics {
+      margin-bottom: 0.25rem !important;
+      gap: 0.2rem !important;
+      font-size: 0.72rem !important;
+    }
+
+    .class-station-grid--ultra .class-effort-track { height: 4px !important; }
+
+    .class-station-grid--ultra .class-card-metrics {
+      font-size: 0.72rem !important;
+      gap: 0.2rem !important;
+    }
+
+    /* Reclaim shared chrome from the ancestor side, so the banner markup
+       (shared with race mode) needs no knowledge of class density. */
+    .card:has(.class-board--ultra) .race-stage-banner { display: none; }
+    .card:has(.class-board--ultra) .card-title { margin-bottom: 0.5rem; }
+
+    .class-station-grid--dense .class-card-metrics { margin-bottom: 0.4rem !important; }
+
+    .class-board--dense { padding: 1rem !important; }
+    .class-board--ultra { padding: 0.75rem !important; }
+
+    .class-board--dense .class-board-hero {
+      padding: 1rem !important;
+      margin-bottom: 1rem !important;
+    }
+
+    .class-board--ultra .class-board-hero {
+      padding: 0.75rem !important;
+      margin-bottom: 0.75rem !important;
+    }
+
+    .class-board--dense .class-hero-kind { font-size: 3.2rem !important; }
+    .class-board--dense .class-hero-countdown { font-size: 2.6rem !important; }
+    .class-board--ultra .class-hero-kind { font-size: 2.4rem !important; }
+    .class-board--ultra .class-hero-countdown { font-size: 2rem !important; }
+    .class-board--ultra .class-hero-total-remaining { font-size: 1.5rem !important; }
+
+    /* The hero band is where the height for the extra station rows comes
+       from: at ultra the plan timeline, the segment line and the kicker
+       are all still readable at a fraction of their default height. */
+    .class-board--dense .class-hero-timeline { height: 40px !important; }
+    .class-board--dense .class-hero-row { margin-bottom: 0.75rem !important; }
+    .class-board--dense .class-hero-segment-line { margin-bottom: 0.75rem !important; }
+
+    .class-board--ultra .class-hero-label { display: none; }
+    .class-board--ultra .class-hero-timeline { height: 24px !important; }
+    .class-board--ultra .class-hero-row { margin-bottom: 0.4rem !important; }
+    .class-board--ultra .class-hero-segment-line { margin-bottom: 0.4rem !important; }
+    .class-board--ultra .class-progress-track { height: 10px !important; }
   </style>
 </head>
 <body>
@@ -2342,6 +2439,8 @@
     // last render was a different renderer entirely). See
     // applyClassBoardIncrementalUpdate.
     let classBoardCardRefs = null;
+    let classRotationTimer = null;
+    const CLASS_ROTATION_INTERVAL_MS = 8000;
     let lastClassSegmentIndex = null;
     let currentSoundEnabled = true;
     function getBrowserLocale() {
@@ -4386,16 +4485,18 @@
         // place afterwards (see captureClassBoardRefs /
         // applyClassBoardIncrementalUpdate) instead of rebuilding the
         // whole board.
-        let card = "<div data-node-id=\"" + escapeHtml(String(node.node_id || "")) + "\" style=\"border:1px solid var(--steel-border);border-radius:4px;padding:1rem;background:var(--card-bg);\">";
+        // data-node-id stays the first attribute and style the second:
+        // the card-cache tests parse this markup with a positional regex.
+        let card = "<div data-node-id=\"" + escapeHtml(String(node.node_id || "")) + "\" style=\"border:1px solid var(--steel-border);border-radius:4px;padding:1rem;background:var(--card-bg);\" class=\"class-station-card\">";
         card += badge;
-        card += "<div style=\"margin-top:0.5rem;font-weight:600;color:var(--text-main);\">" + escapeHtml(athleteName) + "</div>";
-        card += "<div style=\"font-size:0.85rem;color:var(--text-muted);margin-bottom:0.75rem;\">" + escapeHtml(machineName) + "</div>";
-        card += "<div style=\"display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.5rem;margin-bottom:0.75rem;font-size:0.8rem;\">";
-        card += "<div><div style=\"color:var(--text-muted);\">" + escapeHtml(t("metric.power")) + "</div><div style=\"font-weight:600;\"><span class=\"class-metric-power\">" + escapeHtml(powerStr) + " W</span>" + targetIndicatorHtml + "</div></div>";
-        card += "<div><div style=\"color:var(--text-muted);\">" + escapeHtml(t("metric.speed")) + "</div><div class=\"class-metric-speed\" style=\"font-weight:600;\">" + escapeHtml(speedStr) + " kph</div></div>";
-        card += "<div><div style=\"color:var(--text-muted);\">" + escapeHtml(t("metric.distance")) + "</div><div class=\"class-metric-distance\" style=\"font-weight:600;\">" + escapeHtml(distanceStr) + " m</div></div>";
+        card += "<div class=\"class-station-name\" style=\"margin-top:0.5rem;font-weight:600;color:var(--text-main);\">" + escapeHtml(athleteName) + "</div>";
+        card += "<div class=\"class-station-machine\" style=\"font-size:0.85rem;color:var(--text-muted);margin-bottom:0.75rem;\">" + escapeHtml(machineName) + "</div>";
+        card += "<div class=\"class-card-metrics\" style=\"display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.5rem;margin-bottom:0.75rem;font-size:0.8rem;\">";
+        card += "<div><div class=\"class-metric-label\" style=\"color:var(--text-muted);\">" + escapeHtml(t("metric.power")) + "</div><div style=\"font-weight:600;\"><span class=\"class-metric-power\">" + escapeHtml(powerStr) + " W</span>" + targetIndicatorHtml + "</div></div>";
+        card += "<div><div class=\"class-metric-label\" style=\"color:var(--text-muted);\">" + escapeHtml(t("metric.speed")) + "</div><div class=\"class-metric-speed\" style=\"font-weight:600;\">" + escapeHtml(speedStr) + " kph</div></div>";
+        card += "<div><div class=\"class-metric-label\" style=\"color:var(--text-muted);\">" + escapeHtml(t("metric.distance")) + "</div><div class=\"class-metric-distance\" style=\"font-weight:600;\">" + escapeHtml(distanceStr) + " m</div></div>";
         card += "</div>";
-        card += "<div style=\"height:6px;background:var(--steel-border);border-radius:2px;overflow:hidden;\"><div class=\"class-effort-fill\" style=\"height:100%;width:" + effortPercent + "%;background:var(--volt-yellow);transition:width 0.3s ease;\"></div></div>";
+        card += "<div class=\"class-effort-track\" style=\"height:6px;background:var(--steel-border);border-radius:2px;overflow:hidden;\"><div class=\"class-effort-fill\" style=\"height:100%;width:" + effortPercent + "%;background:var(--volt-yellow);transition:width 0.3s ease;\"></div></div>";
         card += "</div>";
         stationCards.push(card);
       }
@@ -4492,19 +4593,24 @@
         "<div class=\"class-next-announcement-kind\" style=\"font-family:Oswald,sans-serif;font-size:2.5rem;font-weight:700;color:var(--hazard-amber);text-transform:uppercase;line-height:1.1;\">" + escapeHtml(announcementKindText) + "</div>" +
         "<div class=\"class-next-announcement-watts\" style=\"font-family:Oswald,sans-serif;font-size:1.75rem;font-weight:700;color:var(--hazard-amber);margin-top:0.25rem;\">" + escapeHtml(announcementWattsText) + "</div>" +
         "</div>";
-      let html = "<div style=\"padding:2rem;\"><div style=\"border:2px solid var(--steel-border);border-radius:4px;padding:2rem;background:linear-gradient(135deg,var(--card-bg),rgba(39,39,42,0.5));margin-bottom:2rem;\">";
-      html += "<div style=\"font-size:0.85rem;color:var(--text-muted);margin-bottom:1rem;\">" + escapeHtml(t("class.in_progress")) + "</div>";
-      html += "<div style=\"display:grid;grid-template-columns:1fr auto;gap:2rem;align-items:start;margin-bottom:1.5rem;\">";
-      html += "<div><div style=\"font-family:Oswald,sans-serif;font-size:5rem;font-weight:700;color:var(--volt-yellow);line-height:1;text-transform:uppercase;\">" + escapeHtml(kindLabel) + "</div>" + instructionHtml + targetWattsHtml;
+      // Density tier from the station count -- see the .class-board--*
+      // and .class-station-grid--* rules for what each tier gives back.
+      const stationDensity = stationCards.length > 20 ? "ultra" : (stationCards.length > 12 ? "dense" : "");
+      const boardClass = "class-board" + (stationDensity ? " class-board--" + stationDensity : "");
+      const gridClass = "class-station-grid" + (stationDensity ? " class-station-grid--" + stationDensity : "");
+      let html = "<div class=\"" + boardClass + "\" style=\"padding:2rem;\"><div class=\"class-board-hero\" style=\"border:2px solid var(--steel-border);border-radius:4px;padding:2rem;background:linear-gradient(135deg,var(--card-bg),rgba(39,39,42,0.5));margin-bottom:2rem;\">";
+      html += "<div class=\"class-hero-label\" style=\"font-size:0.85rem;color:var(--text-muted);margin-bottom:1rem;\">" + escapeHtml(t("class.in_progress")) + "</div>";
+      html += "<div class=\"class-hero-row\" style=\"display:grid;grid-template-columns:1fr auto;gap:2rem;align-items:start;margin-bottom:1.5rem;\">";
+      html += "<div><div class=\"class-hero-kind\" style=\"font-family:Oswald,sans-serif;font-size:5rem;font-weight:700;color:var(--volt-yellow);line-height:1;text-transform:uppercase;\">" + escapeHtml(kindLabel) + "</div>" + instructionHtml + targetWattsHtml;
       html += "<div class=\"class-hero-countdown\" style=\"font-family:Oswald,sans-serif;font-size:3.5rem;font-weight:700;color:var(--volt-yellow);margin-top:0.5rem;\">" + escapeHtml(countdownStr) + "</div></div>";
       html += "<div style=\"text-align:right;\"><div style=\"font-size:0.85rem;color:var(--text-muted);margin-bottom:0.5rem;\">" + escapeHtml(t("class.total_remaining")) + "</div>";
       html += "<div class=\"class-hero-total-remaining\" style=\"font-size:2rem;font-weight:700;color:var(--volt-yellow);\">" + escapeHtml(totalRemainingStr) + "</div></div></div>";
-      html += "<div style=\"margin-bottom:1.5rem;\"><div style=\"font-size:0.85rem;color:var(--text-muted);margin-bottom:0.5rem;\">" + escapeHtml(segmentProgressStr) + "</div>" + nextSegmentHtml + "</div>";
+      html += "<div class=\"class-hero-segment-line\" style=\"margin-bottom:1.5rem;\"><div style=\"font-size:0.85rem;color:var(--text-muted);margin-bottom:0.5rem;\">" + escapeHtml(segmentProgressStr) + "</div>" + nextSegmentHtml + "</div>";
       html += announcementHtml;
-      html += "<div style=\"display:flex;align-items:flex-end;height:64px;border-radius:2px;overflow:hidden;border:1px solid var(--steel-border);\">" + timelineBlocks.join("") + "</div>";
+      html += "<div class=\"class-hero-timeline\" style=\"display:flex;align-items:flex-end;height:64px;border-radius:2px;overflow:hidden;border:1px solid var(--steel-border);\">" + timelineBlocks.join("") + "</div>";
       html += "<div class=\"class-progress-track\" style=\"margin-top:4px;height:20px;border-radius:2px;overflow:hidden;border:1px solid var(--steel-border);background:var(--dim-grey);\"><div class=\"class-progress-fill\" style=\"height:100%;width:" + progressPercent + "%;background:var(--volt-yellow);\"></div></div>";
       html += "</div>";
-      html += "<div style=\"display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1rem;\">" + stationCards.join("") + "</div></div>";
+      html += "<div class=\"" + gridClass + "\">" + stationCards.join("") + "</div></div>";
       return html;
     }
 
@@ -4683,6 +4789,49 @@
       return true;
     }
 
+    // Rotation fallback, for rosters past what even the ultra tier fits.
+    // Pure: which scroll offset comes next. The clamp to maxScroll before
+    // wrapping is what makes the last (partial) page visible at all.
+    function nextRotationScrollTop(scrollTop, clientHeight, scrollHeight) {
+      const maxScroll = scrollHeight - clientHeight;
+      if (maxScroll <= 0) return 0;
+      const next = scrollTop + clientHeight;
+      if (next > maxScroll) return scrollTop >= maxScroll ? 0 : maxScroll;
+      return next;
+    }
+
+    // ponytail: rotate by scrolling the grid, not by paginating cards --
+    // every station stays in the DOM, so applyClassBoardIncrementalUpdate
+    // keeps patching offscreen cards and a page turn never shows stale
+    // numbers. Upgrade path if a venue wants transitions per page: swap
+    // the scroll for a translate on a wrapper, same helper.
+    function updateClassBoardRotation(container) {
+      if (classRotationTimer) {
+        clearInterval(classRotationTimer);
+        classRotationTimer = null;
+      }
+      if (!container) return;
+      const grid = container.querySelector(".class-station-grid");
+      if (!grid) return;
+      // Give the grid exactly the height left below it, so "does it
+      // overflow" is a question about the real screen, not the document.
+      const top = grid.getBoundingClientRect().top;
+      grid.style.maxHeight = Math.max(200, window.innerHeight - top - 24) + "px";
+      grid.style.overflow = "hidden";
+      if (grid.scrollHeight <= grid.clientHeight + 4) return;
+      classRotationTimer = setInterval(function() {
+        if (!grid.isConnected) {
+          clearInterval(classRotationTimer);
+          classRotationTimer = null;
+          return;
+        }
+        grid.scrollTo({
+          top: nextRotationScrollTop(grid.scrollTop, grid.clientHeight, grid.scrollHeight),
+          behavior: "smooth",
+        });
+      }, CLASS_ROTATION_INTERVAL_MS);
+    }
+
     function renderClassBoard(data) {
       // DOM wrapper. Computes the clock, then renders.
       // The classic-leaderboard card cache below belongs to a different
@@ -4710,6 +4859,7 @@
       const container = document.getElementById("leaderboard-container");
       container.innerHTML = buildClassBoardHtml(sessionData, clock);
       if (typeof captureClassBoardRefs === "function") captureClassBoardRefs(container, sessionData, clock);
+      if (typeof updateClassBoardRotation === "function") updateClassBoardRotation(container);
       if (typeof updateClassSegmentCue === "function") updateClassSegmentCue(clock);
     }
 
@@ -4740,6 +4890,7 @@
       }
       container.innerHTML = buildClassBoardHtml(sessionData, clock);
       if (typeof captureClassBoardRefs === "function") captureClassBoardRefs(container, sessionData, clock);
+      if (typeof updateClassBoardRotation === "function") updateClassBoardRotation(container);
       if (typeof updateClassSegmentCue === "function") updateClassSegmentCue(clock);
     }
 
