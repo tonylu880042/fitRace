@@ -1,8 +1,16 @@
+"""One async MQTT client for both the Edge Node runtime and the Central Hub.
+
+Both used to carry their own byte-identical copy, which is how the reconnect
+defects fixed here got repaired on one side and left in place on the other --
+see tests/unit/common/test_mqtt_client_reconnect.py for what each of them
+cost in the field.
+"""
+
 import asyncio
 import logging
 import paho.mqtt.client as mqtt
 
-logger = logging.getLogger("edge_node.mqtt_client")
+DEFAULT_LOGGER_NAME = "fitrace.mqtt_client"
 
 # How long a publish waits for the connection to come back before giving the
 # sample up. Telemetry is a 1 Hz stream: a sample that cannot be sent now is
@@ -11,7 +19,16 @@ DEFAULT_PUBLISH_TIMEOUT_SEC = 5.0
 
 
 class AsyncMqttClient:
-    def __init__(self, host: str, port: int, client_id: str):
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        client_id: str,
+        logger_name: str = DEFAULT_LOGGER_NAME,
+    ):
+        # Each service keeps its own logger name so existing journal filters
+        # (edge_node.mqtt_client / hub_server.mqtt_client) keep matching.
+        self._logger = logging.getLogger(logger_name)
         self._host = host
         self._port = port
         self._client_id = client_id
@@ -50,7 +67,7 @@ class AsyncMqttClient:
         loop.call_soon_threadsafe(action)
 
     def _on_connect(self, client, userdata, flags, reason_code, properties=None):
-        logger.info(f"MQTT Connected with code {reason_code}")
+        self._logger.info(f"MQTT Connected with code {reason_code}")
         # Support reason_code checking (0 is success)
         if getattr(reason_code, "value", reason_code) == 0:
             # Re-subscribe first: a reconnect gives paho a clean session, and
@@ -60,12 +77,12 @@ class AsyncMqttClient:
                 self._client.subscribe(topic)
             self._apply_on_loop(self._connected.set)
         else:
-            logger.error(f"Failed to connect, reason code: {reason_code}")
+            self._logger.error(f"Failed to connect, reason code: {reason_code}")
 
     def _on_disconnect(
         self, client, userdata, disconnect_flags, reason_code, properties=None
     ):
-        logger.warning(f"MQTT Disconnected with code {reason_code}")
+        self._logger.warning(f"MQTT Disconnected with code {reason_code}")
         self._apply_on_loop(self._connected.clear)
 
     # -- connection ----------------------------------------------------------
@@ -78,15 +95,15 @@ class AsyncMqttClient:
         boots (or that restarts later) is a delay, not a permanent standalone
         node that needs a reboot to rejoin.
         """
-        logger.info(f"Connecting to MQTT broker at {self._host}:{self._port}")
+        self._logger.info(f"Connecting to MQTT broker at {self._host}:{self._port}")
         self._loop = asyncio.get_running_loop()
         self._client.connect_async(self._host, self._port)
         self._client.loop_start()
         try:
             await asyncio.wait_for(self._connected.wait(), timeout=timeout_sec)
-            logger.info("Successfully established connection to MQTT broker")
+            self._logger.info("Successfully established connection to MQTT broker")
         except asyncio.TimeoutError:
-            logger.warning(
+            self._logger.warning(
                 "MQTT broker at %s:%s not reachable yet; retrying in the "
                 "background and publishing as soon as it answers",
                 self._host,
@@ -127,6 +144,6 @@ class AsyncMqttClient:
             await asyncio.sleep(0.05)
 
     async def disconnect(self):
-        logger.info("Disconnecting from MQTT broker")
+        self._logger.info("Disconnecting from MQTT broker")
         self._client.disconnect()
         self._client.loop_stop()

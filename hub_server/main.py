@@ -1,7 +1,7 @@
 import uvicorn
 import asyncio
 import logging
-from hub_server.infrastructure.mqtt.client import AsyncMqttClient
+from fitrace_common.mqtt_client import AsyncMqttClient
 from hub_server.adapters.mqtt_subscriber import MqttSubscriber
 from hub_server.infrastructure.fastapi.app import (
     app,
@@ -26,26 +26,28 @@ async def main_async():
 
     # Initialize and connect MQTT
     mqtt_client = AsyncMqttClient(
-        host=mqtt_host, port=mqtt_port, client_id="fitrace-hub-server"
+        host=mqtt_host,
+        port=mqtt_port,
+        client_id="fitrace-hub-server",
+        logger_name="hub_server.mqtt_client",
     )
     app.state.mqtt_client = mqtt_client
     subscriber = None
-    try:
-        await mqtt_client.connect()
-        subscriber = MqttSubscriber(
-            mqtt_client,
-            race_manager,
-            ws_manager,
-            node_registry,
-            race_event_engine,
-            race_result_store,
-        )
-        subscriber.start_listening()
-    except Exception as e:
-        logger.error(
-            f"Failed to connect to MQTT broker: {e}. Running in standalone mode (WebSocket/REST API only)."
-        )
-        mqtt_client = None
+    # connect() does not fail on an absent broker -- paho keeps retrying in
+    # the background and the wrapper replays the subscriptions on every
+    # connect -- so the subscriber is wired up unconditionally. Dropping it
+    # used to leave the hub REST/WebSocket-only until someone restarted the
+    # service, which is the same failure a broker restart caused live.
+    await mqtt_client.connect()
+    subscriber = MqttSubscriber(
+        mqtt_client,
+        race_manager,
+        ws_manager,
+        node_registry,
+        race_event_engine,
+        race_result_store,
+    )
+    subscriber.start_listening()
 
     # Run Uvicorn server concurrently in the same asyncio event loop
     config = uvicorn.Config(app, host=app_host, port=app_port, log_level="info")

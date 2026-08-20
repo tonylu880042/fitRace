@@ -10,7 +10,7 @@ from edge_node.domain.models import EdgeNodeConfig, EquipmentBinding
 from edge_node.infrastructure.config_store import (
     save_edge_config as store_save_edge_config,
 )
-from edge_node.infrastructure.mqtt.client import AsyncMqttClient
+from fitrace_common.mqtt_client import AsyncMqttClient
 from edge_node.adapters.mqtt_publisher import MqttPublisher
 from edge_node.usecases.mock_generator import generate_mock_telemetry
 from edge_node.infrastructure.ble.bleak_client import (
@@ -113,7 +113,10 @@ def main():
         event_log = EdgeEventLog.from_env()
         client_id = f"fitrace-edge-{node_id}"
         mqtt_client = AsyncMqttClient(
-            host=mqtt_host, port=mqtt_port, client_id=client_id
+            host=mqtt_host,
+            port=mqtt_port,
+            client_id=client_id,
+            logger_name="edge_node.mqtt_client",
         )
 
         try:

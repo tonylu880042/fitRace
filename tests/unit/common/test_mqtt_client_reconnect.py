@@ -1,4 +1,4 @@
-"""The edge node has to find its way back to the hub without a reboot.
+"""Edge and hub both have to find their way back to the broker unaided.
 
 Three defects behind "the edge page cannot reach the Central Hub again, only
 a reboot fixes it", all pinned here:
@@ -26,8 +26,8 @@ import time
 
 import pytest
 
-from edge_node.infrastructure.mqtt import client as client_module
-from edge_node.infrastructure.mqtt.client import AsyncMqttClient
+from fitrace_common import mqtt_client as client_module
+from fitrace_common.mqtt_client import AsyncMqttClient
 
 
 class FakePahoClient:
