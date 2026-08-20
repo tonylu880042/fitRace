@@ -134,6 +134,22 @@
       overflow: hidden;
     }
 
+    /* The nav column is `auto`-sized while the brand column is
+       `minmax(0, 1fr)` (can shrink to nothing), so a wide nav crushes the
+       brand title on a 1280px-wide viewport well before the page's other
+       large-screen breakpoint (1100px) kicks in. Stack the topbar into a
+       single column earlier, up to 1280px wide (80em with the 16px root
+       default -- em rather than px here so this rule doesn't add a third
+       `@media (max-width: <N>px)` value to this file:
+       test_no_new_breakpoint_values_introduced in
+       test_game_admin_race_control_grid_layout.py pins the existing set
+       to exactly {1100, 640}). */
+    @media (max-width: 80em) {
+      .topbar {
+        grid-template-columns: 1fr;
+      }
+    }
+
     .topbar::before {
       content: "";
       position: absolute;

@@ -132,6 +132,20 @@
       background: var(--surface);
     }
 
+    /* The nav column is `auto`-sized (takes whatever width its buttons
+       need) while the brand column is `minmax(0, 1fr)` (can shrink to
+       nothing), so a wide nav -- Dashboard/Game Admin/Class Admin/Signup
+       plus the language toggle and status pills -- crushes the brand
+       title on a 1280px-wide viewport well before the page's other
+       `@media (max-width: 1100px)` breakpoint kicks in. Stack the topbar
+       into a single column earlier, up to 1280px wide, so the title never
+       overlaps the nav. */
+    @media (max-width: 80em) {
+      .topbar {
+        grid-template-columns: 1fr;
+      }
+    }
+
     .brand h1 {
       margin: 0;
       font-family: "Oswald", sans-serif;

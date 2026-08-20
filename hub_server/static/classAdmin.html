@@ -108,6 +108,18 @@
       overflow: hidden;
     }
 
+    /* The nav column is `auto`-sized while the brand column is
+       `minmax(0, 1fr)` (can shrink to nothing), so a wide nav crushes the
+       brand title on a 1280px-wide viewport -- this page had no
+       topbar-stacking rule at all before this fix. Stack the topbar into
+       a single column up to 1280px wide (80em with the 16px root
+       default). */
+    @media (max-width: 80em) {
+      .topbar {
+        grid-template-columns: 1fr;
+      }
+    }
+
     .topbar::before {
       content: "";
       position: absolute;
