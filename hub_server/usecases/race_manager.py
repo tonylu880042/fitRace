@@ -224,6 +224,15 @@ class RaceManager:
         }
 
     def _default_participant_name(self, node_id: str) -> str:
+        # A class ranks nobody and usually nobody self-registers, so this
+        # default is what the coach actually reads on the board. The BLE
+        # name remembered from telemetry is printed on the machine itself,
+        # which beats a node id; before any sample has carried one we fall
+        # through to the race defaults below.
+        if self._session_mode == "class":
+            remembered_equipment_id = self._node_equipment_ids.get(node_id)
+            if remembered_equipment_id:
+                return remembered_equipment_id
         if not self._config or self._config.competition_mode != "individual":
             return f"Athlete {node_id}"
         for station_number, assigned_node_id in self._stations.items():
