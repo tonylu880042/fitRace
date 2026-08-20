@@ -12,6 +12,15 @@
 // language-independent (scene order/timing is identical for both cuts), so
 // both language modes read the same DEMO_SCRIPT.md shot table - it is not
 // duplicated per language.
+//
+// FITRACE_DEMO_CUT=class switches entirely to the Class Mode cut (eleven
+// scenes, C1-C11) in output/videos/en-class/, reading DEMO_SCRIPT.md's
+// separate "課程模式自動化錄製分鏡表" shot table instead. This is a
+// different id scheme (C1..C11, not S1..S14), a different row count, and a
+// different raw-concat filename (class_demo_raw.mp4, produced by
+// record_demo_videos.mjs's mainClassCut() - not demo_full_4min.mp4), so it
+// is handled as its own branch throughout rather than folded into the
+// S1..S14 path.
 
 import { spawn } from "node:child_process";
 import { readFile, stat } from "node:fs/promises";
@@ -20,9 +29,12 @@ import path from "node:path";
 const ROOT = process.cwd();
 const DEMO_SCRIPT_PATH = path.join(ROOT, "DEMO_SCRIPT.md");
 const LANG = process.env.FITRACE_DEMO_LANG === "en" ? "en" : "zh";
-const OUTPUT_DIR = LANG === "en"
-  ? path.join(ROOT, "output/videos/en")
-  : path.join(ROOT, "output/videos");
+const CUT = process.env.FITRACE_DEMO_CUT === "class" ? "class" : "default";
+const OUTPUT_DIR = CUT === "class"
+  ? path.join(ROOT, "output/videos/en-class")
+  : LANG === "en"
+    ? path.join(ROOT, "output/videos/en")
+    : path.join(ROOT, "output/videos");
 const FFPROBE = "/opt/homebrew/bin/ffprobe";
 const TOLERANCE = 0.25;
 const MIN_BYTES = 10 * 1024;
@@ -46,14 +58,30 @@ const SCENE_FILENAMES = [
   "s14_outro.webm",
 ];
 
-function parseTableRow(line) {
+// C1..C11 map to these filenames in table order, matching
+// record_demo_videos.mjs's mainClassCut() (sceneC01..sceneC11) exactly.
+const CLASS_SCENE_FILENAMES = [
+  "c01_switch_mode.webm",
+  "c02_plan_editor.webm",
+  "c03_repeat_intervals.webm",
+  "c04_save_plan.webm",
+  "c05_saved_class_library.webm",
+  "c06_start_class.webm",
+  "c07_live_class.webm",
+  "c08_rest_changeover.webm",
+  "c09_high_intensity.webm",
+  "c10_stop_class.webm",
+  "c11_outro.webm",
+];
+
+function parseTableRow(line, idPattern) {
   // | S1 | 開場 | `/` | 靜態推近 | 12 | 場館級即時競賽系統 |
   const cells = line
     .split("|")
     .map((cell) => cell.trim())
     .filter((_, index, array) => index > 0 && index < array.length - 1);
   if (cells.length < 6) return null;
-  const idMatch = cells[0].match(/^S(\d+)$/);
+  const idMatch = cells[0].match(idPattern);
   if (!idMatch) return null;
   const seconds = Number(cells[4]);
   if (!Number.isFinite(seconds) || seconds <= 0) return null;
@@ -69,21 +97,32 @@ function parseTableRow(line) {
 async function loadScenesFromDemoScript() {
   const text = await readFile(DEMO_SCRIPT_PATH, "utf8");
   const lines = text.split("\n");
-  const headingIndex = lines.findIndex((line) => line.includes("自動化錄製分鏡表"));
+  const headingText = CUT === "class" ? "課程模式自動化錄製分鏡表" : "自動化錄製分鏡表";
+  // "自動化錄製分鏡表" is itself a suffix of "課程模式自動化錄製分鏡表", so
+  // the default-cut lookup below must match ONLY the standalone heading
+  // (not the class one that contains it as a substring) - otherwise the
+  // default cut would silently parse the class table's C1..C10 rows
+  // instead of failing loudly. The class-cut branch has no such ambiguity
+  // (nothing else contains "課程模式自動化錄製分鏡表").
+  const headingIndex = lines.findIndex((line) =>
+    CUT === "class" ? line.includes(headingText) : line.includes(headingText) && !line.includes("課程模式")
+  );
   if (headingIndex === -1) {
-    throw new Error(`Could not find "自動化錄製分鏡表" heading in ${DEMO_SCRIPT_PATH}`);
+    throw new Error(`Could not find "${headingText}" heading in ${DEMO_SCRIPT_PATH}`);
   }
+  const idPattern = CUT === "class" ? /^C(\d+)$/ : /^S(\d+)$/;
+  const expectedCount = CUT === "class" ? 11 : 14;
   const scenes = [];
   for (const line of lines.slice(headingIndex)) {
     if (!line.trim().startsWith("|")) {
       if (scenes.length > 0) break; // left the table
       continue;
     }
-    const row = parseTableRow(line);
+    const row = parseTableRow(line, idPattern);
     if (row) scenes.push(row);
   }
-  if (scenes.length !== 14) {
-    throw new Error(`Expected 14 scenes (S1-S14) in DEMO_SCRIPT.md's shot table, found ${scenes.length}`);
+  if (scenes.length !== expectedCount) {
+    throw new Error(`Expected ${expectedCount} scenes in DEMO_SCRIPT.md's "${headingText}" shot table, found ${scenes.length}`);
   }
   scenes.sort((a, b) => a.index - b.index);
   return scenes;
@@ -180,20 +219,22 @@ function printTable(rows) {
 }
 
 async function main() {
-  console.log(`lang=${LANG}  dir=${path.relative(ROOT, OUTPUT_DIR)}`);
+  console.log(`cut=${CUT}  lang=${LANG}  dir=${path.relative(ROOT, OUTPUT_DIR)}`);
   const scenes = await loadScenesFromDemoScript();
   const totalTargetSeconds = scenes.reduce((sum, scene) => sum + scene.seconds, 0);
+  const filenames = CUT === "class" ? CLASS_SCENE_FILENAMES : SCENE_FILENAMES;
+  const rawConcatFilename = CUT === "class" ? "class_demo_raw.mp4" : "demo_full_4min.mp4";
 
   const checks = [];
   for (let i = 0; i < scenes.length; i += 1) {
     const scene = scenes[i];
-    const filename = SCENE_FILENAMES[i];
+    const filename = filenames[i];
     const filePath = path.join(OUTPUT_DIR, filename);
     checks.push(await checkFile(`${scene.id} ${filename}`, filePath, scene.seconds));
   }
 
-  const fullVideoPath = path.join(OUTPUT_DIR, "demo_full_4min.mp4");
-  checks.push(await checkFile("demo_full_4min.mp4", fullVideoPath, totalTargetSeconds));
+  const fullVideoPath = path.join(OUTPUT_DIR, rawConcatFilename);
+  checks.push(await checkFile(rawConcatFilename, fullVideoPath, totalTargetSeconds));
 
   const rows = checks.map(formatRow);
   printTable(rows);

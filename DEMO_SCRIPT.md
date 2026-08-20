@@ -225,3 +225,159 @@ Updated: 2026-08-07 · 版本對應 v0.2.0
 - `03_game_admin.mp4`：S5 + S6，30 秒
 - `04_system_admin.mp4`：S2 + S3 + S9–S13，60 秒
 - `05_live_race.mp4`：S7 原速，20 秒
+
+---
+
+# 課程模式劇本（Class Mode）
+
+獨立的第二支片，長度約 **3 分鐘**。不併進主片——主片已經 234 秒，接上去會破六分鐘。
+需要的話可以當作主片的 Chapter 07 附在後面，或單獨給只關心團課場景的客戶。
+
+輸出 `output/videos/en-class/`，成品 `class_full.mp4`，1920×1080。
+
+**這支片要證明的一件事：課表是可以自由設計的。** 不是一個固定模板套所有課，而是段落種類、長度、強度全部可調——
+所以鏡頭上必須看到**不同的段落種類**（暖身／主課／休息／換機／緩和）和**變化的目標瓦特**，不能從頭到尾同一個數字。
+
+## 示範課表（環狀 + 強度階梯）
+
+錄影實際跑的課表。刻意設計成強度有高有低、有休息也有換機，涵蓋環狀訓練的形態：
+
+| # | 段落 | 長度 | 目標瓦特 | 用意 |
+|---|------|------|----------|------|
+| 1 | Warmup | 18s | — | 暖身不設目標 |
+| 2 | Work | 22s | **120 W** | 輕強度起步 |
+| 3 | Rest | 10s | — | 組間休息 |
+| 4 | Work | 22s | **175 W** | 中強度 |
+| 5 | Rest | 9s | — | 短休 |
+| 6 | Changeover | 9s | — | **環狀訓練換機** |
+| 7 | Work | 22s | **210 W** | 高強度衝刺 |
+| 8 | Cooldown | 20s | — | 緩和 |
+
+強度階梯 **120 → 175 → 210 W** 是這支片的核心賣點：鏡頭上會看到目標數字**在段落之間改變**，
+選手的達標狀態也跟著重新洗牌——同一個人在 120 W 輕鬆達標，到 210 W 就掉到未達標。
+
+時間軸（從 Start Class 起算）：
+
+```
+0    18      40    50      72   81   90       112      132
+|warm |work120|rest |work175|rest|chg |work210 |cooldown|
+```
+
+## 錄製前置（與主片不同的地方）
+
+| 項目 | 設定 |
+|---|---|
+| 課表段落長度 | **必須用短秒數**（見上表）。真實課表動輒 5 分鐘一段，鏡頭會卡在同一段不動，看不出自動推進 |
+| 遙測 | C7／C8 全程要推遙測，否則 `On target` / `Under target` 不會亮 |
+| 達標分佈 | 每個 work 段落都要**同時有達標與未達標的選手**，且**至少一位在目標改變時翻轉狀態**（120 W 達標 → 210 W 未達標） |
+| 站位 | 沿用主片的 6 站與 6 位選手，避免重新報名 |
+| 前置狀態 | 錄製起點必須是 IDLE：`Switch Projector to Class Mode` 在 session RUNNING 時會被鎖住 |
+| 段落判定 | 場景不要用固定 `delay()` 對時間，要輪詢 `/api/race/state` 的班表時鐘，**觀察到目標段落才收工** |
+
+---
+
+## C1 — 切換投影幕到課程模式 · 00:00–00:14
+
+- **畫面**：`/classAdmin`，頂部三個磚 `Class State: IDLE` / `Stations: 6` / `Total Plan Duration`。
+- **操作**：按 `Switch Projector to Class Mode`，出現 `Projector switched to class mode.`；分割畫面帶到 Dashboard 由排行榜換成 `Training Class Board`。
+- **字幕**：`One venue, two modes`
+- **旁白**：Race and class share the same room, the same machines, and the same screen. One switch changes what the projector runs.
+- **備註**：順手帶過 `Cannot switch projector mode while a session is running.`——賽事與課程互斥是刻意設計。
+
+## C2 — 編排課表：不同段落、不同強度 · 00:14–00:40
+
+- **畫面**：`Plan Editor`。
+- **操作**（每加一段停 1.5 秒）：
+  1. `Add Segment` → `Warmup` / 18s / 不設目標
+  2. `Add Segment` → `Work` / 22s / **Target 120 W**
+  3. `Add Segment` → `Rest` / 10s
+  4. `Add Segment` → `Work` / 22s / **Target 175 W** ← 刻意跟上一段不同
+  5. `Add Segment` → `Changeover` / 9s
+- **重點**：`Plan Preview` 用不同顏色長出五種段落；兩個 work 的目標數字**不一樣**，鏡頭要停在這兩個欄位上。
+- **字幕**：`Every block, your call`
+- **旁白**：A class is blocks you choose — warmup, work, rest, changeover, cooldown. Each work block gets its own target, so the intensity can climb, drop, or hold wherever you want it.
+
+## C3 — 環狀訓練：一鍵複製整組 · 00:40–00:58
+
+- **畫面**：`Repeat Selected ×N`（`From row #` / `To row #` / `Times`）。
+- **操作**：選取 work + rest + changeover 三列 → `Times = 3` → 按下去，`Plan Preview` 一次長出三輪環狀循環。
+- **字幕**：`Build a circuit in one click`
+- **旁白**：Circuit training is the same rotation repeated. Select one round, say how many times, and the whole circuit builds itself — every athlete moving to the next machine together.
+
+## C4 — 命名並存進課表庫 · 00:58–01:12
+
+- **畫面**：`Class Name` 與 `Save Plan`。
+- **操作**：輸入 `Tuesday Circuit 30` → `Save Plan` → `Plan saved.`，`Saved Class` 下拉多一筆。
+- **字幕**：`Save it once, teach it weekly`
+- **旁白**：Name the class and it goes into the library. Next week the same session is two clicks away, not a rebuild.
+
+## C5 — 從課表庫叫出既有課表 · 01:12–01:24
+
+- **畫面**：`Saved Class` 下拉選單。
+- **操作**：切到 `New Class` 清空 → 再選回 `Tuesday Circuit 30`，整份還原；游標帶過 `Delete Saved Class`（**不要按**）。
+- **字幕**：`Your class library`
+- **旁白**：Every class you save stays with the venue, not with one laptop or one coach.
+
+## C6 — 開始上課 · 01:24–01:40
+
+- **畫面**：左 classAdmin、右 Dashboard 分割畫面。
+- **操作**：確認 `Station Status` 六站就緒 → `Start Class` → `Class started.`；投影幕切到 `Live Class`，暖身開始倒數。
+- **字幕**：`Press start, the room follows`
+- **旁白**：The coach presses start once. From here the plan runs itself.
+
+## C7 — 強度階梯：目標會變 · 01:40–02:10
+
+- **畫面**：Dashboard 全螢幕 `Training Class Board`。
+- **必須拍到**（用班表時鐘輪詢，觀察到才收工）：
+  1. `Work · Target 120 W` 段落結束
+  2. 自動切到 `Rest`
+  3. 自動切到 `Work · Target 175 W` ← **目標數字當場改變**
+  4. 站位卡的達標狀態隨之重新洗牌
+- **內容**：`Segment N of M`、段落倒數、`Class remaining`、`Next: …` 預告。
+- **字幕**：`Intensity changes, the board keeps up`
+- **旁白**：Each block carries its own target. When the class steps up from a hundred and twenty watts to a hundred and seventy-five, the board re-scores everyone against the new number instantly.
+
+## C8 — 休息與環狀換機 · 02:10–02:30
+
+- **畫面**：投影幕先進 `Rest`（`Recover at your station`），再自動進 `Changeover`（`Move to the next machine`）。
+- **必須拍到**：**兩種段落都要在鏡頭裡**，這是環狀訓練的關鍵一拍。
+- **字幕**：`The screen coaches for you`
+- **旁白**：Rest tells the room to recover. Changeover moves everyone to the next machine. The coach is not shouting the same instruction six times.
+
+## C9 — 高強度段落 · 02:30–02:44
+
+- **畫面**：`Work · Target 210 W` 段落，站位卡上多數人掉到 `Under target`。
+- **重點**：跟 C7 的 120 W 對照——**同一批人，不同強度，狀態完全不同**。
+- **字幕**：`Same room, three intensities`
+- **旁白**：And on the hardest block, most of the room is chasing the number. That contrast is the whole point of setting targets per block.
+
+## C10 — 結束課程與紀錄 · 02:44–03:00
+
+- **畫面**：classAdmin `Stop Class` → `Class stopped.`；捲到 `Class History` 顯示剛結束的課程與參與人數。
+- **字幕**：`The coach ends it, not the clock`
+- **旁白**：The plan does not stop the class — the coach does. When it ends, the session is logged with who took part.
+- **備註**：刻意設計（見 `classAdmin.guidance_manual_stop`），課表跑完不自動停，避免最後一組被切掉。
+
+## 收尾 · 03:00–03:05
+
+- **字幕**：`Race days and training days. One system.`
+
+---
+
+## 課程模式自動化錄製分鏡表
+
+| # | 場景 | 頁面 URL | 主要操作 | 秒數 | 字幕 |
+|---|------|----------|----------|------|------|
+| C1 | 切換模式 | `/classAdmin` | Switch Projector to Class Mode | 14 | One venue, two modes |
+| C2 | 編排課表 | `/classAdmin` | Add Segment ×5、兩種不同目標瓦特 | 26 | Every block, your call |
+| C3 | 環狀複製 | `/classAdmin` | Repeat Selected ×3 | 18 | Build a circuit in one click |
+| C4 | 存課表 | `/classAdmin` | Class Name → Save Plan | 14 | Save it once, teach it weekly |
+| C5 | 叫課表 | `/classAdmin` | Saved Class 下拉還原 | 12 | Your class library |
+| C6 | 開始上課 | `/classAdmin` + `/` | Start Class → 投影幕切換 | 16 | Press start, the room follows |
+| C7 | 強度階梯 | `/` | 觀察 120 W → Rest → 175 W | 30 | Intensity changes, the board keeps up |
+| C8 | 休息換機 | `/` | 觀察 Rest → Changeover | 20 | The screen coaches for you |
+| C9 | 高強度 | `/` | 觀察 210 W 段落 | 14 | Same room, three intensities |
+| C10 | 結束與紀錄 | `/classAdmin` | Stop Class → Class History | 16 | The coach ends it, not the clock |
+| C11 | 收尾 | `/` | 疊字收尾卡 | 5 | Race days and training days |
+
+章節卡插在 C1（`07 / CLASS MODE — Coach-Led Training, Same Screen.`）與 C6（`08 / LIVE CLASS — The Plan Runs Itself.`）之前。
