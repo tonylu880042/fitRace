@@ -186,13 +186,20 @@ def _icons(html):
 
 def test_each_equipment_family_gets_its_own_icon():
     html = _board_html(
-        ["spin_bike", "treadmill", "rower", "ski_erg"],
+        ["spin_bike", "fan_bike", "treadmill", "rower", "ski_erg"],
     )
-    assert _icons(html) == ["bike", "treadmill", "rower", "ski"]
+    assert _icons(html) == ["bike", "fan_bike", "treadmill", "rower", "ski"]
 
 
-def test_every_bike_flavour_shares_the_bike_icon():
-    html = _board_html(["fan_bike", "indoor_bike", "spin_bike"])
+def test_a_fan_bike_is_not_drawn_as_a_spin_bike():
+    """A studio that runs both has to tell them apart from across the room:
+    the air bike is the one with the fan wheel and the moving arms."""
+    html = _board_html(["fan_bike", "spin_bike"])
+    assert _icons(html) == ["fan_bike", "bike"]
+
+
+def test_the_pedal_only_bikes_share_one_icon():
+    html = _board_html(["indoor_bike", "spin_bike", "bike"])
     assert _icons(html) == ["bike", "bike", "bike"]
 
 
