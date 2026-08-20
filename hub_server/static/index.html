@@ -4995,7 +4995,18 @@
       // have. Consult the session mode already known to the page instead,
       // and route straight to the class board with no HTTP request.
       if (currentSessionMode === "class") {
-        currentClassLeaderboard = progressData || {};
+        // A bare empty object is the hub "refresh your node list" ping
+        // (see the else branch in mqtt_subscriber._handle_telemetry), not
+        // a class that has lost every participant. Storing it blanked
+        // every station card on the projector until someone reloaded the
+        // page. A payload that actually names stations still replaces the
+        // board, so a station leaving the class still disappears.
+        // No apostrophes above on purpose: the test helpers that extract
+        // this function scan for quote characters without skipping
+        // comments, so one would truncate the extraction.
+        if (progressData && Object.keys(progressData).length > 0) {
+          currentClassLeaderboard = progressData;
+        }
         renderClassBoardFromState();
         return;
       }
