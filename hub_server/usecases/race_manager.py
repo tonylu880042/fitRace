@@ -187,9 +187,13 @@ class RaceManager:
         self._persist_settings()
 
     def delete_class_plan(self, name: str) -> bool:
-        if name not in self._class_plans:
+        # Stripped the same way save_class_plan strips: the library is keyed
+        # by the stripped name, so a delete of the same string the operator
+        # typed (or that survived a URL path) has to match.
+        cleaned_name = name.strip()
+        if cleaned_name not in self._class_plans:
             return False
-        del self._class_plans[name]
+        del self._class_plans[cleaned_name]
         self._persist_settings()
         return True
 

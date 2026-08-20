@@ -140,6 +140,24 @@ def test_delete_class_plan_missing_name_returns_false():
     assert manager.delete_class_plan("Nonexistent") is False
 
 
+def test_delete_class_plan_strips_the_name_like_save_does():
+    """save_class_plan stores under the stripped name, so a delete of the
+    same operator-typed string (a trailing space survives a URL path, an
+    input field, or a copy-paste) has to find it."""
+    manager = RaceManager()
+    manager.save_class_plan("  Leg Day  ", _plan(60))
+    assert manager.delete_class_plan("  Leg Day  ") is True
+    assert manager.list_class_plans() == {}
+
+
+def test_delete_class_plan_still_reports_false_for_a_name_that_is_only_space():
+    """Stripping must not turn a junk name into a hit on some other entry."""
+    manager = RaceManager()
+    manager.save_class_plan("Leg Day", _plan(60))
+    assert manager.delete_class_plan("   ") is False
+    assert list(manager.list_class_plans()) == ["Leg Day"]
+
+
 def test_delete_class_plan_persists_the_removal(tmp_path):
     store = RaceSettingsStore(tmp_path / "settings.json")
     manager = RaceManager(settings_store=store)

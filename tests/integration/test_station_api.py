@@ -23,32 +23,10 @@ def test_station_api_workflow():
     assert len(data["stations"]) == 0
     assert len(data["unassigned_nodes"]) == 0
 
-    # 3. Simulate active telemetry to discover a node
-    telemetry_payload = {
-        "node_id": "bike-01",
-        "equipment_id": "BIKE_01",
-        "equipment_type": "fan_bike",
-        "instantaneous_speed_kph": 12.0,
-        "cadence_rpm": 60,
-        "power_watts": 150,
-        "heart_rate_bpm": 120,
-        "distance_m": 0.0,
-        "elapsed_time_ms": 0,
-        "timestamp_epoch_ms": 1600000000000,
-    }
-    # We send telemetry. When not in RUNNING state, this shouldn't fail but should record the node as active.
-    # Wait, our post_test_telemetry endpoint has:
-    # `progress = race_manager.update_telemetry(payload)` which might raise ValueError if race is not RUNNING.
-    # To handle active node discovery safely outside of running state, let's make sure telemetry endpoint or subscriber registers it.
-    # Let's test that sending telemetry updates active devices.
-    # Since telemetry endpoint might fail if not RUNNING, we can configure and start a race first, or just configure it.
-    # Actually, we want nodes to be discovered even when the race is IDLE, so that technicians can assign them.
-    # The subscriber receives telemetry. We can also let the HTTP endpoint discover the node.
-    # Let's test if we can assign a node even if we post telemetry. We'll verify this flow.
-
-    # Let's assign station 1 to "bike-01" via API.
-    # Wait, we can assign a node even if it hasn't sent telemetry yet, but it will be in the unassigned list once active.
-    # Let's post an assignment.
+    # 3. Discover the node. Station assignment does not require telemetry
+    # first -- a technician assigns a station, and the node shows up as a
+    # live stream once its edge reports it (node_registry.update_status
+    # below), which is what the rest of this test exercises.
     res = client.post(
         "/api/stations/assign", json={"station_number": 1, "node_id": "bike-01"}
     )
