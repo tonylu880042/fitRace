@@ -2178,8 +2178,17 @@
     /* At 24 stations the units carry the meaning, so the labels go and the
        card body collapses to name + three numbers + effort bar. */
     .class-station-grid--ultra .class-metric-label { display: none; }
+    .class-station-icon {
+      width: 18px;
+      height: 18px;
+      flex: none;
+      color: var(--volt-yellow);
+    }
+
+    .class-station-grid--ultra .class-station-head { margin-top: 0.1rem !important; }
+    .class-station-grid--ultra .class-station-icon { width: 14px; height: 14px; }
+
     .class-station-grid--ultra .class-station-name {
-      margin-top: 0.1rem !important;
       font-size: 0.8rem;
       line-height: 1.15;
       /* One line, ellipsised: a wrapped name costs a whole extra row of
@@ -4320,6 +4329,47 @@
     }
 
     function buildClassBoardHtml(sessionData, clock) {
+      // Nested, not a sibling: several tests extract buildClassBoardHtml
+      // alone by its function-name marker and run it under node -e, so it
+      // cannot call anything declared outside itself (same reason
+      // classTargetStatus below is nested).
+      // Inline SVG rather than an emoji: Raspberry Pi OS kiosk images
+      // routinely ship without an emoji font, and the missing glyph shows on
+      // the projector as a tofu box. Families are matched exactly, never by
+      // substring -- an unrecognised type gets the generic mark instead of a
+      // confidently wrong machine.
+      function equipmentIconSvg(equipmentType) {
+        const FAMILIES = {
+          bike: "bike",
+          fan_bike: "bike",
+          spin_bike: "bike",
+          indoor_bike: "bike",
+          treadmill: "treadmill",
+          rower: "rower",
+          rowing_machine: "rower",
+          ski_erg: "ski",
+          skierg: "ski",
+        };
+        const PATHS = {
+          // side-on bike: two wheels, frame, bars
+          bike: "<circle cx='5.5' cy='17' r='3.5'/><circle cx='18.5' cy='17' r='3.5'/><path d='M5.5 17l4.5-8h5l3.5 8M8 9h5l2.5 8M14 6h3'/>",
+          // treadmill: belt over two rollers, upright console with a handle
+          treadmill: "<circle cx='4.5' cy='17' r='1.5'/><circle cx='14.5' cy='17' r='1.5'/><path d='M4.5 15.5h10M4.5 18.5h10'/><path d='M15 16l3.5-9'/><path d='M17 7h3.5'/>",
+          // rower: spoked flywheel (reads as the fan housing, not a lamp),
+          // chain straight out to the handle, seat on the long slide rail
+          rower: "<circle cx='5.5' cy='8.5' r='3.2'/><path d='M5.5 5.3v6.4M2.3 8.5h6.4'/><path d='M8.7 8.5h4'/><path d='M12.7 6.7v3.6'/><path d='M5.5 11.7v6.8'/><path d='M2.5 18.5h19'/><path d='M10 15.5h4.5v3h-4.5z'/>",
+          // ski erg: tall mast, two pull straps hanging to their handles
+          ski: "<path d='M12 2.5v18'/><path d='M10.5 10l-2.5 5.5M13.5 10l2.5 5.5'/><path d='M6.5 16h3M14.5 16h3'/><path d='M8.5 20.5h7'/>",
+          // generic machine: an effort trace, deliberately not a machine shape
+          generic: "<path d='M3 12h4l3-7 4 14 3-7h4'/>",
+        };
+        const family = FAMILIES[String(equipmentType || "").toLowerCase()] || "generic";
+        return "<svg class=\"class-station-icon\" data-equipment-icon=\"" + family +
+          "\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" " +
+          "stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\">" +
+          PATHS[family] + "</svg>";
+      }
+
       // Pure decision for whether a station is meeting the prescribed
       // power for its segment. No target -> status none. Target present
       // but the station reports no power at all (null/undefined, e.g. a
@@ -4508,7 +4558,9 @@
         // the card-cache tests parse this markup with a positional regex.
         let card = "<div data-node-id=\"" + escapeHtml(String(node.node_id || "")) + "\" style=\"border:1px solid var(--steel-border);border-radius:4px;padding:1rem;background:var(--card-bg);\" class=\"class-station-card\">";
         card += badge;
-        card += "<div class=\"class-station-name\" style=\"margin-top:0.5rem;font-weight:600;color:var(--text-main);\">" + escapeHtml(cardTitle) + "</div>";
+        card += "<div class=\"class-station-head\" style=\"display:flex;align-items:center;gap:0.3rem;margin-top:0.5rem;\">" +
+          equipmentIconSvg(node.equipment_type) +
+          "<div class=\"class-station-name\" style=\"font-weight:600;color:var(--text-main);min-width:0;\">" + escapeHtml(cardTitle) + "</div></div>";
         card += "<div class=\"class-station-machine\" style=\"font-size:0.85rem;color:var(--text-muted);margin-bottom:0.75rem;\">" + escapeHtml(machineName) + "</div>";
         card += "<div class=\"class-card-metrics\" style=\"display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.5rem;margin-bottom:0.75rem;font-size:0.8rem;\">";
         card += "<div><div class=\"class-metric-label\" style=\"color:var(--text-muted);\">" + escapeHtml(t("metric.power")) + "</div><div style=\"font-weight:600;\"><span class=\"class-metric-power\">" + escapeHtml(powerStr) + " W</span>" + targetIndicatorHtml + "</div></div>";

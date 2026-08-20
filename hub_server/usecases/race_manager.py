@@ -627,7 +627,13 @@ class RaceManager:
     def update_active_node(
         self, node_id: str, equipment_type: str, equipment_id: Optional[str] = None
     ):
-        self._active_nodes[node_id] = equipment_type
+        # A sample that carries no type arrives as "unknown"; it must not
+        # erase a type an earlier sample already established, or the
+        # station's equipment icon would flicker back to the generic one.
+        if equipment_type and equipment_type != "unknown":
+            self._active_nodes[node_id] = equipment_type
+        else:
+            self._active_nodes.setdefault(node_id, equipment_type or "unknown")
         if equipment_id:
             self._node_equipment_ids[node_id] = equipment_id
 
@@ -993,6 +999,7 @@ class RaceManager:
         self._progress[node_id] = {
             "node_id": node_id,
             "athlete_name": athlete_name,
+            "equipment_type": self._active_nodes.get(node_id, "unknown"),
             "station_number": station_number,
             "team_name": team_name,
             "avatar_url": avatar_url,
