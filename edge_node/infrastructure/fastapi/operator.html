@@ -552,10 +552,11 @@
       letter-spacing: 0.05em;
     }
 
-    /* The scan overlay (#pairing-scan-overlay) and the batch overlay
-       (#batch-progress-overlay) both use this rule, so it stays one
-       visual system for both dialogs. Their trigger buttons live in
-       different places -- #add-device-btn near the top of the home view,
+    /* The batch overlay (#batch-progress-overlay) is the only dialog left
+       on this rule: the pairing scan used to share it, until a scan that
+       blocked the worklist proved unusable against equipment that stops
+       advertising on its own. Its trigger buttons live in different places
+       -- #add-device-btn near the top of the home view,
        #pairing-rescan-btn and #pairing-save-all-btn at the bottom of the
        worklist -- and any of them can be scrolled out of view, so a
        dialog that chases its trigger would be unpredictable. Anchoring
@@ -1135,7 +1136,10 @@
 
         <main id="view-pairing" class="view" hidden>
           <div class="banner" data-i18n="pairing.instruction"></div>
-          <div class="message" id="pairing-scanning" data-i18n="pairing.scanning" hidden></div>
+          <div class="message" id="pairing-scanning" hidden aria-live="polite">
+            <span data-i18n="pairing.scanning">Listening on every antenna channel; devices appear here as they answer.</span>
+            <span id="pairing-scan-elapsed"></span>
+          </div>
           <div class="capacity-strip" id="pairing-capacity"></div>
           <div id="pairing-row-progress" class="worklist-row-progress" hidden aria-live="polite" aria-atomic="true"></div>
           <div id="pairing-worklist" class="card-grid"></div>
@@ -1146,15 +1150,6 @@
             <button type="button" id="pairing-cancel-btn" class="btn-secondary" data-i18n="pairing.cancel">Cancel</button>
           </div>
           <button type="button" id="pairing-done-btn" class="btn-primary" data-i18n="pairing.done">Done — return home</button>
-          <div id="pairing-scan-overlay" class="batch-progress-overlay" hidden aria-live="polite" aria-atomic="true">
-            <div class="batch-progress-modal">
-              <div class="batch-progress-title" data-i18n="pairing.scanning_dialog_title">Scanning for equipment</div>
-              <div class="batch-progress-info">
-                <div class="batch-progress-count" data-i18n="pairing.scanning">Scanning every antenna channel — this can take 20-40 seconds...</div>
-                <div class="batch-progress-step" id="pairing-scan-elapsed"></div>
-              </div>
-            </div>
-          </div>
           <div id="batch-progress-overlay" class="batch-progress-overlay" hidden aria-live="polite" aria-atomic="true">
             <div class="batch-progress-modal">
               <div class="batch-progress-title" data-i18n="pairing.batch_progress">Processing devices...</div>
@@ -2691,6 +2686,14 @@
         (payload.candidates || []).forEach((candidate) => {
           pairingCandidateStatus.set(candidate.mac, candidate);
         });
+        // Each channel publishes what it heard as soon as it finishes, so a
+        // poll tick during a scan is how new devices reach the worklist.
+        addPairingCandidates(payload.candidates);
+        const scanning = payload.state === "scanning";
+        if (pairingScanInFlight !== scanning) {
+          showPairingScanning(scanning);
+          setPairingScanControls(scanning);
+        }
         if (currentView === "pairing") renderPairingWorklist();
       } catch (_error) {
         // best-effort; next tick retries
@@ -2711,13 +2714,14 @@
     }
 
     // Single choke point for "a scan is running" UI: the inline message
-    // line, the modal dialog (matching .batch-progress-overlay's structure
-    // so it reads as one system with the batch overlay), its elapsed-time
-    // counter, and the pairingScanInFlight flag renderPairingWorklist reads
-    // to suppress the no-candidates message. Every caller (only
-    // startPairing()) toggles this from a try/finally, so active=false
-    // always runs even if the request throws -- the dialog can never be
-    // left stuck on screen, and the counter's interval can never leak.
+    // line, its elapsed-time counter, and the pairingScanInFlight flag
+    // renderPairingWorklist reads to suppress the no-candidates message.
+    // Inline, never a modal: the operator is racing a pairing window that
+    // closes on its own (a watch advertises for under a minute), so the
+    // worklist has to stay usable while the channels are still listening.
+    // Turned off by the status poll when the session stops scanning, and by
+    // startPairing()'s catch when the request itself fails, so neither the
+    // line nor the counter interval can be left behind.
     function showPairingScanning(active) {
       const el = document.getElementById("pairing-scanning");
       if (el) el.hidden = !active;
@@ -2728,9 +2732,7 @@
         pairingScanTimerHandle = null;
       }
 
-      const overlay = document.getElementById("pairing-scan-overlay");
       const elapsedEl = document.getElementById("pairing-scan-elapsed");
-      if (overlay) overlay.hidden = !active;
 
       if (active) {
         const startedAt = Date.now();
@@ -2740,13 +2742,55 @@
           if (elapsedEl) elapsedEl.textContent = t("pairing.scanning_elapsed", { seconds });
         }, 1000);
       } else {
+        if (elapsedEl) elapsedEl.textContent = "";
         // The worklist was rendered at least once while pairingScanInFlight
-        // was still true (the render right after initPairingWorklist() in
-        // startPairing(), before this finally runs) -- re-render now so a
-        // truly-empty scan result shows "no candidates" immediately instead
-        // of waiting on the next poll tick.
+        // was still true, so re-render now: a truly-empty scan result shows
+        // "no candidates" immediately instead of waiting a poll tick.
         renderPairingWorklist();
       }
+    }
+
+    // Rescan and cancel tear down a session the scan thread is still using,
+    // so they stay disabled for as long as the scan runs -- unlike binding a
+    // candidate, which is the whole point of not blocking and is left
+    // enabled throughout.
+    function setPairingScanControls(scanning) {
+      const rescanBtn = document.getElementById("pairing-rescan-btn");
+      const cancelBtn = document.getElementById("pairing-cancel-btn");
+      const doneBtn = document.getElementById("pairing-done-btn");
+      if (rescanBtn) rescanBtn.disabled = scanning;
+      if (cancelBtn) cancelBtn.disabled = scanning;
+      if (doneBtn) doneBtn.disabled = scanning;
+    }
+
+    // Adds rows for candidates a channel has just reported, without
+    // touching rows that already exist: the operator may be part-way
+    // through typing a name or picking a type on one of them while another
+    // channel is still scanning.
+    function addPairingCandidates(candidates) {
+      let added = false;
+      (candidates || []).forEach((candidate) => {
+        if (!candidate || !candidate.mac) return;
+        if (pairingRowMeta.has(candidate.mac)) return;
+        pairingRowMeta.set(candidate.mac, {
+          mac: candidate.mac,
+          name: candidate.name,
+          rssi: candidate.rssi,
+          channelId: null,
+          candidateChannelId: candidate.channel_id,
+          rssiByChannel: candidate.rssi_by_channel || {},
+          equipmentType: null,
+          displayName: candidate.name || candidate.mac,
+          binding: false,
+          bound: false,
+          bindError: null,
+          connecting: false,
+          connectOutcome: null,
+          probing: false,
+        });
+        added = true;
+      });
+      return added;
     }
 
     // A page reload or a tablet waking from sleep must never strand the
@@ -2825,9 +2869,7 @@
       // cancel/done must be inert for the duration of this request so the
       // page can never issue that conflicting call; re-enabled in the same
       // finally that dismisses the dialog, so no path leaves them stuck.
-      rescanBtn.disabled = true;
-      cancelBtn.disabled = true;
-      doneBtn.disabled = true;
+      setPairingScanControls(true);
       try {
         // Scan-only: temp_connect: false means start() issues SCAN commands
         // and nothing else -- no CONNECT_ADD, no batch CONNECT/DISCONNECT:ALL,
@@ -2843,18 +2885,21 @@
         if (!response.ok) throw new Error(payload.detail || t("pairing.start_failed"));
         pairingActive = true;
         applyPairingCapacity(payload.capacity);
-        initPairingWorklist(payload.candidates || []);
+        // start() answers before the scan has heard anything, so there is
+        // nothing to seed with: pollPairingStatus() adds each candidate as
+        // its channel reports it.
+        initPairingWorklist([]);
         renderPairingWorklist();
         startPairingPoll();
       } catch (error) {
         showView("home");
         document.getElementById("add-device-message").textContent = error.message;
-      } finally {
+        // Only this failure path clears the scanning UI here -- on the happy
+        // path the poll owns it, because the scan outlives this request.
         showPairingScanning(false);
+        setPairingScanControls(false);
+      } finally {
         addBtn.disabled = false;
-        rescanBtn.disabled = false;
-        cancelBtn.disabled = false;
-        doneBtn.disabled = false;
       }
     }
 

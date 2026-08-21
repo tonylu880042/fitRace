@@ -42,6 +42,7 @@ import json
 import logging
 import os
 import re
+import threading
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -123,6 +124,14 @@ def is_pairing_active(path: Path | None = None, now: float | None = None) -> boo
         return False
     current = now if now is not None else time.time()
     return (current - mtime) < FLAG_STALE_AFTER_SEC
+
+
+def _run_scan_in_thread(run_scan: Callable[[], None]) -> None:
+    """Production scan executor: a daemon thread, so POST /api/pairing/start
+    answers immediately and the operator can bind the first machine the scan
+    reports while the remaining channels are still listening. Daemon because
+    a half-finished scan must never hold up a service restart."""
+    threading.Thread(target=run_scan, name="pairing-scan", daemon=True).start()
 
 
 @dataclass
@@ -295,6 +304,7 @@ class PairingSession:
         default_scan_duration_sec: float = 5.0,
         command_timeout_sec: float = 5.0,
         report_interval_ms: int = 250,
+        scan_executor: Callable[[Callable[[], None]], None] = _run_scan_in_thread,
     ):
         self._command_runner = command_runner
         self._event_log = event_log
@@ -307,6 +317,12 @@ class PairingSession:
         self._default_scan_duration_sec = default_scan_duration_sec
         self._command_timeout_sec = command_timeout_sec
         self._report_interval_ms = report_interval_ms
+        self._scan_executor = scan_executor
+        # Guards only the fields the scan thread writes while requests read
+        # them (state, candidate list, cached start result). Deliberately not
+        # held across UART commands: a status poll must never block behind a
+        # five-second read.
+        self._scan_lock = threading.RLock()
         self._reset()
 
     @property
@@ -339,16 +355,50 @@ class PairingSession:
         connected=False; the operator connects each one individually via
         connect() only after choosing to bind it.
 
-        Returns (or, if a session is already active, re-returns)
-        `{session_id, candidates, capacity}`.
+        Returns immediately with `{session_id, candidates, capacity}` --
+        candidates empty at first, because the scan itself runs on
+        `scan_executor` behind this call. A watch advertises for under a
+        minute before closing its pairing screen, so the operator cannot
+        spend that budget waiting on a modal: every candidate becomes
+        bindable as soon as its channel reports it, and status() carries the
+        list as it grows. Calling start() again while a session is active
+        re-returns the current result without scanning twice.
         """
-        if self._state in (self.STATE_SCANNING, self.STATE_OBSERVING):
-            return self._start_result
+        with self._scan_lock:
+            if self._state in (self.STATE_SCANNING, self.STATE_OBSERVING):
+                return self._start_result
 
-        self._state = self.STATE_SCANNING
-        config = self._load_config()
-        duration = scan_duration_sec or self._default_scan_duration_sec
+            self._state = self.STATE_SCANNING
+            config = self._load_config()
+            duration = scan_duration_sec or self._default_scan_duration_sec
+            self._candidates = []
+            self._session_id = uuid.uuid4().hex
+            self._started_at = int(self._clock() * 1000)
+            self._write_flag()
+            per_channel_capacity = _channel_capacity(config)
+            self._start_result = {
+                "session_id": self._session_id,
+                "candidates": [],
+                "capacity": {
+                    "per_channel": per_channel_capacity,
+                    "total_free": sum(per_channel_capacity.values()),
+                },
+            }
+            pending_result = self._start_result
 
+        self._scan_executor(lambda: self._run_scan(config, duration, temp_connect))
+        # Inline executors (the tests) have already finished the scan by now,
+        # so hand back whatever the session holds rather than the empty
+        # placeholder built above.
+        with self._scan_lock:
+            return self._start_result or pending_result
+
+    def _run_scan(
+        self,
+        config: EdgeNodeConfig,
+        duration: float,
+        temp_connect: bool,
+    ) -> dict:
         bound_macs = {
             _normalize_mac(binding.ble_target)
             for binding in config.equipment_bindings
@@ -409,6 +459,13 @@ class PairingSession:
                 if not existing["name"] and name:
                     existing["name"] = name
 
+            # Publish what this channel heard before moving to the next one:
+            # the operator is racing a pairing window that closes, so a
+            # candidate has to be bindable the moment it is seen, not when
+            # the last channel finishes. Overwritten by the authoritative
+            # build below once every channel has reported.
+            self._publish_partial_candidates(raw_candidates, config)
+
         per_channel_capacity = _channel_capacity(config)
         accepts_new = {
             channel_id: capacity > 0
@@ -419,7 +476,9 @@ class PairingSession:
         for candidate in raw_candidates.values():
             by_channel.setdefault(candidate["channel_id"], []).append(candidate)
 
-        self._candidates = []
+        # Rebuilt from scratch: the partial lists published per channel above
+        # carry no capacity or connected state.
+        built_candidates: list[PairingCandidate] = []
         self._temp_added_by_channel = {}
         self._fallback_channels = set()
         for channel in config.antenna_channels:
@@ -514,7 +573,7 @@ class PairingSession:
             # so every candidate below comes back connected=False.
 
             for candidate in entries:
-                self._candidates.append(
+                built_candidates.append(
                     PairingCandidate(
                         mac=candidate["mac"],
                         name=candidate["name"],
@@ -526,8 +585,11 @@ class PairingSession:
                     )
                 )
 
-        self._session_id = uuid.uuid4().hex
-        self._started_at = int(self._clock() * 1000)
+        with self._scan_lock:
+            self._candidates = built_candidates
+        # Rewritten, not just touched: start() wrote this flag before the scan
+        # had found anything, and the restart-staleness report reads the
+        # candidate list out of it.
         self._write_flag()
         self._state = self.STATE_OBSERVING
 
@@ -550,6 +612,33 @@ class PairingSession:
             },
         }
         return self._start_result
+
+    def _publish_partial_candidates(
+        self, raw_candidates: dict[str, dict], config: EdgeNodeConfig
+    ) -> None:
+        """Expose the sightings gathered so far, mid-scan.
+
+        A preview: capacity and connected state are settled only by the full
+        build at the end of _run_scan, so everything here reports
+        connected=False. What matters is that the MAC, name and channel are
+        already there, which is all bind() needs.
+        """
+        per_channel_capacity = _channel_capacity(config)
+        partial = [
+            PairingCandidate(
+                mac=candidate["mac"],
+                name=candidate["name"],
+                rssi=candidate["rssi"],
+                channel_id=candidate["channel_id"],
+                channel_accepts_new=per_channel_capacity.get(candidate["channel_id"], 0)
+                > 0,
+                connected=False,
+                rssi_by_channel=dict(candidate.get("rssi_by_channel") or {}),
+            )
+            for candidate in raw_candidates.values()
+        ]
+        with self._scan_lock:
+            self._candidates = partial
 
     def status(self) -> dict:
         """Refresh the flag file's mtime (keeps the watchdog paused) and

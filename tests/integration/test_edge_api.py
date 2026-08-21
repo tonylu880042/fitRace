@@ -2075,6 +2075,11 @@ def _install_fresh_pairing_session(
         restore_configured_devices=restore,
         restart_service=restart,
         flag_path=tmp_path / "pairing.flag",
+        # Inline scan: these tests assert on what POST /api/pairing/start
+        # returns. Production runs the scan on a thread so the operator can
+        # bind the first candidate while the rest of the scan continues --
+        # see tests/unit/edge/test_pairing_session_async_scan.py.
+        scan_executor=lambda run_scan: run_scan(),
     )
     monkeypatch.setattr(edge_app_module, "pairing_session", session)
     return session
@@ -2846,10 +2851,11 @@ def test_pairing_scan_first_endpoints_require_admin_token(monkeypatch, tmp_path)
 
 
 def test_edge_pairing_start_uses_scan_only_and_shows_progress_message():
-    # The scan itself takes 20-40s on real hardware and used to leave the
-    # page showing nothing but a greyed button -- start() must now request a
-    # connectionless scan (temp_connect: false) and show a progress message
-    # for the whole time the request is in flight.
+    # start() must request a connectionless scan (temp_connect: false) and
+    # raise the progress indicator before the request fires. Lowering it is
+    # no longer this function's job on the happy path: the scan outlives the
+    # request now, and the status poll clears the indicator when the session
+    # stops scanning.
     client = TestClient(edge_app_module.app)
 
     source = client.get("/").text
@@ -2864,15 +2870,16 @@ def test_edge_pairing_start_uses_scan_only_and_shows_progress_message():
     # scan silently reverts to the temp-connecting legacy behaviour.
     assert "body: JSON.stringify({ temp_connect: false })" in start_fn
     assert "showPairingScanning(true)" in start_fn
-    assert "showPairingScanning(false)" in start_fn
     scanning_show_index = start_fn.index("showPairingScanning(true)")
     fetch_index = start_fn.index('adminFetch("/api/pairing/start"')
     assert scanning_show_index < fetch_index  # message shown before the request fires
 
     assert 'id="pairing-scanning"' in source
     assert 'data-i18n="pairing.scanning"' in source
-    assert '"pairing.scanning": "Scanning every antenna channel' in source
-    assert '"pairing.scanning": "正在掃描所有天線通道' in source
+    # The copy no longer asks the operator to wait -- devices land in the
+    # worklist while the channels are still listening.
+    assert '"pairing.scanning": "Listening on every antenna channel' in source
+    assert '"pairing.scanning": "正在監聽所有天線通道' in source
 
 
 def test_edge_pairing_worklist_keeps_every_scanned_candidate_with_per_row_controls():
@@ -3666,24 +3673,21 @@ def test_edge_pairing_no_candidates_message_suppressed_during_scan():
     assert "rows.length" in message_line
 
 
-def test_edge_pairing_scanning_dialog_matches_batch_overlay_pattern():
+def test_edge_pairing_scan_indicator_is_inline_not_a_modal():
+    # Replaces the old "scan dialog matches the batch overlay" test: the
+    # modal was removed on purpose. A watch advertises for under a minute,
+    # so the worklist has to stay usable while the channels are listening --
+    # see tests/integration/test_edge_pairing_nonblocking_scan.py.
     client = TestClient(edge_app_module.app)
     source = client.get("/").text
 
-    scan_overlay_start = source.index('id="pairing-scan-overlay"')
-    batch_overlay_start = source.index('id="batch-progress-overlay"')
-    assert scan_overlay_start < batch_overlay_start
-    scan_overlay_html = source[scan_overlay_start:batch_overlay_start]
-
-    # Same structure/classes as the existing batch-progress-overlay so the
-    # two dialogs read as one system.
-    assert 'class="batch-progress-overlay" hidden' in scan_overlay_html
-    assert 'class="batch-progress-modal"' in scan_overlay_html
-    assert 'class="batch-progress-title"' in scan_overlay_html
-    assert 'class="batch-progress-info"' in scan_overlay_html
-    assert 'id="pairing-scan-elapsed"' in scan_overlay_html
-    assert 'data-i18n="pairing.scanning_dialog_title"' in scan_overlay_html
-    assert 'data-i18n="pairing.scanning"' in scan_overlay_html
+    assert "pairing-scan-overlay" not in source
+    inline_start = source.index('id="pairing-scanning"')
+    worklist_start = source.index('id="pairing-worklist"')
+    assert inline_start < worklist_start
+    inline_html = source[inline_start:worklist_start]
+    assert 'data-i18n="pairing.scanning"' in inline_html
+    assert 'id="pairing-scan-elapsed"' in inline_html
 
 
 def test_edge_pairing_scanning_dialog_has_honest_elapsed_counter():
@@ -3705,7 +3709,11 @@ def test_edge_pairing_scanning_dialog_has_honest_elapsed_counter():
     assert "pairingScanInFlight = active;" in fn
 
 
-def test_edge_pairing_start_dismisses_scan_dialog_and_reenables_controls_in_finally():
+def test_edge_pairing_start_leaves_the_scanning_indicator_to_the_poll():
+    # The scan now outlives the request, so the finally can no longer clear
+    # the indicator -- the status poll does, when the session stops
+    # scanning. What start() still owns is the failure path: if the request
+    # itself throws, nothing else will ever turn the indicator off.
     client = TestClient(edge_app_module.app)
     source = client.get("/").text
 
@@ -3713,23 +3721,13 @@ def test_edge_pairing_start_dismisses_scan_dialog_and_reenables_controls_in_fina
     start_fn_end = source.index("async function cancelPairing()", start_fn_start)
     start_fn = source[start_fn_start:start_fn_end]
 
+    catch_index = start_fn.index("} catch (error) {")
     finally_index = start_fn.index("} finally {")
-    finally_block = start_fn[finally_index:]
 
-    # showPairingScanning(false) must live in the finally block -- nowhere
-    # earlier in the function, where a thrown error or a `return` on the
-    # centralHubReady guard could skip it and strand the dialog on screen.
-    assert "showPairingScanning(false)" not in start_fn[:finally_index]
-    assert "showPairingScanning(false)" in finally_block
-
-    # Rescan/cancel/done must be re-enabled in that same finally block, not
-    # merely somewhere else in the function.
-    for line in (
-        "rescanBtn.disabled = false;",
-        "cancelBtn.disabled = false;",
-        "doneBtn.disabled = false;",
-    ):
-        assert line in finally_block
+    assert "showPairingScanning(false)" not in start_fn[:catch_index]
+    assert "showPairingScanning(false)" in start_fn[catch_index:finally_index]
+    # The add-device button is the one control the request itself owns.
+    assert "addBtn.disabled = false;" in start_fn[finally_index:]
 
 
 def test_edge_pairing_start_disables_rescan_cancel_done_before_request_fires():
@@ -3741,13 +3739,10 @@ def test_edge_pairing_start_disables_rescan_cancel_done_before_request_fires():
     start_fn = source[start_fn_start:start_fn_end]
 
     fetch_index = start_fn.index('adminFetch("/api/pairing/start"')
-    for line in (
-        "rescanBtn.disabled = true;",
-        "cancelBtn.disabled = true;",
-        "doneBtn.disabled = true;",
-    ):
-        assert line in start_fn
-        assert start_fn.index(line) < fetch_index
+    # One helper now, because the same three controls have to be re-enabled
+    # from the status poll when the background scan ends.
+    assert "setPairingScanControls(true);" in start_fn
+    assert start_fn.index("setPairingScanControls(true);") < fetch_index
 
 
 def test_edge_pairing_rescan_disables_controls_before_cancel_request():
@@ -3779,7 +3774,6 @@ def test_edge_pairing_scanning_dialog_i18n_keys_present_in_both_locales():
     zh_tw = json.loads((locales_dir / "zh_tw.json").read_text(encoding="utf-8"))
 
     new_keys = {
-        "pairing.scanning_dialog_title",
         "pairing.scanning_elapsed",
     }
     for key in new_keys:
@@ -3795,9 +3789,10 @@ def test_edge_progress_overlay_anchors_near_top_and_stays_scrollable():
     (align-items: center), which covers whatever content the operator was
     looking at when they pressed a trigger button -- #add-device-btn near
     the top of the home view, #pairing-rescan-btn / #pairing-save-all-btn
-    at the bottom of the worklist. Both the scan overlay
-    (#pairing-scan-overlay) and the batch overlay (#batch-progress-overlay)
-    share this one rule, so fixing it here fixes both dialogs at once.
+    at the bottom of the worklist. The batch overlay
+    (#batch-progress-overlay) is the last user of this rule -- the scan
+    modal it used to share it with is gone, because a scan must not block
+    the worklist.
     The modal must sit near the top with a comfortable gap, and the
     overlay itself must stay scrollable so a modal taller than a short
     viewport never becomes unreachable or gets clipped.
