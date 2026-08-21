@@ -92,3 +92,70 @@ def reconnect_configured_devices(
         )
 
     return {"status": "reconnected", "channels": results}
+
+
+def reconnect_single_device(
+    config: EdgeNodeConfig,
+    runner,
+    node_id: str,
+    *,
+    timeout_sec: float = 5.0,
+    report_interval_ms: int = 250,
+) -> dict:
+    """Kick one binding back into connecting, leaving its channel-mates alone.
+
+    The runtime watchdog deliberately waits when a board holds the right
+    target list but has not linked every device yet -- resending CONNECT
+    would restart the firmware's own auto-reconnect. This is the operator
+    override for that wait, so it uses the single-MAC commands
+    (DISCONNECT <mac> then CONNECT_ADD <mac>): CONNECT would replace the
+    channel's whole target list and DISCONNECT:ALL would clear it, either
+    of which drops the other machines on the same board.
+
+    Raises ValueError before touching the UART when the node is unknown, has
+    no antenna channel, or names a channel this node does not have.
+    """
+    binding = next(
+        (b for b in config.equipment_bindings if b.node_id == node_id),
+        None,
+    )
+    if binding is None:
+        raise ValueError(f"Unknown node_id: {node_id}")
+    if not binding.antenna_channel:
+        raise ValueError(f"{node_id} has no antenna channel assigned")
+    if not binding.ble_target:
+        raise ValueError(f"{node_id} has no BLE target")
+
+    channel = next(
+        (c for c in config.antenna_channels if c.id == binding.antenna_channel),
+        None,
+    )
+    if channel is None:
+        raise ValueError(f"Unknown antenna channel: {binding.antenna_channel}")
+
+    def _run(command: str, **extra):
+        return runner.run(
+            AntennaCommandRequest(
+                port=channel.port,
+                baudrate=channel.baudrate,
+                rtscts=channel.rtscts,
+                command=command,
+                timeout_sec=timeout_sec,
+                **extra,
+            )
+        )
+
+    disconnect_result = _run("disconnect", macs=[binding.ble_target])
+    connect_result = _run("connect_add", macs=[binding.ble_target])
+    report_result = _run("report", report_interval_ms=report_interval_ms)
+
+    return {
+        "status": "reconnecting",
+        "node_id": node_id,
+        "channel_id": channel.id,
+        "port": channel.port,
+        "mac": binding.ble_target,
+        "disconnect": disconnect_result,
+        "connect_add": connect_result,
+        "report": report_result,
+    }

@@ -23,7 +23,10 @@ from fitrace_common.wifi_status import (
     LinuxWifiStatusReader,
     WifiStatus,  # noqa: F401 -- re-exported: tests build fakes via edge_app_module.WifiStatus(...)
 )
-from edge_node.usecases.antenna_reconnect import reconnect_configured_devices
+from edge_node.usecases.antenna_reconnect import (
+    reconnect_configured_devices,
+    reconnect_single_device,
+)
 from edge_node.usecases.binding_removal import diff_removed_binding_node_ids
 from edge_node.usecases.event_log import EdgeEventLog
 from edge_node.usecases.ftms_scanner import scan_ftms_devices
@@ -80,6 +83,12 @@ class AntennaReconnectPayload(BaseModel):
     timeout_sec: float = 5.0
     report_interval_ms: int = 250
     disconnect_first: bool = False
+
+
+class AntennaReconnectDevicePayload(BaseModel):
+    node_id: str = Field(..., min_length=1, max_length=128)
+    timeout_sec: float = 5.0
+    report_interval_ms: int = 250
 
 
 class WifiConnectPayload(BaseModel):
@@ -713,6 +722,26 @@ def reconnect_configured_antenna_devices(
             config,
             antenna_command_runner,
             disconnect_first=payload.disconnect_first,
+            timeout_sec=payload.timeout_sec,
+            report_interval_ms=payload.report_interval_ms,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+
+@app.post("/api/antenna/reconnect-device")
+def reconnect_single_antenna_device(
+    payload: AntennaReconnectDevicePayload, request: Request
+):
+    require_admin(request)
+    config = load_edge_config()
+    try:
+        return reconnect_single_device(
+            config,
+            antenna_command_runner,
+            payload.node_id,
             timeout_sec=payload.timeout_sec,
             report_interval_ms=payload.report_interval_ms,
         )

@@ -324,6 +324,14 @@
       font-size: 15px;
     }
 
+    .binding-card-signal {
+      grid-column: 1 / -1;
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      font-family: var(--mono);
+    }
+
     .binding-card-footer {
       grid-column: 1 / -1;
       display: flex;
@@ -1301,6 +1309,7 @@
     // so a message survives renderBindingCards() rebuilding the whole grid,
     // which happens right after removeBinding()'s loadConfig() refresh.
     let bindingRemoveState = new Map();
+    let bindingReconnectState = new Map();
     let wifiNetworks = [];
     let wifiNetworksLoaded = false;
     let uartMonitorSignature = null;
@@ -1644,6 +1653,11 @@
           // on the card after the loadConfig() refresh that follows it --
           // see removeBinding().
           const removeState = bindingRemoveState.get(binding.node_id) || {};
+          // Both card actions share one message slot: only one of them can be
+          // in flight on a card at a time, and the newer outcome is the one
+          // the operator is waiting to read.
+          const reconnectState = bindingReconnectState.get(binding.node_id) || {};
+          const cardMessage = reconnectState.message ? reconnectState : removeState;
           return `
           <div class="binding-card" data-node-id="${escapeHtml(binding.node_id)}">
             <div>
@@ -1659,10 +1673,12 @@
               <div>${escapeHtml(t("monitor.power"))}<strong data-field="power">--</strong></div>
               <div>${escapeHtml(t("monitor.rssi"))}<strong data-field="rssi">--</strong></div>
             </div>
+            <div class="binding-card-signal" data-field="last-signal">--</div>
             <div class="binding-card-footer">
+              <button type="button" class="btn-secondary binding-card-reconnect" data-node-id="${escapeHtml(binding.node_id)}" data-role="reconnect-binding" ${reconnectState.working ? "disabled" : ""}>${escapeHtml(reconnectState.working ? t("operator.card_reconnect_working") : t("operator.card_reconnect"))}</button>
               <button type="button" class="btn-secondary binding-card-remove" data-node-id="${escapeHtml(binding.node_id)}" data-role="remove-binding" ${removeState.removing ? "disabled" : ""}>${escapeHtml(removeState.removing ? t("operator.card_remove_working") : t("operator.card_remove"))}</button>
-              <div class="message binding-card-remove-message ${removeState.ok === false ? "error" : (removeState.ok === true ? "ok" : "")}" data-role="remove-message">${escapeHtml(removeState.message || "")}</div>
             </div>
+            <div class="message binding-card-remove-message ${cardMessage.ok === false ? "error" : (cardMessage.ok === true ? "ok" : "")}" data-role="remove-message">${escapeHtml(cardMessage.message || "")}</div>
           </div>
         `;
         }).join("");
@@ -1702,6 +1718,15 @@
         card.querySelector('[data-field="speed"]').textContent = formatMetric(payload?.instantaneous_speed_kph, " kph", 1);
         card.querySelector('[data-field="power"]').textContent = formatMetric(payload?.power_watts, " W", 0);
         card.querySelector('[data-field="rssi"]').textContent = formatMetric(payload?.rssi, " dBm", 0);
+        // Newest of the two sources, not the preferred one: MQTT pauses for
+        // tens of seconds during a pairing scan while UART frames keep
+        // arriving, and reporting the MQTT stamp then would show a
+        // disconnection that never happened.
+        const lastSignalMs = Math.max(
+          Number(mqttPayload?.timestamp_epoch_ms || 0),
+          Number(uartPayload?.timestamp_epoch_ms || 0)
+        );
+        card.querySelector('[data-field="last-signal"]').textContent = formatLastSignal(lastSignalMs);
       });
     }
 
@@ -1741,6 +1766,49 @@
       // Refresh so the card list (the binding is gone on success) and any
       // capacity display (add-device-btn's "full" state) update -- the
       // message above survives this via bindingRemoveState.
+      await loadConfig();
+    }
+
+    // Wall-clock, not "N minutes ago": the operator compares this against
+    // when the class started or when they last looked at the machine.
+    function formatLastSignal(epochMs) {
+      if (!epochMs) return t("operator.card_last_signal_never");
+      return t("operator.card_last_signal", { time: formatEventTime(epochMs) });
+    }
+
+    // Non-destructive: it re-links this one machine (DISCONNECT + CONNECT_ADD
+    // on its MAC alone), so unlike removeBinding it needs no confirmation and
+    // leaves the other machines on the same antenna channel connected.
+    async function reconnectBinding(nodeId) {
+      const binding = (edgeConfig?.equipment_bindings || []).find((b) => b.node_id === nodeId);
+      const name = binding?.equipment_id || nodeId;
+
+      bindingReconnectState.set(nodeId, { working: true, message: t("operator.card_reconnect_working", { name }), ok: null });
+      if (currentView === "home") renderBindingCards();
+
+      try {
+        const response = await adminFetch("/api/antenna/reconnect-device", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ node_id: nodeId }),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || t("operator.card_reconnect_failed", { name }));
+        bindingReconnectState.set(nodeId, {
+          working: false,
+          message: t("operator.card_reconnect_success", { name }),
+          ok: true,
+        });
+      } catch (error) {
+        bindingReconnectState.set(nodeId, {
+          working: false,
+          message: error.message || t("operator.card_reconnect_failed", { name }),
+          ok: false,
+        });
+      }
+      // The board answers the CONNECT asynchronously, so refresh to pick up
+      // whatever the link state is by now -- and to redraw this card without
+      // its disabled button.
       await loadConfig();
     }
 
@@ -2869,6 +2937,11 @@
     document.getElementById("add-device-btn").addEventListener("click", startPairing);
     document.getElementById("disconnect-all-btn").addEventListener("click", disconnectAllAndClearBindings);
     document.getElementById("binding-cards").addEventListener("click", (event) => {
+      const reconnectTarget = event.target.closest('[data-role="reconnect-binding"]');
+      if (reconnectTarget) {
+        reconnectBinding(reconnectTarget.dataset.nodeId);
+        return;
+      }
       const target = event.target.closest('[data-role="remove-binding"]');
       if (!target) return;
       removeBinding(target.dataset.nodeId);
