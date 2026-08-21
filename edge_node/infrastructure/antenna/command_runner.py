@@ -77,7 +77,10 @@ class AntennaCommandRunner:
 
                             rx.extend(
                                 self._read_lines(
-                                    serial_port, request.timeout_sec, request.port
+                                    serial_port,
+                                    request.timeout_sec,
+                                    request.port,
+                                    _reply_matcher(request.command),
                                 )
                             )
                     except serial_module.SerialException as exc:
@@ -102,8 +105,10 @@ class AntennaCommandRunner:
             "parsed": [protocol.parse_line(line) for line in rx],
         }
 
-    def _read_lines(self, serial_port, duration_sec: float, port: str) -> list[str]:
-        lines = _read_lines(serial_port, duration_sec)
+    def _read_lines(
+        self, serial_port, duration_sec: float, port: str, is_reply=None
+    ) -> list[str]:
+        lines = _read_lines(serial_port, duration_sec, is_reply)
         for line in lines:
             self._record_event("rx", port, line, parsed=protocol.parse_line(line))
         return lines
@@ -126,6 +131,44 @@ def _load_serial():
     except ImportError as exc:
         raise RuntimeError("pyserial is not installed on this Edge Node") from exc
     return serial
+
+
+# What each command's own answer looks like. The board replies in
+# milliseconds, so draining the rest of the timeout window after it has is
+# pure dead air -- measured on the venue node, a STATUS answered with one
+# line still took 5.047s, and a two-channel pairing scan spent half its ~20s
+# listening to nothing after SCAN:STOP.
+#
+# Telemetry is deliberately absent: FTMS frames stream continuously on a
+# channel with connected machines, so treating them as an answer would cut
+# commands off before their real ack. "raw" is absent too -- its reply shape
+# is whatever the operator typed, so it keeps draining the window.
+_REPLY_TYPES_BY_COMMAND = {
+    "ping": ("ok", "error"),
+    "status": ("status", "error"),
+    "version": ("version", "error"),
+    "connect": ("ok", "error"),
+    "connect_add": ("ok", "error"),
+    "disconnect": ("ok", "error"),
+    "disconnect_all": ("ok", "error"),
+    "report": ("ok", "error"),
+    "reboot": ("ok", "error"),
+    # The SCAN:STOP half only; SCAN:START drains its whole window on purpose
+    # (see run()), because nothing tells us how many devices are still out
+    # there to be heard.
+    "scan": ("ok", "error"),
+}
+
+
+def _reply_matcher(command: str):
+    reply_types = _REPLY_TYPES_BY_COMMAND.get(command)
+    if not reply_types:
+        return None
+
+    def is_reply(line: str) -> bool:
+        return protocol.parse_line(line).get("type") in reply_types
+
+    return is_reply
 
 
 def _build_commands(request: AntennaCommandRequest) -> list[str]:
@@ -163,7 +206,12 @@ def _build_commands(request: AntennaCommandRequest) -> list[str]:
     raise ValueError(f"unsupported antenna command: {command}")
 
 
-def _read_lines(serial_port, duration_sec: float) -> list[str]:
+def _read_lines(serial_port, duration_sec: float, is_reply=None) -> list[str]:
+    """Read until the command's own reply arrives, or the window expires.
+
+    `is_reply` is the early exit: without one (a scan, a raw command) this
+    drains the full window exactly as it always did.
+    """
     deadline = time.monotonic() + max(0.1, duration_sec)
     buffer = b""
     lines: list[str] = []
@@ -173,11 +221,16 @@ def _read_lines(serial_port, duration_sec: float) -> list[str]:
         if not chunk:
             continue
         buffer += chunk
+        answered = False
         while b"\n" in buffer:
             line, buffer = buffer.split(b"\n", 1)
             decoded = line.decode("ascii", errors="replace").strip()
             if decoded:
                 lines.append(decoded)
+                if is_reply and is_reply(decoded):
+                    answered = True
+        if answered:
+            return lines
 
     tail = buffer.decode("ascii", errors="replace").strip()
     if tail:
