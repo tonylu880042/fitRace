@@ -143,6 +143,28 @@ clean "no adapter" error is acceptable — record which.
 `curl -H "$AUTH" $EDGE/api/monitor/events` → returns recent events including
 the antenna commands issued above.
 
+**P2.11 Pairing "connecting" grace window.** [HUMAN-ASSIST: browser on the edge
+operator page, one un-paired FTMS machine powered on]
+Calibrates `PAIRING_CONNECTING_GRACE_MS` (15000 ms) in `operator.html` against
+the real restart time. `finishPairing()` posts `/api/pairing/finish` with
+`restart: true`, which restarts the edge runtime and pauses MQTT publishing for
+**every** binding, so the window has to outlast that pause — not just cover the
+newly added machine.
+
+1. Open `$EDGE/` and note the wall-clock time. Run "add device" through to
+   "完成——返回首頁".
+2. On landing on the home view, every card's pill must read **連線中 / Connecting**
+   (amber), not 等待中 / Waiting.
+3. Leave the already-paired machines moving. Record how many seconds until their
+   pills return to **即時 / Live**.
+4. Leave the newly paired machine still. Its pill must fall back to 等待中 after
+   the window, with "尚未收到訊號 · 請踩動器材" underneath. Then pedal it and
+   confirm it goes 即時 within ~3 s.
+5. PASS if step 3 completes inside the window. If any pill is still 連線中 when
+   telemetry has already resumed, the window is too long; if pills flip to 等待中
+   before telemetry resumes, raise `PAIRING_CONNECTING_GRACE_MS` above the
+   measured restart time. Record the measured seconds either way.
+
 ---
 
 ## Phase 3 — End-to-end telemetry pipeline
