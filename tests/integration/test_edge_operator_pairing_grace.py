@@ -28,7 +28,15 @@ def _page() -> str:
 def _function(source: str, signature: str) -> str:
     start = source.index(signature)
     end = source.index("\n    function ", start)
-    return source[start:end]
+    body = source[start:end]
+    # Strip comment-only lines before returning. Otherwise a substring
+    # assertion can be satisfied by a // comment that happens to contain the
+    # same text as the real code -- the CLAUDE.md "comment silently makes the
+    # suite green" trap -- while the actual statement underneath it was
+    # deleted or altered. This applies the guard once, for every test in
+    # this file that inspects an extracted function body.
+    lines = [line for line in body.splitlines() if not line.strip().startswith("//")]
+    return "\n".join(lines)
 
 
 def _run_node(js: str) -> str:
@@ -109,6 +117,17 @@ def test_update_binding_card_leaves_reuses_the_existing_connecting_key():
     fn = _function(source, "function updateBindingCardLeaves()")
 
     assert '"pairing.connecting"' in fn
+
+
+def test_update_binding_card_leaves_calls_pill_state_for_card_with_the_real_clock():
+    """The call site must pass the live wall clock, not a frozen/injected
+    value -- a "connecting" pill that never re-evaluates against Date.now()
+    would sit permanently optimistic, which is the one failure mode this
+    feature exists to avoid."""
+    source = _page()
+    fn = _function(source, "function updateBindingCardLeaves()")
+
+    assert "pillStateForCard(live, Date.now(), pairingConnectingUntilMs)" in fn
 
 
 # -- 3. finishPairing arms the grace window before returning home -----------
