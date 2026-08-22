@@ -183,7 +183,7 @@
   "operator.card_reconnect_success": "Asked {name} to reconnect; the signal should return shortly.",
   "operator.card_reconnect_failed": "Could not ask {name} to reconnect.",
   "operator.card_last_signal": "Last signal {time}",
-  "operator.card_last_signal_never": "No signal yet",
+  "operator.card_last_signal_never": "No signal yet — pedal the machine",
   "operator.disconnect_all_title": "Disconnect all equipment",
   "operator.disconnect_all_help": "Disconnect every antenna link and permanently clear all paired equipment from this Edge Node.",
   "operator.disconnect_all": "Disconnect all & clear bindings",

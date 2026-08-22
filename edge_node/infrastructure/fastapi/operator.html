@@ -373,6 +373,11 @@
       border-color: rgba(52, 211, 153, 0.5);
     }
 
+    .pill.connecting {
+      color: var(--warn);
+      border-color: rgba(245, 158, 11, 0.5);
+    }
+
     .empty {
       padding: 28px 12px;
       border: 1px dashed var(--border);
@@ -1266,9 +1271,22 @@
     const HOME_MONITOR_POLL_MS = 500;
     const UART_MONITOR_MAX = 200;
     const PAIRING_POLL_MS = 1000;
+    // The runtime restart triggered by finishPairing() pauses MQTT publishing
+    // for every binding, not just the one just paired -- without this, every
+    // OTHER card would flash "waiting" right after the operator was told
+    // pairing succeeded.
+    const PAIRING_CONNECTING_GRACE_MS = 15000;
 
     function normalizeMac(value) {
       return String(value || "").trim().toUpperCase();
+    }
+
+    // ponytail: 15s optimistic ceiling on the pairing-restart grace window.
+    // Replace with per-MAC link state from the antenna firmware if it ever
+    // reports one; until then this just expires on its own.
+    function pillStateForCard(live, nowMs, connectingUntilMs) {
+      if (live) return "live";
+      return nowMs < connectingUntilMs ? "connecting" : "waiting";
     }
 
     // -- global state -----------------------------------------------------
@@ -1284,6 +1302,10 @@
     let currentView = "home";
     let pairingCapacity = null; // {per_channel, total_free} -- from start(), refreshed by every successful bind()
     let pairingActive = false;
+    // Epoch ms until which every card's pill shows "connecting" instead of
+    // "waiting" even without fresh telemetry -- armed by finishPairing()
+    // just before the restart-induced MQTT pause.
+    let pairingConnectingUntilMs = 0;
     // True for exactly the duration of the in-flight /api/pairing/start
     // request (set/cleared only by showPairingScanning). Lets
     // renderPairingWorklist tell "scan still running, worklist just
@@ -1707,8 +1729,9 @@
         const payload = mqttLive ? mqttPayload : (uartLive ? uartPayload : mqttPayload);
         const channel = payload?.antenna_channel || binding.antenna_channel;
         const pill = card.querySelector('[data-role="pill"]');
-        pill.className = `pill ${live ? "live" : ""}`;
-        pill.textContent = live ? t("monitor.live") : t("monitor.waiting");
+        const pillState = pillStateForCard(live, Date.now(), pairingConnectingUntilMs);
+        pill.className = `pill ${pillState === "waiting" ? "" : pillState}`;
+        pill.textContent = t(pillState === "live" ? "monitor.live" : (pillState === "connecting" ? "pairing.connecting" : "monitor.waiting"));
         card.querySelector('[data-field="channel"]').textContent = formatAntennaChannel(channel);
         card.querySelector('[data-field="speed"]').textContent = formatMetric(payload?.instantaneous_speed_kph, " kph", 1);
         card.querySelector('[data-field="power"]').textContent = formatMetric(payload?.power_watts, " W", 0);
@@ -2948,6 +2971,10 @@
       } finally {
         doneBtn.disabled = false;
       }
+      // The restart happens server-side regardless of whether the fetch
+      // above threw, so arm the grace window unconditionally before
+      // returning home.
+      pairingConnectingUntilMs = Date.now() + PAIRING_CONNECTING_GRACE_MS;
       await goHome();
     }
 
