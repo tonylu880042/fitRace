@@ -7,7 +7,7 @@ only by a test that greps the source for a function name. To close that gap
 this module:
 
   1. Executes the real pure helpers (buildSegmentsPayload, rowsFromClassPlan,
-     repeatSegmentGroup, buildPlanEditorHtml) under `node -e`, extracted from
+     buildPlanEditorHtml) under `node -e`, extracted from
      the page by the same brace-depth technique
      tests/unit/hub/test_class_admin_page.py uses, and asserts on their
      actual return values / rendered HTML -- not on source text.
@@ -231,42 +231,7 @@ def test_build_segments_payload_coerces_string_target_watts_to_number():
 
 
 # ---------------------------------------------------------------------------
-# 2. repeatSegmentGroup -- "repeat this group x N" must carry the target
-# along with kind and duration into every copy.
-# ---------------------------------------------------------------------------
-
-
-def _run_repeat_segment_group(rows_js: str, start: int, end: int, times: int) -> list:
-    source = _read_class_admin()
-    fn = _strip_js_comments(_extract_function(source, "repeatSegmentGroup"))
-    script = (
-        _metric_number_stub()
-        + fn
-        + "\n"
-        + f"const rows = {rows_js};\n"
-        + f"console.log(JSON.stringify(repeatSegmentGroup(rows, {start}, {end}, {times})));"
-    )
-    return json.loads(_run_node(script))
-
-
-def test_repeat_segment_group_preserves_target_watts_in_every_copy():
-    rows = (
-        '[{"kind": "work", "durationSec": 40, "targetWatts": 200},'
-        ' {"kind": "rest", "durationSec": 20, "targetWatts": null}]'
-    )
-    result = _run_repeat_segment_group(rows, 0, 1, 3)
-    assert result == [
-        {"kind": "work", "durationSec": 40, "targetWatts": 200},
-        {"kind": "rest", "durationSec": 20, "targetWatts": None},
-        {"kind": "work", "durationSec": 40, "targetWatts": 200},
-        {"kind": "rest", "durationSec": 20, "targetWatts": None},
-        {"kind": "work", "durationSec": 40, "targetWatts": 200},
-        {"kind": "rest", "durationSec": 20, "targetWatts": None},
-    ]
-
-
-# ---------------------------------------------------------------------------
-# 3. rowsFromClassPlan -- the load path. A saved target populates the row;
+# 2. rowsFromClassPlan -- the load path. A saved target populates the row;
 # a target-less segment leaves the row without a targetWatts key (matching
 # the shape tests/unit/hub/test_class_admin_page.py already pins for that
 # case).

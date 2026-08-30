@@ -16,7 +16,7 @@ The fix: a VALUE edit (updateSegmentDuration, updateSegmentTargetWatts)
 updates state.rows and refreshes only the views derived from it
 (renderPlanPreview -- the timeline, the total-duration readout, the
 segment count) without touching plan-rows. A ROW-SET change (addSegmentRow,
-deleteSegmentRow, applyRepeatGroup) genuinely changes which rows exist, so
+deleteSegmentRow, duplicateSegmentRow, moveSegmentRow) genuinely changes which rows exist, so
 it still does a full renderPlanEditor(). updateSegmentKind is a <select>
 change -- the row's colour stripe (segment-row-<kind>) depends on the kind
 -- so it patches that one row element's className directly instead of
@@ -164,7 +164,7 @@ def _intl_number_format_stub() -> str:
 # the page, plus a minimal $()/mockElements DOM. Unlike the sibling dirty
 # flag tests, the plan-rows mock element tracks writes to its innerHTML in
 # rowsRenderCount -- the whole point here is proving a value edit does not
-# write to that specific container while add/delete/repeat still do. Each
+# write to that specific container while add/delete/duplicate/move still do. Each
 # row also gets its own segment-row-<index> mock element, so
 # updateSegmentKind's in-place className patch is directly observable.
 #
@@ -200,9 +200,6 @@ def _run_scenario(seed_rows_js: str, steps_js: str) -> dict:
     render_plan_preview_fn = _strip_js_comments(
         _extract_function(source, "renderPlanPreview")
     )
-    repeat_segment_group_fn = _strip_js_comments(
-        _extract_function(source, "repeatSegmentGroup")
-    )
     update_segment_duration_fn = _strip_js_comments(
         _extract_function(source, "updateSegmentDuration")
     )
@@ -216,8 +213,14 @@ def _run_scenario(seed_rows_js: str, steps_js: str) -> dict:
     delete_segment_row_fn = _strip_js_comments(
         _extract_function(source, "deleteSegmentRow")
     )
-    apply_repeat_group_fn = _strip_js_comments(
-        _extract_function(source, "applyRepeatGroup")
+    duplicate_segment_row_fn = _strip_js_comments(
+        _extract_function(source, "duplicateSegmentRow")
+    )
+    move_segment_row_fn = _strip_js_comments(
+        _extract_function(source, "moveSegmentRow")
+    )
+    focus_segment_field_fn = _strip_js_comments(
+        _extract_function(source, "focusSegmentField")
     )
 
     script = (
@@ -263,8 +266,6 @@ def _run_scenario(seed_rows_js: str, steps_js: str) -> dict:
         + "\n"
         + render_plan_preview_fn
         + "\n"
-        + repeat_segment_group_fn
-        + "\n"
         + update_segment_duration_fn
         + "\n"
         + update_segment_target_watts_fn
@@ -275,7 +276,11 @@ def _run_scenario(seed_rows_js: str, steps_js: str) -> dict:
         + "\n"
         + delete_segment_row_fn
         + "\n"
-        + apply_repeat_group_fn
+        + duplicate_segment_row_fn
+        + "\n"
+        + move_segment_row_fn
+        + "\n"
+        + focus_segment_field_fn
         + "\n"
         + "function renderAll() {\n"
         + "  renderPlanEditor();\n"
@@ -369,7 +374,7 @@ def test_update_segment_kind_updates_the_derived_preview():
 
 
 # ---------------------------------------------------------------------------
-# 3. Complementary case: a genuine row-set change (add/delete/repeat) still
+# 3. Complementary case: a genuine row-set change (add/delete/duplicate/move) still
 # does a full plan-rows rebuild -- the fix must not have simply disabled
 # renderPlanEditor everywhere.
 # ---------------------------------------------------------------------------
@@ -390,17 +395,18 @@ def test_delete_segment_row_still_rewrites_plan_rows():
     assert result["rows"][0]["kind"] == "work"
 
 
-def test_apply_repeat_group_still_rewrites_plan_rows():
-    steps = (
-        "mockElements['repeat-from'] = { value: '1' };\n"
-        "mockElements['repeat-to'] = { value: '2' };\n"
-        "mockElements['repeat-times'] = { value: '2' };\n"
-        "applyRepeatGroup();\n"
-    )
-    result = _run_scenario(SEED_ROWS, steps)
+def test_duplicate_segment_row_still_rewrites_plan_rows():
+    result = _run_scenario(SEED_ROWS, "duplicateSegmentRow(0);\n")
     assert result["rowsRenderCount"] == 1
     assert result["rowsDirty"] is True
-    assert len(result["rows"]) == 4
+    assert len(result["rows"]) == 3
+
+
+def test_move_segment_row_still_rewrites_plan_rows():
+    result = _run_scenario(SEED_ROWS, "moveSegmentRow(1, -1);\n")
+    assert result["rowsRenderCount"] == 1
+    assert result["rowsDirty"] is True
+    assert [row["kind"] for row in result["rows"]] == ["work", "warmup"]
 
 
 # ---------------------------------------------------------------------------

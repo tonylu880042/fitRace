@@ -19,9 +19,9 @@ a test that greps the source for a function name. To close that gap:
      buildPlanEditorHtml) are executed with stubbed `t`/`escapeHtml`/`Intl`
      to prove the returned HTML actually contains translated labels and
      computed values -- not just that the helper is invoked somewhere.
-  3. repeatSegmentGroup (the "repeat this group x N" feature) gets dedicated
-     coverage for producing a FLAT list of the expected length and order,
-     since CLAUDE.md flags this as the piece most likely to be subtly wrong.
+  3. Row mutations (single add, duplicate, move, and delete) execute the
+     real handlers against a stubbed DOM so ordering, dirty state, preview,
+     and serialized payload are asserted together.
 
 This module also covers the six-locale `classAdmin.*` i18n keys (the six
 supported locales, not the two-language inline-dictionary pattern used by
@@ -281,84 +281,215 @@ def test_build_segments_payload_empty_rows_is_empty_segments():
 
 
 # ---------------------------------------------------------------------------
-# 3. repeatSegmentGroup -- "repeat this group x N" must expand into a FLAT
-# list of the expected length and order at edit time.
+# 3. Row mutations -- every action changes one segment at a time and keeps
+# state.rows as the source of truth for preview and serialization.
 # ---------------------------------------------------------------------------
 
 
-def _run_repeat_segment_group(rows_js: str, start: int, end: int, times: int) -> list:
+def _run_row_mutation_scenario(rows_js: str, steps_js: str) -> dict:
     source = _read_class_admin()
-    fn = _strip_js_comments(_extract_function(source, "repeatSegmentGroup"))
+    segment_kind_key_fn = _strip_js_comments(
+        _extract_function(source, "segmentKindKey")
+    )
+    format_duration_fn = _strip_js_comments(
+        _extract_function(source, "formatDurationClock")
+    )
+    compute_plan_summary_fn = _strip_js_comments(
+        _extract_function(source, "computePlanSummary")
+    )
+    build_segments_payload_fn = _strip_js_comments(
+        _extract_function(source, "buildSegmentsPayload")
+    )
+    build_plan_editor_html_fn = _strip_js_comments(
+        _extract_function(source, "buildPlanEditorHtml")
+    )
+    build_plan_preview_html_fn = _strip_js_comments(
+        _extract_function(source, "buildPlanPreviewHtml")
+    )
+    render_plan_editor_fn = _strip_js_comments(
+        _extract_function(source, "renderPlanEditor")
+    )
+    render_plan_preview_fn = _strip_js_comments(
+        _extract_function(source, "renderPlanPreview")
+    )
+    add_segment_row_fn = _strip_js_comments(_extract_function(source, "addSegmentRow"))
+    duplicate_segment_row_fn = _strip_js_comments(
+        _extract_function(source, "duplicateSegmentRow")
+    )
+    move_segment_row_fn = _strip_js_comments(
+        _extract_function(source, "moveSegmentRow")
+    )
+    delete_segment_row_fn = _strip_js_comments(
+        _extract_function(source, "deleteSegmentRow")
+    )
+    update_segment_duration_fn = _strip_js_comments(
+        _extract_function(source, "updateSegmentDuration")
+    )
+    update_segment_target_watts_fn = _strip_js_comments(
+        _extract_function(source, "updateSegmentTargetWatts")
+    )
+    focus_segment_field_fn = _strip_js_comments(
+        _extract_function(source, "focusSegmentField")
+    )
     script = (
-        _metric_number_stub()
-        + fn
+        _t_stub()
+        + _metric_number_stub()
+        + _escape_html_stub()
+        + _intl_number_format_stub()
+        + "const currentLocale = 'en-US';\n"
+        + "const mockElements = {};\n"
+        + "let focusedId = null;\n"
+        + "function makeEl(id) { return { innerHTML: '', textContent: '', className: '', dataset: {}, disabled: false, focus() { focusedId = id; } }; }\n"
+        + "function $(id) { if (!mockElements[id]) mockElements[id] = makeEl(id); return mockElements[id]; }\n"
+        + f"const state = {{ rows: {rows_js}, rowsDirty: false }};\n"
+        + segment_kind_key_fn
         + "\n"
-        + f"const rows = {rows_js};\n"
-        + f"console.log(JSON.stringify(repeatSegmentGroup(rows, {start}, {end}, {times})));"
+        + format_duration_fn
+        + "\n"
+        + compute_plan_summary_fn
+        + "\n"
+        + build_segments_payload_fn
+        + "\n"
+        + build_plan_editor_html_fn
+        + "\n"
+        + build_plan_preview_html_fn
+        + "\n"
+        + render_plan_editor_fn
+        + "\n"
+        + render_plan_preview_fn
+        + "\n"
+        + add_segment_row_fn
+        + "\n"
+        + duplicate_segment_row_fn
+        + "\n"
+        + move_segment_row_fn
+        + "\n"
+        + delete_segment_row_fn
+        + "\n"
+        + focus_segment_field_fn
+        + "\n"
+        + update_segment_duration_fn
+        + "\n"
+        + update_segment_target_watts_fn
+        + "\n"
+        + "function renderAll() { renderPlanEditor(); renderPlanPreview(); }\n"
+        + "renderPlanEditor(); renderPlanPreview();\n"
+        + steps_js
+        + "\n"
+        + "console.log(JSON.stringify({ rows: state.rows, rowsDirty: state.rowsDirty, payload: buildSegmentsPayload(state.rows), previewHtml: mockElements['plan-preview'].innerHTML, planRowsHtml: mockElements['plan-rows'].innerHTML, totalDurationText: mockElements['summary-total-duration'].textContent, addDisabled: mockElements['btn-add-segment'].disabled, limitNoteClassName: mockElements['segment-limit-note'].className, limitNoteText: mockElements['segment-limit-note'].textContent, focusedId }));"
     )
     return json.loads(_run_node(script))
 
 
-def test_repeat_segment_group_expands_contiguous_pair_three_times():
-    # [warmup, work, rest, cooldown], repeat (work, rest) x3.
-    rows = (
-        '[{"kind": "warmup", "durationSec": 300},'
-        ' {"kind": "work", "durationSec": 40},'
-        ' {"kind": "rest", "durationSec": 20},'
-        ' {"kind": "cooldown", "durationSec": 300}]'
-    )
-    result = _run_repeat_segment_group(rows, 1, 2, 3)
-    kinds = [row["kind"] for row in result]
-    assert kinds == [
-        "warmup",
-        "work",
-        "rest",
-        "work",
-        "rest",
-        "work",
-        "rest",
-        "cooldown",
+def test_add_segment_appends_exactly_one_default_work_segment_and_updates_views():
+    rows = '[{"kind": "warmup", "durationSec": 90}]'
+    result = _run_row_mutation_scenario(rows, "addSegmentRow();\n")
+    assert result["rows"] == [
+        {"kind": "warmup", "durationSec": 90},
+        {"kind": "work", "durationSec": 300},
     ]
-    assert len(result) == 8
+    assert result["rowsDirty"] is True
+    assert result["payload"]["segments"][1] == {
+        "kind": "work",
+        "duration_sec": 300,
+    }
+    assert result["totalDurationText"] == "06:30"
+    assert '"count":"2"' in result["previewHtml"]
+    assert result["focusedId"] == "segment-duration-1"
 
 
-def test_repeat_segment_group_preserves_duration_values_in_every_copy():
-    rows = '[{"kind": "work", "durationSec": 45}, {"kind": "rest", "durationSec": 15}]'
-    result = _run_repeat_segment_group(rows, 0, 1, 2)
-    assert result == [
-        {"kind": "work", "durationSec": 45},
-        {"kind": "rest", "durationSec": 15},
-        {"kind": "work", "durationSec": 45},
-        {"kind": "rest", "durationSec": 15},
+def test_duplicate_segment_inserts_one_independent_copy_after_source():
+    rows = (
+        '[{"kind": "work", "durationSec": 40, "targetWatts": 200},'
+        ' {"kind": "rest", "durationSec": 20}]'
+    )
+    result = _run_row_mutation_scenario(
+        rows,
+        "const sourceRow = state.rows[0];\n"
+        "duplicateSegmentRow(0);\n"
+        "updateSegmentDuration(state.rows.indexOf(sourceRow), '55');\n"
+        "updateSegmentTargetWatts(state.rows.indexOf(sourceRow), '250');\n",
+    )
+    assert result["rows"] == [
+        {"kind": "work", "durationSec": 55, "targetWatts": 250},
+        {"kind": "work", "durationSec": 40, "targetWatts": 200},
+        {"kind": "rest", "durationSec": 20},
     ]
+    assert result["rowsDirty"] is True
+    assert result["payload"]["segments"] == [
+        {"kind": "work", "duration_sec": 55, "target_watts": 250},
+        {"kind": "work", "duration_sec": 40, "target_watts": 200},
+        {"kind": "rest", "duration_sec": 20},
+    ]
+    assert result["focusedId"] == "segment-duration-1"
 
 
-def test_repeat_segment_group_single_row_group():
-    rows = '[{"kind": "work", "durationSec": 30}]'
-    result = _run_repeat_segment_group(rows, 0, 0, 4)
-    assert [row["kind"] for row in result] == ["work"] * 4
-    assert len(result) == 4
-
-
-def test_repeat_segment_group_times_of_one_is_a_no_op_on_length():
+def test_move_segment_covers_first_middle_last_boundaries_and_keeps_payload_order():
     rows = (
-        '[{"kind": "warmup", "durationSec": 300}, {"kind": "work", "durationSec": 40}]'
+        '[{"kind": "warmup", "durationSec": 90},'
+        ' {"kind": "work", "durationSec": 300, "targetWatts": 150},'
+        ' {"kind": "rest", "durationSec": 60}]'
     )
-    result = _run_repeat_segment_group(rows, 0, 1, 1)
-    assert len(result) == 2
-    assert [row["kind"] for row in result] == ["warmup", "work"]
+    result = _run_row_mutation_scenario(
+        rows,
+        "moveSegmentRow(0, -1);\n"
+        "moveSegmentRow(1, -1);\n"
+        "moveSegmentRow(2, 1);\n"
+        "moveSegmentRow(1, 1);\n",
+    )
+    assert result["rows"] == [
+        {"kind": "work", "durationSec": 300, "targetWatts": 150},
+        {"kind": "rest", "durationSec": 60},
+        {"kind": "warmup", "durationSec": 90},
+    ]
+    assert result["payload"]["segments"][0]["target_watts"] == 150
+    assert result["totalDurationText"] == "07:30"
 
 
-def test_repeat_segment_group_leaves_rows_outside_the_group_untouched_and_in_place():
+def test_delete_segment_removes_only_selected_segment_and_updates_preview():
     rows = (
-        '[{"kind": "warmup", "durationSec": 300},'
-        ' {"kind": "work", "durationSec": 40},'
-        ' {"kind": "cooldown", "durationSec": 300}]'
+        '[{"kind": "warmup", "durationSec": 90},'
+        ' {"kind": "work", "durationSec": 300},'
+        ' {"kind": "cooldown", "durationSec": 60}]'
     )
-    result = _run_repeat_segment_group(rows, 1, 1, 3)
-    assert result[0] == {"kind": "warmup", "durationSec": 300}
-    assert result[-1] == {"kind": "cooldown", "durationSec": 300}
-    assert len(result) == 5  # warmup + work*3 + cooldown
+    result = _run_row_mutation_scenario(rows, "deleteSegmentRow(1);\n")
+    assert [row["kind"] for row in result["rows"]] == ["warmup", "cooldown"]
+    assert result["rowsDirty"] is True
+    assert result["totalDurationText"] == "02:30"
+
+
+def test_add_and_duplicate_are_noops_at_two_hundred_segment_limit_but_move_works():
+    rows = json.dumps(
+        [
+            {"kind": "warmup", "durationSec": 90},
+            {"kind": "work", "durationSec": 300, "targetWatts": 150},
+        ]
+        + [{"kind": "rest", "durationSec": 30, "targetWatts": None} for _ in range(197)]
+        + [{"kind": "changeover", "durationSec": 45, "targetWatts": 88}]
+    )
+    at_limit = _run_row_mutation_scenario(rows, "")
+    assert at_limit["addDisabled"] is True
+    assert at_limit["limitNoteClassName"] == "field-note show"
+    assert at_limit["limitNoteText"] == "T[classAdmin.segment_limit_reached]"
+    assert 'onclick="duplicateSegmentRow(0)" disabled' in at_limit["planRowsHtml"]
+    result = _run_row_mutation_scenario(
+        rows,
+        "addSegmentRow();\n"
+        "duplicateSegmentRow(0);\n"
+        "moveSegmentRow(199, -1);\n"
+        "deleteSegmentRow(198);\n",
+    )
+    assert len(result["rows"]) == 199
+    assert result["rows"][-1] == {
+        "kind": "rest",
+        "durationSec": 30,
+        "targetWatts": None,
+    }
+    assert result["rowsDirty"] is True
+    assert result["addDisabled"] is False
+    assert 'onclick="duplicateSegmentRow(0)" disabled' not in result["planRowsHtml"]
+    assert result["limitNoteClassName"] == "field-note"
+    assert result["limitNoteText"] == ""
 
 
 # ---------------------------------------------------------------------------
@@ -897,14 +1028,17 @@ CLASS_ADMIN_KEYS = [
     "classAdmin.panel_plan_editor",
     "classAdmin.panel_plan_preview",
     "classAdmin.panel_station_status",
+    "classAdmin.label_segment_number",
     "classAdmin.label_segment_kind",
     "classAdmin.label_segment_duration",
+    "classAdmin.label_target_watts",
     "classAdmin.btn_add_segment",
     "classAdmin.btn_delete_segment",
-    "classAdmin.btn_repeat_group",
-    "classAdmin.label_repeat_times",
-    "classAdmin.label_repeat_to",
-    "classAdmin.label_repeat_from",
+    "classAdmin.btn_duplicate_segment",
+    "classAdmin.btn_move_up",
+    "classAdmin.btn_move_down",
+    "classAdmin.btn_refresh",
+    "classAdmin.segment_limit_reached",
     "classAdmin.label_segment_count",
     "classAdmin.plan_empty",
     "classAdmin.station_col_number",
@@ -1021,41 +1155,32 @@ def test_class_admin_page_never_hardcodes_admin_token_header_name_wrong():
     assert "X-FitRace-Admin-Token" in body
 
 
-def test_repeat_to_label_routes_through_i18n_not_hardcoded_english():
-    """The repeat-group toolbar's "to row #" label used to render a literal
-    English string with no data-i18n attribute at all, so it stayed English
-    in every locale. It must now carry a data-i18n key like every other
-    label on the page."""
+def test_class_admin_page_removes_repeat_toolbar_and_uses_single_row_actions():
     body = _read_class_admin()
-    assert '<label for="repeat-to">To row #</label>' not in body
-    assert 'data-i18n="classAdmin.label_repeat_to"' in body
+    executable = _strip_js_comments(body)
+    assert "repeat-toolbar" not in executable
+    assert "applyRepeatGroup" not in executable
+    assert "repeatSegmentGroup" not in executable
+    assert 'id="btn-add-segment"' in body
+    assert 'onclick="duplicateSegmentRow(' in body
+    assert 'onclick="moveSegmentRow(' in body
 
 
-def _repeat_control_label_key(body: str, input_id: str) -> str:
-    match = re.search(rf'<label for="{input_id}" data-i18n="([^"]+)">', body)
-    assert match, f'no data-i18n label found for for="{input_id}"'
-    return match.group(1)
-
-
-def test_repeat_control_labels_reference_three_distinct_i18n_keys():
-    """The repeat-group toolbar has three inputs (from row, to row, times)
-    each with its own <label>. A prior bug pointed the "from row" label at
-    classAdmin.label_segment_kind -- the segment KIND dropdown's own label,
-    reused by copy-paste -- so the toolbar visibly read "Kind / To row # /
-    Count" instead of describing what the three inputs do. That was a key
-    COLLISION, not a missing key, so a plain "does this key exist in every
-    locale" check would never have caught it: the key existed and was fully
-    translated, just attached to the wrong label. Pin that the three labels
-    resolve to three distinct keys so that class of bug cannot recur."""
+def test_class_admin_segment_markup_has_translated_visible_labels_and_refresh_wiring():
+    html = _run_build_plan_editor_html(
+        '[{"kind":"work","durationSec":300,"targetWatts":150},'
+        ' {"kind":"rest","durationSec":60}]'
+    )
+    assert "T[classAdmin.label_segment_number|" in html
+    assert "T[classAdmin.label_segment_kind]" in html
+    assert "T[classAdmin.label_segment_duration]" in html
+    assert "T[classAdmin.label_target_watts]" in html
+    assert "moveSegmentRow(0, -1)" in html
+    assert "moveSegmentRow(1, 1)" in html
+    assert "duplicateSegmentRow(0)" in html
+    assert "duplicateSegmentRow(1)" in html
     body = _read_class_admin()
-    from_key = _repeat_control_label_key(body, "repeat-from")
-    to_key = _repeat_control_label_key(body, "repeat-to")
-    times_key = _repeat_control_label_key(body, "repeat-times")
-
-    assert from_key == "classAdmin.label_repeat_from"
-    assert to_key == "classAdmin.label_repeat_to"
-    assert times_key == "classAdmin.label_repeat_times"
-    assert len({from_key, to_key, times_key}) == 3
+    assert 'data-i18n="classAdmin.btn_refresh"' in body
 
 
 # ---------------------------------------------------------------------------

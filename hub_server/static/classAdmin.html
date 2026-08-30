@@ -244,9 +244,9 @@
     .guidance-box p { margin: 0 0 6px; }
     .guidance-box p:last-child { margin-bottom: 0; }
 
-    .repeat-toolbar {
+    .saved-plan-toolbar {
       display: grid;
-      grid-template-columns: 1fr 1fr 1fr auto;
+      grid-template-columns: 1fr 1fr auto;
       gap: 10px;
       align-items: end;
       margin-bottom: 14px;
@@ -268,6 +268,32 @@
       border-radius: 4px;
       background: rgba(0,0,0,0.22);
       padding: 10px 12px;
+    }
+
+    .segment-heading {
+      grid-column: 1 / -1;
+      margin: 0;
+      color: var(--text);
+      font-family: "Oswald", sans-serif;
+      font-size: 17px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .segment-field { min-width: 0; }
+
+    .segment-actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .segment-actions button {
+      min-height: 38px;
+      padding: 0 10px;
+      font-size: 12px;
     }
 
     .segment-row-work { border-left-color: var(--accent); }
@@ -367,8 +393,10 @@
 
     @media (max-width: 900px) {
       .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .repeat-toolbar { grid-template-columns: 1fr; }
+      .saved-plan-toolbar { grid-template-columns: 1fr; }
       .segment-row { grid-template-columns: 1fr; }
+      .segment-heading { grid-column: auto; }
+      .segment-actions { align-items: stretch; }
       .station-row { grid-template-columns: 1fr; }
       .history-row { grid-template-columns: 1fr; }
     }
@@ -413,7 +441,7 @@
           <span class="pill race-state" id="class-state-pill" data-i18n="state.idle">IDLE</span>
         </div>
 
-        <div class="repeat-toolbar" id="saved-plan-toolbar" style="grid-template-columns: 1fr 1fr auto;">
+        <div class="saved-plan-toolbar" id="saved-plan-toolbar">
           <div class="field">
             <label for="saved-class-picker" data-i18n="classAdmin.label_saved_class_picker">Saved Class</label>
             <select id="saved-class-picker" onchange="onSavedClassPickerChange(this.value)"></select>
@@ -425,27 +453,12 @@
           <button type="button" class="danger" id="btn-delete-saved-class" onclick="deleteSavedClass()" disabled data-i18n="classAdmin.btn_delete_saved_class">Delete Saved Class</button>
         </div>
 
-        <div class="repeat-toolbar">
-          <div class="field">
-            <label for="repeat-from" data-i18n="classAdmin.label_repeat_from">From row #</label>
-            <input type="number" id="repeat-from" min="1" value="1">
-          </div>
-          <div class="field">
-            <label for="repeat-to" data-i18n="classAdmin.label_repeat_to">To row #</label>
-            <input type="number" id="repeat-to" min="1" value="1">
-          </div>
-          <div class="field">
-            <label for="repeat-times" data-i18n="classAdmin.label_repeat_times">Times</label>
-            <input type="number" id="repeat-times" min="2" value="2">
-          </div>
-          <button type="button" id="btn-repeat-group" onclick="applyRepeatGroup()" data-i18n="classAdmin.btn_repeat_group">Repeat Selected ×N</button>
-        </div>
-
         <div class="segment-rows" id="plan-rows"></div>
 
         <div class="button-group">
-          <button type="button" onclick="addSegmentRow()" data-i18n="classAdmin.btn_add_segment">Add Segment</button>
+          <button type="button" id="btn-add-segment" onclick="addSegmentRow()" data-i18n="classAdmin.btn_add_segment">+ Add Segment</button>
         </div>
+        <div class="field-note" id="segment-limit-note" data-i18n="classAdmin.segment_limit_reached">The plan cannot contain more than 200 segments.</div>
 
         <h3 class="panel-title" style="font-size:16px;margin-top:18px;" data-i18n="classAdmin.panel_plan_preview">Plan Preview</h3>
         <div id="plan-preview"></div>
@@ -479,7 +492,7 @@
       <section class="panel" aria-labelledby="station-title">
         <div class="panel-header">
           <h2 class="panel-title" id="station-title" data-i18n="classAdmin.panel_station_status">Station Status</h2>
-          <button type="button" onclick="refreshAll()" data-i18n="classAdmin.btn_add_segment">Refresh</button>
+          <button type="button" onclick="refreshAll()" data-i18n="classAdmin.btn_refresh">Refresh</button>
         </div>
         <div class="station-list" id="station-list"></div>
       </section>
@@ -734,22 +747,6 @@
       return options;
     }
 
-    function repeatSegmentGroup(rows, startIndex, endIndex, times) {
-      const source = rows || [];
-      const safeStart = Math.max(0, Math.min(startIndex, endIndex));
-      const safeEnd = Math.min(source.length - 1, Math.max(startIndex, endIndex));
-      const safeTimes = Math.max(1, Math.floor(metricNumber(times, 1)));
-      if (safeStart > safeEnd || !source.length) return source.slice();
-      const before = source.slice(0, safeStart);
-      const group = source.slice(safeStart, safeEnd + 1);
-      const after = source.slice(safeEnd + 1);
-      const repeated = [];
-      for (let i = 0; i < safeTimes; i++) {
-        group.forEach((row) => repeated.push({ ...row }));
-      }
-      return [...before, ...repeated, ...after];
-    }
-
     // Pure -- input is one target watts value (or null/undefined) per
     // segment, output is one height percent per segment. Declared INSIDE
     // computePlanSummary so the two stay a single self-contained unit: the
@@ -994,17 +991,40 @@
       if (!rows.length) {
         return `<div class="empty">${escapeHtml(t("classAdmin.plan_empty"))}</div>`;
       }
+      const atLimit = rows.length >= 200;
       return rows.map((row, index) => {
         const wattsValue = row.targetWatts === null || row.targetWatts === undefined ? "" : escapeHtml(String(row.targetWatts));
-        const wattsLabel = escapeHtml(t("classAdmin.placeholder_target_watts"));
+        const numberLabel = escapeHtml(t("classAdmin.label_segment_number", { index: index + 1 }));
+        const kindLabel = escapeHtml(t("classAdmin.label_segment_kind"));
+        const durationLabel = escapeHtml(t("classAdmin.label_segment_duration"));
+        const wattsLabel = escapeHtml(t("classAdmin.label_target_watts"));
+        const wattsPlaceholder = escapeHtml(t("classAdmin.placeholder_target_watts"));
+        const upDisabled = index === 0 ? "disabled" : "";
+        const downDisabled = index === rows.length - 1 ? "disabled" : "";
+        const duplicateDisabled = atLimit ? "disabled" : "";
         return `
         <div class="segment-row segment-row-${escapeHtml(row.kind)}" id="segment-row-${index}">
-          <select onchange="updateSegmentKind(${index}, this.value)">
-            ${["warmup", "work", "rest", "cooldown", "changeover"].map((kind) => `<option value="${kind}" ${row.kind === kind ? "selected" : ""}>${escapeHtml(t(segmentKindKey(kind)))}</option>`).join("")}
-          </select>
-          <input type="number" min="5" max="3600" value="${escapeHtml(String(row.durationSec))}" oninput="updateSegmentDuration(${index}, this.value)" onchange="updateSegmentDuration(${index}, this.value)">
-          <input type="number" min="1" max="2000" placeholder="${wattsLabel}" title="${wattsLabel}" value="${wattsValue}" oninput="updateSegmentTargetWatts(${index}, this.value)" onchange="updateSegmentTargetWatts(${index}, this.value)">
-          <button type="button" class="danger" onclick="deleteSegmentRow(${index})">${escapeHtml(t("classAdmin.btn_delete_segment"))}</button>
+          <h3 class="segment-heading">${numberLabel}</h3>
+          <div class="segment-field">
+            <label for="segment-kind-${index}" data-i18n="classAdmin.label_segment_kind">${kindLabel}</label>
+            <select id="segment-kind-${index}" onchange="updateSegmentKind(${index}, this.value)">
+              ${["warmup", "work", "rest", "cooldown", "changeover"].map((kind) => `<option value="${kind}" ${row.kind === kind ? "selected" : ""}>${escapeHtml(t(segmentKindKey(kind)))}</option>`).join("")}
+            </select>
+          </div>
+          <div class="segment-field">
+            <label for="segment-duration-${index}" data-i18n="classAdmin.label_segment_duration">${durationLabel}</label>
+            <input id="segment-duration-${index}" type="number" min="5" max="3600" value="${escapeHtml(String(row.durationSec))}" oninput="updateSegmentDuration(${index}, this.value)" onchange="updateSegmentDuration(${index}, this.value)">
+          </div>
+          <div class="segment-field">
+            <label for="segment-target-watts-${index}" data-i18n="classAdmin.label_target_watts">${wattsLabel}</label>
+            <input id="segment-target-watts-${index}" type="number" min="1" max="2000" placeholder="${wattsPlaceholder}" title="${wattsLabel}" value="${wattsValue}" oninput="updateSegmentTargetWatts(${index}, this.value)" onchange="updateSegmentTargetWatts(${index}, this.value)">
+          </div>
+          <div class="segment-actions">
+            <button type="button" onclick="moveSegmentRow(${index}, -1)" ${upDisabled} data-i18n="classAdmin.btn_move_up">${escapeHtml(t("classAdmin.btn_move_up"))}</button>
+            <button type="button" onclick="moveSegmentRow(${index}, 1)" ${downDisabled} data-i18n="classAdmin.btn_move_down">${escapeHtml(t("classAdmin.btn_move_down"))}</button>
+            <button type="button" onclick="duplicateSegmentRow(${index})" ${duplicateDisabled} data-i18n="classAdmin.btn_duplicate_segment">${escapeHtml(t("classAdmin.btn_duplicate_segment"))}</button>
+            <button type="button" class="danger" onclick="deleteSegmentRow(${index})" data-i18n="classAdmin.btn_delete_segment">${escapeHtml(t("classAdmin.btn_delete_segment"))}</button>
+          </div>
         </div>
       `;
       }).join("");
@@ -1016,6 +1036,14 @@
 
     function renderPlanEditor() {
       $("plan-rows").innerHTML = buildPlanEditorHtml(state.rows);
+      const atLimit = state.rows.length >= 200;
+      const addButton = $("btn-add-segment");
+      if (addButton) addButton.disabled = atLimit;
+      const limitNote = $("segment-limit-note");
+      if (limitNote) {
+        limitNote.className = atLimit ? "field-note show" : "field-note";
+        limitNote.textContent = atLimit ? t("classAdmin.segment_limit_reached") : "";
+      }
     }
 
     function renderPlanPreview() {
@@ -1109,16 +1137,43 @@
     // Row mutation handlers.
     // ------------------------------------------------------------------
 
+    function focusSegmentField(index, field = "duration") {
+      const element = $(`segment-${field}-${index}`);
+      if (element && typeof element.focus === "function") element.focus();
+    }
+
     function addSegmentRow() {
+      if (state.rows.length >= 200) return;
       state.rowsDirty = true;
-      state.rows.push({ kind: "work", durationSec: 300, targetWatts: null });
+      state.rows.push({ kind: "work", durationSec: 300 });
       renderAll();
+      focusSegmentField(state.rows.length - 1);
+    }
+
+    function duplicateSegmentRow(index) {
+      if (!state.rows[index] || state.rows.length >= 200) return;
+      state.rowsDirty = true;
+      state.rows.splice(index + 1, 0, { ...state.rows[index] });
+      renderAll();
+      focusSegmentField(index + 1);
+    }
+
+    function moveSegmentRow(index, direction) {
+      if (!state.rows[index] || ![-1, 1].includes(direction)) return;
+      const targetIndex = index + direction;
+      if (targetIndex < 0 || targetIndex >= state.rows.length) return;
+      state.rowsDirty = true;
+      [state.rows[index], state.rows[targetIndex]] = [state.rows[targetIndex], state.rows[index]];
+      renderAll();
+      focusSegmentField(targetIndex);
     }
 
     function deleteSegmentRow(index) {
+      if (!state.rows[index]) return;
       state.rowsDirty = true;
       state.rows.splice(index, 1);
       renderAll();
+      if (state.rows.length) focusSegmentField(Math.min(index, state.rows.length - 1));
     }
 
     // A <select> change, not a text input -- but the row it belongs to is
@@ -1156,15 +1211,6 @@
       const trimmed = String(value ?? "").trim();
       state.rows[index].targetWatts = trimmed === "" ? null : metricNumber(trimmed, null);
       renderPlanPreview();
-    }
-
-    function applyRepeatGroup() {
-      const fromIndex = metricNumber($("repeat-from").value, 1) - 1;
-      const toIndex = metricNumber($("repeat-to").value, 1) - 1;
-      const times = metricNumber($("repeat-times").value, 2);
-      state.rowsDirty = true;
-      state.rows = repeatSegmentGroup(state.rows, fromIndex, toIndex, times);
-      renderAll();
     }
 
     // Picking a saved class from the dropdown loads it into the editor.
