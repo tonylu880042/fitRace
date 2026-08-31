@@ -1308,6 +1308,11 @@
     };
     const MONITOR_LIVE_WINDOW_MS = 3000;
     const HOME_MONITOR_POLL_MS = 500;
+    // The UART log is a diagnostic aid, not something card liveness depends
+    // on -- unlike the telemetry poll below, it doesn't need to track the
+    // 500ms cadence, so it gets its own slower interval (see the kiosk CPU
+    // note on refreshUartMonitor()).
+    const UART_MONITOR_POLL_MS = 2000;
     const UART_MONITOR_MAX = 200;
     const PAIRING_POLL_MS = 1000;
     // The runtime restart triggered by finishPairing() pauses MQTT publishing
@@ -2090,7 +2095,15 @@
       });
     }
 
-    async function refreshTelemetry() {
+    // The kiosk browser on the Edge Node itself polls this page -- on real
+    // hardware, running this fetch + renderUartMonitor() at the same 500ms
+    // cadence as refreshTelemetry() below doubled request volume for no
+    // liveness benefit (~800 requests/3min from a single client, ~26%
+    // uvicorn CPU / ~39% renderer CPU on an idle box). The UART log is a
+    // diagnostic aid an operator reads, not something card liveness
+    // depends on, so it gets its own slower interval -- see
+    // UART_MONITOR_POLL_MS.
+    async function refreshUartMonitor() {
       try {
         const response = await adminFetch("/api/monitor/events?limit=500");
         const payload = await response.json();
@@ -2100,6 +2113,9 @@
       } catch (_error) {
         // best-effort; next poll retries
       }
+    }
+
+    async function refreshTelemetry() {
       try {
         // A pairing scan can flood the raw event log above with dozens of
         // device-discovery lines (a real scan on this hardware produced 40
@@ -3102,9 +3118,11 @@
     checkPowerDryRunMode();
     refreshWifiStatus();
     refreshTelemetry();
+    refreshUartMonitor();
     setInterval(refreshWifiStatus, 5000);
     setInterval(() => refreshCentralHubStatus({ updateMessage: false }), 5000);
     setInterval(refreshTelemetry, HOME_MONITOR_POLL_MS);
+    setInterval(refreshUartMonitor, UART_MONITOR_POLL_MS);
   </script>
 </body>
 </html>

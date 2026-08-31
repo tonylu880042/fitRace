@@ -352,10 +352,13 @@ def test_edge_operator_uart_monitor_shows_latest_first_and_keeps_only_200_messag
 
     source = client.get("/").text
     render_start = source.index("function renderUartMonitor(events)")
-    render_end = source.index("async function refreshTelemetry()", render_start)
+    render_end = source.index("async function refreshUartMonitor()", render_start)
     render_source = source[render_start:render_end]
+    # refreshUartMonitor() (split out of refreshTelemetry() for perf --
+    # see test_edge_operator_uart_monitor_polls_on_its_own_slower_interval)
+    # is what actually calls this endpoint + renderUartMonitor() now.
     refresh_start = render_end
-    refresh_end = source.index("// -- view switching", refresh_start)
+    refresh_end = source.index("async function refreshTelemetry()", refresh_start)
     refresh_source = source[refresh_start:refresh_end]
 
     assert "const UART_MONITOR_MAX = 200" in source
@@ -3972,3 +3975,52 @@ def test_edge_operator_language_switch_preserves_wifi_toggle_button_expanded_lab
     assert 'getAttribute("aria-expanded") === "true"' in apply_fn
     assert '"wifi.collapse"' in apply_fn
     assert '"wifi.choose_other"' in apply_fn
+
+
+def test_edge_operator_uart_monitor_polls_on_its_own_slower_interval():
+    """Perf regression, measured on real hardware (192.168.0.135): the
+    on-device kiosk Chromium showing this page alone generated ~4
+    requests/second (792 in 3 minutes, all from 127.0.0.1) because
+    refreshTelemetry() fired every HOME_MONITOR_POLL_MS (500ms) and made
+    TWO requests per tick -- the UART log's `?limit=500` fetch plus the
+    telemetry `kind=telemetry&limit=200` fetch that card liveness actually
+    needs. list_events() re-parses the whole event log file on every
+    request, so this was ~3.6 MB/s of JSON parsing for no liveness
+    benefit: the UART log is a diagnostic aid, not something card
+    liveness depends on. refreshUartMonitor() must be split out onto its
+    own, slower UART_MONITOR_POLL_MS interval, and refreshTelemetry()
+    must no longer reach the `?limit=500` path at all.
+    """
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    assert "const UART_MONITOR_POLL_MS = 2000;" in source
+
+    uart_start = source.index("async function refreshUartMonitor()")
+    uart_end = source.index("async function refreshTelemetry()", uart_start)
+    uart_fn = _strip_js_comments(source[uart_start:uart_end])
+    assert '"/api/monitor/events?limit=500"' in uart_fn
+    assert "renderUartMonitor(events);" in uart_fn
+
+    telemetry_start = source.index("async function refreshTelemetry()")
+    telemetry_end = source.index("// -- view switching", telemetry_start)
+    telemetry_fn = _strip_js_comments(source[telemetry_start:telemetry_end])
+    # the 500ms path must no longer be able to reach the ?limit=500 fetch --
+    # that's the whole point of the split.
+    assert "?limit=500" not in telemetry_fn
+    assert '"/api/monitor/events?kind=telemetry&limit=200"' in telemetry_fn
+    assert "harvestTelemetryEvents(telemetryEvents);" in telemetry_fn
+    assert "updateBindingCardLeaves();" in telemetry_fn
+    assert "renderPairingWorklist();" in telemetry_fn
+
+    init_start = source.index(
+        "applyTranslations();\n    loadConfig({ populateHubFields: true })"
+    )
+    init_source = _strip_js_comments(source[init_start:])
+    # both must still run once at page init, not just from a setInterval
+    assert "refreshTelemetry();" in init_source
+    assert "refreshUartMonitor();" in init_source
+    # and each on its OWN interval -- the UART one strictly slower, proving
+    # it is not silently reusing the 500ms telemetry cadence.
+    assert "setInterval(refreshTelemetry, HOME_MONITOR_POLL_MS);" in init_source
+    assert "setInterval(refreshUartMonitor, UART_MONITOR_POLL_MS);" in init_source
