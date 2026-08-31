@@ -306,7 +306,13 @@ def test_edge_operator_wifi_view_uses_existing_scan_and_connect_apis():
     )
     assert 't("wifi.back_to_list")' in source
     assert "if (expanded && !wifiNetworksLoaded)" in source
-    init_start = source.index("applyTranslations();")
+    # Anchor on the actual page-init sequence at the bottom of the script,
+    # not just any "applyTranslations();" call -- the language switcher's
+    # change handler (added later in this file) also calls
+    # applyTranslations() from a spot earlier in the script.
+    init_start = source.index(
+        "applyTranslations();\n    loadConfig({ populateHubFields: true })"
+    )
     init_source = source[init_start:]
     assert "scanWifiNetworks();" not in init_source
 
@@ -3851,3 +3857,47 @@ def test_edge_pairing_worklist_restores_caret_position_after_rerender():
     assert (
         "restored.setSelectionRange(selectionStart, selectionStart);" in render_source
     )
+
+
+def test_edge_operator_page_offers_a_language_switcher_that_re_renders_dynamic_content():
+    """The operator page (`/`) previously had no way to change language --
+    only the old `/maintenance` page's `<select id="language-select">` did.
+    This mirrors that same pattern (same element id, same two options, same
+    localStorage key `fitrace.edge.locale`) so `/` and `/maintenance` stay
+    in sync on the same origin. A switch must also re-render the dynamic
+    content that was built with t() at render time (binding cards, hub
+    chip, Wi-Fi status, pairing worklist), not just call applyTranslations()
+    -- a switch that leaves half the page in the old language is a defect.
+    """
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    header_start = source.index('<header class="op-header">')
+    header_end = source.index('id="admin-auth-banner"', header_start)
+    header_html = source[header_start:header_end]
+
+    assert 'id="language-select"' in header_html
+    assert "aria-label=" in header_html
+    assert '<option value="en-US">English</option>' in header_html
+    assert '<option value="zh-TW">繁體中文</option>' in header_html
+
+    # init: after applyTranslations() runs, the select must reflect
+    # currentLocale -- extract applyTranslations()'s own body so a comment
+    # elsewhere mentioning "languageSelect.value" can't satisfy this.
+    apply_start = source.index("function applyTranslations()")
+    apply_end = source.index("function escapeHtml(value)", apply_start)
+    apply_fn = _strip_js_comments(source[apply_start:apply_end])
+    assert "languageSelect.value = currentLocale;" in apply_fn
+
+    # change: currentLocale + localStorage under the SAME key as
+    # /maintenance, then applyTranslations() plus re-rendering everything on
+    # the home view that t() built at render time.
+    change_start = source.index('languageSelect.addEventListener("change"')
+    change_end = source.index("function escapeHtml(value)", change_start)
+    change_fn = _strip_js_comments(source[change_start:change_end])
+    assert "currentLocale = languageSelect.value;" in change_fn
+    assert 'localStorage.setItem("fitrace.edge.locale", currentLocale);' in change_fn
+    assert "applyTranslations();" in change_fn
+    assert "refreshHubChip();" in change_fn
+    assert "refreshWifiStatus();" in change_fn
+    assert "renderBindingCards();" in change_fn

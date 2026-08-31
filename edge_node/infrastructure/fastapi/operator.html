@@ -75,6 +75,15 @@
       flex-wrap: wrap;
     }
 
+    .language-select {
+      height: 30px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+
     .chip {
       display: inline-flex;
       align-items: center;
@@ -1014,6 +1023,10 @@
     <header class="op-header">
       <h1 id="operator-title">__EDGE_NODE_TITLE__</h1>
       <div class="chip-row">
+        <select id="language-select" class="language-select" aria-label="System language">
+          <option value="en-US">English</option>
+          <option value="zh-TW">繁體中文</option>
+        </select>
         <div class="chip" id="hub-chip">
           <span class="chip-dot" id="hub-chip-dot"></span>
           <span data-i18n="operator.hub_label">Hub</span>
@@ -1175,6 +1188,7 @@
   </div>
 
   <script>
+    const languageSelect = document.getElementById("language-select");
     const dictionaries = __I18N_DICTIONARIES__;
     const edgeNodeLabel = "__EDGE_NODE_LABEL__";
 
@@ -1206,6 +1220,7 @@
 
     function applyTranslations() {
       document.documentElement.lang = currentLocale;
+      languageSelect.value = currentLocale;
       document.querySelectorAll("[data-i18n]").forEach((element) => {
         element.innerText = t(element.dataset.i18n);
       });
@@ -1213,6 +1228,22 @@
       document.title = title;
       document.getElementById("operator-title").textContent = title;
     }
+
+    // Mirrors /maintenance's language-select handler (same element id, same
+    // localStorage key) so the two pages stay in sync on the same origin.
+    // applyTranslations() only swaps data-i18n text nodes -- everything else
+    // on the current view that was built with t() at render time (binding
+    // cards, hub chip, Wi-Fi status, pairing worklist) has to be rebuilt
+    // explicitly or it's left showing the old language.
+    languageSelect.addEventListener("change", () => {
+      currentLocale = languageSelect.value;
+      localStorage.setItem("fitrace.edge.locale", currentLocale);
+      applyTranslations();
+      refreshHubChip();
+      refreshWifiStatus();
+      if (currentView === "home" && edgeConfig) renderBindingCards();
+      if (currentView === "pairing") renderPairingWorklist();
+    });
 
     function escapeHtml(value) {
       return String(value ?? "")
