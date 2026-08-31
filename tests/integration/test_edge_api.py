@@ -4024,3 +4024,102 @@ def test_edge_operator_uart_monitor_polls_on_its_own_slower_interval():
     # it is not silently reusing the 500ms telemetry cadence.
     assert "setInterval(refreshTelemetry, HOME_MONITOR_POLL_MS);" in init_source
     assert "setInterval(refreshUartMonitor, UART_MONITOR_POLL_MS);" in init_source
+
+
+def test_edge_operator_uart_monitor_panel_is_collapsible_and_defaults_closed():
+    """The UART monitor is a diagnostic view that ran uninterrupted all day
+    on the venue's kiosk (see test_edge_operator_uart_monitor_polls_on_its_own_slower_interval).
+    Even on its own slower interval, polling a panel nobody is looking at
+    is still wasted work -- the device owner needs to be able to close it,
+    and a closed monitor must not be polled at all. Mirrors the existing
+    #wifi-toggle-btn / #wifi-picker-body / toggleWifiPicker() pattern
+    rather than inventing a new one.
+    """
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    panel_start = source.index('<section class="panel uart-monitor-panel"')
+    panel_end = source.index("</section>", panel_start)
+    panel_html = source[panel_start:panel_end]
+
+    # collapsed by default: aria-expanded="false" and the body hidden.
+    assert 'id="uart-monitor-toggle-btn"' in panel_html
+    assert 'aria-expanded="false"' in panel_html
+    assert 'aria-controls="uart-monitor-body"' in panel_html
+    assert 'id="uart-monitor-body" class="uart-monitor-body" hidden' in panel_html
+    # only the log body collapses -- the heading stays outside it so the
+    # operator can always find the panel again.
+    assert panel_html.index('id="uart-monitor-title"') < panel_html.index(
+        'id="uart-monitor-toggle-btn"'
+    )
+    assert panel_html.index('id="uart-monitor-toggle-btn"') < panel_html.index(
+        'id="uart-monitor-body"'
+    )
+
+    # persistence: read on init, written on toggle, under its own key --
+    # wrapped so a throwing/unavailable localStorage still renders.
+    read_start = source.index("function readUartMonitorOpenPreference()")
+    read_end = source.index("function writeUartMonitorOpenPreference(", read_start)
+    read_fn = _strip_js_comments(source[read_start:read_end])
+    assert 'localStorage.getItem(UART_MONITOR_OPEN_STORAGE_KEY) === "true"' in read_fn
+    assert "try {" in read_fn and "catch (_error) {" in read_fn
+
+    write_start = source.index("function writeUartMonitorOpenPreference(open)")
+    write_end = source.index("function setUartMonitorExpanded(", write_start)
+    write_fn = _strip_js_comments(source[write_start:write_end])
+    assert (
+        "localStorage.setItem(UART_MONITOR_OPEN_STORAGE_KEY, String(open));" in write_fn
+    )
+    assert "try {" in write_fn and "catch (_error) {" in write_fn
+
+    assert (
+        'const UART_MONITOR_OPEN_STORAGE_KEY = "fitrace.edge.uartMonitorOpen";'
+        in source
+    )
+
+    toggle_start = source.index("function toggleUartMonitor()")
+    toggle_end = source.index("async function refreshTelemetry()", toggle_start)
+    toggle_fn = _strip_js_comments(source[toggle_start:toggle_end])
+    assert "writeUartMonitorOpenPreference(expanded);" in toggle_fn
+    # opening it must fetch immediately, not wait for the next tick.
+    assert "if (expanded) {" in toggle_fn
+    assert "refreshUartMonitor();" in toggle_fn
+
+    # read on init, before applyTranslations() so the derived label is
+    # correct on first paint -- and the toggle button is wired up.
+    init_start = source.index(
+        "setUartMonitorExpanded(readUartMonitorOpenPreference());"
+    )
+    init_end = source.index("applyTranslations();", init_start)
+    assert init_start < init_end
+    assert (
+        'document.getElementById("uart-monitor-toggle-btn").addEventListener("click", toggleUartMonitor);'
+        in source
+    )
+
+    # the poll itself must be skipped entirely while collapsed -- not
+    # fetched and discarded.
+    uart_start = source.index("async function refreshUartMonitor()")
+    uart_end = source.index("const UART_MONITOR_OPEN_STORAGE_KEY", uart_start)
+    uart_fn = _strip_js_comments(source[uart_start:uart_end])
+    assert 'toggleBtn.getAttribute("aria-expanded") !== "true") return;' in uart_fn
+
+    # the language-switch trap fixed for #wifi-toggle-btn in 4730aeb
+    # applies here too -- applyTranslations() must re-derive this button's
+    # label from its own aria-expanded state.
+    apply_start = source.index("function applyTranslations()")
+    apply_end = source.index('languageSelect.addEventListener("change"', apply_start)
+    apply_fn = _strip_js_comments(source[apply_start:apply_end])
+    assert 'document.getElementById("uart-monitor-toggle-btn")' in apply_fn
+    assert '"uartmonitor.collapse"' in apply_fn
+    assert '"uartmonitor.expand"' in apply_fn
+
+
+def test_edge_locales_have_uart_monitor_toggle_labels():
+    locales_dir = Path(edge_app_module.__file__).resolve().parent.parent / "locales"
+    en = json.loads((locales_dir / "en.json").read_text(encoding="utf-8"))
+    zh_tw = json.loads((locales_dir / "zh_tw.json").read_text(encoding="utf-8"))
+    for key in ("uartmonitor.expand", "uartmonitor.collapse"):
+        assert key in en, key
+        assert key in zh_tw, key
+    assert set(en.keys()) == set(zh_tw.keys())

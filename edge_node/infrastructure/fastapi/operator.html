@@ -900,6 +900,19 @@
       font-size: 12px;
     }
 
+    .uart-monitor-toggle-btn {
+      width: 100%;
+      margin-top: 12px;
+    }
+
+    .uart-monitor-body {
+      margin-top: 12px;
+    }
+
+    .uart-monitor-body[hidden] {
+      display: none;
+    }
+
     .uart-monitor-legend {
       display: flex;
       gap: 14px;
@@ -1117,16 +1130,26 @@
         </section>
         <section class="panel uart-monitor-panel" aria-labelledby="uart-monitor-title">
           <h2 id="uart-monitor-title" data-i18n="uartmonitor.title">UART RX/TX Monitor</h2>
-          <div class="uart-monitor-legend" id="uart-monitor-legend">
-            <span class="rx" data-i18n="uartmonitor.rx">RX Receive</span>
-            <span class="tx" data-i18n="uartmonitor.tx">TX Send</span>
+          <button
+            type="button"
+            id="uart-monitor-toggle-btn"
+            class="btn-secondary uart-monitor-toggle-btn"
+            aria-expanded="false"
+            aria-controls="uart-monitor-body"
+            data-i18n="uartmonitor.expand"
+          >Show log</button>
+          <div id="uart-monitor-body" class="uart-monitor-body" hidden>
+            <div class="uart-monitor-legend" id="uart-monitor-legend">
+              <span class="rx" data-i18n="uartmonitor.rx">RX Receive</span>
+              <span class="tx" data-i18n="uartmonitor.tx">TX Send</span>
+            </div>
+            <div
+              id="uart-monitor-log"
+              class="uart-monitor-log"
+              aria-describedby="uart-monitor-legend"
+              tabindex="0"
+            ></div>
           </div>
-          <div
-            id="uart-monitor-log"
-            class="uart-monitor-log"
-            aria-describedby="uart-monitor-legend"
-            tabindex="0"
-          ></div>
         </section>
       </aside>
 
@@ -1234,6 +1257,9 @@
       // toggleWifiPicker() uses) so a language switch can't regress it.
       const wifiToggleBtn = document.getElementById("wifi-toggle-btn");
       wifiToggleBtn.textContent = t(wifiToggleBtn.getAttribute("aria-expanded") === "true" ? "wifi.collapse" : "wifi.choose_other");
+      // Same trap, same fix, for the UART monitor's own toggle button.
+      const uartToggleBtn = document.getElementById("uart-monitor-toggle-btn");
+      uartToggleBtn.textContent = t(uartToggleBtn.getAttribute("aria-expanded") === "true" ? "uartmonitor.collapse" : "uartmonitor.expand");
     }
 
     // Mirrors /maintenance's language-select handler (same element id, same
@@ -2104,6 +2130,11 @@
     // depends on, so it gets its own slower interval -- see
     // UART_MONITOR_POLL_MS.
     async function refreshUartMonitor() {
+      const toggleBtn = document.getElementById("uart-monitor-toggle-btn");
+      // Collapsed -- skip the request entirely rather than fetching and
+      // discarding; the whole point of the toggle is to stop this poll
+      // when nobody is looking at the log.
+      if (toggleBtn.getAttribute("aria-expanded") !== "true") return;
       try {
         const response = await adminFetch("/api/monitor/events?limit=500");
         const payload = await response.json();
@@ -2112,6 +2143,50 @@
         renderUartMonitor(events);
       } catch (_error) {
         // best-effort; next poll retries
+      }
+    }
+
+    // The UART log is a diagnostic view an operator opens occasionally --
+    // it defaults to collapsed (and the choice is remembered per browser)
+    // so the venue's all-day kiosk doesn't poll it until someone actually
+    // wants to look. Wrapped in try/catch so a throwing/unavailable
+    // localStorage (private mode, disabled storage) still renders a
+    // working page -- collapsed, the safe default.
+    const UART_MONITOR_OPEN_STORAGE_KEY = "fitrace.edge.uartMonitorOpen";
+
+    function readUartMonitorOpenPreference() {
+      try {
+        return localStorage.getItem(UART_MONITOR_OPEN_STORAGE_KEY) === "true";
+      } catch (_error) {
+        return false;
+      }
+    }
+
+    function writeUartMonitorOpenPreference(open) {
+      try {
+        localStorage.setItem(UART_MONITOR_OPEN_STORAGE_KEY, String(open));
+      } catch (_error) {
+        // best-effort; the page still works, it just won't remember the choice
+      }
+    }
+
+    function setUartMonitorExpanded(expanded) {
+      const toggleBtn = document.getElementById("uart-monitor-toggle-btn");
+      const body = document.getElementById("uart-monitor-body");
+      toggleBtn.setAttribute("aria-expanded", String(expanded));
+      toggleBtn.textContent = t(expanded ? "uartmonitor.collapse" : "uartmonitor.expand");
+      body.hidden = !expanded;
+    }
+
+    function toggleUartMonitor() {
+      const toggleBtn = document.getElementById("uart-monitor-toggle-btn");
+      const expanded = toggleBtn.getAttribute("aria-expanded") !== "true";
+      setUartMonitorExpanded(expanded);
+      writeUartMonitorOpenPreference(expanded);
+      if (expanded) {
+        // Fetch immediately rather than waiting for the next
+        // UART_MONITOR_POLL_MS tick, so the log isn't blank on open.
+        refreshUartMonitor();
       }
     }
 
@@ -3102,6 +3177,7 @@
     document.getElementById("diagnostic-status-btn").addEventListener("click", () => runAntennaDiagnostic("status"));
     document.getElementById("wifi-toggle-btn").addEventListener("click", toggleWifiPicker);
     document.getElementById("wifi-rescan-btn").addEventListener("click", scanWifiNetworks);
+    document.getElementById("uart-monitor-toggle-btn").addEventListener("click", toggleUartMonitor);
     document.getElementById("pairing-rescan-btn").addEventListener("click", rescan);
     document.getElementById("pairing-cancel-btn").addEventListener("click", async () => {
       await cancelPairing();
@@ -3113,6 +3189,10 @@
     document.getElementById("pairing-worklist").addEventListener("click", handlePairingWorklistClick);
     document.getElementById("pairing-worklist").addEventListener("input", handlePairingWorklistInput);
 
+    // Must run before applyTranslations() so the label it derives from
+    // aria-expanded reflects the restored (or default-collapsed) state,
+    // not the static markup's default.
+    setUartMonitorExpanded(readUartMonitorOpenPreference());
     applyTranslations();
     loadConfig({ populateHubFields: true }).then(restorePairingSessionIfActive);
     checkPowerDryRunMode();

@@ -98,6 +98,8 @@
   "uartmonitor.title": "UART RX/TX Monitor",
   "uartmonitor.rx": "RX Receive",
   "uartmonitor.tx": "TX Send",
+  "uartmonitor.expand": "Show log",
+  "uartmonitor.collapse": "Hide log",
   "uartlog.title": "Antenna UART log",
   "uartlog.empty": "No UART traffic yet.",
   "monitor.status": "Live / bound equipment slots",
