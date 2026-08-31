@@ -1241,6 +1241,7 @@
       applyTranslations();
       refreshHubChip();
       refreshWifiStatus();
+      refreshWifiPickerLanguage();
       if (currentView === "home" && edgeConfig) renderBindingCards();
       if (currentView === "pairing") renderPairingWorklist();
     });
@@ -1360,6 +1361,11 @@
     let bindingReconnectState = new Map();
     let wifiNetworks = [];
     let wifiNetworksLoaded = false;
+    // The network object currently shown in the connect/password form, or
+    // null when the plain list is what's on screen -- lets a language
+    // switch re-render whichever of the two is visible without a fresh
+    // scan or request.
+    let wifiConnectingNet = null;
     let uartMonitorSignature = null;
     let centralHubReady = false;
     let centralHubStatus = "checking";
@@ -1548,6 +1554,7 @@
     }
 
     function renderWifiNetworks() {
+      wifiConnectingNet = null; // back on the list -- no network mid-connect
       const list = document.getElementById("wifi-networks");
       const message = document.getElementById("wifi-scan-message");
       if (!wifiNetworks.length) {
@@ -1618,6 +1625,7 @@
     }
 
     function renderWifiConnect(net) {
+      wifiConnectingNet = net;
       const list = document.getElementById("wifi-networks");
       const message = document.getElementById("wifi-scan-message");
       const needsPassword = net.secured && !net.saved;
@@ -1664,6 +1672,21 @@
         }
       });
       (document.getElementById("wifi-password") || confirmBtn).focus();
+    }
+
+    // A language switch must relabel whichever of the Wi-Fi network list or
+    // the connect/password form is currently on screen -- refreshWifiStatus()
+    // only rewrites the current-network status line and touches neither.
+    // Never triggers a fresh scan or request; only rebuilds from state
+    // already held in memory (wifiNetworks / wifiConnectingNet).
+    function refreshWifiPickerLanguage() {
+      const toggleBtn = document.getElementById("wifi-toggle-btn");
+      if (toggleBtn.getAttribute("aria-expanded") !== "true") return;
+      if (wifiConnectingNet) {
+        renderWifiConnect(wifiConnectingNet);
+      } else if (wifiNetworksLoaded) {
+        renderWifiNetworks();
+      }
     }
 
     async function checkPowerDryRunMode() {

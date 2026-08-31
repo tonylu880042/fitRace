@@ -3900,4 +3900,46 @@ def test_edge_operator_page_offers_a_language_switcher_that_re_renders_dynamic_c
     assert "applyTranslations();" in change_fn
     assert "refreshHubChip();" in change_fn
     assert "refreshWifiStatus();" in change_fn
+    assert "refreshWifiPickerLanguage();" in change_fn
     assert "renderBindingCards();" in change_fn
+    assert "renderPairingWorklist();" in change_fn
+
+
+def test_edge_operator_language_switch_relabels_the_open_wifi_picker():
+    """Regression: refreshWifiStatus() (called on a language switch) only
+    rewrites the current-network status line -- it never touches the
+    scanned network list (renderWifiNetworks(), built with t("wifi.saved")/
+    t("wifi.connect")/t("wifi.connected")) or the connect/password form
+    (renderWifiConnect(net), built with 9 t() calls). An operator with the
+    Wi-Fi picker open who switches language would otherwise keep old-
+    language button labels until they rescan. refreshWifiPickerLanguage()
+    must re-render whichever of the two is actually on screen, using state
+    already in memory -- not by triggering a fresh scan or request.
+    """
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    refresh_start = source.index("function refreshWifiPickerLanguage()")
+    refresh_end = source.index("async function checkPowerDryRunMode()", refresh_start)
+    refresh_fn = _strip_js_comments(source[refresh_start:refresh_end])
+
+    assert 'toggleBtn.getAttribute("aria-expanded") !== "true"' in refresh_fn
+    assert "renderWifiConnect(wifiConnectingNet);" in refresh_fn
+    assert "renderWifiNetworks();" in refresh_fn
+    # must be a pure re-render from memory, never a fresh scan or request
+    assert "scanWifiNetworks()" not in refresh_fn
+    assert "adminFetch(" not in refresh_fn
+
+    # renderWifiConnect(net) must record which network is on screen so
+    # refreshWifiPickerLanguage() can rebuild the same form later.
+    connect_start = source.index("function renderWifiConnect(net)")
+    connect_end = source.index("function refreshWifiPickerLanguage()", connect_start)
+    connect_fn = _strip_js_comments(source[connect_start:connect_end])
+    assert "wifiConnectingNet = net;" in connect_fn
+
+    # renderWifiNetworks() must clear that marker -- back on the list means
+    # no network is mid-connect any more.
+    networks_start = source.index("function renderWifiNetworks()")
+    networks_end = source.index("async function scanWifiNetworks()", networks_start)
+    networks_fn = _strip_js_comments(source[networks_start:networks_end])
+    assert "wifiConnectingNet = null;" in networks_fn
