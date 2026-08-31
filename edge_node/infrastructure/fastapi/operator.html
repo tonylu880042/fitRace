@@ -1227,6 +1227,13 @@
       const title = `${edgeNodeLabel}-${t("operator.title")}`;
       document.title = title;
       document.getElementById("operator-title").textContent = title;
+      // The blanket data-i18n sweep above just reset this button back to its
+      // static "choose another network" label -- but if the Wi-Fi picker is
+      // currently expanded it should read "Collapse" instead. Re-derive it
+      // from the button's own aria-expanded state (the same ternary
+      // toggleWifiPicker() uses) so a language switch can't regress it.
+      const wifiToggleBtn = document.getElementById("wifi-toggle-btn");
+      wifiToggleBtn.textContent = t(wifiToggleBtn.getAttribute("aria-expanded") === "true" ? "wifi.collapse" : "wifi.choose_other");
     }
 
     // Mirrors /maintenance's language-select handler (same element id, same

@@ -3926,6 +3926,11 @@ def test_edge_operator_language_switch_relabels_the_open_wifi_picker():
     assert 'toggleBtn.getAttribute("aria-expanded") !== "true"' in refresh_fn
     assert "renderWifiConnect(wifiConnectingNet);" in refresh_fn
     assert "renderWifiNetworks();" in refresh_fn
+    # the list branch must stay gated on wifiNetworksLoaded -- without this
+    # guard, switching language while the picker is expanded but the first
+    # scan hasn't returned yet renders the empty list and flashes
+    # t("wifi.none_found") instead of leaving the in-flight scan message.
+    assert "else if (wifiNetworksLoaded) {" in refresh_fn
     # must be a pure re-render from memory, never a fresh scan or request
     assert "scanWifiNetworks()" not in refresh_fn
     assert "adminFetch(" not in refresh_fn
@@ -3943,3 +3948,27 @@ def test_edge_operator_language_switch_relabels_the_open_wifi_picker():
     networks_end = source.index("async function scanWifiNetworks()", networks_start)
     networks_fn = _strip_js_comments(source[networks_start:networks_end])
     assert "wifiConnectingNet = null;" in networks_fn
+
+
+def test_edge_operator_language_switch_preserves_wifi_toggle_button_expanded_label():
+    """Regression: #wifi-toggle-btn carries a static data-i18n="wifi.choose_other"
+    attribute, but toggleWifiPicker() overwrites its live text to
+    t("wifi.collapse") while the Wi-Fi picker is expanded. applyTranslations()'s
+    blanket `[data-i18n]` sweep (which a language switch re-runs) always resets
+    the button back to t("wifi.choose_other") from that static attribute --
+    so with the picker OPEN, every language switch leaves the collapse button
+    reading the wrong ("choose another network") label. applyTranslations()
+    must re-derive the button's label from its actual aria-expanded state
+    after the sweep, not just leave whatever the blanket pass produced.
+    """
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    apply_start = source.index("function applyTranslations()")
+    apply_end = source.index('languageSelect.addEventListener("change"', apply_start)
+    apply_fn = _strip_js_comments(source[apply_start:apply_end])
+
+    assert 'document.getElementById("wifi-toggle-btn")' in apply_fn
+    assert 'getAttribute("aria-expanded") === "true"' in apply_fn
+    assert '"wifi.collapse"' in apply_fn
+    assert '"wifi.choose_other"' in apply_fn
