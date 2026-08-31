@@ -1,0 +1,1447 @@
+<!DOCTYPE html>
+<html lang="en-US">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FitRaceStudio Class Admin</title>
+  <meta name="description" content="FitRaceStudio class operation console">
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;700&family=Outfit:wght@400;600;800&family=Noto+Sans+TC:wght@500;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #09090b;
+      --surface: #18181b;
+      --surface-2: #111113;
+      --border: #27272a;
+      --border-strong: #3f3f46;
+      --text: #fafafa;
+      --muted: #a1a1aa;
+      --accent: #e2ff3b;
+      --warn: #f59e0b;
+      --danger: #f43f5e;
+      --ok: #34d399;
+      --rest-grey: #71717a;
+      --changeover-violet: #a78bfa;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Outfit", "Noto Sans TC", sans-serif;
+      padding: 24px;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background-image: radial-gradient(rgba(255,255,255,0.018) 1px, transparent 0);
+      background-size: 24px 24px;
+      pointer-events: none;
+      z-index: -1;
+    }
+
+    button, input, select { font: inherit; }
+
+    button {
+      min-height: 42px;
+      border: 1px solid var(--border-strong);
+      border-radius: 4px;
+      background: var(--surface-2);
+      color: var(--text);
+      cursor: pointer;
+      font-family: "Oswald", sans-serif;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 0 14px;
+    }
+
+    button:hover:not(:disabled) {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    .primary { background: var(--accent); border-color: var(--accent); color: #09090b; }
+    .primary:hover:not(:disabled) { color: #09090b; filter: brightness(1.08); }
+
+    .danger { border-color: rgba(244, 63, 94, 0.7); color: var(--danger); }
+    .danger:hover:not(:disabled) { background: rgba(244, 63, 94, 0.12); color: #fb7185; }
+
+    input, select {
+      width: 100%;
+      height: 42px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: rgba(0,0,0,0.32);
+      color: var(--text);
+      padding: 0 12px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 7px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .shell { width: min(1480px, 100%); margin: 0 auto; display: grid; gap: 18px; }
+
+    .topbar {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 16px;
+      align-items: center;
+      padding: 22px 24px;
+      border: 2px solid var(--border);
+      border-radius: 4px;
+      background: linear-gradient(180deg, rgba(24,24,27,0.92), rgba(17,17,19,0.94));
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* The nav column is `auto`-sized while the brand column is
+       `minmax(0, 1fr)` (can shrink to nothing), so a wide nav crushes the
+       brand title on a 1280px-wide viewport -- this page had no
+       topbar-stacking rule at all before this fix. Stack the topbar into
+       a single column up to 1280px wide (80em with the 16px root
+       default). */
+    @media (max-width: 80em) {
+      .topbar {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .topbar::before {
+      content: "";
+      position: absolute;
+      inset: 0 0 auto 0;
+      height: 4px;
+      background: repeating-linear-gradient(-45deg, var(--accent), var(--accent) 8px, #000 8px, #000 16px);
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-family: "Oswald", sans-serif;
+      font-size: clamp(28px, 3.2vw, 44px);
+      line-height: 1;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .brand h1 span { color: var(--accent); }
+
+    .brand p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .top-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 10px; }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 34px;
+      padding: 0 11px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: rgba(0,0,0,0.24);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--danger);
+      box-shadow: 0 0 10px rgba(244,63,94,0.55);
+    }
+
+    .dot.online { background: var(--accent); box-shadow: 0 0 10px rgba(226,255,59,0.48); }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--danger); display: inline-block; }
+    .status-dot.online { background: var(--ok); }
+
+    #language-select { width: auto; height: 34px; padding: 0 8px; }
+
+    .summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+
+    .metric {
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: rgba(0,0,0,0.22);
+      padding: 13px;
+    }
+
+    .metric-value { font-family: "Oswald", sans-serif; font-size: 28px; line-height: 1; color: var(--accent); }
+    .metric-label { margin-top: 6px; color: var(--muted); font-size: 12px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; }
+
+    .layout { display: grid; gap: 18px; }
+
+    .panel { border: 2px solid var(--border); border-radius: 4px; background: var(--surface); padding: 18px; }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding-bottom: 12px;
+      margin-bottom: 14px;
+      border-bottom: 2px solid var(--border);
+    }
+
+    .panel-title { margin: 0; font-family: "Oswald", sans-serif; font-size: 22px; letter-spacing: 0.04em; text-transform: uppercase; }
+    .panel-subtitle { margin: 0 0 4px; color: var(--muted); font-size: 13px; line-height: 1.35; }
+
+    .button-group { display: flex; flex-wrap: wrap; gap: 10px; }
+
+    .status-text { min-height: 20px; margin-top: 10px; color: var(--muted); font-size: 13px; line-height: 1.35; }
+    .status-text.ok { color: var(--ok); }
+    .status-text.warn { color: var(--warn); }
+    .status-text.error { color: var(--danger); }
+
+    .field-note { display: none; margin-top: 6px; color: var(--muted); font-size: 11px; line-height: 1.35; }
+    .field-note.show { display: block; }
+
+    .action-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-top: 18px;
+      padding-top: 14px;
+      border-top: 2px solid var(--border);
+    }
+
+    .guidance-box {
+      margin-top: 14px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: rgba(0,0,0,0.22);
+      padding: 12px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .guidance-box p { margin: 0 0 6px; }
+    .guidance-box p:last-child { margin-bottom: 0; }
+
+    .saved-plan-toolbar {
+      display: grid;
+      grid-template-columns: 1fr 1fr auto;
+      gap: 10px;
+      align-items: end;
+      margin-bottom: 14px;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: rgba(0,0,0,0.18);
+    }
+
+    .segment-rows { display: grid; gap: 10px; margin-bottom: 12px; }
+
+    .segment-row {
+      display: grid;
+      grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--border-strong);
+      border-radius: 4px;
+      background: rgba(0,0,0,0.22);
+      padding: 10px 12px;
+    }
+
+    .segment-heading {
+      grid-column: 1 / -1;
+      margin: 0;
+      color: var(--text);
+      font-family: "Oswald", sans-serif;
+      font-size: 17px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .segment-field { min-width: 0; }
+
+    .segment-actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .segment-actions button {
+      min-height: 38px;
+      padding: 0 10px;
+      font-size: 12px;
+    }
+
+    .segment-row-work { border-left-color: var(--accent); }
+    .segment-row-rest { border-left-color: var(--rest-grey); }
+    .segment-row-warmup { border-left-color: var(--warn); }
+    .segment-row-cooldown { border-left-color: #60a5fa; }
+    .segment-row-changeover { border-left-color: var(--changeover-violet); }
+
+    .timeline {
+      display: flex;
+      align-items: flex-end;
+      width: 100%;
+      height: 120px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      overflow: hidden;
+      background: rgba(0,0,0,0.3);
+    }
+
+    .timeline-block { border-right: 1px solid rgba(0,0,0,0.4); }
+    .timeline-block:last-child { border-right: none; }
+    .timeline-warmup { background: var(--warn); }
+    .timeline-work { background: var(--accent); }
+    .timeline-rest { background: var(--rest-grey); }
+    .timeline-cooldown { background: #60a5fa; }
+    .timeline-changeover { background: var(--changeover-violet); }
+
+    .plan-summary-row {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .station-list { display: grid; gap: 8px; }
+
+    .station-row {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr) auto auto;
+      align-items: center;
+      gap: 12px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: rgba(0,0,0,0.22);
+      padding: 10px 12px;
+      font-size: 13px;
+    }
+
+    .station-number { font-weight: 800; color: var(--text); }
+    .station-athlete, .station-machine { color: var(--muted); }
+    .station-live-label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+
+    .history-list { display: grid; gap: 8px; }
+
+    .history-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr);
+      align-items: center;
+      gap: 12px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: rgba(0,0,0,0.22);
+      padding: 10px 12px;
+      font-size: 13px;
+    }
+
+    .history-when { font-weight: 800; color: var(--text); }
+    .history-duration, .history-count { color: var(--muted); }
+
+    .empty { color: var(--muted); font-size: 13px; padding: 14px; text-align: center; border: 1px dashed var(--border); border-radius: 4px; }
+
+    .login {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      align-items: center;
+      justify-content: center;
+      z-index: 50;
+    }
+
+    .login.show { display: flex; }
+
+    .login-box {
+      width: min(420px, 92vw);
+      border: 2px solid var(--border);
+      border-radius: 4px;
+      background: var(--surface);
+      padding: 20px;
+    }
+
+    .login-box h2 { margin: 0 0 8px; font-family: "Oswald", sans-serif; text-transform: uppercase; }
+    .login-box p { color: var(--muted); font-size: 13px; line-height: 1.4; margin: 0 0 14px; }
+    .button-row { display: flex; gap: 10px; margin-top: 14px; }
+
+    @media (max-width: 900px) {
+      .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .saved-plan-toolbar { grid-template-columns: 1fr; }
+      .segment-row { grid-template-columns: 1fr; }
+      .segment-heading { grid-column: auto; }
+      .segment-actions { align-items: stretch; }
+      .station-row { grid-template-columns: 1fr; }
+      .history-row { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <h1>FitRace<span>Studio</span> Class Admin</h1>
+        <p data-i18n="classAdmin.subtitle">Class operation console</p>
+      </div>
+      <div class="top-actions">
+        <select id="language-select" onchange="setLanguage(this.value)"></select>
+        <div class="pill"><span class="dot" id="ws-dot"></span><span id="ws-label" data-i18n="connection.offline">Offline</span></div>
+        <button type="button" onclick="window.location.href='/'" data-i18n="classAdmin.nav_dashboard">Dashboard</button>
+        <button type="button" onclick="window.location.href='/gameAdmin'" data-i18n="classAdmin.nav_game_admin">Game Admin</button>
+        <button type="button" onclick="window.location.href='/systemAdmin'" data-i18n="classAdmin.nav_system_admin">System Admin</button>
+        <button type="button" onclick="openLogin()" data-i18n="classAdmin.nav_operator_unlock">Operator Unlock</button>
+      </div>
+    </header>
+
+    <section class="summary-grid" aria-label="Class summary">
+      <div class="metric">
+        <div class="metric-value" id="summary-state" data-i18n="state.idle">IDLE</div>
+        <div class="metric-label" data-i18n="classAdmin.tile_state">Class State</div>
+      </div>
+      <div class="metric">
+        <div class="metric-value" id="summary-stations">0</div>
+        <div class="metric-label" data-i18n="classAdmin.tile_stations">Stations</div>
+      </div>
+      <div class="metric">
+        <div class="metric-value" id="summary-total-duration">00:00</div>
+        <div class="metric-label" data-i18n="classAdmin.tile_total_duration">Total Plan Duration</div>
+      </div>
+    </section>
+
+    <main class="layout">
+      <section class="panel" aria-labelledby="plan-editor-title">
+        <div class="panel-header">
+          <h2 class="panel-title" id="plan-editor-title" data-i18n="classAdmin.panel_plan_editor">Plan Editor</h2>
+          <span class="pill race-state" id="class-state-pill" data-i18n="state.idle">IDLE</span>
+        </div>
+
+        <div class="saved-plan-toolbar" id="saved-plan-toolbar">
+          <div class="field">
+            <label for="saved-class-picker" data-i18n="classAdmin.label_saved_class_picker">Saved Class</label>
+            <select id="saved-class-picker" onchange="onSavedClassPickerChange(this.value)"></select>
+          </div>
+          <div class="field">
+            <label for="class-name" data-i18n="classAdmin.label_class_name">Class Name</label>
+            <input type="text" id="class-name" maxlength="60">
+          </div>
+          <button type="button" class="danger" id="btn-delete-saved-class" onclick="deleteSavedClass()" disabled data-i18n="classAdmin.btn_delete_saved_class">Delete Saved Class</button>
+        </div>
+
+        <div class="segment-rows" id="plan-rows"></div>
+
+        <div class="button-group">
+          <button type="button" id="btn-add-segment" onclick="addSegmentRow()" data-i18n="classAdmin.btn_add_segment">+ Add Segment</button>
+        </div>
+        <div class="field-note" id="segment-limit-note" data-i18n="classAdmin.segment_limit_reached">The plan cannot contain more than 200 segments.</div>
+
+        <h3 class="panel-title" style="font-size:16px;margin-top:18px;" data-i18n="classAdmin.panel_plan_preview">Plan Preview</h3>
+        <div id="plan-preview"></div>
+
+        <div class="guidance-box">
+          <p data-i18n="classAdmin.guidance_auto_advance">Segments advance automatically once the class starts.</p>
+          <p data-i18n="classAdmin.guidance_manual_stop">The class does not stop on its own when the plan ends — the coach ends it.</p>
+        </div>
+
+        <div class="action-bar">
+          <div class="button-group">
+            <button type="button" class="danger" id="btn-stop-class" onclick="stopClass()" data-i18n="classAdmin.btn_stop_class">Stop Class</button>
+            <button type="button" class="danger" id="btn-reset-class" onclick="resetClass()" data-i18n="classAdmin.btn_reset_class">Reset Class</button>
+          </div>
+          <div class="button-group">
+            <button type="button" class="primary" id="btn-save-plan" onclick="savePlan()" data-i18n="classAdmin.btn_save_plan">Save Plan</button>
+            <button type="button" class="primary" id="btn-start-class" onclick="startClass()" data-i18n="classAdmin.btn_start_class">Start Class</button>
+          </div>
+        </div>
+        <div class="status-text" id="class-message"></div>
+      </section>
+
+      <section class="panel" aria-labelledby="mode-title">
+        <div class="panel-header">
+          <h2 class="panel-title" id="mode-title" data-i18n="classAdmin.btn_switch_to_class_mode">Switch Projector to Class Mode</h2>
+        </div>
+        <button type="button" class="primary" id="btn-switch-to-class-mode" onclick="switchToClassMode()" data-i18n="classAdmin.btn_switch_to_class_mode">Switch Projector to Class Mode</button>
+        <p class="field-note show" id="switch-mode-note" data-i18n="classAdmin.switch_mode_note">Switches the dashboard to show the class board.</p>
+      </section>
+
+      <section class="panel" aria-labelledby="station-title">
+        <div class="panel-header">
+          <h2 class="panel-title" id="station-title" data-i18n="classAdmin.panel_station_status">Station Status</h2>
+          <button type="button" onclick="refreshAll()" data-i18n="classAdmin.btn_refresh">Refresh</button>
+        </div>
+        <div class="station-list" id="station-list"></div>
+      </section>
+
+      <section class="panel" aria-labelledby="history-title">
+        <div class="panel-header">
+          <h2 class="panel-title" id="history-title" data-i18n="classAdmin.panel_history">Class History</h2>
+        </div>
+        <div class="history-list" id="class-history-list"></div>
+      </section>
+    </main>
+  </div>
+
+  <div class="login" id="login-modal" role="dialog" aria-modal="true" aria-labelledby="login-title">
+    <div class="login-box">
+      <h2 id="login-title" data-i18n="classAdmin.login_title">Operator Unlock</h2>
+      <p data-i18n="classAdmin.login_description">Enter the operator access code for protected class actions.</p>
+      <div class="field">
+        <label for="admin-token" data-i18n="classAdmin.label_access_code">Access Code</label>
+        <input type="password" id="admin-token" autocomplete="off">
+      </div>
+      <div class="button-row">
+        <button type="button" class="primary" onclick="saveAdminToken()" data-i18n="classAdmin.btn_save">Save</button>
+        <button type="button" onclick="closeLogin()" data-i18n="classAdmin.btn_cancel">Cancel</button>
+      </div>
+      <div class="status-text" id="login-message"></div>
+    </div>
+  </div>
+
+  <script>
+    // Shown only until the first GET /api/race/state reply tells us what is
+    // actually saved on the hub. applyRaceState() below falls back to this
+    // ONLY when the incoming class_plan is null -- never once a real plan
+    // has arrived, or a coach reload would silently revert to it.
+    const DEFAULT_PLAN_ROWS = [
+      { kind: "warmup", durationSec: 300 },
+      { kind: "work", durationSec: 1200 },
+      { kind: "cooldown", durationSec: 300 },
+    ];
+
+    const state = {
+      race: {},
+      stations: {},
+      stationHealth: [],
+      classHistory: [],
+      rows: DEFAULT_PLAN_ROWS.map((row) => ({ ...row })),
+      // The plan editor is operator-owned once the coach has touched it.
+      // rowsDirty starts false so the first load and every poll before any
+      // edit still pull the saved plan in. Any row mutation handler sets
+      // it true; only a successful save or a reset clears it again. See
+      // applyRaceState below for the read side of this flag.
+      rowsDirty: false,
+      adminToken: localStorage.getItem("fitrace.adminPassword") || localStorage.getItem("fitrace.adminToken") || "",
+      refreshTimer: null,
+      // Named class plan library (durable venue configuration -- see
+      // GET/POST/DELETE /api/class/plans). Populated on load and after any
+      // save/delete, never by the 4s poll.
+      savedPlans: [],
+      selectedSavedClassName: null,
+    };
+
+    function $(id) {
+      return document.getElementById(id);
+    }
+
+    function metricNumber(value, fallback = 0) {
+      const number = Number(value);
+      return Number.isFinite(number) ? number : fallback;
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    // ------------------------------------------------------------------
+    // i18n: six-locale API system (matches index.html), NOT the inline
+    // dictionaries pattern used by gameAdmin/systemAdmin.
+    // ------------------------------------------------------------------
+    function getBrowserLocale() {
+      const saved = localStorage.getItem("fitrace.locale");
+      if (saved) return saved;
+      const browserLang = navigator.language || navigator.userLanguage;
+      if (browserLang) {
+        const lower = browserLang.toLowerCase();
+        if (lower.startsWith("zh")) return "zh-TW";
+        if (lower.startsWith("it")) return "it";
+        if (lower.startsWith("fr")) return "fr";
+        if (lower.startsWith("de")) return "de-CH";
+        if (lower.startsWith("sv")) return "sv";
+        if (lower.startsWith("en")) return "en-US";
+      }
+      return "en-US";
+    }
+
+    let currentLocale = getBrowserLocale();
+    let messages = {};
+
+    function t(key, params = {}) {
+      let value = messages[key] || key;
+      Object.entries(params).forEach(([name, replacement]) => {
+        value = value.replaceAll(`{${name}}`, String(replacement));
+      });
+      return value;
+    }
+
+    async function loadLocaleList() {
+      try {
+        const response = await fetch("/api/locales");
+        const payload = await response.json();
+        const select = $("language-select");
+        select.innerHTML = (payload.locales || []).map((entry) =>
+          `<option value="${escapeHtml(entry.code)}">${escapeHtml(entry.label)}</option>`
+        ).join("");
+        select.value = currentLocale;
+      } catch (_) {
+        // Non-fatal: the page still works with the fallback English strings.
+      }
+    }
+
+    async function loadLocale(locale = currentLocale) {
+      const response = await fetch(`/api/locales/${encodeURIComponent(locale)}?t=${Date.now()}`);
+      const payload = await response.json();
+      currentLocale = payload.locale || "en-US";
+      messages = payload.messages || {};
+      localStorage.setItem("fitrace.locale", currentLocale);
+      document.documentElement.lang = currentLocale;
+      const select = $("language-select");
+      if (select) select.value = currentLocale;
+      applyTranslations();
+    }
+
+    async function setLanguage(locale) {
+      await loadLocale(locale);
+      renderAll();
+    }
+
+    function applyTranslations() {
+      document.querySelectorAll("[data-i18n]").forEach((element) => {
+        element.innerText = t(element.dataset.i18n);
+      });
+    }
+
+    function adminHeaders(extra = {}) {
+      const headers = { ...extra };
+      if (state.adminToken) {
+        headers["X-FitRace-Admin-Token"] = state.adminToken;
+      }
+      return headers;
+    }
+
+    function setMessage(id, text, kind = "") {
+      const node = $(id);
+      node.textContent = text || "";
+      node.className = `status-text ${kind}`;
+    }
+
+    function openLogin() {
+      $("admin-token").value = state.adminToken;
+      $("login-modal").classList.add("show");
+      $("admin-token").focus();
+    }
+
+    function closeLogin() {
+      $("login-modal").classList.remove("show");
+      setMessage("login-message", "");
+    }
+
+    async function saveAdminToken() {
+      state.adminToken = $("admin-token").value.trim();
+      localStorage.setItem("fitrace.adminToken", state.adminToken);
+      localStorage.setItem("fitrace.adminPassword", state.adminToken);
+      closeLogin();
+      // GET /api/class/plans is admin-gated, and refreshSavedClassPlans()
+      // is deliberately excluded from the 4s poll (it is venue
+      // configuration, not something that changes on its own) -- so a
+      // coach who unlocks mid-setup after an earlier 401 left the picker
+      // empty would otherwise see it stay empty until a full page reload.
+      // Unlocking is the one moment every other panel on this page
+      // self-heals; this makes the picker do the same.
+      await refreshSavedClassPlans();
+    }
+
+    // ------------------------------------------------------------------
+    // Pure helpers -- no DOM access. Each is independently unit-tested
+    // under `node -e` in tests/unit/hub/test_class_admin_page.py.
+    // ------------------------------------------------------------------
+
+    function formatDurationClock(totalSeconds) {
+      const safeSeconds = Math.max(0, metricNumber(totalSeconds, 0));
+      const hours = Math.floor(safeSeconds / 3600);
+      const minutes = Math.floor((safeSeconds % 3600) / 60);
+      const seconds = Math.floor(safeSeconds % 60);
+      const pad = (n) => (n < 10 ? "0" + n : String(n));
+      if (hours > 0) {
+        return `${hours}:${pad(minutes)}:${pad(seconds)}`;
+      }
+      return `${pad(minutes)}:${pad(seconds)}`;
+    }
+
+    function buildSegmentsPayload(rows) {
+      return {
+        segments: (rows || []).map((row) => {
+          const segment = {
+            kind: row.kind,
+            duration_sec: metricNumber(row.durationSec, 0),
+          };
+          // Blank means no prescribed intensity -- omit the key entirely
+          // rather than force a number or send a stray zero.
+          if (row.targetWatts !== null && row.targetWatts !== undefined && row.targetWatts !== "") {
+            const watts = metricNumber(row.targetWatts, null);
+            if (watts !== null) segment.target_watts = watts;
+          }
+          return segment;
+        }),
+      };
+    }
+
+    // Pure, DOM-free -- builds the POST /api/class/plans body from the
+    // current editor state. Returns null for a blank/whitespace-only name
+    // so callers can treat "no name typed" as "don't save to the library"
+    // without duplicating the trim/blank check themselves.
+    function buildNamedPlanPayload(name, rows) {
+      const trimmedName = String(name ?? "").trim();
+      if (!trimmedName) return null;
+      return { name: trimmedName, plan: buildSegmentsPayload(rows) };
+    }
+
+    // Pure, DOM-free -- the saved-class <select>'s option list as plain
+    // data ({value, label, selected}), NOT rendered HTML. The first entry
+    // is always the "new class" placeholder (empty value); its `label` is
+    // deliberately left blank here rather than translated, because
+    // translating would make this helper depend on t()/the loaded
+    // messages dict -- buildSavedClassPickerHtml (the render-path sibling,
+    // next to buildPlanPreviewHtml/buildStationStatusHtml) is what
+    // supplies the translated "new class" text, exactly like
+    // segmentKindKey returning a bare key for buildPlanPreviewHtml to
+    // translate.
+    function savedPlanOptions(plans, selectedName) {
+      const options = [{ value: "", label: "", selected: !selectedName }];
+      (plans || []).forEach((entry) => {
+        options.push({
+          value: entry.name,
+          label: entry.name,
+          selected: entry.name === selectedName,
+        });
+      });
+      return options;
+    }
+
+    // Pure -- input is one target watts value (or null/undefined) per
+    // segment, output is one height percent per segment. Declared INSIDE
+    // computePlanSummary so the two stay a single self-contained unit: the
+    // sibling class-admin test files already extract computePlanSummary
+    // alone (by brace-depth from the function computePlanSummary( marker)
+    // and run it standalone under node -e, so a helper this function calls
+    // has to be nested here rather than a sibling top-level declaration,
+    // or those extractions would call an undefined name. This file
+    // extracts it directly too, by searching for the nested function
+    // computeBlockHeightPercents( marker -- the extraction technique
+    // matches braces from wherever the marker is found, nesting does not
+    // matter.
+    function computePlanSummary(rows) {
+      function computeBlockHeightPercents(targets) {
+        const list = targets || [];
+        const baselinePercent = 20;
+        const fullPercent = 100;
+        const positiveTargets = list.filter(
+          (value) => typeof value === "number" && Number.isFinite(value) && value > 0
+        );
+        const maxTarget = positiveTargets.length ? Math.max(...positiveTargets) : 0;
+        if (maxTarget <= 0) {
+          // No segment in this plan carries a target at all -- keep the
+          // bar exactly as it rendered before this feature: one uniform
+          // full-height bar, no scaling applied.
+          return list.map(() => fullPercent);
+        }
+        return list.map((value) => {
+          if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+            // No prescribed intensity for this segment -- a low baseline
+            // keeps it visible without implying maximum effort.
+            return baselinePercent;
+          }
+          const ratio = Math.min(1, value / maxTarget);
+          return baselinePercent + ratio * (fullPercent - baselinePercent);
+        });
+      }
+
+      const segments = (rows || []).map((row) => ({
+        kind: row.kind,
+        durationSec: Math.max(0, metricNumber(row.durationSec, 0)),
+        targetWatts:
+          row.targetWatts === null || row.targetWatts === undefined
+            ? null
+            : metricNumber(row.targetWatts, null),
+      }));
+      const totalDurationSec = segments.reduce((sum, segment) => sum + segment.durationSec, 0);
+      const heightPercents = computeBlockHeightPercents(
+        segments.map((segment) => segment.targetWatts)
+      );
+      const blocks = segments.map((segment, index) => ({
+        kind: segment.kind,
+        durationSec: segment.durationSec,
+        targetWatts: segment.targetWatts,
+        widthPercent: totalDurationSec > 0 ? (segment.durationSec / totalDurationSec) * 100 : 0,
+        heightPercent: heightPercents[index],
+      }));
+      return { totalDurationSec, segmentCount: segments.length, blocks };
+    }
+
+    function mergeStationStatus(stationsById, stationHealthList) {
+      const healthByStation = {};
+      (stationHealthList || []).forEach((entry) => {
+        healthByStation[Number(entry.station_number)] = entry;
+      });
+      const stationNumbers = Object.keys(stationsById || {})
+        .map(Number)
+        .filter((n) => Number.isFinite(n))
+        .sort((a, b) => a - b);
+      return stationNumbers.map((stationNumber) => {
+        const station = (stationsById || {})[String(stationNumber)] || {};
+        const health = healthByStation[stationNumber];
+        return {
+          stationNumber,
+          athleteName: station.athlete_name || null,
+          machineName: station.node_display_name || station.equipment_id || null,
+          isLive: Boolean(health && health.health === "online"),
+        };
+      });
+    }
+
+    function segmentKindKey(kind) {
+      const keys = {
+        warmup: "class.kind.warmup",
+        work: "class.kind.work",
+        rest: "class.kind.rest",
+        cooldown: "class.kind.cooldown",
+        changeover: "class.kind.changeover",
+      };
+      return keys[kind] || keys.warmup;
+    }
+
+    function sessionModeSwitchState(raceState) {
+      const disabled = raceState === "RUNNING";
+      return {
+        disabled,
+        noteKey: disabled ? "classAdmin.switch_mode_note_disabled" : "classAdmin.switch_mode_note",
+      };
+    }
+
+    // Converts the class_plan stored on the hub (GET /api/race/state) into
+    // editor rows. Falls back to DEFAULT_PLAN_ROWS only when class_plan is
+    // null/missing/empty -- never once a real plan has been returned, so a
+    // save can never be overwritten by the default just by reloading.
+    function rowsFromClassPlan(classPlan) {
+      const segments = classPlan && Array.isArray(classPlan.segments) ? classPlan.segments : [];
+      if (!segments.length) {
+        return DEFAULT_PLAN_ROWS.map((row) => ({ ...row }));
+      }
+      return segments.map((segment) => {
+        const row = { kind: segment.kind, durationSec: metricNumber(segment.duration_sec, 0) };
+        // Only carry a targetWatts key when the saved segment actually has
+        // one -- a target-less plan (every segment saved before this field
+        // existed, or a coach who left it blank) must round-trip to
+        // exactly the row shape rowsFromClassPlan has always produced.
+        if (segment.target_watts !== null && segment.target_watts !== undefined) {
+          row.targetWatts = segment.target_watts;
+        }
+        return row;
+      });
+    }
+
+    // Formats a finished class run date/time. Deliberately UTC and built
+    // from plain Date getters -- no locale-string or twelve-hour-clock API
+    // of any kind -- so the value is both deterministic under test and
+    // consistent with the rest of this page, which only ever renders a
+    // twenty-four-hour clock (see formatDurationClock above).
+    function formatClassRunAt(epochMs) {
+      const ms = metricNumber(epochMs, NaN);
+      if (!Number.isFinite(ms) || ms <= 0) return "--";
+      const d = new Date(ms);
+      const pad = (n) => (n < 10 ? "0" + n : String(n));
+      const year = d.getUTCFullYear();
+      const month = pad(d.getUTCMonth() + 1);
+      const day = pad(d.getUTCDate());
+      const hours = pad(d.getUTCHours());
+      const minutes = pad(d.getUTCMinutes());
+      return `${year}-${month}-${day} ${hours}:${minutes} UTC`;
+    }
+
+    // ------------------------------------------------------------------
+    // Render-path helpers -- pure string builders that use t()/escapeHtml()
+    // /Intl but do not touch the DOM themselves. Executed under `node -e`
+    // with stubs to prove their HTML actually contains translated labels
+    // and computed values (not merely that the helper is called).
+    // ------------------------------------------------------------------
+
+    function buildPlanPreviewHtml(summary) {
+      const numberFormat = new Intl.NumberFormat(currentLocale);
+      const blocksHtml = summary.blocks.map((block) => {
+        // heightPercent is missing only for callers passing a hand-built
+        // block object that predates this field -- fall back to the old
+        // always-full-height look rather than rendering height:undefined%.
+        const heightPercent = block.heightPercent === undefined || block.heightPercent === null
+          ? 100
+          : block.heightPercent;
+        const kindLabel = t(segmentKindKey(block.kind));
+        const hasTarget = block.targetWatts !== undefined && block.targetWatts !== null;
+        const title = hasTarget
+          ? t("classAdmin.preview_block_title_with_target", {
+              kind: kindLabel,
+              watts: numberFormat.format(block.targetWatts),
+            })
+          : kindLabel;
+        return `
+        <span class="timeline-block timeline-${escapeHtml(block.kind)}" style="width:${block.widthPercent}%;height:${heightPercent}%" title="${escapeHtml(title)}"></span>
+      `;
+      }).join("");
+      return `
+        <div class="timeline">${blocksHtml}</div>
+        <div class="plan-summary-row">
+          <span>${escapeHtml(t("classAdmin.tile_total_duration"))}: ${escapeHtml(formatDurationClock(summary.totalDurationSec))}</span>
+          <span>${t("classAdmin.label_segment_count", { count: numberFormat.format(summary.segmentCount) })}</span>
+        </div>
+      `;
+    }
+
+    function buildStationStatusHtml(rows, stationsById) {
+      if (!rows.length) {
+        return `<div class="empty">${escapeHtml(t("classAdmin.no_stations"))}</div>`;
+      }
+      const safeStationsById = stationsById || {};
+      return rows.map((row) => {
+        // Anonymous participation: a null athleteName is ambiguous on its
+        // own -- it could mean nobody has registered here (show the
+        // no-athlete placeholder, same as before) or someone registered
+        // without giving a name (show the station instead). The raw
+        // station explicit registered flag, not athleteName truthiness,
+        // tells the two apart.
+        const rawStation = safeStationsById[String(row.stationNumber)] || {};
+        const athleteLabel = row.athleteName
+          || (rawStation.registered ? `${t("stations.station")} ${row.stationNumber}` : t("classAdmin.station_no_athlete"));
+        return `
+        <div class="station-row">
+          <span class="station-number">${escapeHtml(t("classAdmin.station_col_number"))} ${escapeHtml(String(row.stationNumber))}</span>
+          <span class="station-athlete">${escapeHtml(athleteLabel)}</span>
+          <span class="station-machine">${escapeHtml(row.machineName || t("classAdmin.station_no_machine"))}</span>
+          <span class="status-dot ${row.isLive ? "online" : ""}"></span>
+          <span class="station-live-label">${escapeHtml(row.isLive ? t("connection.online") : t("connection.offline"))}</span>
+        </div>
+      `;
+      }).join("");
+    }
+
+    // Compact list only -- date/time, duration, participant count. No
+    // charts, no per-athlete rows, no drill-down: a half-built history view
+    // is worse than none.
+    function buildClassHistoryHtml(classes) {
+      if (!classes.length) {
+        return `<div class="empty">${escapeHtml(t("classAdmin.no_history"))}</div>`;
+      }
+      const numberFormat = new Intl.NumberFormat(currentLocale);
+      return classes.map((entry) => {
+        const when = formatClassRunAt(entry.start_time_epoch_ms);
+        const durationSec = Math.round(metricNumber(entry.duration_ms, 0) / 1000);
+        const duration = formatDurationClock(durationSec);
+        const participants = t("classAdmin.history_participants", {
+          count: numberFormat.format(metricNumber(entry.participant_count, 0)),
+        });
+        return `
+        <div class="history-row">
+          <span class="history-when">${escapeHtml(when)}</span>
+          <span class="history-duration">${escapeHtml(duration)}</span>
+          <span class="history-count">${escapeHtml(participants)}</span>
+        </div>
+      `;
+      }).join("");
+    }
+
+    // Render-path sibling of savedPlanOptions above -- turns its pure
+    // {value, label, selected} data into <option> HTML, translating the
+    // "new class" placeholder (empty value) via t() here rather than in
+    // the pure helper.
+    function buildSavedClassPickerHtml(options) {
+      return (options || []).map((option) => {
+        const label = option.value === "" ? t("classAdmin.saved_class_picker_new_option") : option.label;
+        return `<option value="${escapeHtml(option.value)}" ${option.selected ? "selected" : ""}>${escapeHtml(label)}</option>`;
+      }).join("");
+    }
+
+    function buildPlanEditorHtml(rows) {
+      if (!rows.length) {
+        return `<div class="empty">${escapeHtml(t("classAdmin.plan_empty"))}</div>`;
+      }
+      const atLimit = rows.length >= 200;
+      return rows.map((row, index) => {
+        const wattsValue = row.targetWatts === null || row.targetWatts === undefined ? "" : escapeHtml(String(row.targetWatts));
+        const numberLabel = escapeHtml(t("classAdmin.label_segment_number", { index: index + 1 }));
+        const kindLabel = escapeHtml(t("classAdmin.label_segment_kind"));
+        const durationLabel = escapeHtml(t("classAdmin.label_segment_duration"));
+        const wattsLabel = escapeHtml(t("classAdmin.label_target_watts"));
+        const wattsPlaceholder = escapeHtml(t("classAdmin.placeholder_target_watts"));
+        const upDisabled = index === 0 ? "disabled" : "";
+        const downDisabled = index === rows.length - 1 ? "disabled" : "";
+        const duplicateDisabled = atLimit ? "disabled" : "";
+        return `
+        <div class="segment-row segment-row-${escapeHtml(row.kind)}" id="segment-row-${index}">
+          <h3 class="segment-heading">${numberLabel}</h3>
+          <div class="segment-field">
+            <label for="segment-kind-${index}" data-i18n="classAdmin.label_segment_kind">${kindLabel}</label>
+            <select id="segment-kind-${index}" onchange="updateSegmentKind(${index}, this.value)">
+              ${["warmup", "work", "rest", "cooldown", "changeover"].map((kind) => `<option value="${kind}" ${row.kind === kind ? "selected" : ""}>${escapeHtml(t(segmentKindKey(kind)))}</option>`).join("")}
+            </select>
+          </div>
+          <div class="segment-field">
+            <label for="segment-duration-${index}" data-i18n="classAdmin.label_segment_duration">${durationLabel}</label>
+            <input id="segment-duration-${index}" type="number" min="5" max="3600" value="${escapeHtml(String(row.durationSec))}" oninput="updateSegmentDuration(${index}, this.value)" onchange="updateSegmentDuration(${index}, this.value)">
+          </div>
+          <div class="segment-field">
+            <label for="segment-target-watts-${index}" data-i18n="classAdmin.label_target_watts">${wattsLabel}</label>
+            <input id="segment-target-watts-${index}" type="number" min="1" max="2000" placeholder="${wattsPlaceholder}" title="${wattsLabel}" value="${wattsValue}" oninput="updateSegmentTargetWatts(${index}, this.value)" onchange="updateSegmentTargetWatts(${index}, this.value)">
+          </div>
+          <div class="segment-actions">
+            <button type="button" onclick="moveSegmentRow(${index}, -1)" ${upDisabled} data-i18n="classAdmin.btn_move_up">${escapeHtml(t("classAdmin.btn_move_up"))}</button>
+            <button type="button" onclick="moveSegmentRow(${index}, 1)" ${downDisabled} data-i18n="classAdmin.btn_move_down">${escapeHtml(t("classAdmin.btn_move_down"))}</button>
+            <button type="button" onclick="duplicateSegmentRow(${index})" ${duplicateDisabled} data-i18n="classAdmin.btn_duplicate_segment">${escapeHtml(t("classAdmin.btn_duplicate_segment"))}</button>
+            <button type="button" class="danger" onclick="deleteSegmentRow(${index})" data-i18n="classAdmin.btn_delete_segment">${escapeHtml(t("classAdmin.btn_delete_segment"))}</button>
+          </div>
+        </div>
+      `;
+      }).join("");
+    }
+
+    // ------------------------------------------------------------------
+    // DOM-touching render/wiring functions.
+    // ------------------------------------------------------------------
+
+    function renderPlanEditor() {
+      $("plan-rows").innerHTML = buildPlanEditorHtml(state.rows);
+      const atLimit = state.rows.length >= 200;
+      const addButton = $("btn-add-segment");
+      if (addButton) addButton.disabled = atLimit;
+      const limitNote = $("segment-limit-note");
+      if (limitNote) {
+        limitNote.className = atLimit ? "field-note show" : "field-note";
+        limitNote.textContent = atLimit ? t("classAdmin.segment_limit_reached") : "";
+      }
+    }
+
+    function renderPlanPreview() {
+      const summary = computePlanSummary(state.rows);
+      $("plan-preview").innerHTML = buildPlanPreviewHtml(summary);
+      $("summary-total-duration").textContent = formatDurationClock(summary.totalDurationSec);
+    }
+
+    function renderStationStatus() {
+      const rows = mergeStationStatus(state.stations.stations || {}, state.stationHealth);
+      $("station-list").innerHTML = buildStationStatusHtml(rows, state.stations.stations || {});
+      $("summary-stations").textContent = new Intl.NumberFormat(currentLocale).format(rows.length);
+    }
+
+    function renderClassHistory() {
+      $("class-history-list").innerHTML = buildClassHistoryHtml(state.classHistory || []);
+    }
+
+    function renderSavedClassPicker() {
+      const options = savedPlanOptions(state.savedPlans, state.selectedSavedClassName);
+      $("saved-class-picker").innerHTML = buildSavedClassPickerHtml(options);
+      $("btn-delete-saved-class").disabled = !state.selectedSavedClassName;
+    }
+
+    function stateDisplayKey(raceState) {
+      const keys = { IDLE: "state.idle", READY: "state.ready", RUNNING: "state.running", STOPPED: "state.stopped" };
+      return keys[raceState] || "state.idle";
+    }
+
+    function renderSummaryState() {
+      const raceState = state.race.state || "IDLE";
+      const label = t(stateDisplayKey(raceState));
+      $("summary-state").textContent = label;
+      $("class-state-pill").textContent = label;
+      $("class-state-pill").className = `pill race-state ${raceState}`;
+      $("btn-stop-class").disabled = raceState !== "RUNNING";
+      $("btn-reset-class").disabled = raceState === "RUNNING";
+      $("btn-start-class").disabled = raceState === "RUNNING";
+      $("btn-save-plan").disabled = raceState === "RUNNING";
+      syncSessionModeControl();
+    }
+
+    function syncSessionModeControl() {
+      const raceState = state.race.state || "IDLE";
+      const modeState = sessionModeSwitchState(raceState);
+      const button = $("btn-switch-to-class-mode");
+      const note = $("switch-mode-note");
+      button.disabled = modeState.disabled;
+      note.dataset.i18n = modeState.noteKey;
+      note.textContent = t(modeState.noteKey);
+    }
+
+    function renderAll() {
+      renderPlanEditor();
+      renderPlanPreview();
+      renderStationStatus();
+      renderClassHistory();
+      renderSummaryState();
+      renderSavedClassPicker();
+      applyTranslations();
+    }
+
+    // The single entry point for a fresh GET /api/race/state reply. Backs
+    // BOTH the very first load and every four-second poll (see
+    // scheduleRefresh/refreshAll/refreshState below), so it must not treat
+    // those two callers the same way once the coach has started editing.
+    // state.race, the plan preview, and the summary tiles always track the
+    // server. The editor rows only get re-derived from class_plan (see
+    // rowsFromClassPlan) while state.rowsDirty is false -- once a row
+    // mutation handler sets it, a poll reply leaves state.rows and the
+    // rendered plan-rows DOM alone, no matter what the server has saved.
+    function applyRaceState(raceState) {
+      state.race = raceState || {};
+      if (!state.rowsDirty) {
+        state.rows = rowsFromClassPlan(state.race.class_plan);
+        renderPlanEditor();
+      }
+      renderPlanPreview();
+      renderSummaryState();
+    }
+
+    // Legitimate points where the server becomes authoritative over the
+    // plan editor again: a successful save and a reset. Clears the dirty
+    // flag first so the reply is applied exactly like a fresh load.
+    function loadRaceStateAndRows(raceState) {
+      state.rowsDirty = false;
+      applyRaceState(raceState);
+    }
+
+    // ------------------------------------------------------------------
+    // Row mutation handlers.
+    // ------------------------------------------------------------------
+
+    function focusSegmentField(index, field = "duration") {
+      const element = $(`segment-${field}-${index}`);
+      if (element && typeof element.focus === "function") element.focus();
+    }
+
+    function addSegmentRow() {
+      if (state.rows.length >= 200) return;
+      state.rowsDirty = true;
+      state.rows.push({ kind: "work", durationSec: 300 });
+      renderAll();
+      focusSegmentField(state.rows.length - 1);
+    }
+
+    function duplicateSegmentRow(index) {
+      if (!state.rows[index] || state.rows.length >= 200) return;
+      state.rowsDirty = true;
+      state.rows.splice(index + 1, 0, { ...state.rows[index] });
+      renderAll();
+      focusSegmentField(index + 1);
+    }
+
+    function moveSegmentRow(index, direction) {
+      if (!state.rows[index] || ![-1, 1].includes(direction)) return;
+      const targetIndex = index + direction;
+      if (targetIndex < 0 || targetIndex >= state.rows.length) return;
+      state.rowsDirty = true;
+      [state.rows[index], state.rows[targetIndex]] = [state.rows[targetIndex], state.rows[index]];
+      renderAll();
+      focusSegmentField(targetIndex);
+    }
+
+    function deleteSegmentRow(index) {
+      if (!state.rows[index]) return;
+      state.rowsDirty = true;
+      state.rows.splice(index, 1);
+      renderAll();
+      if (state.rows.length) focusSegmentField(Math.min(index, state.rows.length - 1));
+    }
+
+    // A <select> change, not a text input -- but the row it belongs to is
+    // still live under the coach's pointer, so this must not regenerate
+    // plan-rows either. The only thing a kind change visually owns outside
+    // state.rows is the row's own left-border colour stripe
+    // (segment-row-${kind}), so that one row element gets its className
+    // patched directly instead of the whole editor being rebuilt.
+    function updateSegmentKind(index, kind) {
+      if (!state.rows[index]) return;
+      state.rowsDirty = true;
+      state.rows[index].kind = kind;
+      const rowElement = $(`segment-row-${index}`);
+      if (rowElement) {
+        rowElement.className = `segment-row segment-row-${kind}`;
+      }
+      renderPlanPreview();
+    }
+
+    // Value edits (duration, target watts) must not touch plan-rows -- the
+    // input the coach is typing into lives there, and regenerating it
+    // destroys focus/caret. state.rows is the source of truth for the
+    // saved value; only the views derived from it (preview timeline, total
+    // duration, segment count) get refreshed.
+    function updateSegmentDuration(index, value) {
+      if (!state.rows[index]) return;
+      state.rowsDirty = true;
+      state.rows[index].durationSec = metricNumber(value, state.rows[index].durationSec);
+      renderPlanPreview();
+    }
+
+    function updateSegmentTargetWatts(index, value) {
+      if (!state.rows[index]) return;
+      state.rowsDirty = true;
+      const trimmed = String(value ?? "").trim();
+      state.rows[index].targetWatts = trimmed === "" ? null : metricNumber(trimmed, null);
+      renderPlanPreview();
+    }
+
+    // Picking a saved class from the dropdown loads it into the editor.
+    // Picking the blank "new class" option just clears the name field and
+    // leaves whatever rows are already on screen alone.
+    function onSavedClassPickerChange(name) {
+      state.selectedSavedClassName = name || null;
+      if (!name) {
+        $("class-name").value = "";
+        renderSavedClassPicker();
+        return;
+      }
+      const entry = (state.savedPlans || []).find((item) => item.name === name);
+      if (!entry) {
+        renderSavedClassPicker();
+        return;
+      }
+      $("class-name").value = entry.name;
+      state.rows = rowsFromClassPlan(entry.plan);
+      // This looks like the save/reset case (an explicit operator action
+      // that should hand server authority back), so clearing rowsDirty
+      // here would seem consistent -- but it is NOT: the hub-side
+      // race.class_plan has not been told about this load (only the
+      // library entry was pulled in locally), so the very next 4s poll
+      // would call applyRaceState -> rowsFromClassPlan(state.race.class_plan)
+      // and silently overwrite the rows just loaded. Keeping rowsDirty
+      // true freezes the editor, exactly like a manual edit, until the
+      // coach saves or starts the class and the server becomes
+      // authoritative for real.
+      state.rowsDirty = true;
+      renderAll();
+    }
+
+    // ------------------------------------------------------------------
+    // Networking.
+    // ------------------------------------------------------------------
+
+    async function fetchJson(url, options = {}) {
+      const response = await fetch(url, options);
+      const text = await response.text();
+      const payload = text ? JSON.parse(text) : {};
+      if (!response.ok) {
+        throw new Error(payload.detail || response.statusText || "Request failed");
+      }
+      return payload;
+    }
+
+    async function refreshState() {
+      const raceState = await fetchJson(`/api/race/state?t=${Date.now()}`);
+      applyRaceState(raceState);
+    }
+
+    async function refreshStations() {
+      state.stations = await fetchJson(`/api/stations?t=${Date.now()}`);
+      renderStationStatus();
+    }
+
+    async function refreshReadiness() {
+      try {
+        const readiness = await fetchJson(`/api/race/readiness?t=${Date.now()}`);
+        state.stationHealth = readiness.station_health || [];
+        renderStationStatus();
+      } catch (_) {
+        // Readiness is race-shaped and may 400/404 in class mode on some
+        // hub versions; station status simply keeps its last known value.
+      }
+    }
+
+    async function refreshClassHistory() {
+      try {
+        const history = await fetchJson(`/api/class/history?limit=10&t=${Date.now()}`);
+        state.classHistory = history.classes || [];
+        renderClassHistory();
+      } catch (_) {
+        // Non-fatal: the coach still sees the plan editor and station
+        // status even if the history fetch fails.
+      }
+    }
+
+    // Deliberately NOT part of refreshAll()/scheduleRefresh() -- the saved
+    // library is venue configuration, not something that changes on its
+    // own every 4s. Called on load and after any save/delete instead.
+    async function refreshSavedClassPlans() {
+      try {
+        const payload = await fetchJson(`/api/class/plans?t=${Date.now()}`, { headers: adminHeaders() });
+        state.savedPlans = payload.plans || [];
+      } catch (_) {
+        // Non-fatal: keep whatever was last known rather than wiping the
+        // picker on a transient failure.
+      }
+      renderSavedClassPicker();
+    }
+
+    async function refreshHealth() {
+      try {
+        await fetchJson(`/health?t=${Date.now()}`);
+        $("ws-dot").classList.add("online");
+        $("ws-label").textContent = t("connection.online");
+      } catch (_) {
+        $("ws-dot").classList.remove("online");
+        $("ws-label").textContent = t("connection.offline");
+      }
+    }
+
+    async function refreshAll() {
+      await Promise.allSettled([
+        refreshHealth(),
+        refreshState(),
+        refreshStations(),
+        refreshReadiness(),
+        refreshClassHistory(),
+      ]);
+    }
+
+    function scheduleRefresh() {
+      if (state.refreshTimer) window.clearInterval(state.refreshTimer);
+      state.refreshTimer = window.setInterval(refreshAll, 4000);
+    }
+
+    // ------------------------------------------------------------------
+    // Actions.
+    // ------------------------------------------------------------------
+
+    async function savePlan() {
+      try {
+        // Guarding the whole named-save block on the raw input value (not
+        // just relying on the blank check inside buildNamedPlanPayload)
+        // means a coach who never typed a name takes exactly the same path
+        // as before this feature existed: configure only, nothing posted
+        // to the library.
+        const nameValue = $("class-name").value;
+        if (nameValue) {
+          const namedPayload = buildNamedPlanPayload(nameValue, state.rows);
+          if (namedPayload) {
+            await fetchJson("/api/class/plans", {
+              method: "POST",
+              headers: adminHeaders({ "Content-Type": "application/json" }),
+              body: JSON.stringify(namedPayload),
+            });
+            state.selectedSavedClassName = namedPayload.name;
+            await refreshSavedClassPlans();
+          }
+        }
+        const raceState = await fetchJson("/api/class/configure", {
+          method: "POST",
+          headers: adminHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify(buildSegmentsPayload(state.rows)),
+        });
+        loadRaceStateAndRows(raceState);
+        setMessage("class-message", t("classAdmin.message_plan_saved"), "ok");
+      } catch (error) {
+        setMessage("class-message", error.message, "error");
+      }
+    }
+
+    async function deleteSavedClass() {
+      const name = state.selectedSavedClassName;
+      if (!name) return;
+      if (!window.confirm(t("classAdmin.confirm_delete_saved_class", { name }))) return;
+      try {
+        await fetchJson(`/api/class/plans/${encodeURIComponent(name)}`, {
+          method: "DELETE",
+          headers: adminHeaders(),
+        });
+        state.selectedSavedClassName = null;
+        await refreshSavedClassPlans();
+        setMessage("class-message", t("classAdmin.message_saved_class_deleted"), "ok");
+      } catch (error) {
+        setMessage("class-message", error.message, "error");
+      }
+    }
+
+    async function startClass() {
+      try {
+        state.race = await fetchJson("/api/race/start", { method: "POST", headers: adminHeaders() });
+        renderSummaryState();
+        setMessage("class-message", t("classAdmin.message_class_started"), "ok");
+      } catch (error) {
+        setMessage("class-message", error.message, "error");
+      }
+    }
+
+    async function stopClass() {
+      try {
+        state.race = await fetchJson("/api/race/stop", { method: "POST", headers: adminHeaders() });
+        renderSummaryState();
+        setMessage("class-message", t("classAdmin.message_class_stopped"), "ok");
+      } catch (error) {
+        setMessage("class-message", error.message, "error");
+      }
+    }
+
+    async function resetClass() {
+      if (!window.confirm(t("classAdmin.confirm_reset"))) return;
+      try {
+        const raceState = await fetchJson("/api/race/reset", { method: "POST", headers: adminHeaders() });
+        loadRaceStateAndRows(raceState);
+        setMessage("class-message", t("classAdmin.message_class_reset"), "ok");
+      } catch (error) {
+        setMessage("class-message", error.message, "error");
+      }
+    }
+
+    async function switchToClassMode() {
+      try {
+        state.race = await fetchJson("/api/session/mode", {
+          method: "POST",
+          headers: adminHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({ mode: "class" }),
+        });
+        renderSummaryState();
+        setMessage("class-message", t("classAdmin.message_mode_switched"), "ok");
+      } catch (error) {
+        setMessage("class-message", error.message, "error");
+      }
+    }
+
+    // ------------------------------------------------------------------
+    // Boot.
+    // ------------------------------------------------------------------
+
+    async function init() {
+      await loadLocaleList();
+      await loadLocale(currentLocale);
+      renderAll();
+      await refreshAll();
+      await refreshSavedClassPlans();
+      scheduleRefresh();
+    }
+
+    init();
+  </script>
+</body>
+</html>

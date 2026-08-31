@@ -84,7 +84,7 @@ class RaceResultsQuery:
 
             end_time = snapshot.get("end_time_epoch_ms")
             leaderboard = snapshot.get("leaderboard")
-            rows = self._named_rows(
+            rows = self._participant_rows(
                 leaderboard if isinstance(leaderboard, dict) else {}
             )
 
@@ -140,7 +140,7 @@ class RaceResultsQuery:
                 continue
             snapshot = record["snapshot"]
             leaderboard = snapshot.get("leaderboard")
-            rows = self._named_rows(
+            rows = self._participant_rows(
                 leaderboard if isinstance(leaderboard, dict) else {}
             )
             ranked_rows = self._rank_and_tag(
@@ -166,9 +166,7 @@ class RaceResultsQuery:
         leaderboard = snapshot.get("leaderboard")
         leaderboard = leaderboard if isinstance(leaderboard, dict) else {}
         athlete_count = sum(
-            1
-            for row in leaderboard.values()
-            if isinstance(row, dict) and row.get("athlete_name")
+            1 for row in leaderboard.values() if RaceResultsQuery._is_participant(row)
         )
         return {
             "result_id": result_id,
@@ -180,10 +178,40 @@ class RaceResultsQuery:
         }
 
     @staticmethod
-    def _named_rows(leaderboard: dict[str, Any]) -> list[dict[str, Any]]:
+    def _is_participant(row: Any) -> bool:
+        """A leaderboard row counts as a participant if it names someone,
+        OR is anonymous-but-real (a real station, no name given).
+
+        Anonymous participation (commit a2a397c) lets `athlete_name` be
+        `None`: RegisterAthletePayload normalizes a blank/whitespace name to
+        `None` before it ever reaches a leaderboard row, so a genuine
+        anonymous finisher's row looks like `{"athlete_name": None,
+        "station_number": 3, ...}`. Production code never emits
+        `athlete_name == ""` -- that value only exists in older test
+        fixtures as a stand-in for "not really a participant".
+
+        Those two falsy values are therefore deliberately NOT equivalent
+        here: `None` plus a real `station_number` is a person who chose not
+        to give a name and must be kept; `""` (or any other falsy-but-not-
+        None name) is not a participant regardless of `station_number`. Do
+        not simplify this to `if not name` -- that silently drops every
+        anonymous finisher again, which is the exact bug this predicate
+        exists to fix.
+        """
+        if not isinstance(row, dict):
+            return False
+        name = row.get("athlete_name")
+        if isinstance(name, str) and name.strip():
+            return True
+        if name is None and row.get("station_number") is not None:
+            return True
+        return False
+
+    @staticmethod
+    def _participant_rows(leaderboard: dict[str, Any]) -> list[dict[str, Any]]:
         rows = []
         for node_id, row in leaderboard.items():
-            if not isinstance(row, dict) or not row.get("athlete_name"):
+            if not RaceResultsQuery._is_participant(row):
                 continue
             enriched = dict(row)
             enriched.setdefault("node_id", node_id)

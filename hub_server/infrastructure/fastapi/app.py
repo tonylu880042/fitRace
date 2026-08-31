@@ -13,8 +13,9 @@ import segno
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from hub_server.domain.models import RaceState, RaceConfig
+from hub_server.domain.class_models import ClassPlan
 from hub_server.usecases.race_manager import RaceManager
 from hub_server.usecases.node_registry import NodeRegistry
 from hub_server.usecases.node_display_names import (
@@ -107,10 +108,25 @@ race_manager = RaceManager(
 ws_manager = WebSocketManager()
 node_registry = NodeRegistry()
 race_event_engine = RaceEventEngine()
-race_result_store = RaceResultStore(
-    os.getenv("FITRACE_RACE_RESULTS_PATH", "data/race_results.jsonl")
-)
+_race_results_path = os.getenv("FITRACE_RACE_RESULTS_PATH", "data/race_results.jsonl")
+race_result_store = RaceResultStore(_race_results_path)
 race_results_query = RaceResultsQuery(race_result_store)
+# A finished class is persisted the same way a race is -- same store class,
+# same append-only jsonl mechanics -- but to its own file and its own env
+# var, so a class record can never mix into race results, the records wall,
+# or the podium (see RaceResultStore.save_finished_snapshot's session_mode
+# filter). Its default sits beside the race results default (same parent
+# directory) rather than hardcoding its own "data/" relative path: a
+# deployment that sets FITRACE_RACE_RESULTS_PATH to a stable shared location
+# but forgets FITRACE_CLASS_RESULTS_PATH still lands the class store next to
+# it instead of falling back into the (often unwritable) release directory.
+class_result_store = RaceResultStore(
+    os.getenv(
+        "FITRACE_CLASS_RESULTS_PATH",
+        str(Path(_race_results_path).parent / "class_results.jsonl"),
+    ),
+    session_mode="class",
+)
 race_start_countdown_lock = asyncio.Lock()
 update_checker = UpdateChecker(
     manifest_url=os.getenv(
@@ -152,6 +168,15 @@ class LeaderboardDisplayPayload(BaseModel):
     mode: str
 
 
+class SessionModePayload(BaseModel):
+    mode: str
+
+
+class SaveClassPlanPayload(BaseModel):
+    name: str = Field(..., min_length=1, max_length=60)
+    plan: ClassPlan
+
+
 class StartCountdownSoundPayload(BaseModel):
     enabled: bool
 
@@ -163,9 +188,24 @@ class AssignStationPayload(BaseModel):
 
 class RegisterAthletePayload(BaseModel):
     station_number: int = Field(..., ge=1)
-    athlete_name: str = Field(..., min_length=1, max_length=80)
+    # Anonymous participation: a name is no longer required (GDPR posture --
+    # a session with no names and no photos collects no personal data). An
+    # empty or whitespace-only string is normalized to None below so " " and
+    # "" behave identically to omitting the field entirely. Registration
+    # itself (RaceManager._station_registrations) is the source of truth for
+    # "is this station registered?" -- never athlete_name truthiness.
+    athlete_name: Optional[str] = Field(None, max_length=80)
     team_name: Optional[str] = Field(None, max_length=80)
     avatar_base64: Optional[str] = None
+
+    @field_validator("athlete_name", mode="before")
+    @classmethod
+    def _blank_name_is_none(cls, value):
+        if value is None:
+            return None
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
 
 class PowerActionPayload(BaseModel):
@@ -353,9 +393,66 @@ def get_stations_status_data() -> dict:
     )
 
 
+def summarize_class_record(record: Any) -> Optional[dict]:
+    """A finished class kept SMALL: when it ran, total duration, the plan
+    that was used, and per-station totals -- nothing more (no ranking, no
+    tokens, no per-athlete detail page; a class was never a leaderboard).
+
+    Reuses RaceResultsQuery._is_participant rather than a name-truthiness
+    check, so an anonymous finisher (no name, real station_number) is kept
+    here exactly as it is on the race side -- see that predicate's own
+    docstring for why `if not name` would silently drop them again.
+    """
+    if not isinstance(record, dict):
+        return None
+    result_id = record.get("result_id")
+    snapshot = record.get("snapshot")
+    if not result_id or not isinstance(snapshot, dict):
+        return None
+
+    start = snapshot.get("start_time_epoch_ms")
+    end = snapshot.get("end_time_epoch_ms")
+    duration_ms = None
+    if (
+        isinstance(start, (int, float))
+        and isinstance(end, (int, float))
+        and end >= start
+    ):
+        duration_ms = end - start
+
+    leaderboard = snapshot.get("leaderboard")
+    leaderboard = leaderboard if isinstance(leaderboard, dict) else {}
+    stations = []
+    for row in leaderboard.values():
+        if not RaceResultsQuery._is_participant(row):
+            continue
+        stations.append(
+            {
+                "station_number": row.get("station_number"),
+                "athlete_name": row.get("athlete_name"),
+                "distance_m": row.get("distance_m"),
+                "calories": row.get("calories"),
+                "max_power_watts": row.get("max_power_watts"),
+                "active_time_ms": row.get("elapsed_time_ms"),
+            }
+        )
+    stations.sort(key=lambda s: (s["station_number"] is None, s["station_number"]))
+
+    return {
+        "result_id": result_id,
+        "start_time_epoch_ms": start,
+        "end_time_epoch_ms": end,
+        "duration_ms": duration_ms,
+        "class_plan": snapshot.get("class_plan"),
+        "participant_count": len(stations),
+        "stations": stations,
+    }
+
+
 async def broadcast_race_state():
     state_data = await get_race_state_data()
     race_result_store.save_finished_snapshot(state_data)
+    class_result_store.save_finished_snapshot(state_data)
     ws_data = dict(state_data)
     ws_data["type"] = "state_change"
     await ws_manager.broadcast(ws_data)
@@ -514,7 +611,10 @@ def get_race_readiness_status() -> dict:
     registered_stations = [
         (int(station_number), station)
         for station_number, station in stations.items()
-        if station.get("athlete_name")
+        # "registered?" is an explicit boolean from get_stations_status(),
+        # not athlete_name truthiness -- a station can be legitimately
+        # registered with no name (anonymous participation).
+        if station.get("registered")
     ]
     registered_stations.sort(key=lambda item: item[0])
 
@@ -652,6 +752,20 @@ def get_race_results(limit: int = 50):
 @app.get("/api/results/races")
 def list_race_results(limit: int = 20):
     return {"races": race_results_query.list_races(limit=limit)}
+
+
+@app.get("/api/class/history")
+def list_class_history(limit: int = 20):
+    # Newest-first, mirroring RaceResultsQuery._load_records: the jsonl file
+    # is append-only in chronological order, so reversing gives the required
+    # order without a separate timestamp sort.
+    records = list(reversed(class_result_store.list_results(limit=limit)))
+    classes = [
+        summary
+        for summary in (summarize_class_record(record) for record in records)
+        if summary is not None
+    ]
+    return {"classes": classes}
 
 
 @app.get("/api/results/records")
@@ -945,10 +1059,74 @@ async def configure_race(payload: ConfigurePayload, request: Request):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@app.post("/api/class/configure")
+async def configure_class(payload: ClassPlan, request: Request):
+    require_admin(request)
+    try:
+        prev_state = race_manager.get_state()
+        race_manager.configure_class(payload)
+        if prev_state == RaceState.STOPPED:
+            race_event_engine.reset()
+        return await broadcast_race_state()
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+def _class_plans_response() -> Dict[str, Any]:
+    # Sorted by name -- a stable, predictable order for the operator-facing
+    # picker, independent of dict insertion order.
+    plans = race_manager.list_class_plans()
+    return {
+        "plans": [
+            {"name": name, "plan": plan.model_dump()}
+            for name, plan in sorted(plans.items())
+        ]
+    }
+
+
+@app.get("/api/class/plans")
+async def list_class_plans(request: Request):
+    require_admin(request)
+    return _class_plans_response()
+
+
+@app.post("/api/class/plans")
+async def save_class_plan(payload: SaveClassPlanPayload, request: Request):
+    require_admin(request)
+    try:
+        race_manager.save_class_plan(payload.name, payload.plan)
+        return _class_plans_response()
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.delete("/api/class/plans/{name}")
+async def delete_class_plan(name: str, request: Request):
+    require_admin(request)
+    removed = race_manager.delete_class_plan(name)
+    if not removed:
+        raise HTTPException(status_code=404, detail="Class plan not found")
+    return _class_plans_response()
+
+
+@app.post("/api/session/mode")
+async def set_session_mode(payload: SessionModePayload, request: Request):
+    require_admin(request)
+    try:
+        race_manager.set_session_mode(payload.mode)
+        return await broadcast_race_state()
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @app.post("/api/race/start")
 async def start_race(request: Request):
     require_admin(request)
-    enforce_race_readiness()
+    # Readiness checks (target value, station assignment, team setup, ...)
+    # are all race-config concepts a class doesn't have. Classes get their
+    # own guard inside race_manager.start_race() (plan must be configured).
+    if race_manager.get_session_mode() == "race":
+        enforce_race_readiness()
     try:
         race_manager.start_race()
         race_event_engine.reset()
@@ -995,6 +1173,7 @@ async def stop_race(request: Request):
         race_manager.stop_race()
         state_data = await broadcast_race_state()
         race_result_store.save_finished_snapshot(state_data)
+        class_result_store.save_finished_snapshot(state_data)
         return state_data
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -1007,6 +1186,7 @@ async def close_race(request: Request):
         race_manager.close_race()
         state_data = await broadcast_race_state()
         race_result_store.save_finished_snapshot(state_data)
+        class_result_store.save_finished_snapshot(state_data)
         return state_data
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -1184,6 +1364,11 @@ def read_admin():
 @app.get("/gameAdmin")
 def read_game_admin():
     return RedirectResponse(url="/static/gameAdmin.html")
+
+
+@app.get("/classAdmin")
+def read_class_admin():
+    return RedirectResponse(url="/static/classAdmin.html")
 
 
 @app.get("/systemAdmin")

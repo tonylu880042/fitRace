@@ -75,6 +75,15 @@
       flex-wrap: wrap;
     }
 
+    .language-select {
+      height: 30px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+
     .chip {
       display: inline-flex;
       align-items: center;
@@ -324,6 +333,14 @@
       font-size: 15px;
     }
 
+    .binding-card-signal {
+      grid-column: 1 / -1;
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      font-family: var(--mono);
+    }
+
     .binding-card-footer {
       grid-column: 1 / -1;
       display: flex;
@@ -363,6 +380,11 @@
     .pill.live {
       color: var(--ok);
       border-color: rgba(52, 211, 153, 0.5);
+    }
+
+    .pill.connecting {
+      color: var(--warn);
+      border-color: rgba(245, 158, 11, 0.5);
     }
 
     .empty {
@@ -544,10 +566,11 @@
       letter-spacing: 0.05em;
     }
 
-    /* The scan overlay (#pairing-scan-overlay) and the batch overlay
-       (#batch-progress-overlay) both use this rule, so it stays one
-       visual system for both dialogs. Their trigger buttons live in
-       different places -- #add-device-btn near the top of the home view,
+    /* The batch overlay (#batch-progress-overlay) is the only dialog left
+       on this rule: the pairing scan used to share it, until a scan that
+       blocked the worklist proved unusable against equipment that stops
+       advertising on its own. Its trigger buttons live in different places
+       -- #add-device-btn near the top of the home view,
        #pairing-rescan-btn and #pairing-save-all-btn at the bottom of the
        worklist -- and any of them can be scrolled out of view, so a
        dialog that chases its trigger would be unpredictable. Anchoring
@@ -877,6 +900,19 @@
       font-size: 12px;
     }
 
+    .uart-monitor-toggle-btn {
+      width: 100%;
+      margin-top: 12px;
+    }
+
+    .uart-monitor-body {
+      margin-top: 12px;
+    }
+
+    .uart-monitor-body[hidden] {
+      display: none;
+    }
+
     .uart-monitor-legend {
       display: flex;
       gap: 14px;
@@ -1000,6 +1036,10 @@
     <header class="op-header">
       <h1 id="operator-title">__EDGE_NODE_TITLE__</h1>
       <div class="chip-row">
+        <select id="language-select" class="language-select" aria-label="System language">
+          <option value="en-US">English</option>
+          <option value="zh-TW">繁體中文</option>
+        </select>
         <div class="chip" id="hub-chip">
           <span class="chip-dot" id="hub-chip-dot"></span>
           <span data-i18n="operator.hub_label">Hub</span>
@@ -1090,16 +1130,26 @@
         </section>
         <section class="panel uart-monitor-panel" aria-labelledby="uart-monitor-title">
           <h2 id="uart-monitor-title" data-i18n="uartmonitor.title">UART RX/TX Monitor</h2>
-          <div class="uart-monitor-legend" id="uart-monitor-legend">
-            <span class="rx" data-i18n="uartmonitor.rx">RX Receive</span>
-            <span class="tx" data-i18n="uartmonitor.tx">TX Send</span>
+          <button
+            type="button"
+            id="uart-monitor-toggle-btn"
+            class="btn-secondary uart-monitor-toggle-btn"
+            aria-expanded="false"
+            aria-controls="uart-monitor-body"
+            data-i18n="uartmonitor.expand"
+          >Show log</button>
+          <div id="uart-monitor-body" class="uart-monitor-body" hidden>
+            <div class="uart-monitor-legend" id="uart-monitor-legend">
+              <span class="rx" data-i18n="uartmonitor.rx">RX Receive</span>
+              <span class="tx" data-i18n="uartmonitor.tx">TX Send</span>
+            </div>
+            <div
+              id="uart-monitor-log"
+              class="uart-monitor-log"
+              aria-describedby="uart-monitor-legend"
+              tabindex="0"
+            ></div>
           </div>
-          <div
-            id="uart-monitor-log"
-            class="uart-monitor-log"
-            aria-describedby="uart-monitor-legend"
-            tabindex="0"
-          ></div>
         </section>
       </aside>
 
@@ -1127,7 +1177,10 @@
 
         <main id="view-pairing" class="view" hidden>
           <div class="banner" data-i18n="pairing.instruction"></div>
-          <div class="message" id="pairing-scanning" data-i18n="pairing.scanning" hidden></div>
+          <div class="message" id="pairing-scanning" hidden aria-live="polite">
+            <span data-i18n="pairing.scanning">Listening on every antenna channel; devices appear here as they answer.</span>
+            <span id="pairing-scan-elapsed"></span>
+          </div>
           <div class="capacity-strip" id="pairing-capacity"></div>
           <div id="pairing-row-progress" class="worklist-row-progress" hidden aria-live="polite" aria-atomic="true"></div>
           <div id="pairing-worklist" class="card-grid"></div>
@@ -1138,15 +1191,6 @@
             <button type="button" id="pairing-cancel-btn" class="btn-secondary" data-i18n="pairing.cancel">Cancel</button>
           </div>
           <button type="button" id="pairing-done-btn" class="btn-primary" data-i18n="pairing.done">Done — return home</button>
-          <div id="pairing-scan-overlay" class="batch-progress-overlay" hidden aria-live="polite" aria-atomic="true">
-            <div class="batch-progress-modal">
-              <div class="batch-progress-title" data-i18n="pairing.scanning_dialog_title">Scanning for equipment</div>
-              <div class="batch-progress-info">
-                <div class="batch-progress-count" data-i18n="pairing.scanning">Scanning every antenna channel — this can take 20-40 seconds...</div>
-                <div class="batch-progress-step" id="pairing-scan-elapsed"></div>
-              </div>
-            </div>
-          </div>
           <div id="batch-progress-overlay" class="batch-progress-overlay" hidden aria-live="polite" aria-atomic="true">
             <div class="batch-progress-modal">
               <div class="batch-progress-title" data-i18n="pairing.batch_progress">Processing devices...</div>
@@ -1167,6 +1211,7 @@
   </div>
 
   <script>
+    const languageSelect = document.getElementById("language-select");
     const dictionaries = __I18N_DICTIONARIES__;
     const edgeNodeLabel = "__EDGE_NODE_LABEL__";
 
@@ -1198,13 +1243,41 @@
 
     function applyTranslations() {
       document.documentElement.lang = currentLocale;
+      languageSelect.value = currentLocale;
       document.querySelectorAll("[data-i18n]").forEach((element) => {
         element.innerText = t(element.dataset.i18n);
       });
       const title = `${edgeNodeLabel}-${t("operator.title")}`;
       document.title = title;
       document.getElementById("operator-title").textContent = title;
+      // The blanket data-i18n sweep above just reset this button back to its
+      // static "choose another network" label -- but if the Wi-Fi picker is
+      // currently expanded it should read "Collapse" instead. Re-derive it
+      // from the button's own aria-expanded state (the same ternary
+      // toggleWifiPicker() uses) so a language switch can't regress it.
+      const wifiToggleBtn = document.getElementById("wifi-toggle-btn");
+      wifiToggleBtn.textContent = t(wifiToggleBtn.getAttribute("aria-expanded") === "true" ? "wifi.collapse" : "wifi.choose_other");
+      // Same trap, same fix, for the UART monitor's own toggle button.
+      const uartToggleBtn = document.getElementById("uart-monitor-toggle-btn");
+      uartToggleBtn.textContent = t(uartToggleBtn.getAttribute("aria-expanded") === "true" ? "uartmonitor.collapse" : "uartmonitor.expand");
     }
+
+    // Mirrors /maintenance's language-select handler (same element id, same
+    // localStorage key) so the two pages stay in sync on the same origin.
+    // applyTranslations() only swaps data-i18n text nodes -- everything else
+    // on the current view that was built with t() at render time (binding
+    // cards, hub chip, Wi-Fi status, pairing worklist) has to be rebuilt
+    // explicitly or it's left showing the old language.
+    languageSelect.addEventListener("change", () => {
+      currentLocale = languageSelect.value;
+      localStorage.setItem("fitrace.edge.locale", currentLocale);
+      applyTranslations();
+      refreshHubChip();
+      refreshWifiStatus();
+      refreshWifiPickerLanguage();
+      if (currentView === "home" && edgeConfig) renderBindingCards();
+      if (currentView === "pairing") renderPairingWorklist();
+    });
 
     function escapeHtml(value) {
       return String(value ?? "")
@@ -1261,11 +1334,29 @@
     };
     const MONITOR_LIVE_WINDOW_MS = 3000;
     const HOME_MONITOR_POLL_MS = 500;
+    // The UART log is a diagnostic aid, not something card liveness depends
+    // on -- unlike the telemetry poll below, it doesn't need to track the
+    // 500ms cadence, so it gets its own slower interval (see the kiosk CPU
+    // note on refreshUartMonitor()).
+    const UART_MONITOR_POLL_MS = 2000;
     const UART_MONITOR_MAX = 200;
     const PAIRING_POLL_MS = 1000;
+    // The runtime restart triggered by finishPairing() pauses MQTT publishing
+    // for every binding, not just the one just paired -- without this, every
+    // OTHER card would flash "waiting" right after the operator was told
+    // pairing succeeded.
+    const PAIRING_CONNECTING_GRACE_MS = 15000;
 
     function normalizeMac(value) {
       return String(value || "").trim().toUpperCase();
+    }
+
+    // ponytail: 15s optimistic ceiling on the pairing-restart grace window.
+    // Replace with per-MAC link state from the antenna firmware if it ever
+    // reports one; until then this just expires on its own.
+    function pillStateForCard(live, nowMs, connectingUntilMs) {
+      if (live) return "live";
+      return nowMs < connectingUntilMs ? "connecting" : "waiting";
     }
 
     // -- global state -----------------------------------------------------
@@ -1281,6 +1372,10 @@
     let currentView = "home";
     let pairingCapacity = null; // {per_channel, total_free} -- from start(), refreshed by every successful bind()
     let pairingActive = false;
+    // Epoch ms until which every card's pill shows "connecting" instead of
+    // "waiting" even without fresh telemetry -- armed by finishPairing()
+    // just before the restart-induced MQTT pause.
+    let pairingConnectingUntilMs = 0;
     // True for exactly the duration of the in-flight /api/pairing/start
     // request (set/cleared only by showPairingScanning). Lets
     // renderPairingWorklist tell "scan still running, worklist just
@@ -1301,8 +1396,14 @@
     // so a message survives renderBindingCards() rebuilding the whole grid,
     // which happens right after removeBinding()'s loadConfig() refresh.
     let bindingRemoveState = new Map();
+    let bindingReconnectState = new Map();
     let wifiNetworks = [];
     let wifiNetworksLoaded = false;
+    // The network object currently shown in the connect/password form, or
+    // null when the plain list is what's on screen -- lets a language
+    // switch re-render whichever of the two is visible without a fresh
+    // scan or request.
+    let wifiConnectingNet = null;
     let uartMonitorSignature = null;
     let centralHubReady = false;
     let centralHubStatus = "checking";
@@ -1491,6 +1592,7 @@
     }
 
     function renderWifiNetworks() {
+      wifiConnectingNet = null; // back on the list -- no network mid-connect
       const list = document.getElementById("wifi-networks");
       const message = document.getElementById("wifi-scan-message");
       if (!wifiNetworks.length) {
@@ -1561,6 +1663,7 @@
     }
 
     function renderWifiConnect(net) {
+      wifiConnectingNet = net;
       const list = document.getElementById("wifi-networks");
       const message = document.getElementById("wifi-scan-message");
       const needsPassword = net.secured && !net.saved;
@@ -1609,6 +1712,21 @@
       (document.getElementById("wifi-password") || confirmBtn).focus();
     }
 
+    // A language switch must relabel whichever of the Wi-Fi network list or
+    // the connect/password form is currently on screen -- refreshWifiStatus()
+    // only rewrites the current-network status line and touches neither.
+    // Never triggers a fresh scan or request; only rebuilds from state
+    // already held in memory (wifiNetworks / wifiConnectingNet).
+    function refreshWifiPickerLanguage() {
+      const toggleBtn = document.getElementById("wifi-toggle-btn");
+      if (toggleBtn.getAttribute("aria-expanded") !== "true") return;
+      if (wifiConnectingNet) {
+        renderWifiConnect(wifiConnectingNet);
+      } else if (wifiNetworksLoaded) {
+        renderWifiNetworks();
+      }
+    }
+
     async function checkPowerDryRunMode() {
       const banner = document.getElementById("power-dry-run-banner");
       try {
@@ -1644,6 +1762,11 @@
           // on the card after the loadConfig() refresh that follows it --
           // see removeBinding().
           const removeState = bindingRemoveState.get(binding.node_id) || {};
+          // Both card actions share one message slot: only one of them can be
+          // in flight on a card at a time, and the newer outcome is the one
+          // the operator is waiting to read.
+          const reconnectState = bindingReconnectState.get(binding.node_id) || {};
+          const cardMessage = reconnectState.message ? reconnectState : removeState;
           return `
           <div class="binding-card" data-node-id="${escapeHtml(binding.node_id)}">
             <div>
@@ -1659,10 +1782,12 @@
               <div>${escapeHtml(t("monitor.power"))}<strong data-field="power">--</strong></div>
               <div>${escapeHtml(t("monitor.rssi"))}<strong data-field="rssi">--</strong></div>
             </div>
+            <div class="binding-card-signal" data-field="last-signal">--</div>
             <div class="binding-card-footer">
+              <button type="button" class="btn-secondary binding-card-reconnect" data-node-id="${escapeHtml(binding.node_id)}" data-role="reconnect-binding" ${reconnectState.working ? "disabled" : ""}>${escapeHtml(reconnectState.working ? t("operator.card_reconnect_working") : t("operator.card_reconnect"))}</button>
               <button type="button" class="btn-secondary binding-card-remove" data-node-id="${escapeHtml(binding.node_id)}" data-role="remove-binding" ${removeState.removing ? "disabled" : ""}>${escapeHtml(removeState.removing ? t("operator.card_remove_working") : t("operator.card_remove"))}</button>
-              <div class="message binding-card-remove-message ${removeState.ok === false ? "error" : (removeState.ok === true ? "ok" : "")}" data-role="remove-message">${escapeHtml(removeState.message || "")}</div>
             </div>
+            <div class="message binding-card-remove-message ${cardMessage.ok === false ? "error" : (cardMessage.ok === true ? "ok" : "")}" data-role="remove-message">${escapeHtml(cardMessage.message || "")}</div>
           </div>
         `;
         }).join("");
@@ -1696,12 +1821,22 @@
         const payload = mqttLive ? mqttPayload : (uartLive ? uartPayload : mqttPayload);
         const channel = payload?.antenna_channel || binding.antenna_channel;
         const pill = card.querySelector('[data-role="pill"]');
-        pill.className = `pill ${live ? "live" : ""}`;
-        pill.textContent = live ? t("monitor.live") : t("monitor.waiting");
+        const pillState = pillStateForCard(live, Date.now(), pairingConnectingUntilMs);
+        pill.className = `pill ${pillState === "waiting" ? "" : pillState}`;
+        pill.textContent = t(pillState === "live" ? "monitor.live" : (pillState === "connecting" ? "pairing.connecting" : "monitor.waiting"));
         card.querySelector('[data-field="channel"]').textContent = formatAntennaChannel(channel);
         card.querySelector('[data-field="speed"]').textContent = formatMetric(payload?.instantaneous_speed_kph, " kph", 1);
         card.querySelector('[data-field="power"]').textContent = formatMetric(payload?.power_watts, " W", 0);
         card.querySelector('[data-field="rssi"]').textContent = formatMetric(payload?.rssi, " dBm", 0);
+        // Newest of the two sources, not the preferred one: MQTT pauses for
+        // tens of seconds during a pairing scan while UART frames keep
+        // arriving, and reporting the MQTT stamp then would show a
+        // disconnection that never happened.
+        const lastSignalMs = Math.max(
+          Number(mqttPayload?.timestamp_epoch_ms || 0),
+          Number(uartPayload?.timestamp_epoch_ms || 0)
+        );
+        card.querySelector('[data-field="last-signal"]').textContent = formatLastSignal(lastSignalMs);
       });
     }
 
@@ -1741,6 +1876,49 @@
       // Refresh so the card list (the binding is gone on success) and any
       // capacity display (add-device-btn's "full" state) update -- the
       // message above survives this via bindingRemoveState.
+      await loadConfig();
+    }
+
+    // Wall-clock, not "N minutes ago": the operator compares this against
+    // when the class started or when they last looked at the machine.
+    function formatLastSignal(epochMs) {
+      if (!epochMs) return t("operator.card_last_signal_never");
+      return t("operator.card_last_signal", { time: formatEventTime(epochMs) });
+    }
+
+    // Non-destructive: it re-links this one machine (DISCONNECT + CONNECT_ADD
+    // on its MAC alone), so unlike removeBinding it needs no confirmation and
+    // leaves the other machines on the same antenna channel connected.
+    async function reconnectBinding(nodeId) {
+      const binding = (edgeConfig?.equipment_bindings || []).find((b) => b.node_id === nodeId);
+      const name = binding?.equipment_id || nodeId;
+
+      bindingReconnectState.set(nodeId, { working: true, message: t("operator.card_reconnect_working", { name }), ok: null });
+      if (currentView === "home") renderBindingCards();
+
+      try {
+        const response = await adminFetch("/api/antenna/reconnect-device", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ node_id: nodeId }),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || t("operator.card_reconnect_failed", { name }));
+        bindingReconnectState.set(nodeId, {
+          working: false,
+          message: t("operator.card_reconnect_success", { name }),
+          ok: true,
+        });
+      } catch (error) {
+        bindingReconnectState.set(nodeId, {
+          working: false,
+          message: error.message || t("operator.card_reconnect_failed", { name }),
+          ok: false,
+        });
+      }
+      // The board answers the CONNECT asynchronously, so refresh to pick up
+      // whatever the link state is by now -- and to redraw this card without
+      // its disabled button.
       await loadConfig();
     }
 
@@ -1943,7 +2121,20 @@
       });
     }
 
-    async function refreshTelemetry() {
+    // The kiosk browser on the Edge Node itself polls this page -- on real
+    // hardware, running this fetch + renderUartMonitor() at the same 500ms
+    // cadence as refreshTelemetry() below doubled request volume for no
+    // liveness benefit (~800 requests/3min from a single client, ~26%
+    // uvicorn CPU / ~39% renderer CPU on an idle box). The UART log is a
+    // diagnostic aid an operator reads, not something card liveness
+    // depends on, so it gets its own slower interval -- see
+    // UART_MONITOR_POLL_MS.
+    async function refreshUartMonitor() {
+      const toggleBtn = document.getElementById("uart-monitor-toggle-btn");
+      // Collapsed -- skip the request entirely rather than fetching and
+      // discarding; the whole point of the toggle is to stop this poll
+      // when nobody is looking at the log.
+      if (toggleBtn.getAttribute("aria-expanded") !== "true") return;
       try {
         const response = await adminFetch("/api/monitor/events?limit=500");
         const payload = await response.json();
@@ -1953,6 +2144,53 @@
       } catch (_error) {
         // best-effort; next poll retries
       }
+    }
+
+    // The UART log is a diagnostic view an operator opens occasionally --
+    // it defaults to collapsed (and the choice is remembered per browser)
+    // so the venue's all-day kiosk doesn't poll it until someone actually
+    // wants to look. Wrapped in try/catch so a throwing/unavailable
+    // localStorage (private mode, disabled storage) still renders a
+    // working page -- collapsed, the safe default.
+    const UART_MONITOR_OPEN_STORAGE_KEY = "fitrace.edge.uartMonitorOpen";
+
+    function readUartMonitorOpenPreference() {
+      try {
+        return localStorage.getItem(UART_MONITOR_OPEN_STORAGE_KEY) === "true";
+      } catch (_error) {
+        return false;
+      }
+    }
+
+    function writeUartMonitorOpenPreference(open) {
+      try {
+        localStorage.setItem(UART_MONITOR_OPEN_STORAGE_KEY, String(open));
+      } catch (_error) {
+        // best-effort; the page still works, it just won't remember the choice
+      }
+    }
+
+    function setUartMonitorExpanded(expanded) {
+      const toggleBtn = document.getElementById("uart-monitor-toggle-btn");
+      const body = document.getElementById("uart-monitor-body");
+      toggleBtn.setAttribute("aria-expanded", String(expanded));
+      toggleBtn.textContent = t(expanded ? "uartmonitor.collapse" : "uartmonitor.expand");
+      body.hidden = !expanded;
+    }
+
+    function toggleUartMonitor() {
+      const toggleBtn = document.getElementById("uart-monitor-toggle-btn");
+      const expanded = toggleBtn.getAttribute("aria-expanded") !== "true";
+      setUartMonitorExpanded(expanded);
+      writeUartMonitorOpenPreference(expanded);
+      if (expanded) {
+        // Fetch immediately rather than waiting for the next
+        // UART_MONITOR_POLL_MS tick, so the log isn't blank on open.
+        refreshUartMonitor();
+      }
+    }
+
+    async function refreshTelemetry() {
       try {
         // A pairing scan can flood the raw event log above with dozens of
         // device-discovery lines (a real scan on this hardware produced 40
@@ -2623,6 +2861,14 @@
         (payload.candidates || []).forEach((candidate) => {
           pairingCandidateStatus.set(candidate.mac, candidate);
         });
+        // Each channel publishes what it heard as soon as it finishes, so a
+        // poll tick during a scan is how new devices reach the worklist.
+        addPairingCandidates(payload.candidates);
+        const scanning = payload.state === "scanning";
+        if (pairingScanInFlight !== scanning) {
+          showPairingScanning(scanning);
+          setPairingScanControls(scanning);
+        }
         if (currentView === "pairing") renderPairingWorklist();
       } catch (_error) {
         // best-effort; next tick retries
@@ -2643,13 +2889,14 @@
     }
 
     // Single choke point for "a scan is running" UI: the inline message
-    // line, the modal dialog (matching .batch-progress-overlay's structure
-    // so it reads as one system with the batch overlay), its elapsed-time
-    // counter, and the pairingScanInFlight flag renderPairingWorklist reads
-    // to suppress the no-candidates message. Every caller (only
-    // startPairing()) toggles this from a try/finally, so active=false
-    // always runs even if the request throws -- the dialog can never be
-    // left stuck on screen, and the counter's interval can never leak.
+    // line, its elapsed-time counter, and the pairingScanInFlight flag
+    // renderPairingWorklist reads to suppress the no-candidates message.
+    // Inline, never a modal: the operator is racing a pairing window that
+    // closes on its own (a watch advertises for under a minute), so the
+    // worklist has to stay usable while the channels are still listening.
+    // Turned off by the status poll when the session stops scanning, and by
+    // startPairing()'s catch when the request itself fails, so neither the
+    // line nor the counter interval can be left behind.
     function showPairingScanning(active) {
       const el = document.getElementById("pairing-scanning");
       if (el) el.hidden = !active;
@@ -2660,9 +2907,7 @@
         pairingScanTimerHandle = null;
       }
 
-      const overlay = document.getElementById("pairing-scan-overlay");
       const elapsedEl = document.getElementById("pairing-scan-elapsed");
-      if (overlay) overlay.hidden = !active;
 
       if (active) {
         const startedAt = Date.now();
@@ -2672,13 +2917,55 @@
           if (elapsedEl) elapsedEl.textContent = t("pairing.scanning_elapsed", { seconds });
         }, 1000);
       } else {
+        if (elapsedEl) elapsedEl.textContent = "";
         // The worklist was rendered at least once while pairingScanInFlight
-        // was still true (the render right after initPairingWorklist() in
-        // startPairing(), before this finally runs) -- re-render now so a
-        // truly-empty scan result shows "no candidates" immediately instead
-        // of waiting on the next poll tick.
+        // was still true, so re-render now: a truly-empty scan result shows
+        // "no candidates" immediately instead of waiting a poll tick.
         renderPairingWorklist();
       }
+    }
+
+    // Rescan and cancel tear down a session the scan thread is still using,
+    // so they stay disabled for as long as the scan runs -- unlike binding a
+    // candidate, which is the whole point of not blocking and is left
+    // enabled throughout.
+    function setPairingScanControls(scanning) {
+      const rescanBtn = document.getElementById("pairing-rescan-btn");
+      const cancelBtn = document.getElementById("pairing-cancel-btn");
+      const doneBtn = document.getElementById("pairing-done-btn");
+      if (rescanBtn) rescanBtn.disabled = scanning;
+      if (cancelBtn) cancelBtn.disabled = scanning;
+      if (doneBtn) doneBtn.disabled = scanning;
+    }
+
+    // Adds rows for candidates a channel has just reported, without
+    // touching rows that already exist: the operator may be part-way
+    // through typing a name or picking a type on one of them while another
+    // channel is still scanning.
+    function addPairingCandidates(candidates) {
+      let added = false;
+      (candidates || []).forEach((candidate) => {
+        if (!candidate || !candidate.mac) return;
+        if (pairingRowMeta.has(candidate.mac)) return;
+        pairingRowMeta.set(candidate.mac, {
+          mac: candidate.mac,
+          name: candidate.name,
+          rssi: candidate.rssi,
+          channelId: null,
+          candidateChannelId: candidate.channel_id,
+          rssiByChannel: candidate.rssi_by_channel || {},
+          equipmentType: null,
+          displayName: candidate.name || candidate.mac,
+          binding: false,
+          bound: false,
+          bindError: null,
+          connecting: false,
+          connectOutcome: null,
+          probing: false,
+        });
+        added = true;
+      });
+      return added;
     }
 
     // A page reload or a tablet waking from sleep must never strand the
@@ -2757,9 +3044,7 @@
       // cancel/done must be inert for the duration of this request so the
       // page can never issue that conflicting call; re-enabled in the same
       // finally that dismisses the dialog, so no path leaves them stuck.
-      rescanBtn.disabled = true;
-      cancelBtn.disabled = true;
-      doneBtn.disabled = true;
+      setPairingScanControls(true);
       try {
         // Scan-only: temp_connect: false means start() issues SCAN commands
         // and nothing else -- no CONNECT_ADD, no batch CONNECT/DISCONNECT:ALL,
@@ -2775,18 +3060,21 @@
         if (!response.ok) throw new Error(payload.detail || t("pairing.start_failed"));
         pairingActive = true;
         applyPairingCapacity(payload.capacity);
-        initPairingWorklist(payload.candidates || []);
+        // start() answers before the scan has heard anything, so there is
+        // nothing to seed with: pollPairingStatus() adds each candidate as
+        // its channel reports it.
+        initPairingWorklist([]);
         renderPairingWorklist();
         startPairingPoll();
       } catch (error) {
         showView("home");
         document.getElementById("add-device-message").textContent = error.message;
-      } finally {
+        // Only this failure path clears the scanning UI here -- on the happy
+        // path the poll owns it, because the scan outlives this request.
         showPairingScanning(false);
+        setPairingScanControls(false);
+      } finally {
         addBtn.disabled = false;
-        rescanBtn.disabled = false;
-        cancelBtn.disabled = false;
-        doneBtn.disabled = false;
       }
     }
 
@@ -2835,6 +3123,10 @@
       } finally {
         doneBtn.disabled = false;
       }
+      // The restart happens server-side regardless of whether the fetch
+      // above threw, so arm the grace window unconditionally before
+      // returning home.
+      pairingConnectingUntilMs = Date.now() + PAIRING_CONNECTING_GRACE_MS;
       await goHome();
     }
 
@@ -2869,6 +3161,11 @@
     document.getElementById("add-device-btn").addEventListener("click", startPairing);
     document.getElementById("disconnect-all-btn").addEventListener("click", disconnectAllAndClearBindings);
     document.getElementById("binding-cards").addEventListener("click", (event) => {
+      const reconnectTarget = event.target.closest('[data-role="reconnect-binding"]');
+      if (reconnectTarget) {
+        reconnectBinding(reconnectTarget.dataset.nodeId);
+        return;
+      }
       const target = event.target.closest('[data-role="remove-binding"]');
       if (!target) return;
       removeBinding(target.dataset.nodeId);
@@ -2880,6 +3177,7 @@
     document.getElementById("diagnostic-status-btn").addEventListener("click", () => runAntennaDiagnostic("status"));
     document.getElementById("wifi-toggle-btn").addEventListener("click", toggleWifiPicker);
     document.getElementById("wifi-rescan-btn").addEventListener("click", scanWifiNetworks);
+    document.getElementById("uart-monitor-toggle-btn").addEventListener("click", toggleUartMonitor);
     document.getElementById("pairing-rescan-btn").addEventListener("click", rescan);
     document.getElementById("pairing-cancel-btn").addEventListener("click", async () => {
       await cancelPairing();
@@ -2891,14 +3189,20 @@
     document.getElementById("pairing-worklist").addEventListener("click", handlePairingWorklistClick);
     document.getElementById("pairing-worklist").addEventListener("input", handlePairingWorklistInput);
 
+    // Must run before applyTranslations() so the label it derives from
+    // aria-expanded reflects the restored (or default-collapsed) state,
+    // not the static markup's default.
+    setUartMonitorExpanded(readUartMonitorOpenPreference());
     applyTranslations();
     loadConfig({ populateHubFields: true }).then(restorePairingSessionIfActive);
     checkPowerDryRunMode();
     refreshWifiStatus();
     refreshTelemetry();
+    refreshUartMonitor();
     setInterval(refreshWifiStatus, 5000);
     setInterval(() => refreshCentralHubStatus({ updateMessage: false }), 5000);
     setInterval(refreshTelemetry, HOME_MONITOR_POLL_MS);
+    setInterval(refreshUartMonitor, UART_MONITOR_POLL_MS);
   </script>
 </body>
 </html>

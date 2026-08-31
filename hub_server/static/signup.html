@@ -361,8 +361,8 @@
       </div>
 
       <div class="form-group">
-        <label for="athlete-name" data-i18n="signup.athlete_name">Athlete Name</label>
-        <input type="text" id="athlete-name" class="form-control" placeholder="Enter name..." data-i18n-placeholder="signup.athlete_placeholder" required maxlength="20">
+        <label for="athlete-name" data-i18n="signup.athlete_name">Athlete Name (Optional)</label>
+        <input type="text" id="athlete-name" class="form-control" placeholder="Enter name..." data-i18n-placeholder="signup.athlete_placeholder" maxlength="20">
       </div>
 
       <div class="form-group">
@@ -439,7 +439,7 @@
       "avatar.too_large": "Photo is too large. Please choose an image under 8MB.",
       "avatar.compress_failed": "Could not prepare this photo. Please choose another image.",
       "signup.station_select": "Select Station",
-      "signup.athlete_name": "Athlete Name",
+      "signup.athlete_name": "Athlete Name (Optional)",
       "signup.athlete_placeholder": "Enter name...",
       "signup.team": "Team (Optional)",
       "signup.team_placeholder": "Example: RD, Red Team, 17Fit...",
@@ -476,7 +476,7 @@
         "avatar.too_large": "照片太大，請選擇 8MB 以下的圖片。",
         "avatar.compress_failed": "無法處理此照片，請選擇另一張圖片。",
         "signup.station_select": "選擇設備站位",
-        "signup.athlete_name": "選手姓名",
+        "signup.athlete_name": "選手姓名（選填）",
         "signup.athlete_placeholder": "請輸入姓名...",
         "signup.team": "組別隊伍（選填）",
         "signup.team_placeholder": "例如：RD、紅隊、17Fit...",
@@ -502,7 +502,7 @@
         "signup.subtitle": "Registrazione atleta",
         "signup.avatar": "Avatar atleta",
         "signup.station_select": "Seleziona postazione",
-        "signup.athlete_name": "Nome atleta",
+        "signup.athlete_name": "Nome atleta (facoltativo)",
         "signup.athlete_placeholder": "Inserisci il nome...",
         "signup.team": "Team (opzionale)",
         "signup.submit": "Registrati"
@@ -511,7 +511,7 @@
         "signup.subtitle": "Inscription athlète",
         "signup.avatar": "Avatar athlète",
         "signup.station_select": "Sélectionner un poste",
-        "signup.athlete_name": "Nom de l'athlète",
+        "signup.athlete_name": "Nom de l'athlète (facultatif)",
         "signup.athlete_placeholder": "Saisir le nom...",
         "signup.team": "Équipe (facultatif)",
         "signup.submit": "S'inscrire"
@@ -520,7 +520,7 @@
         "signup.subtitle": "Athleten-Registrierung",
         "signup.avatar": "Athletenbild",
         "signup.station_select": "Station wählen",
-        "signup.athlete_name": "Name",
+        "signup.athlete_name": "Name (optional)",
         "signup.athlete_placeholder": "Name eingeben...",
         "signup.team": "Team (optional)",
         "signup.submit": "Registrieren"
@@ -529,7 +529,7 @@
         "signup.subtitle": "Deltagarregistrering",
         "signup.avatar": "Deltagarbild",
         "signup.station_select": "Välj station",
-        "signup.athlete_name": "Deltagarens namn",
+        "signup.athlete_name": "Deltagarens namn (valfritt)",
         "signup.athlete_placeholder": "Ange namn...",
         "signup.team": "Lag (valfritt)",
         "signup.submit": "Registrera"
@@ -768,8 +768,11 @@
 
           stationLbl.innerText = `Station ${station}${eqType ? ' - ' + eqType : ''}${nodeInfo}`;
 
-          if (st.athlete_name) {
-            warningDiv.innerText = t('signup.overwrite_warning', { name: st.athlete_name });
+          // The registered flag (not athlete_name truthiness) is the
+          // source of truth -- a station can be registered anonymously,
+          // with no name to show, so fall back to the station number.
+          if (st.registered) {
+            warningDiv.innerText = t('signup.overwrite_warning', { name: st.athlete_name || `Station ${station}` });
             warningDiv.style.display = 'block';
           } else {
             warningDiv.style.display = 'none';
@@ -802,7 +805,7 @@
 
               const eqType = st.equipment_type ? t(equipmentNames[st.equipment_type] || st.equipment_type) : t('signup.station_unassigned');
               const nodeInfo = st.node_id ? ` (${st.node_display_name || st.node_id})` : "";
-              const athInfo = st.athlete_name ? ` [${t('signup.station_registered', { name: st.athlete_name })}]` : "";
+              const athInfo = st.registered ? ` [${t('signup.station_registered', { name: st.athlete_name || `Station ${sn}` })}]` : "";
 
               opt.innerText = `Station ${sn} - ${eqType}${nodeInfo}${athInfo}`;
               select.appendChild(opt);
@@ -810,8 +813,9 @@
 
             // Check warning for initial selection
             const firstStation = select.value;
-            if (firstStation && stations[firstStation] && stations[firstStation].athlete_name) {
-              warningDiv.innerText = t('signup.overwrite_warning', { name: stations[firstStation].athlete_name });
+            if (firstStation && stations[firstStation] && stations[firstStation].registered) {
+              const firstStationEntry = stations[firstStation];
+              warningDiv.innerText = t('signup.overwrite_warning', { name: firstStationEntry.athlete_name || `Station ${firstStation}` });
               warningDiv.style.display = 'block';
             }
           }
@@ -856,8 +860,8 @@
           if (res.ok) {
             const data = await res.json();
             const st = (data.stations || {})[selectedStation] || {};
-            if (st.athlete_name) {
-              warningDiv.innerText = t('signup.overwrite_warning', { name: st.athlete_name });
+            if (st.registered) {
+              warningDiv.innerText = t('signup.overwrite_warning', { name: st.athlete_name || `Station ${selectedStation}` });
               warningDiv.style.display = 'block';
             } else {
               warningDiv.style.display = 'none';
@@ -875,8 +879,9 @@
         return;
       }
 
-      const name = athleteNameInput.value.trim();
-      if (!name) return;
+      // Anonymous participation: an empty name is allowed, sent as null so
+      // the hub treats it identically to the field being omitted.
+      const name = athleteNameInput.value.trim() || null;
       const team = teamNameInput.value.trim() || null;
 
       let finalStation = station;

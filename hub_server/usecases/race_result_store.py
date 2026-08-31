@@ -1,13 +1,23 @@
 import json
+import logging
 import time
 from pathlib import Path
 from typing import Any
 
+logger = logging.getLogger("hub_server.race_result_store")
+
 
 class RaceResultStore:
-    def __init__(self, path: str | Path):
+    def __init__(self, path: str | Path, session_mode: str = "race"):
         self._path = Path(path)
         self._saved_keys: set[str] = set()
+        # Which session kind this instance files: "race" (the historical,
+        # default behaviour every existing caller relies on) or "class". A
+        # single class parameterised this way -- rather than a second,
+        # copy-pasted store class -- keeps the append-only file format, the
+        # dedup-by-result_id logic, and list_results() identical for both
+        # kinds; only the filter below differs.
+        self._session_mode = session_mode
 
     @property
     def path(self) -> Path:
@@ -15,6 +25,13 @@ class RaceResultStore:
 
     def save_finished_snapshot(self, snapshot: dict[str, Any]) -> dict[str, Any] | None:
         if snapshot.get("state") != "STOPPED":
+            return None
+        # Snapshots written before class mode existed have no session_mode
+        # key at all -- absent must mean "race", not "class", for either
+        # store: a race-mode store must keep filing those old snapshots,
+        # and a class-mode store must keep rejecting them.
+        snapshot_session_mode = snapshot.get("session_mode") or "race"
+        if snapshot_session_mode != self._session_mode:
             return None
         result_key = self._result_key(snapshot)
         if result_key in self._saved_keys or self._key_exists(result_key):
@@ -26,11 +43,23 @@ class RaceResultStore:
             "saved_epoch_ms": int(time.time() * 1000),
             "snapshot": snapshot,
         }
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        with self._path.open("a", encoding="utf-8") as f:
-            f.write(
-                json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n"
+        # Ending a session is the critical path; persisting its history record
+        # is not. A storage failure here (read-only shared dir, missing
+        # mount, full disk -- see the venue incident this guards against)
+        # must never propagate and break the stop/reset flow that called us.
+        # Only OS/IO failures are swallowed -- a bug in record construction
+        # above should still surface as a real exception.
+        try:
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+            with self._path.open("a", encoding="utf-8") as f:
+                f.write(
+                    json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n"
+                )
+        except OSError as exc:
+            logger.warning(
+                "Failed to persist finished snapshot to %s: %s", self._path, exc
             )
+            return None
         self._saved_keys.add(result_key)
         return record
 

@@ -10,7 +10,7 @@ from edge_node.domain.models import EdgeNodeConfig, EquipmentBinding
 from edge_node.infrastructure.config_store import (
     save_edge_config as store_save_edge_config,
 )
-from edge_node.infrastructure.mqtt.client import AsyncMqttClient
+from fitrace_common.mqtt_client import AsyncMqttClient
 from edge_node.adapters.mqtt_publisher import MqttPublisher
 from edge_node.usecases.mock_generator import generate_mock_telemetry
 from edge_node.infrastructure.ble.bleak_client import (
@@ -113,7 +113,10 @@ def main():
         event_log = EdgeEventLog.from_env()
         client_id = f"fitrace-edge-{node_id}"
         mqtt_client = AsyncMqttClient(
-            host=mqtt_host, port=mqtt_port, client_id=client_id
+            host=mqtt_host,
+            port=mqtt_port,
+            client_id=client_id,
+            logger_name="edge_node.mqtt_client",
         )
 
         try:
@@ -141,8 +144,10 @@ def main():
                     logger.error(f"Error handling command message: {ex}")
 
             mqtt_client._client.on_message = on_message
-            mqtt_client._client.subscribe(command_topic_broadcast)
-            mqtt_client._client.subscribe(command_topic_specific)
+            # Registered through the wrapper, which replays them after every
+            # reconnect -- paho does not.
+            mqtt_client.subscribe(command_topic_broadcast)
+            mqtt_client.subscribe(command_topic_specific)
             logger.info(
                 "Subscribed to MQTT command topics: %s and %s",
                 command_topic_broadcast,
@@ -150,11 +155,17 @@ def main():
             )
 
         except Exception as e:
+            # connect() no longer fails on an absent broker (it keeps
+            # retrying in the background), so reaching here means the client
+            # itself could not be set up. Keep it anyway: dropping it used to
+            # latch the node into a publish-nothing standalone mode that only
+            # a reboot cleared, which is exactly the field failure this
+            # branch was meant to soften.
             logger.error(
-                f"MQTT connection failed: {e}. Running in standalone mode (no publish)."
+                "MQTT setup incomplete: %s. Telemetry will publish once the "
+                "broker answers.",
+                e,
             )
-            # In standalone mode, we still generate logs to stdout
-            mqtt_client = None
 
         publisher = (
             MqttPublisher(mqtt_client, event_log=event_log) if mqtt_client else None

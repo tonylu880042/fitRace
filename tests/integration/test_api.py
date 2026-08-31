@@ -1,8 +1,12 @@
+import os
 import time
 
+import pytest
 from fastapi.testclient import TestClient
 from fitrace_common.version import APP_VERSION
+from hub_server.infrastructure.fastapi import app as app_module
 from hub_server.infrastructure.fastapi.app import app
+from hub_server.usecases.race_manager import RaceManager
 
 client = TestClient(app)
 
@@ -1433,3 +1437,577 @@ def test_qrcode_library_returns_200():
     assert response.status_code == 200
     assert "QRCode" in response.text
     assert len(response.content) > 10000
+
+
+# -- training class mode ----------------------------------------------
+
+_SHORT_CLASS_PLAN = {
+    "segments": [
+        {"kind": "warmup", "duration_sec": 60},
+        {"kind": "work", "duration_sec": 60},
+        {"kind": "cooldown", "duration_sec": 60},
+    ]
+}
+
+
+def test_class_configure_endpoint_moves_session_to_ready_in_class_mode():
+    client.post("/api/race/reset")
+    res = client.post("/api/class/configure", json=_SHORT_CLASS_PLAN)
+    assert res.status_code == 200
+    body = res.json()
+    assert body["state"] == "READY"
+    assert body["session_mode"] == "class"
+    assert body["class_plan"]["segments"][0]["kind"] == "warmup"
+    client.post("/api/race/reset")
+
+
+def test_class_workflow_via_api_never_auto_stops_and_can_be_manually_stopped(
+    monkeypatch,
+):
+    monkeypatch.setenv("TESTING", "1")
+    client.post("/api/race/reset")
+    client.post("/api/class/configure", json=_SHORT_CLASS_PLAN)
+
+    start_res = client.post("/api/race/start")
+    assert start_res.status_code == 200
+    assert start_res.json()["state"] == "RUNNING"
+    assert start_res.json()["session_mode"] == "class"
+
+    # Feed telemetry well past the plan's total duration (180s) for a
+    # participant -- a race would auto-stop, a class must not.
+    telemetry_res = client.post(
+        "/api/test/telemetry",
+        json={
+            "node_id": "class-node-01",
+            "distance_m": 5000.0,
+            "elapsed_time_ms": 999_000,
+        },
+    )
+    assert telemetry_res.status_code == 200
+
+    state_res = client.get("/api/race/state")
+    assert state_res.json()["state"] == "RUNNING"
+    assert state_res.json()["leaderboard"]["class-node-01"]["finished_time_ms"] is None
+
+    stop_res = client.post("/api/race/stop")
+    assert stop_res.status_code == 200
+    assert stop_res.json()["state"] == "STOPPED"
+
+    client.post("/api/race/reset")
+
+
+def test_session_mode_endpoint_switches_mode_and_rejects_while_running():
+    client.post("/api/race/reset")
+
+    res = client.post("/api/session/mode", json={"mode": "class"})
+    assert res.status_code == 200
+    assert res.json()["session_mode"] == "class"
+
+    res = client.post("/api/session/mode", json={"mode": "race"})
+    assert res.status_code == 200
+    assert res.json()["session_mode"] == "race"
+
+    # Now switch to class, start it, and confirm mode changes are rejected
+    # both directions while RUNNING.
+    client.post("/api/class/configure", json=_SHORT_CLASS_PLAN)
+    client.post("/api/race/start")
+
+    blocked = client.post("/api/session/mode", json={"mode": "race"})
+    assert blocked.status_code == 400
+
+    client.post("/api/race/stop")
+    client.post("/api/race/reset")
+
+
+def test_race_configure_resets_session_mode_back_to_race():
+    client.post("/api/race/reset")
+    client.post("/api/class/configure", json=_SHORT_CLASS_PLAN)
+    assert client.get("/api/race/state").json()["session_mode"] == "class"
+
+    res = client.post(
+        "/api/race/configure",
+        json={"race_type": "distance", "target_value": 100, "duration_sec": 0},
+    )
+    assert res.status_code == 200
+    assert res.json()["session_mode"] == "race"
+    client.post("/api/race/reset")
+
+
+def test_starting_class_with_no_plan_is_rejected_by_api(monkeypatch):
+    # A class plan is venue configuration now: reset_race() deliberately no
+    # longer clears it (see hub_server/usecases/race_manager.py), so once
+    # ANY earlier test in this shared, process-wide race_manager has ever
+    # configured a class, "/api/race/reset" can no longer be relied on to
+    # get back to a genuinely plan-less state. Swap in a brand-new
+    # RaceManager for just this test so "no plan has ever been configured"
+    # is actually true, independent of test execution order.
+    monkeypatch.setattr(app_module, "race_manager", RaceManager())
+
+    client.post("/api/race/reset")
+    prepare_individual_ready_race()
+    # Flip to class mode without ever configuring a plan.
+    client.post("/api/session/mode", json={"mode": "class"})
+
+    res = client.post("/api/race/start")
+    assert res.status_code == 400
+
+    client.post("/api/race/reset")
+
+
+def test_class_configure_endpoint_rejects_while_race_is_running_and_mode_stays_race(
+    monkeypatch,
+):
+    # Same isolation concern as the test above: this assertion cares that a
+    # REJECTED configure_class() call leaves class_plan untouched, which
+    # only reads as "still None" if nothing earlier in the shared
+    # race_manager ever configured a class. A fresh RaceManager makes that
+    # true regardless of what ran before it.
+    monkeypatch.setattr(app_module, "race_manager", RaceManager())
+
+    client.post("/api/race/reset")
+    prepare_individual_ready_race()
+    start_res = client.post("/api/race/start")
+    assert start_res.status_code == 200
+    assert start_res.json()["session_mode"] == "race"
+
+    res = client.post("/api/class/configure", json=_SHORT_CLASS_PLAN)
+    assert res.status_code == 400
+
+    # Not just the raise -- the running session's mode must not have moved.
+    state = client.get("/api/race/state").json()
+    assert state["session_mode"] == "race"
+    assert state["state"] == "RUNNING"
+    assert state["class_plan"] is None
+
+    client.post("/api/race/stop")
+    client.post("/api/race/reset")
+
+
+# ---------------------------------------------------------------------------
+# Anonymous participation (GDPR): athlete_name is optional at the HTTP layer.
+# Registration in RaceManager._station_registrations (exposed as the
+# explicit "registered" boolean on each station) is the source of truth for
+# "is this station registered?" -- never athlete_name truthiness.
+# ---------------------------------------------------------------------------
+
+
+def test_register_athlete_with_no_name_field_is_accepted_and_marked_registered():
+    client.post("/api/race/reset")
+    set_online_station(1, "node-01")
+
+    res = client.post("/api/race/register", json={"station_number": 1})
+
+    assert res.status_code == 200
+    station = res.json()["stations"]["1"]
+    assert station["athlete_name"] is None
+    assert station["registered"] is True
+
+    client.post("/api/race/reset")
+
+
+def test_register_athlete_with_empty_string_name_normalizes_to_none():
+    client.post("/api/race/reset")
+    set_online_station(1, "node-01")
+
+    res = client.post(
+        "/api/race/register", json={"station_number": 1, "athlete_name": ""}
+    )
+
+    assert res.status_code == 200
+    station = res.json()["stations"]["1"]
+    assert station["athlete_name"] is None
+    assert station["registered"] is True
+
+    client.post("/api/race/reset")
+
+
+def test_register_athlete_with_whitespace_only_name_normalizes_to_none():
+    client.post("/api/race/reset")
+    set_online_station(1, "node-01")
+
+    res = client.post(
+        "/api/race/register", json={"station_number": 1, "athlete_name": "   "}
+    )
+
+    assert res.status_code == 200
+    station = res.json()["stations"]["1"]
+    assert station["athlete_name"] is None
+    assert station["registered"] is True
+
+    client.post("/api/race/reset")
+
+
+def test_register_athlete_with_a_real_name_is_unaffected():
+    client.post("/api/race/reset")
+    set_online_station(1, "node-01")
+
+    res = client.post(
+        "/api/race/register", json={"station_number": 1, "athlete_name": "Runner A"}
+    )
+
+    assert res.status_code == 200
+    station = res.json()["stations"]["1"]
+    assert station["athlete_name"] == "Runner A"
+    assert station["registered"] is True
+
+    client.post("/api/race/reset")
+
+
+def test_register_athlete_name_over_eighty_characters_is_still_rejected():
+    client.post("/api/race/reset")
+    set_online_station(1, "node-01")
+
+    res = client.post(
+        "/api/race/register",
+        json={"station_number": 1, "athlete_name": "x" * 81},
+    )
+
+    assert res.status_code == 422
+
+    client.post("/api/race/reset")
+
+
+def test_team_race_readiness_and_start_succeed_with_a_mix_of_named_and_anonymous_members():
+    from hub_server.infrastructure.fastapi.app import node_registry
+
+    client.post("/api/race/reset")
+    node_registry.clear()
+    set_online_station(1, "node-01")
+    set_online_station(2, "node-02")
+    client.post(
+        "/api/race/register",
+        json={"station_number": 1, "athlete_name": "Runner A", "team_name": "Volt"},
+    )
+    # Second team's only member registers anonymously -- no name, still a
+    # real registration that must count toward "at least two teams".
+    client.post(
+        "/api/race/register",
+        json={"station_number": 2, "team_name": "Apex"},
+    )
+    client.post(
+        "/api/race/configure",
+        json={
+            "race_type": "distance",
+            "target_value": 100,
+            "duration_sec": 0,
+            "competition_mode": "team",
+            "team_scoring_policy": "total",
+            "team_completion_policy": "all_members",
+        },
+    )
+
+    readiness = client.get("/api/race/readiness")
+    assert readiness.status_code == 200
+    payload = readiness.json()
+    assert payload["ready"] is True
+    assert payload["blocking_issues"] == []
+    assert payload["checks"]["registrations"]["status"] == "ok"
+    assert "2 athlete(s) registered" in payload["checks"]["registrations"]["message"]
+    assert payload["checks"]["teams"]["status"] == "ok"
+
+    started = client.post("/api/race/start")
+    assert started.status_code == 200
+    assert started.json()["state"] == "RUNNING"
+
+    state = client.get("/api/race/state").json()
+    team_leaderboard = state["team_leaderboard"]
+    assert {team["team_name"] for team in team_leaderboard} == {"Volt", "Apex"}
+    apex = next(team for team in team_leaderboard if team["team_name"] == "Apex")
+    assert apex["member_count"] == 1
+    assert apex["members"][0]["athlete_name"] is None
+
+    client.post("/api/race/stop")
+    client.post("/api/race/reset")
+
+
+def test_stopped_class_is_not_filed_as_a_race_result_but_a_real_race_still_is(
+    monkeypatch, tmp_path
+):
+    import hub_server.infrastructure.fastapi.app as hub_app
+    from hub_server.usecases.race_result_store import RaceResultStore
+    from hub_server.usecases.race_results_query import RaceResultsQuery
+
+    monkeypatch.setenv("TESTING", "1")
+    store = RaceResultStore(tmp_path / "race_results.jsonl")
+    monkeypatch.setattr(hub_app, "race_result_store", store)
+    monkeypatch.setattr(hub_app, "race_results_query", RaceResultsQuery(store))
+
+    # Run a training class end to end.
+    client.post("/api/race/reset")
+    client.post("/api/class/configure", json=_SHORT_CLASS_PLAN)
+    start_res = client.post("/api/race/start")
+    assert start_res.status_code == 200
+    assert start_res.json()["session_mode"] == "class"
+
+    client.post(
+        "/api/test/telemetry",
+        json={
+            "node_id": "class-node-01",
+            "distance_m": 500.0,
+            "elapsed_time_ms": 60_000,
+        },
+    )
+
+    stop_res = client.post("/api/race/stop")
+    assert stop_res.status_code == 200
+    client.post("/api/race/reset")
+
+    races_after_class = client.get("/api/results/races").json()["races"]
+    assert races_after_class == []
+
+    # Now run a real race -- it must still be filed as usual.
+    set_online_station(1, "node-01")
+    client.post(
+        "/api/race/register",
+        json={"station_number": 1, "athlete_name": "Runner A"},
+    )
+    client.post(
+        "/api/race/configure",
+        json={"race_type": "time", "target_value": 0, "duration_sec": 120},
+    )
+    client.post("/api/race/start")
+    client.post("/api/race/stop")
+    client.post("/api/race/reset")
+
+    races_after_real_race = client.get("/api/results/races").json()["races"]
+    assert len(races_after_real_race) == 1
+
+
+def test_race_configure_endpoint_rejects_while_class_is_running_and_mode_stays_class():
+    client.post("/api/race/reset")
+    client.post("/api/class/configure", json=_SHORT_CLASS_PLAN)
+    start_res = client.post("/api/race/start")
+    assert start_res.status_code == 200
+    assert start_res.json()["session_mode"] == "class"
+
+    res = client.post(
+        "/api/race/configure",
+        json={"race_type": "distance", "target_value": 100, "duration_sec": 0},
+    )
+    assert res.status_code == 400
+
+    state = client.get("/api/race/state").json()
+    assert state["session_mode"] == "class"
+    assert state["state"] == "RUNNING"
+    assert state["class_plan"] is not None
+
+    client.post("/api/race/stop")
+    client.post("/api/race/reset")
+
+
+# ---------------------------------------------------------------------------
+# GET /api/class/history (commit 2 of class history).
+# ---------------------------------------------------------------------------
+
+
+def _swap_result_stores(monkeypatch, tmp_path):
+    """Installs fresh, isolated race and class result stores for a test, the
+    same pattern test_stopped_race_result_is_persisted_and_listed and
+    test_stopped_class_is_not_filed_as_a_race_result_but_a_real_race_still_is
+    already use for the race store -- extended to also swap class_result_store
+    so class history tests do not leak into (or read stale data from) the
+    module-level stores other tests share."""
+    import hub_server.infrastructure.fastapi.app as hub_app
+    from hub_server.usecases.race_result_store import RaceResultStore
+    from hub_server.usecases.race_results_query import RaceResultsQuery
+
+    race_store = RaceResultStore(tmp_path / "race_results.jsonl")
+    class_store = RaceResultStore(
+        tmp_path / "class_results.jsonl", session_mode="class"
+    )
+    monkeypatch.setattr(hub_app, "race_result_store", race_store)
+    monkeypatch.setattr(hub_app, "race_results_query", RaceResultsQuery(race_store))
+    monkeypatch.setattr(hub_app, "class_result_store", class_store)
+    return race_store, class_store
+
+
+def test_finished_class_appears_in_class_history_not_race_results(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setenv("TESTING", "1")
+    _swap_result_stores(monkeypatch, tmp_path)
+
+    client.post("/api/race/reset")
+    set_online_station(1, "history-node-01")
+    client.post(
+        "/api/race/register",
+        json={"station_number": 1, "athlete_name": "Coach Pick"},
+    )
+    # Station 2 is assigned but registered with no name -- a real anonymous
+    # participant that must still be counted (see summarize_class_record /
+    # RaceResultsQuery._is_participant).
+    set_online_station(2, "history-node-02")
+    client.post("/api/race/register", json={"station_number": 2})
+
+    client.post("/api/class/configure", json=_SHORT_CLASS_PLAN)
+    start_res = client.post("/api/race/start")
+    assert start_res.json()["session_mode"] == "class"
+
+    client.post(
+        "/api/test/telemetry",
+        json={
+            "node_id": "history-node-01",
+            "distance_m": 1500.0,
+            "elapsed_time_ms": 90_000,
+            "power_watts": 180,
+        },
+    )
+    client.post(
+        "/api/test/telemetry",
+        json={
+            "node_id": "history-node-02",
+            "distance_m": 1100.0,
+            "elapsed_time_ms": 80_000,
+            "power_watts": 140,
+        },
+    )
+
+    client.post("/api/race/stop")
+    client.post("/api/race/reset")
+
+    history = client.get("/api/class/history").json()["classes"]
+    assert len(history) == 1
+    entry = history[0]
+    assert entry["duration_ms"] is not None and entry["duration_ms"] > 0
+    assert entry["participant_count"] == 2
+    assert entry["class_plan"]["segments"][0]["kind"] == "warmup"
+
+    stations_by_number = {s["station_number"]: s for s in entry["stations"]}
+    assert stations_by_number[1]["athlete_name"] == "Coach Pick"
+    assert stations_by_number[1]["distance_m"] == 1500.0
+    # The anonymous participant must still be present, with a null name.
+    assert stations_by_number[2]["athlete_name"] is None
+    assert stations_by_number[2]["distance_m"] == 1100.0
+
+    # A class must never leak into the race results log.
+    races = client.get("/api/results/races").json()["races"]
+    assert races == []
+
+
+def test_a_real_race_appears_in_race_results_not_class_history(monkeypatch, tmp_path):
+    _swap_result_stores(monkeypatch, tmp_path)
+
+    client.post("/api/race/reset")
+    set_online_station(1, "race-history-node-01")
+    client.post(
+        "/api/race/register",
+        json={"station_number": 1, "athlete_name": "Runner A"},
+    )
+    client.post(
+        "/api/race/configure",
+        json={"race_type": "time", "target_value": 0, "duration_sec": 120},
+    )
+    client.post("/api/race/start")
+    client.post("/api/race/stop")
+    client.post("/api/race/reset")
+
+    races = client.get("/api/results/races").json()["races"]
+    assert len(races) == 1
+
+    history = client.get("/api/class/history").json()["classes"]
+    assert history == []
+
+
+def test_class_history_endpoint_respects_limit():
+    response = client.get("/api/class/history?limit=1")
+    assert response.status_code == 200
+    assert "classes" in response.json()
+
+
+# ---------------------------------------------------------------------------
+# Venue regression: an unwritable results path must not turn a routine stop
+# into an HTTP 500. race_manager.stop_race() runs before the result store is
+# touched, so the session itself always stops -- but a store write failure
+# used to propagate out of broadcast_race_state() and fail the whole
+# request, leaving the coach staring at an error with no idea whether the
+# class actually ended. See DEPLOYMENT.md / FITRACE_CLASS_RESULTS_PATH.
+# ---------------------------------------------------------------------------
+
+
+def _unwritable_result_store_path(tmp_path, filename):
+    """Builds a store path inside a read-only directory and returns
+    (path, restore) -- restore must be called so tmp_path cleanup can remove
+    the tree afterward."""
+    readonly_dir = tmp_path / "unwritable"
+    readonly_dir.mkdir()
+    readonly_dir.chmod(0o500)
+
+    def restore():
+        readonly_dir.chmod(0o700)
+
+    return readonly_dir / "nested" / filename, restore
+
+
+def _skip_if_root_bypasses_permissions():
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        pytest.skip(
+            "running as root: chmod does not block writes, test would be a no-op"
+        )
+
+
+def test_stopping_a_class_with_an_unwritable_history_path_still_returns_200(
+    monkeypatch, tmp_path
+):
+    _skip_if_root_bypasses_permissions()
+    import hub_server.infrastructure.fastapi.app as hub_app
+    from hub_server.usecases.race_result_store import RaceResultStore
+
+    monkeypatch.setenv("TESTING", "1")
+    unwritable_path, restore = _unwritable_result_store_path(
+        tmp_path, "class_results.jsonl"
+    )
+    try:
+        broken_class_store = RaceResultStore(unwritable_path, session_mode="class")
+        monkeypatch.setattr(hub_app, "class_result_store", broken_class_store)
+
+        client.post("/api/race/reset")
+        client.post("/api/class/configure", json=_SHORT_CLASS_PLAN)
+        start_res = client.post("/api/race/start")
+        assert start_res.status_code == 200
+        assert start_res.json()["session_mode"] == "class"
+
+        stop_res = client.post("/api/race/stop")
+
+        assert stop_res.status_code == 200
+        assert stop_res.json()["state"] == "STOPPED"
+        assert client.get("/api/race/state").json()["state"] == "STOPPED"
+
+        client.post("/api/race/reset")
+    finally:
+        restore()
+
+
+def test_stopping_a_race_with_an_unwritable_results_path_still_returns_200(
+    monkeypatch, tmp_path
+):
+    _skip_if_root_bypasses_permissions()
+    import hub_server.infrastructure.fastapi.app as hub_app
+    from hub_server.usecases.race_result_store import RaceResultStore
+
+    unwritable_path, restore = _unwritable_result_store_path(
+        tmp_path, "race_results.jsonl"
+    )
+    try:
+        broken_race_store = RaceResultStore(unwritable_path)
+        monkeypatch.setattr(hub_app, "race_result_store", broken_race_store)
+
+        client.post("/api/race/reset")
+        set_online_station(1, "unwritable-node-01")
+        client.post(
+            "/api/race/register",
+            json={"station_number": 1, "athlete_name": "Runner A"},
+        )
+        client.post(
+            "/api/race/configure",
+            json={"race_type": "time", "target_value": 0, "duration_sec": 120},
+        )
+        client.post("/api/race/start")
+
+        stop_res = client.post("/api/race/stop")
+
+        assert stop_res.status_code == 200
+        assert stop_res.json()["state"] == "STOPPED"
+
+        client.post("/api/race/reset")
+    finally:
+        restore()

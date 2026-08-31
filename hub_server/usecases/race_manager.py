@@ -1,5 +1,6 @@
 from typing import Dict, Any, Optional
 from hub_server.domain.models import RaceState, RaceConfig
+from hub_server.domain.class_models import ClassPlan, segment_at
 
 
 class RaceManager:
@@ -10,12 +11,22 @@ class RaceManager:
         "sprint_board",
     }
 
+    VALID_SESSION_MODES = {"race", "class"}
+
     def __init__(self, settings_store=None):
         self._state: RaceState = RaceState.IDLE
         self._config: Optional[RaceConfig] = None
         self._leaderboard_display_mode: str = "classic"
         self._start_countdown_sound_enabled: bool = True
         self._settings_store = settings_store
+        self._session_mode: str = "race"
+        self._class_plan: Optional[ClassPlan] = None
+        # Durable, named library of class plans -- venue configuration, like
+        # station assignment. Distinct from _class_plan above (the plan
+        # currently loaded into the editor/about to run): entries here
+        # survive reset_race() and are only removed by an explicit
+        # delete_class_plan() call. Keyed by the operator-chosen name.
+        self._class_plans: Dict[str, ClassPlan] = {}
         self._registered_nodes: Dict[str, str] = (
             {}
         )  # node_id -> athlete_name (for legacy backward compatibility)
@@ -69,6 +80,34 @@ class RaceManager:
                 self._config = RaceConfig.model_validate(config)
             except Exception:
                 self._config = None
+        # Keys absent (e.g. a settings.json written by 0.2.1, before this
+        # feature existed) default session_mode to "race" and the plan to
+        # None -- an old file must still load cleanly.
+        session_mode = data.get("session_mode")
+        if session_mode in self.VALID_SESSION_MODES:
+            self._session_mode = session_mode
+        class_plan = data.get("class_plan")
+        if isinstance(class_plan, dict):
+            try:
+                self._class_plan = ClassPlan.model_validate(class_plan)
+            except Exception:
+                self._class_plan = None
+        # class_plans: same "must load cleanly" contract as everything else
+        # above -- a settings file written before this feature (key absent)
+        # loads as an empty library, and one bad entry (fails
+        # ClassPlan.model_validate) is skipped individually rather than
+        # discarding the whole library or crashing startup.
+        class_plans = data.get("class_plans")
+        if isinstance(class_plans, dict):
+            loaded_plans: Dict[str, ClassPlan] = {}
+            for name, plan_dict in class_plans.items():
+                if not isinstance(plan_dict, dict):
+                    continue
+                try:
+                    loaded_plans[name] = ClassPlan.model_validate(plan_dict)
+                except Exception:
+                    continue
+            self._class_plans = loaded_plans
 
     def _persist_settings(self) -> None:
         if not self._settings_store:
@@ -79,6 +118,13 @@ class RaceManager:
                 "leaderboard_display_mode": self._leaderboard_display_mode,
                 "start_countdown_sound_enabled": self._start_countdown_sound_enabled,
                 "config": self._config.model_dump() if self._config else None,
+                "session_mode": self._session_mode,
+                "class_plan": (
+                    self._class_plan.model_dump() if self._class_plan else None
+                ),
+                "class_plans": {
+                    name: plan.model_dump() for name, plan in self._class_plans.items()
+                },
             }
         )
 
@@ -103,6 +149,53 @@ class RaceManager:
         self._leaderboard_display_mode = mode
         self._persist_settings()
         return self._leaderboard_display_mode
+
+    def get_session_mode(self) -> str:
+        return self._session_mode
+
+    def set_session_mode(self, mode: str) -> str:
+        if mode not in self.VALID_SESSION_MODES:
+            raise ValueError(f"Unsupported session mode: {mode}")
+        if self._state == RaceState.RUNNING:
+            raise ValueError(
+                "Cannot change session mode while a race or class is RUNNING"
+            )
+        self._session_mode = mode
+        self._persist_settings()
+        return self._session_mode
+
+    def get_class_plan(self) -> Optional[ClassPlan]:
+        return self._class_plan
+
+    # -- named class plan library ---------------------------------------
+    # Durable venue configuration (see the field comment in __init__):
+    # untouched by reset_race(), only changed by an explicit save/delete.
+
+    def list_class_plans(self) -> Dict[str, ClassPlan]:
+        return dict(self._class_plans)
+
+    def save_class_plan(self, name: str, plan: ClassPlan) -> None:
+        cleaned_name = name.strip()
+        if not cleaned_name or len(cleaned_name) > 60:
+            raise ValueError(
+                "Class plan name must be 1..60 characters after stripping "
+                "leading/trailing whitespace"
+            )
+        # Upsert: an existing entry with the same (stripped) name is
+        # overwritten, not duplicated.
+        self._class_plans[cleaned_name] = plan
+        self._persist_settings()
+
+    def delete_class_plan(self, name: str) -> bool:
+        # Stripped the same way save_class_plan strips: the library is keyed
+        # by the stripped name, so a delete of the same string the operator
+        # typed (or that survived a URL path) has to match.
+        cleaned_name = name.strip()
+        if cleaned_name not in self._class_plans:
+            return False
+        del self._class_plans[cleaned_name]
+        self._persist_settings()
+        return True
 
     def get_start_countdown_sound_enabled(self) -> bool:
         return self._start_countdown_sound_enabled
@@ -135,6 +228,28 @@ class RaceManager:
         }
 
     def _default_participant_name(self, node_id: str) -> str:
+        # A class ranks nobody and usually nobody self-registers, so this
+        # default is what the coach actually reads on the board -- and both
+        # halves identify a participant in the room: the station says where
+        # they are, the BLE name (printed on the machine itself) says which
+        # machine. Either half alone when the other is unknown; only a
+        # stream with neither falls through to the race defaults below.
+        if self._session_mode == "class":
+            remembered_equipment_id = self._node_equipment_ids.get(node_id)
+            station_number = next(
+                (
+                    assigned_station
+                    for assigned_station, assigned_node_id in self._stations.items()
+                    if assigned_node_id == node_id
+                ),
+                None,
+            )
+            if station_number is not None and remembered_equipment_id:
+                return f"Station {station_number} - {remembered_equipment_id}"
+            if remembered_equipment_id:
+                return remembered_equipment_id
+            if station_number is not None:
+                return f"Station {station_number}"
         if not self._config or self._config.competition_mode != "individual":
             return f"Athlete {node_id}"
         for station_number, assigned_node_id in self._stations.items():
@@ -159,7 +274,22 @@ class RaceManager:
             "start_countdown_sound_enabled": self.get_start_countdown_sound_enabled(),
             "leaderboard": self.get_leaderboard_progress(),
             "team_leaderboard": team_leaderboard,
+            "session_mode": self.get_session_mode(),
+            "class_plan": (self._class_plan.model_dump() if self._class_plan else None),
+            "class_segment": self._current_class_segment(),
         }
+
+    def _current_class_segment(self) -> Optional[Dict[str, Any]]:
+        if self._session_mode != "class":
+            return None
+        if self._state != RaceState.RUNNING:
+            return None
+        if not self._class_plan or self._start_time_epoch_ms is None:
+            return None
+        import time
+
+        elapsed_ms = max(0, int(time.time() * 1000) - self._start_time_epoch_ms)
+        return segment_at(elapsed_ms, self._class_plan)
 
     def get_leaderboard_progress(self) -> Dict[str, Dict[str, Any]]:
         if self._state in (RaceState.RUNNING, RaceState.STOPPED):
@@ -461,6 +591,32 @@ class RaceManager:
 
         self._config = config
         self._state = RaceState.READY
+        # A plain race configure always lands the session back in "race"
+        # mode -- mutual exclusion with class mode is enforced here, not
+        # just at the API layer.
+        self._session_mode = "race"
+        self._persist_settings()
+
+    def configure_class(self, plan: ClassPlan):
+        # Reuses the exact same state machine gate as configure(): allowed
+        # in IDLE, READY, or STOPPED.
+        if self._state not in (RaceState.IDLE, RaceState.READY, RaceState.STOPPED):
+            raise ValueError(f"Cannot configure class in state {self._state}")
+
+        if self._state == RaceState.STOPPED:
+            self._start_time_epoch_ms = None
+            self._end_time_epoch_ms = None
+            self._registered_nodes.clear()
+            self._progress.clear()
+            # Clean current athlete registrations but keep hardware station mapping
+            self._station_registrations.clear()
+            self._station_teams.clear()
+            self._station_has_avatar.clear()
+            self._active_nodes.clear()
+
+        self._class_plan = plan
+        self._session_mode = "class"
+        self._state = RaceState.READY
         self._persist_settings()
 
     def register_node(self, node_id: str, athlete_name: str):
@@ -471,7 +627,13 @@ class RaceManager:
     def update_active_node(
         self, node_id: str, equipment_type: str, equipment_id: Optional[str] = None
     ):
-        self._active_nodes[node_id] = equipment_type
+        # A sample that carries no type arrives as "unknown"; it must not
+        # erase a type an earlier sample already established, or the
+        # station's equipment icon would flicker back to the generic one.
+        if equipment_type and equipment_type != "unknown":
+            self._active_nodes[node_id] = equipment_type
+        else:
+            self._active_nodes.setdefault(node_id, equipment_type or "unknown")
         if equipment_id:
             self._node_equipment_ids[node_id] = equipment_id
 
@@ -556,7 +718,7 @@ class RaceManager:
     def register_athlete(
         self,
         station_number: int,
-        athlete_name: str,
+        athlete_name: Optional[str],
         team_name: Optional[str] = None,
         has_avatar: bool = False,
     ):
@@ -580,6 +742,11 @@ class RaceManager:
                 "node_id": nid,
                 "equipment_type": eq_type,
                 "athlete_name": ath_name,
+                # Explicit "is this station registered?" signal, independent
+                # of whether a name was supplied -- anonymous participation
+                # means athlete_name can be None on a registered station.
+                # Callers must consult this, never athlete_name truthiness.
+                "registered": sn in self._station_registrations,
                 "team_name": self._station_teams.get(sn),
                 "has_avatar": self._station_has_avatar.get(sn, False),
             }
@@ -591,6 +758,7 @@ class RaceManager:
                     "node_id": None,
                     "equipment_type": None,
                     "athlete_name": self._station_registrations[sn],
+                    "registered": True,
                     "team_name": self._station_teams.get(sn),
                     "has_avatar": self._station_has_avatar.get(sn, False),
                 }
@@ -608,6 +776,8 @@ class RaceManager:
     def start_race(self):
         if self._state != RaceState.READY:
             raise ValueError("Race must be in READY state to start")
+        if self._session_mode == "class" and self._class_plan is None:
+            raise ValueError("Cannot start a class without a configured plan")
         self._state = RaceState.RUNNING
         import time
 
@@ -687,6 +857,14 @@ class RaceManager:
     def reset_race(self):
         self._state = RaceState.IDLE
         self._config = None
+        # self._class_plan (the currently configured/active plan) is
+        # DELIBERATELY not cleared here. A class plan is venue configuration
+        # -- like station assignment -- not session state: it must only
+        # disappear when the operator deletes it explicitly (see
+        # delete_class_plan / the named library above), never as a side
+        # effect of resetting progress. self._class_plans (the named
+        # library) was never touched by reset_race() and still isn't.
+        self._session_mode = "race"
         self._start_time_epoch_ms = None
         self._end_time_epoch_ms = None
         self._registered_nodes.clear()
@@ -696,6 +874,13 @@ class RaceManager:
         self._station_teams.clear()
         self._station_has_avatar.clear()
         self._active_nodes.clear()
+        # Reset must actually stick: without this, race_settings.json still
+        # holds the cleared config, and the next hub restart resurrects it
+        # via _load_settings(). Station mapping, display mode, sound
+        # setting, the class plan, and the class plan library are untouched
+        # by the clears above, so persisting here only writes back the
+        # None-ed out config.
+        self._persist_settings()
 
     def update_telemetry(self, payload: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
         if self._state == RaceState.STOPPED:
@@ -778,7 +963,16 @@ class RaceManager:
 
         # Calculate progress percent
         progress_percent = 0.0
-        if self._config:
+        if self._session_mode == "class":
+            # A class has no target/duration RaceConfig -- progress is
+            # purely the plan clock, clamped so it never reads past 100.
+            if self._class_plan and self._class_plan.total_duration_sec > 0:
+                progress_percent = min(
+                    100.0,
+                    (elapsed_time_ms / (self._class_plan.total_duration_sec * 1000.0))
+                    * 100.0,
+                )
+        elif self._config:
             if self._config.race_type == "distance" and self._config.target_value > 0:
                 progress_percent = (distance_m / self._config.target_value) * 100.0
             elif self._config.race_type == "calories" and self._config.target_value > 0:
@@ -791,14 +985,21 @@ class RaceManager:
                     elapsed_time_ms / (self._config.duration_sec * 1000.0)
                 ) * 100.0
 
+        # A class has no finish line -- finished_time_ms must stay None for
+        # every participant, even once progress_percent reads 100.
         finished_time_ms = prev_finished_time
-        if progress_percent >= 100.0 and finished_time_ms is None:
+        if (
+            self._session_mode != "class"
+            and progress_percent >= 100.0
+            and finished_time_ms is None
+        ):
             finished_time_ms = elapsed_time_ms
 
         # Update metrics
         self._progress[node_id] = {
             "node_id": node_id,
             "athlete_name": athlete_name,
+            "equipment_type": self._active_nodes.get(node_id, "unknown"),
             "station_number": station_number,
             "team_name": team_name,
             "avatar_url": avatar_url,
@@ -812,8 +1013,10 @@ class RaceManager:
             "finished_time_ms": finished_time_ms,
         }
 
-        # Check if all participants have finished the race
-        if self._progress:
+        # Check if all participants have finished the race. A class is a
+        # coach-run session with no ranking or finish line -- it must NEVER
+        # auto-stop, so this whole block is skipped in class mode.
+        if self._session_mode != "class" and self._progress:
             all_finished = True
             for nid, p in self._progress.items():
                 if nid.startswith("station-"):

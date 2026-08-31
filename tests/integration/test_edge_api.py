@@ -306,7 +306,13 @@ def test_edge_operator_wifi_view_uses_existing_scan_and_connect_apis():
     )
     assert 't("wifi.back_to_list")' in source
     assert "if (expanded && !wifiNetworksLoaded)" in source
-    init_start = source.index("applyTranslations();")
+    # Anchor on the actual page-init sequence at the bottom of the script,
+    # not just any "applyTranslations();" call -- the language switcher's
+    # change handler (added later in this file) also calls
+    # applyTranslations() from a spot earlier in the script.
+    init_start = source.index(
+        "applyTranslations();\n    loadConfig({ populateHubFields: true })"
+    )
     init_source = source[init_start:]
     assert "scanWifiNetworks();" not in init_source
 
@@ -346,10 +352,13 @@ def test_edge_operator_uart_monitor_shows_latest_first_and_keeps_only_200_messag
 
     source = client.get("/").text
     render_start = source.index("function renderUartMonitor(events)")
-    render_end = source.index("async function refreshTelemetry()", render_start)
+    render_end = source.index("async function refreshUartMonitor()", render_start)
     render_source = source[render_start:render_end]
+    # refreshUartMonitor() (split out of refreshTelemetry() for perf --
+    # see test_edge_operator_uart_monitor_polls_on_its_own_slower_interval)
+    # is what actually calls this endpoint + renderUartMonitor() now.
     refresh_start = render_end
-    refresh_end = source.index("// -- view switching", refresh_start)
+    refresh_end = source.index("async function refreshTelemetry()", refresh_start)
     refresh_source = source[refresh_start:refresh_end]
 
     assert "const UART_MONITOR_MAX = 200" in source
@@ -2075,6 +2084,11 @@ def _install_fresh_pairing_session(
         restore_configured_devices=restore,
         restart_service=restart,
         flag_path=tmp_path / "pairing.flag",
+        # Inline scan: these tests assert on what POST /api/pairing/start
+        # returns. Production runs the scan on a thread so the operator can
+        # bind the first candidate while the rest of the scan continues --
+        # see tests/unit/edge/test_pairing_session_async_scan.py.
+        scan_executor=lambda run_scan: run_scan(),
     )
     monkeypatch.setattr(edge_app_module, "pairing_session", session)
     return session
@@ -2846,10 +2860,11 @@ def test_pairing_scan_first_endpoints_require_admin_token(monkeypatch, tmp_path)
 
 
 def test_edge_pairing_start_uses_scan_only_and_shows_progress_message():
-    # The scan itself takes 20-40s on real hardware and used to leave the
-    # page showing nothing but a greyed button -- start() must now request a
-    # connectionless scan (temp_connect: false) and show a progress message
-    # for the whole time the request is in flight.
+    # start() must request a connectionless scan (temp_connect: false) and
+    # raise the progress indicator before the request fires. Lowering it is
+    # no longer this function's job on the happy path: the scan outlives the
+    # request now, and the status poll clears the indicator when the session
+    # stops scanning.
     client = TestClient(edge_app_module.app)
 
     source = client.get("/").text
@@ -2864,15 +2879,16 @@ def test_edge_pairing_start_uses_scan_only_and_shows_progress_message():
     # scan silently reverts to the temp-connecting legacy behaviour.
     assert "body: JSON.stringify({ temp_connect: false })" in start_fn
     assert "showPairingScanning(true)" in start_fn
-    assert "showPairingScanning(false)" in start_fn
     scanning_show_index = start_fn.index("showPairingScanning(true)")
     fetch_index = start_fn.index('adminFetch("/api/pairing/start"')
     assert scanning_show_index < fetch_index  # message shown before the request fires
 
     assert 'id="pairing-scanning"' in source
     assert 'data-i18n="pairing.scanning"' in source
-    assert '"pairing.scanning": "Scanning every antenna channel' in source
-    assert '"pairing.scanning": "正在掃描所有天線通道' in source
+    # The copy no longer asks the operator to wait -- devices land in the
+    # worklist while the channels are still listening.
+    assert '"pairing.scanning": "Listening on every antenna channel' in source
+    assert '"pairing.scanning": "正在監聽所有天線通道' in source
 
 
 def test_edge_pairing_worklist_keeps_every_scanned_candidate_with_per_row_controls():
@@ -3666,24 +3682,21 @@ def test_edge_pairing_no_candidates_message_suppressed_during_scan():
     assert "rows.length" in message_line
 
 
-def test_edge_pairing_scanning_dialog_matches_batch_overlay_pattern():
+def test_edge_pairing_scan_indicator_is_inline_not_a_modal():
+    # Replaces the old "scan dialog matches the batch overlay" test: the
+    # modal was removed on purpose. A watch advertises for under a minute,
+    # so the worklist has to stay usable while the channels are listening --
+    # see tests/integration/test_edge_pairing_nonblocking_scan.py.
     client = TestClient(edge_app_module.app)
     source = client.get("/").text
 
-    scan_overlay_start = source.index('id="pairing-scan-overlay"')
-    batch_overlay_start = source.index('id="batch-progress-overlay"')
-    assert scan_overlay_start < batch_overlay_start
-    scan_overlay_html = source[scan_overlay_start:batch_overlay_start]
-
-    # Same structure/classes as the existing batch-progress-overlay so the
-    # two dialogs read as one system.
-    assert 'class="batch-progress-overlay" hidden' in scan_overlay_html
-    assert 'class="batch-progress-modal"' in scan_overlay_html
-    assert 'class="batch-progress-title"' in scan_overlay_html
-    assert 'class="batch-progress-info"' in scan_overlay_html
-    assert 'id="pairing-scan-elapsed"' in scan_overlay_html
-    assert 'data-i18n="pairing.scanning_dialog_title"' in scan_overlay_html
-    assert 'data-i18n="pairing.scanning"' in scan_overlay_html
+    assert "pairing-scan-overlay" not in source
+    inline_start = source.index('id="pairing-scanning"')
+    worklist_start = source.index('id="pairing-worklist"')
+    assert inline_start < worklist_start
+    inline_html = source[inline_start:worklist_start]
+    assert 'data-i18n="pairing.scanning"' in inline_html
+    assert 'id="pairing-scan-elapsed"' in inline_html
 
 
 def test_edge_pairing_scanning_dialog_has_honest_elapsed_counter():
@@ -3705,7 +3718,11 @@ def test_edge_pairing_scanning_dialog_has_honest_elapsed_counter():
     assert "pairingScanInFlight = active;" in fn
 
 
-def test_edge_pairing_start_dismisses_scan_dialog_and_reenables_controls_in_finally():
+def test_edge_pairing_start_leaves_the_scanning_indicator_to_the_poll():
+    # The scan now outlives the request, so the finally can no longer clear
+    # the indicator -- the status poll does, when the session stops
+    # scanning. What start() still owns is the failure path: if the request
+    # itself throws, nothing else will ever turn the indicator off.
     client = TestClient(edge_app_module.app)
     source = client.get("/").text
 
@@ -3713,23 +3730,13 @@ def test_edge_pairing_start_dismisses_scan_dialog_and_reenables_controls_in_fina
     start_fn_end = source.index("async function cancelPairing()", start_fn_start)
     start_fn = source[start_fn_start:start_fn_end]
 
+    catch_index = start_fn.index("} catch (error) {")
     finally_index = start_fn.index("} finally {")
-    finally_block = start_fn[finally_index:]
 
-    # showPairingScanning(false) must live in the finally block -- nowhere
-    # earlier in the function, where a thrown error or a `return` on the
-    # centralHubReady guard could skip it and strand the dialog on screen.
-    assert "showPairingScanning(false)" not in start_fn[:finally_index]
-    assert "showPairingScanning(false)" in finally_block
-
-    # Rescan/cancel/done must be re-enabled in that same finally block, not
-    # merely somewhere else in the function.
-    for line in (
-        "rescanBtn.disabled = false;",
-        "cancelBtn.disabled = false;",
-        "doneBtn.disabled = false;",
-    ):
-        assert line in finally_block
+    assert "showPairingScanning(false)" not in start_fn[:catch_index]
+    assert "showPairingScanning(false)" in start_fn[catch_index:finally_index]
+    # The add-device button is the one control the request itself owns.
+    assert "addBtn.disabled = false;" in start_fn[finally_index:]
 
 
 def test_edge_pairing_start_disables_rescan_cancel_done_before_request_fires():
@@ -3741,13 +3748,10 @@ def test_edge_pairing_start_disables_rescan_cancel_done_before_request_fires():
     start_fn = source[start_fn_start:start_fn_end]
 
     fetch_index = start_fn.index('adminFetch("/api/pairing/start"')
-    for line in (
-        "rescanBtn.disabled = true;",
-        "cancelBtn.disabled = true;",
-        "doneBtn.disabled = true;",
-    ):
-        assert line in start_fn
-        assert start_fn.index(line) < fetch_index
+    # One helper now, because the same three controls have to be re-enabled
+    # from the status poll when the background scan ends.
+    assert "setPairingScanControls(true);" in start_fn
+    assert start_fn.index("setPairingScanControls(true);") < fetch_index
 
 
 def test_edge_pairing_rescan_disables_controls_before_cancel_request():
@@ -3779,7 +3783,6 @@ def test_edge_pairing_scanning_dialog_i18n_keys_present_in_both_locales():
     zh_tw = json.loads((locales_dir / "zh_tw.json").read_text(encoding="utf-8"))
 
     new_keys = {
-        "pairing.scanning_dialog_title",
         "pairing.scanning_elapsed",
     }
     for key in new_keys:
@@ -3795,9 +3798,10 @@ def test_edge_progress_overlay_anchors_near_top_and_stays_scrollable():
     (align-items: center), which covers whatever content the operator was
     looking at when they pressed a trigger button -- #add-device-btn near
     the top of the home view, #pairing-rescan-btn / #pairing-save-all-btn
-    at the bottom of the worklist. Both the scan overlay
-    (#pairing-scan-overlay) and the batch overlay (#batch-progress-overlay)
-    share this one rule, so fixing it here fixes both dialogs at once.
+    at the bottom of the worklist. The batch overlay
+    (#batch-progress-overlay) is the last user of this rule -- the scan
+    modal it used to share it with is gone, because a scan must not block
+    the worklist.
     The modal must sit near the top with a comfortable gap, and the
     overlay itself must stay scrollable so a modal taller than a short
     viewport never becomes unreachable or gets clipped.
@@ -3856,3 +3860,266 @@ def test_edge_pairing_worklist_restores_caret_position_after_rerender():
     assert (
         "restored.setSelectionRange(selectionStart, selectionStart);" in render_source
     )
+
+
+def test_edge_operator_page_offers_a_language_switcher_that_re_renders_dynamic_content():
+    """The operator page (`/`) previously had no way to change language --
+    only the old `/maintenance` page's `<select id="language-select">` did.
+    This mirrors that same pattern (same element id, same two options, same
+    localStorage key `fitrace.edge.locale`) so `/` and `/maintenance` stay
+    in sync on the same origin. A switch must also re-render the dynamic
+    content that was built with t() at render time (binding cards, hub
+    chip, Wi-Fi status, pairing worklist), not just call applyTranslations()
+    -- a switch that leaves half the page in the old language is a defect.
+    """
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    header_start = source.index('<header class="op-header">')
+    header_end = source.index('id="admin-auth-banner"', header_start)
+    header_html = source[header_start:header_end]
+
+    assert 'id="language-select"' in header_html
+    assert "aria-label=" in header_html
+    assert '<option value="en-US">English</option>' in header_html
+    assert '<option value="zh-TW">繁體中文</option>' in header_html
+
+    # init: after applyTranslations() runs, the select must reflect
+    # currentLocale -- extract applyTranslations()'s own body so a comment
+    # elsewhere mentioning "languageSelect.value" can't satisfy this.
+    apply_start = source.index("function applyTranslations()")
+    apply_end = source.index("function escapeHtml(value)", apply_start)
+    apply_fn = _strip_js_comments(source[apply_start:apply_end])
+    assert "languageSelect.value = currentLocale;" in apply_fn
+
+    # change: currentLocale + localStorage under the SAME key as
+    # /maintenance, then applyTranslations() plus re-rendering everything on
+    # the home view that t() built at render time.
+    change_start = source.index('languageSelect.addEventListener("change"')
+    change_end = source.index("function escapeHtml(value)", change_start)
+    change_fn = _strip_js_comments(source[change_start:change_end])
+    assert "currentLocale = languageSelect.value;" in change_fn
+    assert 'localStorage.setItem("fitrace.edge.locale", currentLocale);' in change_fn
+    assert "applyTranslations();" in change_fn
+    assert "refreshHubChip();" in change_fn
+    assert "refreshWifiStatus();" in change_fn
+    assert "refreshWifiPickerLanguage();" in change_fn
+    assert "renderBindingCards();" in change_fn
+    assert "renderPairingWorklist();" in change_fn
+
+
+def test_edge_operator_language_switch_relabels_the_open_wifi_picker():
+    """Regression: refreshWifiStatus() (called on a language switch) only
+    rewrites the current-network status line -- it never touches the
+    scanned network list (renderWifiNetworks(), built with t("wifi.saved")/
+    t("wifi.connect")/t("wifi.connected")) or the connect/password form
+    (renderWifiConnect(net), built with 9 t() calls). An operator with the
+    Wi-Fi picker open who switches language would otherwise keep old-
+    language button labels until they rescan. refreshWifiPickerLanguage()
+    must re-render whichever of the two is actually on screen, using state
+    already in memory -- not by triggering a fresh scan or request.
+    """
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    refresh_start = source.index("function refreshWifiPickerLanguage()")
+    refresh_end = source.index("async function checkPowerDryRunMode()", refresh_start)
+    refresh_fn = _strip_js_comments(source[refresh_start:refresh_end])
+
+    assert 'toggleBtn.getAttribute("aria-expanded") !== "true"' in refresh_fn
+    assert "renderWifiConnect(wifiConnectingNet);" in refresh_fn
+    assert "renderWifiNetworks();" in refresh_fn
+    # the list branch must stay gated on wifiNetworksLoaded -- without this
+    # guard, switching language while the picker is expanded but the first
+    # scan hasn't returned yet renders the empty list and flashes
+    # t("wifi.none_found") instead of leaving the in-flight scan message.
+    assert "else if (wifiNetworksLoaded) {" in refresh_fn
+    # must be a pure re-render from memory, never a fresh scan or request
+    assert "scanWifiNetworks()" not in refresh_fn
+    assert "adminFetch(" not in refresh_fn
+
+    # renderWifiConnect(net) must record which network is on screen so
+    # refreshWifiPickerLanguage() can rebuild the same form later.
+    connect_start = source.index("function renderWifiConnect(net)")
+    connect_end = source.index("function refreshWifiPickerLanguage()", connect_start)
+    connect_fn = _strip_js_comments(source[connect_start:connect_end])
+    assert "wifiConnectingNet = net;" in connect_fn
+
+    # renderWifiNetworks() must clear that marker -- back on the list means
+    # no network is mid-connect any more.
+    networks_start = source.index("function renderWifiNetworks()")
+    networks_end = source.index("async function scanWifiNetworks()", networks_start)
+    networks_fn = _strip_js_comments(source[networks_start:networks_end])
+    assert "wifiConnectingNet = null;" in networks_fn
+
+
+def test_edge_operator_language_switch_preserves_wifi_toggle_button_expanded_label():
+    """Regression: #wifi-toggle-btn carries a static data-i18n="wifi.choose_other"
+    attribute, but toggleWifiPicker() overwrites its live text to
+    t("wifi.collapse") while the Wi-Fi picker is expanded. applyTranslations()'s
+    blanket `[data-i18n]` sweep (which a language switch re-runs) always resets
+    the button back to t("wifi.choose_other") from that static attribute --
+    so with the picker OPEN, every language switch leaves the collapse button
+    reading the wrong ("choose another network") label. applyTranslations()
+    must re-derive the button's label from its actual aria-expanded state
+    after the sweep, not just leave whatever the blanket pass produced.
+    """
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    apply_start = source.index("function applyTranslations()")
+    apply_end = source.index('languageSelect.addEventListener("change"', apply_start)
+    apply_fn = _strip_js_comments(source[apply_start:apply_end])
+
+    assert 'document.getElementById("wifi-toggle-btn")' in apply_fn
+    assert 'getAttribute("aria-expanded") === "true"' in apply_fn
+    assert '"wifi.collapse"' in apply_fn
+    assert '"wifi.choose_other"' in apply_fn
+
+
+def test_edge_operator_uart_monitor_polls_on_its_own_slower_interval():
+    """Perf regression, measured on real hardware (192.168.0.135): the
+    on-device kiosk Chromium showing this page alone generated ~4
+    requests/second (792 in 3 minutes, all from 127.0.0.1) because
+    refreshTelemetry() fired every HOME_MONITOR_POLL_MS (500ms) and made
+    TWO requests per tick -- the UART log's `?limit=500` fetch plus the
+    telemetry `kind=telemetry&limit=200` fetch that card liveness actually
+    needs. list_events() re-parses the whole event log file on every
+    request, so this was ~3.6 MB/s of JSON parsing for no liveness
+    benefit: the UART log is a diagnostic aid, not something card
+    liveness depends on. refreshUartMonitor() must be split out onto its
+    own, slower UART_MONITOR_POLL_MS interval, and refreshTelemetry()
+    must no longer reach the `?limit=500` path at all.
+    """
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    assert "const UART_MONITOR_POLL_MS = 2000;" in source
+
+    uart_start = source.index("async function refreshUartMonitor()")
+    uart_end = source.index("async function refreshTelemetry()", uart_start)
+    uart_fn = _strip_js_comments(source[uart_start:uart_end])
+    assert '"/api/monitor/events?limit=500"' in uart_fn
+    assert "renderUartMonitor(events);" in uart_fn
+
+    telemetry_start = source.index("async function refreshTelemetry()")
+    telemetry_end = source.index("// -- view switching", telemetry_start)
+    telemetry_fn = _strip_js_comments(source[telemetry_start:telemetry_end])
+    # the 500ms path must no longer be able to reach the ?limit=500 fetch --
+    # that's the whole point of the split.
+    assert "?limit=500" not in telemetry_fn
+    assert '"/api/monitor/events?kind=telemetry&limit=200"' in telemetry_fn
+    assert "harvestTelemetryEvents(telemetryEvents);" in telemetry_fn
+    assert "updateBindingCardLeaves();" in telemetry_fn
+    assert "renderPairingWorklist();" in telemetry_fn
+
+    init_start = source.index(
+        "applyTranslations();\n    loadConfig({ populateHubFields: true })"
+    )
+    init_source = _strip_js_comments(source[init_start:])
+    # both must still run once at page init, not just from a setInterval
+    assert "refreshTelemetry();" in init_source
+    assert "refreshUartMonitor();" in init_source
+    # and each on its OWN interval -- the UART one strictly slower, proving
+    # it is not silently reusing the 500ms telemetry cadence.
+    assert "setInterval(refreshTelemetry, HOME_MONITOR_POLL_MS);" in init_source
+    assert "setInterval(refreshUartMonitor, UART_MONITOR_POLL_MS);" in init_source
+
+
+def test_edge_operator_uart_monitor_panel_is_collapsible_and_defaults_closed():
+    """The UART monitor is a diagnostic view that ran uninterrupted all day
+    on the venue's kiosk (see test_edge_operator_uart_monitor_polls_on_its_own_slower_interval).
+    Even on its own slower interval, polling a panel nobody is looking at
+    is still wasted work -- the device owner needs to be able to close it,
+    and a closed monitor must not be polled at all. Mirrors the existing
+    #wifi-toggle-btn / #wifi-picker-body / toggleWifiPicker() pattern
+    rather than inventing a new one.
+    """
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    panel_start = source.index('<section class="panel uart-monitor-panel"')
+    panel_end = source.index("</section>", panel_start)
+    panel_html = source[panel_start:panel_end]
+
+    # collapsed by default: aria-expanded="false" and the body hidden.
+    assert 'id="uart-monitor-toggle-btn"' in panel_html
+    assert 'aria-expanded="false"' in panel_html
+    assert 'aria-controls="uart-monitor-body"' in panel_html
+    assert 'id="uart-monitor-body" class="uart-monitor-body" hidden' in panel_html
+    # only the log body collapses -- the heading stays outside it so the
+    # operator can always find the panel again.
+    assert panel_html.index('id="uart-monitor-title"') < panel_html.index(
+        'id="uart-monitor-toggle-btn"'
+    )
+    assert panel_html.index('id="uart-monitor-toggle-btn"') < panel_html.index(
+        'id="uart-monitor-body"'
+    )
+
+    # persistence: read on init, written on toggle, under its own key --
+    # wrapped so a throwing/unavailable localStorage still renders.
+    read_start = source.index("function readUartMonitorOpenPreference()")
+    read_end = source.index("function writeUartMonitorOpenPreference(", read_start)
+    read_fn = _strip_js_comments(source[read_start:read_end])
+    assert 'localStorage.getItem(UART_MONITOR_OPEN_STORAGE_KEY) === "true"' in read_fn
+    assert "try {" in read_fn and "catch (_error) {" in read_fn
+
+    write_start = source.index("function writeUartMonitorOpenPreference(open)")
+    write_end = source.index("function setUartMonitorExpanded(", write_start)
+    write_fn = _strip_js_comments(source[write_start:write_end])
+    assert (
+        "localStorage.setItem(UART_MONITOR_OPEN_STORAGE_KEY, String(open));" in write_fn
+    )
+    assert "try {" in write_fn and "catch (_error) {" in write_fn
+
+    assert (
+        'const UART_MONITOR_OPEN_STORAGE_KEY = "fitrace.edge.uartMonitorOpen";'
+        in source
+    )
+
+    toggle_start = source.index("function toggleUartMonitor()")
+    toggle_end = source.index("async function refreshTelemetry()", toggle_start)
+    toggle_fn = _strip_js_comments(source[toggle_start:toggle_end])
+    assert "writeUartMonitorOpenPreference(expanded);" in toggle_fn
+    # opening it must fetch immediately, not wait for the next tick.
+    assert "if (expanded) {" in toggle_fn
+    assert "refreshUartMonitor();" in toggle_fn
+
+    # read on init, before applyTranslations() so the derived label is
+    # correct on first paint -- and the toggle button is wired up.
+    init_start = source.index(
+        "setUartMonitorExpanded(readUartMonitorOpenPreference());"
+    )
+    init_end = source.index("applyTranslations();", init_start)
+    assert init_start < init_end
+    assert (
+        'document.getElementById("uart-monitor-toggle-btn").addEventListener("click", toggleUartMonitor);'
+        in source
+    )
+
+    # the poll itself must be skipped entirely while collapsed -- not
+    # fetched and discarded.
+    uart_start = source.index("async function refreshUartMonitor()")
+    uart_end = source.index("const UART_MONITOR_OPEN_STORAGE_KEY", uart_start)
+    uart_fn = _strip_js_comments(source[uart_start:uart_end])
+    assert 'toggleBtn.getAttribute("aria-expanded") !== "true") return;' in uart_fn
+
+    # the language-switch trap fixed for #wifi-toggle-btn in 4730aeb
+    # applies here too -- applyTranslations() must re-derive this button's
+    # label from its own aria-expanded state.
+    apply_start = source.index("function applyTranslations()")
+    apply_end = source.index('languageSelect.addEventListener("change"', apply_start)
+    apply_fn = _strip_js_comments(source[apply_start:apply_end])
+    assert 'document.getElementById("uart-monitor-toggle-btn")' in apply_fn
+    assert '"uartmonitor.collapse"' in apply_fn
+    assert '"uartmonitor.expand"' in apply_fn
+
+
+def test_edge_locales_have_uart_monitor_toggle_labels():
+    locales_dir = Path(edge_app_module.__file__).resolve().parent.parent / "locales"
+    en = json.loads((locales_dir / "en.json").read_text(encoding="utf-8"))
+    zh_tw = json.loads((locales_dir / "zh_tw.json").read_text(encoding="utf-8"))
+    for key in ("uartmonitor.expand", "uartmonitor.collapse"):
+        assert key in en, key
+        assert key in zh_tw, key
+    assert set(en.keys()) == set(zh_tw.keys())

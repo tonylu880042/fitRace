@@ -82,9 +82,12 @@ class MqttSubscriber:
         """
         logger.info("Setting up MQTT subscriptions")
         self._mqtt_client._client.on_message = self._on_message
-        self._mqtt_client._client.subscribe("gym/telemetry/#")
-        self._mqtt_client._client.subscribe("fitrace/nodes/+/status")
-        self._mqtt_client._client.subscribe("fitrace/nodes/+/bindings_removed")
+        # Through the wrapper, not the paho client: paho drops subscriptions
+        # on reconnect, and a hub that silently stops receiving telemetry
+        # looks healthy from every angle except the blank dashboard.
+        self._mqtt_client.subscribe("gym/telemetry/#")
+        self._mqtt_client.subscribe("fitrace/nodes/+/status")
+        self._mqtt_client.subscribe("fitrace/nodes/+/bindings_removed")
 
     def _on_message(self, client, userdata, message):
         """

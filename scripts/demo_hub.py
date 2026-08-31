@@ -92,4 +92,5 @@ app.router.lifespan_context = demo_lifespan
 if __name__ == "__main__":
     if os.getenv("TESTING") != "1":
         raise SystemExit("demo_hub.py is only available with TESTING=1")
-    uvicorn.run(app, host="127.0.0.1", port=8010)
+    port = int(os.getenv("FITRACE_DEMO_HUB_PORT", "8010"))
+    uvicorn.run(app, host="127.0.0.1", port=port)

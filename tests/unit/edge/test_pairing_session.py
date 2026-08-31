@@ -108,6 +108,7 @@ class Harness:
 def make_harness(
     config,
     *,
+    scan_executor=None,
     scan_results_by_port=None,
     connect_add_replies_by_port=None,
     events=None,
@@ -145,6 +146,10 @@ def make_harness(
         restart_service=restart,
         clock=clock or (lambda: 1_700_000_000.0),
         flag_path=flag_path,
+        # Inline by default: these tests read start() as a straight line
+        # ("scan, then assert"). Production hands the scan to a thread so the
+        # operator is never blocked -- see _run_scan_in_thread.
+        scan_executor=scan_executor or (lambda run_scan: run_scan()),
     )
     return Harness(
         session, runner, event_log, restore_calls, restart_calls, config_holder

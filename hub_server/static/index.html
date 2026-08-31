@@ -16,6 +16,9 @@
       --crimson-red: #f43f5e;
       --text-main: #fafafa;
       --text-muted: #a1a1aa;
+      --mid-grey: #3f3f46;
+      --dim-grey: #52525b;
+      --changeover-violet: #a78bfa;
     }
 
     * {
@@ -2140,6 +2143,112 @@
         transform: none !important;
       }
     }
+
+    /* Class board density. A full studio is ~24 machines, and the projector
+       screen never scrolls -- so the station grid tightens (and the hero
+       band gives back height) as the roster grows. Count-driven, no
+       measurement: the tiers below are what fits 1080p. */
+    .class-station-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 1rem;
+    }
+
+    .class-station-grid--dense {
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 0.6rem;
+    }
+
+    .class-station-grid--ultra {
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 0.4rem;
+    }
+
+    /* !important throughout: the cards carry inline styles from the
+       renderer, which a plain class rule cannot outrank. */
+    .class-station-grid--dense .class-station-card { padding: 0.6rem !important; }
+
+    .class-station-grid--ultra .class-station-card {
+      padding: 0.3rem !important;
+      font-size: 0.85rem;
+    }
+
+    .class-station-grid--ultra .class-station-machine { display: none; }
+
+    /* At 24 stations the units carry the meaning, so the labels go and the
+       card body collapses to name + three numbers + effort bar. */
+    .class-station-grid--ultra .class-metric-label { display: none; }
+    .class-station-icon {
+      width: 18px;
+      height: 18px;
+      flex: none;
+      color: var(--volt-yellow);
+    }
+
+    .class-station-grid--ultra .class-station-head { margin-top: 0.1rem !important; }
+    .class-station-grid--ultra .class-station-icon { width: 14px; height: 14px; }
+
+    .class-station-grid--ultra .class-station-name {
+      font-size: 0.8rem;
+      line-height: 1.15;
+      /* One line, ellipsised: a wrapped name costs a whole extra row of
+         stations across the board. */
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .class-station-grid--ultra .class-card-metrics {
+      margin-bottom: 0.25rem !important;
+      gap: 0.2rem !important;
+      font-size: 0.72rem !important;
+    }
+
+    .class-station-grid--ultra .class-effort-track { height: 4px !important; }
+
+    .class-station-grid--ultra .class-card-metrics {
+      font-size: 0.72rem !important;
+      gap: 0.2rem !important;
+    }
+
+    /* Reclaim shared chrome from the ancestor side, so the banner markup
+       (shared with race mode) needs no knowledge of class density. */
+    .card:has(.class-board--ultra) .race-stage-banner { display: none; }
+    .card:has(.class-board--ultra) .card-title { margin-bottom: 0.5rem; }
+
+    .class-station-grid--dense .class-card-metrics { margin-bottom: 0.4rem !important; }
+
+    .class-board--dense { padding: 1rem !important; }
+    .class-board--ultra { padding: 0.75rem !important; }
+
+    .class-board--dense .class-board-hero {
+      padding: 1rem !important;
+      margin-bottom: 1rem !important;
+    }
+
+    .class-board--ultra .class-board-hero {
+      padding: 0.75rem !important;
+      margin-bottom: 0.75rem !important;
+    }
+
+    .class-board--dense .class-hero-kind { font-size: 3.2rem !important; }
+    .class-board--dense .class-hero-countdown { font-size: 2.6rem !important; }
+    .class-board--ultra .class-hero-kind { font-size: 2.4rem !important; }
+    .class-board--ultra .class-hero-countdown { font-size: 2rem !important; }
+    .class-board--ultra .class-hero-total-remaining { font-size: 1.5rem !important; }
+
+    /* The hero band is where the height for the extra station rows comes
+       from: at ultra the plan timeline, the segment line and the kicker
+       are all still readable at a fraction of their default height. */
+    .class-board--dense .class-hero-timeline { height: 40px !important; }
+    .class-board--dense .class-hero-row { margin-bottom: 0.75rem !important; }
+    .class-board--dense .class-hero-segment-line { margin-bottom: 0.75rem !important; }
+
+    .class-board--ultra .class-hero-label { display: none; }
+    .class-board--ultra .class-hero-timeline { height: 24px !important; }
+    .class-board--ultra .class-hero-row { margin-bottom: 0.4rem !important; }
+    .class-board--ultra .class-hero-segment-line { margin-bottom: 0.4rem !important; }
+    .class-board--ultra .class-progress-track { height: 10px !important; }
   </style>
 </head>
 <body>
@@ -2187,7 +2296,7 @@
     <main>
       <div class="card accent">
         <div class="card-title">
-          <div data-i18n="leaderboard.title">Live Leaderboard</div>
+          <div id="leaderboard-panel-title" data-i18n="leaderboard.title">Live Leaderboard</div>
           <span id="race-type-indicator" data-i18n="race.unconfigured">Race: Not configured</span>
         </div>
         <div class="race-stage-banner" id="race-stage-banner" aria-live="polite">
@@ -2272,6 +2381,7 @@
 
   </div>
   <audio id="race-start-countdown-audio" preload="auto" src="/static/audio/countdown_start.wav"></audio>
+  <audio id="class-segment-cue-audio" preload="auto" src="/static/audio/checkpoint.wav"></audio>
 
   <script>
     let ws;
@@ -2283,11 +2393,30 @@
     let leaderboardRankByNode = new Map();
     let teamLeaderboardRows = [];
     let leaderboardDisplayMode = "classic";
-    let lastLeaderboardData = null;
-    let lastTeamLeaderboardData = null;
     let celebrationShownForRaceKey = null;
     let leaderboardSmoothValues = new Map();
-    let isSmoothLeaderboardFrame = false;
+    // Coalescing state for the untyped-telemetry WS branch: a venue can
+    // fire several telemetry broadcasts between two painted frames, and
+    // rendering each one separately is the runaway-reflow defect this
+    // guards against. pendingLeaderboardData always holds the latest
+    // payload; leaderboardRenderScheduled is true from the moment a frame
+    // has been requested until it fires, so a burst collapses into one
+    // render of the newest data rather than one render per message.
+    let leaderboardRenderScheduled = false;
+    let pendingLeaderboardData = null;
+    // Per-card DOM cache for the classic individual leaderboard: node_id
+    // to the specific elements inside its already-rendered row (the three
+    // metric-value spans and the progress-fill bar). When a render arrives
+    // whose station set, order, and identity fields exactly match the last
+    // full render (tracked by leaderboardCardSignature), only these cached
+    // elements get new text/width -- no markup regeneration, no DOM query
+    // for a full rebuild, no reorder-animation position reads. A full
+    // rebuild stays the fallback whenever the signature does not match
+    // (first render, a station joined/left, a rank changed, someone
+    // finished, or the race became final) -- see
+    // buildLeaderboardCardSignature.
+    let leaderboardCardRefs = new Map();
+    let leaderboardCardSignature = null;
     let raceStageOverride = null;
     let raceStageOverrideTimer = null;
     let autoResetInterval = null;
@@ -2308,6 +2437,21 @@
     let recordWallIndex = 0;
     let recordWallRotateTimer = null;
     let recordWallRefreshTimer = null;
+    let classClockInterval = null;
+    let currentClassPlan = null;
+    let currentClassLeaderboard = {};
+    let currentSessionMode = null;
+    // Per-station DOM cache for the class board, mirroring
+    // leaderboardCardRefs above but for the station cards and hero
+    // countdown/total-remaining text that buildClassBoardHtml renders.
+    // Null whenever no fast path is currently valid (first render, or the
+    // last render was a different renderer entirely). See
+    // applyClassBoardIncrementalUpdate.
+    let classBoardCardRefs = null;
+    let classRotationTimer = null;
+    const CLASS_ROTATION_INTERVAL_MS = 8000;
+    let lastClassSegmentIndex = null;
+    let currentSoundEnabled = true;
     function getBrowserLocale() {
       const saved = localStorage.getItem("fitrace.locale");
       if (saved) return saved;
@@ -2349,13 +2493,23 @@
     async function setLanguage(locale) {
       await loadLocale(locale);
       toggleConfigFields();
-      updateUIState({
-        state: currentState,
-        config: currentConfig,
-        start_time_epoch_ms: raceStartTime,
-        end_time_epoch_ms: raceEndTime,
-        leaderboard: null,
-      });
+      renderCurrentStateLabel(currentState);
+      renderDashboardChrome();
+      if (currentSessionMode === "class") {
+        // The synthetic updateUIState() call below has no class_plan/
+        // leaderboard of its own, so a class board must be re-rendered
+        // directly from state already held by the page -- otherwise it
+        // keeps its previous-language labels until the next server tick.
+        renderClassBoardFromState();
+      } else {
+        updateUIState({
+          state: currentState,
+          config: currentConfig,
+          start_time_epoch_ms: raceStartTime,
+          end_time_epoch_ms: raceEndTime,
+          leaderboard: null,
+        });
+      }
       renderEdgeNodes(edgeNodes);
     }
 
@@ -2451,6 +2605,43 @@
       }
     }
 
+    function shouldPlayClassSegmentCue(sessionMode, state, previousIndex, newIndex) {
+      // Pure decision, no DOM/Audio access, so this is executed directly
+      // under node in tests. previousIndex is null on the very first render
+      // of a running class (page load, reconnect, or a fresh class start),
+      // and the guard below refuses to fire in that case -- there is no
+      // prior segment to have changed FROM.
+      if (sessionMode !== "class") return false;
+      if (state !== "RUNNING") return false;
+      if (previousIndex === null || previousIndex === undefined) return false;
+      if (newIndex === null || newIndex === undefined) return false;
+      return newIndex !== previousIndex;
+    }
+
+    async function playClassSegmentChangeCue() {
+      if (currentSoundEnabled === false) return;
+      const audio = document.getElementById("class-segment-cue-audio") || new Audio("/static/audio/checkpoint.wav");
+      audio.currentTime = 0;
+      try {
+        await audio.play();
+      } catch (err) {
+        console.warn("Class segment cue audio was blocked by the browser:", err);
+      }
+    }
+
+    function updateClassSegmentCue(clock) {
+      // Shared by every class board render path (typed state_change,
+      // untyped telemetry ticks, and the periodic local clock) so the
+      // segment-changed decision is made in exactly one place. A rejected
+      // play() promise must never stop the board from having already
+      // updated -- playClassSegmentChangeCue() is fire-and-forget here.
+      const newIndex = clock ? clock.index : null;
+      if (shouldPlayClassSegmentCue(currentSessionMode, currentState, lastClassSegmentIndex, newIndex)) {
+        playClassSegmentChangeCue();
+      }
+      lastClassSegmentIndex = (currentSessionMode === "class" && currentState === "RUNNING") ? newIndex : null;
+    }
+
     function formatElapsedTime(elapsed) {
       const safeElapsed = Math.max(0, metricNumber(elapsed));
       const totalTenths = Math.floor(safeElapsed / 100);
@@ -2465,7 +2656,29 @@
       );
     }
 
+    function getClassStageDetails(stage) {
+      // A class is never a race: the banner must never claim live ranking.
+      // Reuses the existing className buckets (ready/running/finished/idle)
+      // purely for the banners CSS coloring -- the copy itself always
+      // comes from class.* keys.
+      const kicker = t("class.stage_kicker");
+      const sub = t("class.stage_sub");
+      if (stage === "RUNNING") {
+        return { className: "running", kicker, main: t("class.in_progress"), sub, timer: "" };
+      }
+      if (stage === "STOPPED") {
+        return { className: "finished", kicker, main: t("class.stage_not_running"), sub, timer: "" };
+      }
+      if (stage === "READY") {
+        return { className: "ready", kicker, main: t("class.stage_not_running"), sub, timer: "" };
+      }
+      return { className: "idle", kicker, main: t("class.stage_not_running"), sub, timer: "" };
+    }
+
     function getRaceStageDetails(stage = currentState) {
+      if (currentSessionMode === "class") {
+        return getClassStageDetails(stage);
+      }
       const competition = currentConfig?.competition_mode === "team" ? t("stage.team") : t("stage.individual");
       const raceType = currentConfig?.race_type || "";
       const target = currentConfig
@@ -2565,6 +2778,9 @@
         wsConnected = false;
         document.getElementById("ws-dot").className = "status-dot";
         document.getElementById("ws-status").innerText = t("connection.offline");
+        // The first state fetch after a reconnect must never be mistaken
+        // for a live segment change -- see shouldPlayClassSegmentCue.
+        lastClassSegmentIndex = null;
         startFallbackRefresh();
         setTimeout(connectWebSocket, 3000);
       };
@@ -2610,7 +2826,29 @@
         if (data && Object.keys(data).length > 0) {
           // Populated, untyped payloads are per-athlete telemetry progress.
           // They never carry station registration changes, so no refetch.
-          renderLeaderboard(data);
+          // They also never carry session_mode -- renderLeaderboard()
+          // itself consults the mode already known to the page, so a
+          // class board does not get promoted into a race leaderboard the
+          // instant telemetry ticks.
+          //
+          // A venue with several machines can fire many of these between
+          // two painted frames. requestAnimationFrame coalesces a burst
+          // into one render of the newest payload instead of one render
+          // per message. A plain Node context (as used by tests) has no
+          // animation frame concept at all, so this falls back to
+          // rendering the payload right away in that case.
+          pendingLeaderboardData = data;
+          if (typeof requestAnimationFrame !== "function") {
+            renderLeaderboard(data);
+          } else if (!leaderboardRenderScheduled) {
+            leaderboardRenderScheduled = true;
+            requestAnimationFrame(() => {
+              leaderboardRenderScheduled = false;
+              const data = pendingLeaderboardData;
+              pendingLeaderboardData = null;
+              renderLeaderboard(data);
+            });
+          }
         }
         // Untyped payloads -- whether populated leaderboard progress or the
         // empty {} tick sent whenever no race is running -- never carry
@@ -2657,11 +2895,14 @@
         toast.className = "marquee-toast";
         document.body.appendChild(toast);
       }
-      
+
       const teamSuffix = team ? ` (${team})` : '';
       const eqDisplay = (equipmentType && equipmentType !== 'unknown') ? ` - ${equipmentType.toUpperCase()}` : '';
+      // Anonymous participation: registration_success can carry a null
+      // name -- never render the literal word null, fall back to the station.
+      const displayedName = name || (station ? `${t("stations.station")} ${station}` : t("stations.athlete"));
       const text = t("registration.welcome", {
-        name: `${name}${teamSuffix}`,
+        name: `${displayedName}${teamSuffix}`,
         station,
         equipment: eqDisplay,
       });
@@ -2698,6 +2939,86 @@
     function metricNumber(value, fallback = 0) {
       const number = Number(value);
       return Number.isFinite(number) ? number : fallback;
+    }
+
+    function classClockAt(nowMs, startTimeMs, plan) {
+      // Mirrors hub_server/domain/class_models.py::segment_at EXACTLY.
+      let elapsedMs = nowMs - startTimeMs;
+      if (elapsedMs < 0) elapsedMs = 0;
+
+      const segments = plan.segments;
+      const totalMs = segments.reduce((sum, s) => sum + s.duration_sec * 1000, 0);
+      const lastIndex = segments.length - 1;
+
+      if (elapsedMs >= totalMs) {
+        const result = {
+          index: lastIndex,
+          kind: segments[lastIndex].kind,
+          segmentRemainingMs: 0,
+          totalRemainingMs: 0,
+          finished: true,
+        };
+        if (segments[lastIndex].target_watts !== null && segments[lastIndex].target_watts !== undefined) {
+          result.targetWatts = segments[lastIndex].target_watts;
+        }
+        return result;
+      }
+
+      let cumulativeMs = 0;
+      for (let index = 0; index < segments.length; index++) {
+        const segment = segments[index];
+        const segmentEndMs = cumulativeMs + segment.duration_sec * 1000;
+        if (elapsedMs < segmentEndMs) {
+          const result = {
+            index,
+            kind: segment.kind,
+            segmentRemainingMs: segmentEndMs - elapsedMs,
+            totalRemainingMs: totalMs - elapsedMs,
+            finished: false,
+          };
+          if (segment.target_watts !== null && segment.target_watts !== undefined) {
+            result.targetWatts = segment.target_watts;
+          }
+          return result;
+        }
+        cumulativeMs = segmentEndMs;
+      }
+
+      // Unreachable given the totalMs check above.
+      const fallbackResult = {
+        index: lastIndex,
+        kind: segments[lastIndex].kind,
+        segmentRemainingMs: 0,
+        totalRemainingMs: 0,
+        finished: true,
+      };
+      if (segments[lastIndex].target_watts !== null && segments[lastIndex].target_watts !== undefined) {
+        fallbackResult.targetWatts = segments[lastIndex].target_watts;
+      }
+      return fallbackResult;
+    }
+
+    function formatClock(ms) {
+      const safeMs = Math.max(0, metricNumber(ms));
+      const totalSeconds = Math.floor(safeMs / 1000);
+      const seconds = totalSeconds % 60;
+      const minutes = Math.floor(totalSeconds / 60);
+      return (minutes < 10 ? "0" + minutes : String(minutes)) + ":" +
+             (seconds < 10 ? "0" + seconds : String(seconds));
+    }
+
+    function toClockShape(serverClassSegment) {
+      const clock = {
+        index: serverClassSegment.index,
+        kind: serverClassSegment.kind,
+        segmentRemainingMs: serverClassSegment.segment_remaining_ms,
+        totalRemainingMs: serverClassSegment.total_remaining_ms,
+        finished: serverClassSegment.finished,
+      };
+      if (serverClassSegment.target_watts !== null && serverClassSegment.target_watts !== undefined) {
+        clock.targetWatts = serverClassSegment.target_watts;
+      }
+      return clock;
     }
 
     function smoothMetricNumber(key, targetValue, smoothingMs = 180) {
@@ -2853,7 +3174,7 @@
               <span class="medal-mark ${medal.className}" title="${medal.title}">${medal.label}</span>
               <span>#${rank} ${medal.title}</span>
             </div>
-            <div class="podium-name">${escapeHtml(node.athlete_name || t("stations.athlete"))}${teamSuffix}</div>
+            <div class="podium-name">${escapeHtml(node.athlete_name || (node.station_number ? `${t("stations.station")} ${node.station_number}` : t("stations.athlete")))}${teamSuffix}</div>
             <div class="podium-score">${score.value}</div>
             <div class="podium-sub">${score.label} · ${escapeHtml(nodeDisplayName(node))}</div>
           </div>
@@ -3229,7 +3550,10 @@
           return buildPodiumOverlayCard(rank, entry.team_name, null, score.value, null);
         }
         const score = formatResultScore(entry, raceType);
-        return buildPodiumOverlayCard(rank, entry.athlete_name, entry.team_name, score.value, entry.avatar_url);
+        // Anonymous participation: no name does not mean no one is here --
+        // fall back to the station number before the generic athlete label.
+        const overlayName = entry.athlete_name || (entry.station_number ? `${t("stations.station")} ${entry.station_number}` : t("stations.athlete"));
+        return buildPodiumOverlayCard(rank, overlayName, entry.team_name, score.value, entry.avatar_url);
       });
       // Visual order matches the classic podium layout (2nd, 1st, 3rd);
       // the CSS `order` property re-stacks these regardless of DOM order.
@@ -3288,7 +3612,7 @@
           <div class="record-wall-row rank-${rank}">
             <div class="record-wall-rank">#${rank}</div>
             <div>
-              <div class="record-wall-name">${escapeHtml(entry.athlete_name || t("stations.athlete"))}</div>
+              <div class="record-wall-name">${escapeHtml(entry.athlete_name || (entry.station_number ? `${t("stations.station")} ${entry.station_number}` : t("stations.athlete")))}</div>
               ${teamHtml}
             </div>
             <div class="record-wall-value">${formatRecordEntryValue(raceType, entry.value)}</div>
@@ -3313,6 +3637,7 @@
       if (latestRace && Array.isArray(latestRace.results) && latestRace.results.length) {
         const topThree = latestRace.results.slice(0, 3).map((row) => ({
           athlete_name: row.athlete_name,
+          station_number: row.station_number,
           team_name: row.team_name,
           value: row.finished_time_ms != null
             ? row.finished_time_ms
@@ -3478,7 +3803,6 @@
     }
 
     function animateLeaderboardReorder(previousRects) {
-      if (isSmoothLeaderboardFrame) return;
       const items = document.querySelectorAll(".leaderboard-item, .team-leaderboard-item, .race-track-item, .team-battle-card, .sprint-board-card");
       items.forEach((item) => {
         const nodeId = item.dataset.nodeId;
@@ -3513,15 +3837,6 @@
       leaderboardDisplayMode = normalizeLeaderboardDisplayMode(mode);
     }
 
-    function renderSmoothLeaderboardFrame() {
-      if (currentState === "RUNNING" && lastLeaderboardData) {
-        isSmoothLeaderboardFrame = true;
-        renderLeaderboard(lastLeaderboardData, lastTeamLeaderboardData);
-        isSmoothLeaderboardFrame = false;
-      }
-      requestAnimationFrame(renderSmoothLeaderboardFrame);
-    }
-
     function getRankedTeamRows(progressData, teamData, raceType) {
       return sortTeamLeaderboardRows(
         Array.isArray(teamData) && teamData.length
@@ -3550,6 +3865,8 @@
     }
 
     function renderLeaderboardEmptyState(message = t("leaderboard.waiting_data")) {
+      resetLeaderboardCardCache();
+      if (typeof resetClassBoardCardCache === "function") resetClassBoardCardCache();
       const container = document.getElementById("leaderboard-container");
       container.innerHTML = renderRegistrationEmptyState(message);
       leaderboardNodes = [];
@@ -3584,7 +3901,7 @@
         return `
           <span class="${className} ${finished ? "finished" : ""}">
             ${station}
-            <strong>${escapeHtml(member.athlete_name || t("stations.athlete"))}</strong>
+            <strong>${escapeHtml(member.athlete_name || (member.station_number ? `${t("stations.station")} ${member.station_number}` : t("stations.athlete")))}</strong>
             ${machineText}
             ${metricNumber(member.progress_percent).toFixed(0)}%
           </span>
@@ -3593,6 +3910,8 @@
     }
 
     function renderRaceTrackLeaderboard(progressData, teamData = null) {
+      resetLeaderboardCardCache();
+      if (typeof resetClassBoardCardCache === "function") resetClassBoardCardCache();
       const container = document.getElementById("leaderboard-container");
       const previousRects = new Map();
       container.querySelectorAll(".race-track-item").forEach((item) => {
@@ -3628,7 +3947,7 @@
             const teamSuffix = node.team_name ? ` · ${node.team_name}` : "";
             return {
               id: node.node_id,
-              name: node.athlete_name || t("stations.athlete"),
+              name: node.athlete_name || (node.station_number ? `${t("stations.station")} ${node.station_number}` : t("stations.athlete")),
               meta: `${station || t("fallback.node")}${teamSuffix}`,
               score,
               progress: metricNumber(node.progress_percent),
@@ -3720,6 +4039,8 @@
     }
 
     function renderTeamBattleLeaderboard(progressData, teamData = null) {
+      resetLeaderboardCardCache();
+      if (typeof resetClassBoardCardCache === "function") resetClassBoardCardCache();
       const container = document.getElementById("leaderboard-container");
       const previousRects = new Map();
       container.querySelectorAll(".team-battle-card").forEach((item) => {
@@ -3798,6 +4119,8 @@
     }
 
     function renderSprintBoardLeaderboard(progressData, teamData = null) {
+      resetLeaderboardCardCache();
+      if (typeof resetClassBoardCardCache === "function") resetClassBoardCardCache();
       const container = document.getElementById("leaderboard-container");
       const previousRects = new Map();
       container.querySelectorAll(".sprint-board-card").forEach((item) => {
@@ -3827,7 +4150,7 @@
         : individualRows.map((node) => ({
             id: node.node_id,
             kind: "individual",
-            name: node.athlete_name || t("stations.athlete"),
+            name: node.athlete_name || (node.station_number ? `${t("stations.station")} ${node.station_number}` : t("stations.athlete")),
             meta: `${stationLabel(node)}${node.team_name ? ` · ${node.team_name}` : ""}`,
             progress: metricNumber(node.progress_percent),
             score: formatResultScore(node, raceType),
@@ -3905,6 +4228,8 @@
     }
 
     function renderTeamLeaderboard(progressData, teamData = null) {
+      resetLeaderboardCardCache();
+      if (typeof resetClassBoardCardCache === "function") resetClassBoardCardCache();
       const container = document.getElementById("leaderboard-container");
       const previousRects = new Map();
       container.querySelectorAll(".team-leaderboard-item").forEach((item) => {
@@ -3961,7 +4286,7 @@
           return `
             <span class="team-member-chip">
               ${station}
-              <strong>${escapeHtml(member.athlete_name || t("stations.athlete"))}</strong>
+              <strong>${escapeHtml(member.athlete_name || (member.station_number ? `${t("stations.station")} ${member.station_number}` : t("stations.athlete")))}</strong>
               ${machineText}
               ${smoothMetricNumber(`${teamKey}:${member.node_id || member.athlete_name}:progress`, member.progress_percent).toFixed(0)}%
             </span>
@@ -4003,10 +4328,767 @@
       }
     }
 
+    function buildClassBoardHtml(sessionData, clock) {
+      // Nested, not a sibling: several tests extract buildClassBoardHtml
+      // alone by its function-name marker and run it under node -e, so it
+      // cannot call anything declared outside itself (same reason
+      // classTargetStatus below is nested).
+      // Inline SVG rather than an emoji: Raspberry Pi OS kiosk images
+      // routinely ship without an emoji font, and the missing glyph shows on
+      // the projector as a tofu box. Families are matched exactly, never by
+      // substring -- an unrecognised type gets the generic mark instead of a
+      // confidently wrong machine.
+      function equipmentIconSvg(equipmentType) {
+        const FAMILIES = {
+          bike: "bike",
+          spin_bike: "bike",
+          indoor_bike: "bike",
+          fan_bike: "fan_bike",
+          treadmill: "treadmill",
+          rower: "rower",
+          rowing_machine: "rower",
+          ski_erg: "ski",
+          skierg: "ski",
+        };
+        const PATHS = {
+          // air bike: same bicycle silhouette as the spin bike so the pair
+          // reads as one family, with the two things that actually tell them
+          // apart on the floor -- the big spoked fan wheel up front and the
+          // tall V handlebars.
+          fan_bike: "<circle cx='4.5' cy='18.5' r='3'/><circle cx='16.5' cy='16' r='5.5'/><path d='M16.5 10.5v11M11 16h11'/><path d='M4.5 18.5l4-6.5h4.5M8.5 12l1-3.5M7 8.5h4'/><path d='M13 11.5V5.5M13 5.5l-2-2M13 5.5l2-2'/>",
+          // side-on bike: two wheels, frame, bars
+          bike: "<circle cx='5.5' cy='17' r='3.5'/><circle cx='18.5' cy='17' r='3.5'/><path d='M5.5 17l4.5-8h5l3.5 8M8 9h5l2.5 8M14 6h3'/>",
+          // treadmill: belt over two rollers, upright console with a handle
+          treadmill: "<circle cx='4.5' cy='17' r='1.5'/><circle cx='14.5' cy='17' r='1.5'/><path d='M4.5 15.5h10M4.5 18.5h10'/><path d='M15 16l3.5-9'/><path d='M17 7h3.5'/>",
+          // rower: spoked flywheel (reads as the fan housing, not a lamp),
+          // chain straight out to the handle, seat on the long slide rail
+          rower: "<circle cx='5.5' cy='8.5' r='3.2'/><path d='M5.5 5.3v6.4M2.3 8.5h6.4'/><path d='M8.7 8.5h4'/><path d='M12.7 6.7v3.6'/><path d='M5.5 11.7v6.8'/><path d='M2.5 18.5h19'/><path d='M10 15.5h4.5v3h-4.5z'/>",
+          // ski erg: tall mast, two pull straps hanging to their handles
+          ski: "<path d='M12 2.5v18'/><path d='M10.5 10l-2.5 5.5M13.5 10l2.5 5.5'/><path d='M6.5 16h3M14.5 16h3'/><path d='M8.5 20.5h7'/>",
+          // generic machine: an effort trace, deliberately not a machine shape
+          generic: "<path d='M3 12h4l3-7 4 14 3-7h4'/>",
+        };
+        const family = FAMILIES[String(equipmentType || "").toLowerCase()] || "generic";
+        return "<svg class=\"class-station-icon\" data-equipment-icon=\"" + family +
+          "\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" " +
+          "stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\">" +
+          PATHS[family] + "</svg>";
+      }
+
+      // Pure decision for whether a station is meeting the prescribed
+      // power for its segment. No target -> status none. Target present
+      // but the station reports no power at all (null/undefined, e.g. a
+      // treadmill, which never reports watts) -> status none too, since
+      // absent power is not the same as under-target. Only a station
+      // that actually reports a number gets scored status on (>= target)
+      // or status under (< target). Declared here (rather than top-level)
+      // so it is captured automatically whenever buildClassBoardHtml itself is
+      // extracted for testing, while still being independently
+      // extractable and testable by its own function-name marker.
+      function classTargetStatus(powerWatts, targetWatts) {
+        if (targetWatts === null || targetWatts === undefined) return "none";
+        if (powerWatts === null || powerWatts === undefined) return "none";
+        const power = Number(powerWatts);
+        const target = Number(targetWatts);
+        if (!Number.isFinite(power) || !Number.isFinite(target)) return "none";
+        return power >= target ? "on" : "under";
+      }
+
+      // Pure -- decides whether the NEXT segment should get a large,
+      // hard-to-miss announcement on the projector board, and what it
+      // should say. Athletes get no warning otherwise: the muted
+      // nextSegmentHtml line built further below stays legible from the
+      // front row but is easy to miss from across a gym, so the last
+      // ANNOUNCEMENT_LEAD_MS of the CURRENT segment promotes the same
+      // information into a headline instead. Returns null once there is
+      // no next segment to announce (the final segment in the plan) or
+      // once the plan has already finished -- there is nothing left to
+      // brace for. ANNOUNCEMENT_LEAD_MS is declared here rather than
+      // top-level for the same reason classTargetStatus above is nested:
+      // several tests extract buildClassBoardHtml alone by its
+      // function-name marker and run it standalone under node -e. See
+      // computeUpcomingSegmentAnnouncementForPatch further below for the
+      // top-level twin the incremental patch path uses -- same constant,
+      // same decision, duplicated once for that same extractability
+      // constraint. Changing ANNOUNCEMENT_LEAD_MS (or anything else about
+      // this decision) here without making the identical change in the
+      // twin is caught by
+      // tests/unit/hub/test_dashboard_announcement_duplication_guard.py,
+      // which extracts both copies and asserts they agree on a shared
+      // table of inputs, including this exact 10000ms boundary.
+      function computeUpcomingSegmentAnnouncement(currentClock, currentPlan) {
+        const ANNOUNCEMENT_LEAD_MS = 10000;
+        if (!currentClock || currentClock.finished) return null;
+        if (!currentPlan || !currentPlan.segments) return null;
+        if (currentClock.segmentRemainingMs > ANNOUNCEMENT_LEAD_MS) return null;
+        const nextIndex = currentClock.index + 1;
+        if (nextIndex >= currentPlan.segments.length) return null;
+        const nextSegment = currentPlan.segments[nextIndex];
+        const announcement = { kind: nextSegment.kind, targetWatts: null };
+        if (nextSegment.target_watts !== null && nextSegment.target_watts !== undefined) {
+          announcement.targetWatts = nextSegment.target_watts;
+        }
+        return announcement;
+      }
+
+      // Pure -- input is one target watts value (or null/undefined) per
+      // segment, output is one height percent per segment. Mirrors
+      // classAdmin.html computeBlockHeightPercents (nested inside
+      // computePlanSummary there) byte-for-byte so the coach plan
+      // preview and this projector wall can never disagree about the
+      // shape of the same plan. Declared here (rather than top-level) for
+      // the same reason classTargetStatus above is nested inside
+      // buildClassBoardHtml: several tests extract buildClassBoardHtml
+      // alone by its function-name marker and run it standalone under
+      // node -e, so a helper it calls has to live inside it rather than
+      // as a sibling top-level declaration.
+      function computeBlockHeightPercents(targets) {
+        const list = targets || [];
+        const baselinePercent = 20;
+        const fullPercent = 100;
+        const positiveTargets = list.filter(
+          (value) => typeof value === "number" && Number.isFinite(value) && value > 0
+        );
+        const maxTarget = positiveTargets.length ? Math.max(...positiveTargets) : 0;
+        if (maxTarget <= 0) {
+          // No segment in this plan carries a target at all -- keep the
+          // strip exactly as it rendered before this feature: one uniform
+          // full-height profile, no scaling applied.
+          return list.map(() => fullPercent);
+        }
+        return list.map((value) => {
+          if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+            // No prescribed intensity for this segment -- a low baseline
+            // keeps it visible without implying maximum effort.
+            return baselinePercent;
+          }
+          const ratio = Math.min(1, value / maxTarget);
+          return baselinePercent + ratio * (fullPercent - baselinePercent);
+        });
+      }
+
+      // Pure -- overall progress through the WHOLE plan, as a percent from
+      // 0 to 100. Derived from the same clock fields the big countdown
+      // above already renders (totalRemainingMs, finished) plus the plan
+      // total duration, so this bar can never disagree with the numbers
+      // already on screen. finished is pinned at 100 forever rather than
+      // recomputed from totalRemainingMs, since the class does not
+      // auto-stop and the bar must never wrap or reset once the plan ends.
+      // Nested for the same reason computeBlockHeightPercents above is
+      // nested: several tests extract buildClassBoardHtml alone by its
+      // function-name marker and run it standalone under node -e.
+      function computeClassProgressPercent(planTotalMs, totalRemainingMs, finished) {
+        if (finished) return 100;
+        const safeTotalMs = metricNumber(planTotalMs);
+        if (safeTotalMs <= 0) return 0;
+        const safeRemainingMs = Math.max(0, Math.min(safeTotalMs, metricNumber(totalRemainingMs, safeTotalMs)));
+        const elapsedMs = safeTotalMs - safeRemainingMs;
+        const percent = (elapsedMs / safeTotalMs) * 100;
+        return Math.max(0, Math.min(100, percent));
+      }
+
+      const plan = sessionData.class_plan;
+      const leaderboard = sessionData.leaderboard || {};
+      if (!plan || !plan.segments || plan.segments.length === 0) {
+        return "<div>No class plan</div>";
+      }
+      const numberFormat = new Intl.NumberFormat(currentLocale);
+      const stationEntries = Object.entries(leaderboard);
+      const sortedStations = stationEntries.sort(function(a, b) {
+        const aNum = metricNumber(a[1].station_number, Infinity);
+        const bNum = metricNumber(b[1].station_number, Infinity);
+        if (aNum === Infinity && bNum === Infinity) return 0;
+        if (aNum === Infinity) return 1;
+        if (bNum === Infinity) return -1;
+        return aNum - bNum;
+      });
+      // Density tier -- see the .class-board--* / .class-station-grid--*
+      // rules for what each tier gives back. Known before the loop because
+      // the cards themselves change at ultra: the station badge goes, and
+      // the name carries the station instead.
+      const stationDensity = sortedStations.length > 20 ? "ultra" : (sortedStations.length > 12 ? "dense" : "");
+      const stationCards = [];
+      for (let i = 0; i < sortedStations.length; i++) {
+        const pair = sortedStations[i];
+        const node = pair[1];
+        // Anonymous participation: no name does not mean no one is here --
+        // fall back to the station number before the generic athlete label.
+        const athleteName = node.athlete_name || (node.station_number ? `${t("stations.station")} ${node.station_number}` : t("stations.athlete"));
+        const machineName = nodeDisplayName(node);
+        const stationNum = metricNumber(node.station_number);
+        // An unregistered class station arrives labelled "Station 3 - Vmax26_35B"
+        // (race_manager._default_participant_name). The badge below already says
+        // which station, in the page locale, so the English half is stripped off
+        // the name rather than printed a second time. If the hub ever stops
+        // prefixing, nothing matches and the whole name is kept as-is.
+        const hubStationPrefix = stationNum ? `Station ${stationNum} - ` : "";
+        const machineHalf = hubStationPrefix && athleteName.startsWith(hubStationPrefix)
+          ? athleteName.slice(hubStationPrefix.length)
+          : athleteName;
+        // At ultra the badge is dropped for height, so the name is the only
+        // place left that can carry the station.
+        const cardTitle = stationDensity === "ultra" && stationNum
+          ? `${t("stations.station")} ${stationNum} - ${machineHalf}`
+          : machineHalf;
+        const power = metricNumber(node.power_watts);
+        const speed = metricNumber(node.instantaneous_speed_kph);
+        const distance = metricNumber(node.distance_m);
+        const powerStr = numberFormat.format(power);
+        const speedStr = numberFormat.format(speed);
+        const distanceStr = numberFormat.format(distance);
+        const effortPercent = Math.min(100, power / 5);
+        let badge = "";
+        if (stationDensity !== "ultra" && stationNum && Number.isFinite(stationNum)) {
+          badge = "<span class=\"class-station-badge\" style=\"display:inline-block;background:var(--volt-yellow);color:var(--bg-color);padding:0.25rem 0.5rem;border-radius:3px;font-size:0.75rem;font-weight:700;margin-right:0.5rem;\">" + escapeHtml(t("stations.station")) + " " + escapeHtml(String(stationNum)) + "</span>";
+        }
+        // Meeting-target indicator: never shown when the segment has no
+        // target, and never shown as "under" for a station reporting no
+        // power at all (raw node.power_watts, not the zero-defaulted
+        // `power` above -- a treadmill never reports watts and must not
+        // be flagged under-target forever).
+        const targetStatus = classTargetStatus(node.power_watts, clock.targetWatts);
+        let targetIndicatorHtml = "";
+        if (targetStatus === "on") {
+          targetIndicatorHtml = "<span class=\"class-target-indicator class-target-on\" title=\"" + escapeHtml(t("class.target_met")) + "\" style=\"margin-left:0.4rem;color:var(--volt-yellow);\">&#9679;</span>";
+        } else if (targetStatus === "under") {
+          targetIndicatorHtml = "<span class=\"class-target-indicator class-target-under\" title=\"" + escapeHtml(t("class.target_under")) + "\" style=\"margin-left:0.4rem;color:var(--hazard-amber);\">&#9679;</span>";
+        }
+        // data-node-id and the class-metric-*/class-effort-fill classes
+        // below carry no visual meaning -- they exist purely so a
+        // telemetry-driven tick can find and patch this cards numbers in
+        // place afterwards (see captureClassBoardRefs /
+        // applyClassBoardIncrementalUpdate) instead of rebuilding the
+        // whole board.
+        // data-node-id stays the first attribute and style the second:
+        // the card-cache tests parse this markup with a positional regex.
+        let card = "<div data-node-id=\"" + escapeHtml(String(node.node_id || "")) + "\" style=\"border:1px solid var(--steel-border);border-radius:4px;padding:1rem;background:var(--card-bg);\" class=\"class-station-card\">";
+        card += badge;
+        card += "<div class=\"class-station-head\" style=\"display:flex;align-items:center;gap:0.3rem;margin-top:0.5rem;\">" +
+          equipmentIconSvg(node.equipment_type) +
+          "<div class=\"class-station-name\" style=\"font-weight:600;color:var(--text-main);min-width:0;\">" + escapeHtml(cardTitle) + "</div></div>";
+        card += "<div class=\"class-station-machine\" style=\"font-size:0.85rem;color:var(--text-muted);margin-bottom:0.75rem;\">" + escapeHtml(machineName) + "</div>";
+        card += "<div class=\"class-card-metrics\" style=\"display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.5rem;margin-bottom:0.75rem;font-size:0.8rem;\">";
+        card += "<div><div class=\"class-metric-label\" style=\"color:var(--text-muted);\">" + escapeHtml(t("metric.power")) + "</div><div style=\"font-weight:600;\"><span class=\"class-metric-power\">" + escapeHtml(powerStr) + " W</span>" + targetIndicatorHtml + "</div></div>";
+        card += "<div><div class=\"class-metric-label\" style=\"color:var(--text-muted);\">" + escapeHtml(t("metric.speed")) + "</div><div class=\"class-metric-speed\" style=\"font-weight:600;\">" + escapeHtml(speedStr) + " kph</div></div>";
+        card += "<div><div class=\"class-metric-label\" style=\"color:var(--text-muted);\">" + escapeHtml(t("metric.distance")) + "</div><div class=\"class-metric-distance\" style=\"font-weight:600;\">" + escapeHtml(distanceStr) + " m</div></div>";
+        card += "</div>";
+        card += "<div class=\"class-effort-track\" style=\"height:6px;background:var(--steel-border);border-radius:2px;overflow:hidden;\"><div class=\"class-effort-fill\" style=\"height:100%;width:" + effortPercent + "%;background:var(--volt-yellow);transition:width 0.3s ease;\"></div></div>";
+        card += "</div>";
+        stationCards.push(card);
+      }
+      const totalDurationMs = plan.segments.reduce(function(sum, s) { return sum + s.duration_sec * 1000; }, 0);
+      const progressPercent = computeClassProgressPercent(totalDurationMs, clock.totalRemainingMs, clock.finished);
+      const timelineHeightPercents = computeBlockHeightPercents(
+        plan.segments.map(function(s) { return s.target_watts; })
+      );
+      const timelineBlocks = [];
+      for (let idx = 0; idx < plan.segments.length; idx++) {
+        const segment = plan.segments[idx];
+        const isCurrentSegment = idx === clock.index;
+        const isCompleted = idx < clock.index;
+        let bgColor = "var(--dim-grey)";
+        if (segment.kind === "work") bgColor = "var(--volt-yellow)";
+        else if (segment.kind === "rest") bgColor = "var(--mid-grey)";
+        else if (segment.kind === "changeover") bgColor = "var(--changeover-violet)";
+        const borderStyle = isCurrentSegment ? "2px solid var(--volt-yellow)" : "1px solid var(--steel-border)";
+        const opacity = isCompleted ? "0.4" : "1";
+        const heightPercent = timelineHeightPercents[idx];
+        const blockStyle = "flex-grow:" + segment.duration_sec + ";background:" + bgColor + ";height:" + heightPercent + "%;border:" + borderStyle + ";opacity:" + opacity + ";";
+        timelineBlocks.push("<div style=\"" + blockStyle + "\"></div>");
+      }
+      let nextSegmentHtml = "";
+      if (clock.index + 1 < plan.segments.length) {
+        const nextSegment = plan.segments[clock.index + 1];
+        let nextKindLabel = t("class.kind.work");
+        if (nextSegment.kind === "warmup") nextKindLabel = t("class.kind.warmup");
+        else if (nextSegment.kind === "work") nextKindLabel = t("class.kind.work");
+        else if (nextSegment.kind === "rest") nextKindLabel = t("class.kind.rest");
+        else if (nextSegment.kind === "cooldown") nextKindLabel = t("class.kind.cooldown");
+        else if (nextSegment.kind === "changeover") nextKindLabel = t("class.kind.changeover");
+        const nextDurationStr = formatClock(nextSegment.duration_sec * 1000);
+        nextSegmentHtml = "<div style=\"margin-top:0.5rem;font-size:0.85rem;color:var(--text-muted);\">" + escapeHtml(t("class.next_segment", { kind: nextKindLabel, duration: nextDurationStr })) + "</div>";
+      } else {
+        nextSegmentHtml = "<div style=\"margin-top:0.5rem;font-size:0.85rem;color:var(--text-muted);\">" + escapeHtml(t("class.last_segment")) + "</div>";
+      }
+      let kindLabel = t("class.kind.work");
+      if (clock.kind === "warmup") kindLabel = t("class.kind.warmup");
+      else if (clock.kind === "work") kindLabel = t("class.kind.work");
+      else if (clock.kind === "rest") kindLabel = t("class.kind.rest");
+      else if (clock.kind === "cooldown") kindLabel = t("class.kind.cooldown");
+      else if (clock.kind === "changeover") kindLabel = t("class.kind.changeover");
+      // A one-line instruction under the segment name -- read at a glance
+      // from across a gym. Only rest (catch your breath where you are)
+      // and changeover (move to the next machine) need to tell athletes
+      // something beyond the segment name; work/warmup/cooldown stay as
+      // they were before this field existed.
+      let instructionHtml = "";
+      if (clock.kind === "rest") {
+        instructionHtml = "<div class=\"class-hero-instruction\" style=\"font-size:1.1rem;color:var(--text-muted);margin-top:0.35rem;\">" + escapeHtml(t("class.instruction_rest")) + "</div>";
+      } else if (clock.kind === "changeover") {
+        instructionHtml = "<div class=\"class-hero-instruction\" style=\"font-size:1.1rem;color:var(--text-muted);margin-top:0.35rem;\">" + escapeHtml(t("class.instruction_changeover")) + "</div>";
+      }
+      const countdownStr = clock.finished ? t("class.time_up") : formatClock(clock.segmentRemainingMs);
+      const segmentProgressStr = t("class.segment_progress", { index: clock.index + 1, total: plan.segments.length });
+      const totalRemainingStr = formatClock(clock.totalRemainingMs);
+      // Prescribed intensity for the CURRENT segment, shown near the
+      // segment name -- the number athletes look up at. Absent entirely
+      // when this segment has no target, so the hero band looks exactly
+      // as it did before this field existed.
+      let targetWattsHtml = "";
+      if (clock.targetWatts !== null && clock.targetWatts !== undefined) {
+        const targetWattsStr = numberFormat.format(clock.targetWatts);
+        targetWattsHtml = "<div class=\"class-hero-target\" style=\"font-family:Oswald,sans-serif;font-size:1.5rem;font-weight:700;color:var(--volt-yellow);margin-top:0.35rem;\">" + escapeHtml(t("class.target_watts", { watts: targetWattsStr })) + "</div>";
+      }
+      // Large last-ten-seconds announcement of the NEXT segment. Rendered
+      // every time (not only when active) so its container/kind/watts
+      // elements are always present in the markup for
+      // captureClassBoardRefs to find -- applyClassBoardIncrementalUpdate
+      // then flips its display and rewrites its text on every ordinary
+      // tick without a rebuild. Sized well below the 5rem current-segment
+      // name and the 3.5rem countdown above, and well above the 0.85rem
+      // muted nextSegmentHtml line, so it reads as a loud complement, not
+      // a replacement or a competitor for attention.
+      let announcementDisplay = "none";
+      let announcementKindText = "";
+      let announcementWattsText = "";
+      const upcomingAnnouncement = computeUpcomingSegmentAnnouncement(clock, plan);
+      if (upcomingAnnouncement) {
+        announcementDisplay = "block";
+        let announcementKindLabel = t("class.kind.work");
+        if (upcomingAnnouncement.kind === "warmup") announcementKindLabel = t("class.kind.warmup");
+        else if (upcomingAnnouncement.kind === "work") announcementKindLabel = t("class.kind.work");
+        else if (upcomingAnnouncement.kind === "rest") announcementKindLabel = t("class.kind.rest");
+        else if (upcomingAnnouncement.kind === "cooldown") announcementKindLabel = t("class.kind.cooldown");
+        else if (upcomingAnnouncement.kind === "changeover") announcementKindLabel = t("class.kind.changeover");
+        announcementKindText = t("class.next_segment_announcement", { kind: announcementKindLabel });
+        if (upcomingAnnouncement.targetWatts !== null) {
+          announcementWattsText = t("class.target_watts", { watts: numberFormat.format(upcomingAnnouncement.targetWatts) });
+        }
+      }
+      const announcementHtml = "<div class=\"class-next-announcement\" style=\"display:" + announcementDisplay + ";margin-top:1rem;padding:1rem 1.5rem;border:2px solid var(--hazard-amber);border-radius:4px;background:rgba(245,158,11,0.12);\">" +
+        "<div class=\"class-next-announcement-kind\" style=\"font-family:Oswald,sans-serif;font-size:2.5rem;font-weight:700;color:var(--hazard-amber);text-transform:uppercase;line-height:1.1;\">" + escapeHtml(announcementKindText) + "</div>" +
+        "<div class=\"class-next-announcement-watts\" style=\"font-family:Oswald,sans-serif;font-size:1.75rem;font-weight:700;color:var(--hazard-amber);margin-top:0.25rem;\">" + escapeHtml(announcementWattsText) + "</div>" +
+        "</div>";
+      const boardClass = "class-board" + (stationDensity ? " class-board--" + stationDensity : "");
+      const gridClass = "class-station-grid" + (stationDensity ? " class-station-grid--" + stationDensity : "");
+      let html = "<div class=\"" + boardClass + "\" style=\"padding:2rem;\"><div class=\"class-board-hero\" style=\"border:2px solid var(--steel-border);border-radius:4px;padding:2rem;background:linear-gradient(135deg,var(--card-bg),rgba(39,39,42,0.5));margin-bottom:2rem;\">";
+      html += "<div class=\"class-hero-label\" style=\"font-size:0.85rem;color:var(--text-muted);margin-bottom:1rem;\">" + escapeHtml(t("class.in_progress")) + "</div>";
+      html += "<div class=\"class-hero-row\" style=\"display:grid;grid-template-columns:1fr auto;gap:2rem;align-items:start;margin-bottom:1.5rem;\">";
+      html += "<div><div class=\"class-hero-kind\" style=\"font-family:Oswald,sans-serif;font-size:5rem;font-weight:700;color:var(--volt-yellow);line-height:1;text-transform:uppercase;\">" + escapeHtml(kindLabel) + "</div>" + instructionHtml + targetWattsHtml;
+      html += "<div class=\"class-hero-countdown\" style=\"font-family:Oswald,sans-serif;font-size:3.5rem;font-weight:700;color:var(--volt-yellow);margin-top:0.5rem;\">" + escapeHtml(countdownStr) + "</div></div>";
+      html += "<div style=\"text-align:right;\"><div style=\"font-size:0.85rem;color:var(--text-muted);margin-bottom:0.5rem;\">" + escapeHtml(t("class.total_remaining")) + "</div>";
+      html += "<div class=\"class-hero-total-remaining\" style=\"font-size:2rem;font-weight:700;color:var(--volt-yellow);\">" + escapeHtml(totalRemainingStr) + "</div></div></div>";
+      html += "<div class=\"class-hero-segment-line\" style=\"margin-bottom:1.5rem;\"><div style=\"font-size:0.85rem;color:var(--text-muted);margin-bottom:0.5rem;\">" + escapeHtml(segmentProgressStr) + "</div>" + nextSegmentHtml + "</div>";
+      html += announcementHtml;
+      html += "<div class=\"class-hero-timeline\" style=\"display:flex;align-items:flex-end;height:64px;border-radius:2px;overflow:hidden;border:1px solid var(--steel-border);\">" + timelineBlocks.join("") + "</div>";
+      html += "<div class=\"class-progress-track\" style=\"margin-top:4px;height:20px;border-radius:2px;overflow:hidden;border:1px solid var(--steel-border);background:var(--dim-grey);\"><div class=\"class-progress-fill\" style=\"height:100%;width:" + progressPercent + "%;background:var(--volt-yellow);\"></div></div>";
+      html += "</div>";
+      html += "<div class=\"" + gridClass + "\">" + stationCards.join("") + "</div></div>";
+      return html;
+    }
+
+    function resetClassBoardCardCache() {
+      classBoardCardRefs = null;
+    }
+
+    // Twin of classTargetStatus nested inside buildClassBoardHtml -- kept
+    // as a standalone top-level copy (not shared) for the same reason
+    // that one stays nested: several tests extract buildClassBoardHtml
+    // alone by its function-name marker and run it standalone under
+    // node -e, so it cannot depend on a sibling declared elsewhere. This
+    // copy lets the incremental patch path below decide whether a station
+    // target-met indicator would change without a full rebuild.
+    function classTargetStatusForPatch(powerWatts, targetWatts) {
+      if (targetWatts === null || targetWatts === undefined) return "none";
+      if (powerWatts === null || powerWatts === undefined) return "none";
+      const power = Number(powerWatts);
+      const target = Number(targetWatts);
+      if (!Number.isFinite(power) || !Number.isFinite(target)) return "none";
+      return power >= target ? "on" : "under";
+    }
+
+    // Twin of computeClassProgressPercent nested inside buildClassBoardHtml,
+    // for the same reason as classTargetStatusForPatch above.
+    function computeClassProgressPercentForPatch(planTotalMs, totalRemainingMs, finished) {
+      if (finished) return 100;
+      const safeTotalMs = metricNumber(planTotalMs);
+      if (safeTotalMs <= 0) return 0;
+      const safeRemainingMs = Math.max(0, Math.min(safeTotalMs, metricNumber(totalRemainingMs, safeTotalMs)));
+      const elapsedMs = safeTotalMs - safeRemainingMs;
+      const percent = (elapsedMs / safeTotalMs) * 100;
+      return Math.max(0, Math.min(100, percent));
+    }
+
+    // Twin of computeUpcomingSegmentAnnouncement nested inside
+    // buildClassBoardHtml, for the same reason as
+    // computeClassProgressPercentForPatch above: the incremental patch
+    // path below needs the exact same show/hide-and-what decision on
+    // every ordinary tick, without forcing buildClassBoardHtml to depend
+    // on anything declared outside it. See the comment on the nested
+    // twin above for why a single shared definition is not possible here,
+    // and tests/unit/hub/test_dashboard_announcement_duplication_guard.py
+    // for the test that keeps the two copies (and their two
+    // ANNOUNCEMENT_LEAD_MS constants) from drifting apart.
+    function computeUpcomingSegmentAnnouncementForPatch(clock, plan) {
+      const ANNOUNCEMENT_LEAD_MS = 10000;
+      if (!clock || clock.finished) return null;
+      if (!plan || !plan.segments) return null;
+      if (clock.segmentRemainingMs > ANNOUNCEMENT_LEAD_MS) return null;
+      const nextIndex = clock.index + 1;
+      if (nextIndex >= plan.segments.length) return null;
+      const nextSegment = plan.segments[nextIndex];
+      const announcement = { kind: nextSegment.kind, targetWatts: null };
+      if (nextSegment.target_watts !== null && nextSegment.target_watts !== undefined) {
+        announcement.targetWatts = nextSegment.target_watts;
+      }
+      return announcement;
+    }
+
+    // Maps a segment kind to its localized label, for the announcement
+    // patch path only. buildClassBoardHtml keeps its own inline copies of
+    // this same mapping (see classTargetStatus/classTargetStatusForPatch
+    // above for why the two paths cannot share one copy).
+    function classSegmentKindLabelForPatch(kind) {
+      if (kind === "warmup") return t("class.kind.warmup");
+      if (kind === "work") return t("class.kind.work");
+      if (kind === "rest") return t("class.kind.rest");
+      if (kind === "cooldown") return t("class.kind.cooldown");
+      if (kind === "changeover") return t("class.kind.changeover");
+      return t("class.kind.work");
+    }
+
+    // A string that changes exactly when a station card needs new MARKUP:
+    // identity (name, machine name, station number) and target-met status
+    // (whose indicator element only exists in the DOM at all when the
+    // status is on-target or under-target -- see buildClassBoardHtml --
+    // so a status change is a markup change, not a patchable number). Sorted so
+    // Object.entries iteration order can never cause a false cache miss.
+    // Deliberately excludes power/speed/distance -- those are exactly
+    // what the fast path patches without a rebuild.
+    function buildClassStationSignature(leaderboard, clock) {
+      const entries = Object.entries(leaderboard || {});
+      return entries.map(function (pair) {
+        const node = pair[1];
+        return [
+          node.node_id,
+          node.station_number,
+          node.athlete_name || "",
+          nodeDisplayName(node),
+          classTargetStatusForPatch(node.power_watts, clock.targetWatts),
+        ].join(":");
+      }).sort().join(",");
+    }
+
+    // Reads the per-station metric/effort elements and the hero countdown/
+    // total-remaining/progress-fill elements out of a just-rendered class
+    // board, so future ordinary ticks can patch them directly. Defensive
+    // against containers with no querySelectorAll (some tests use plain
+    // object stubs for the container) -- in that case there is simply no
+    // fast path available next time, which is safe, just not fast.
+    function captureClassBoardRefs(container, sessionData, clock) {
+      if (!container || typeof container.querySelectorAll !== "function") {
+        classBoardCardRefs = null;
+        return;
+      }
+      const stations = new Map();
+      container.querySelectorAll("[data-node-id]").forEach(function (card) {
+        stations.set(card.dataset.nodeId, {
+          power: card.querySelector(".class-metric-power"),
+          speed: card.querySelector(".class-metric-speed"),
+          distance: card.querySelector(".class-metric-distance"),
+          effortFill: card.querySelector(".class-effort-fill"),
+        });
+      });
+      classBoardCardRefs = {
+        container: container,
+        signature: buildClassStationSignature(sessionData.leaderboard, clock),
+        segmentIndex: clock.index,
+        finished: clock.finished,
+        stations: stations,
+        countdown: container.querySelector(".class-hero-countdown"),
+        totalRemaining: container.querySelector(".class-hero-total-remaining"),
+        progressFill: container.querySelector(".class-progress-fill"),
+        announcementContainer: container.querySelector(".class-next-announcement"),
+        announcementKind: container.querySelector(".class-next-announcement-kind"),
+        announcementWatts: container.querySelector(".class-next-announcement-watts"),
+      };
+    }
+
+    // The fast path: true if it successfully patched numbers in place (no
+    // markup change needed), false if the caller must fall back to a full
+    // buildClassBoardHtml rebuild. No markup is generated, no innerHTML is
+    // touched, and no position/geometry method is called anywhere here.
+    function applyClassBoardIncrementalUpdate(container, sessionData, clock) {
+      if (!classBoardCardRefs || classBoardCardRefs.container !== container) return false;
+      if (clock.index !== classBoardCardRefs.segmentIndex || clock.finished !== classBoardCardRefs.finished) return false;
+      const signature = buildClassStationSignature(sessionData.leaderboard, clock);
+      if (signature !== classBoardCardRefs.signature) return false;
+
+      const numberFormat = new Intl.NumberFormat(currentLocale);
+      Object.values(sessionData.leaderboard || {}).forEach(function (node) {
+        const refs = classBoardCardRefs.stations.get(node.node_id);
+        if (!refs) return;
+        const power = metricNumber(node.power_watts);
+        if (refs.power) refs.power.textContent = numberFormat.format(power) + " W";
+        if (refs.speed) refs.speed.textContent = numberFormat.format(metricNumber(node.instantaneous_speed_kph)) + " kph";
+        if (refs.distance) refs.distance.textContent = numberFormat.format(metricNumber(node.distance_m)) + " m";
+        if (refs.effortFill) refs.effortFill.style.width = Math.min(100, power / 5) + "%";
+      });
+
+      if (classBoardCardRefs.countdown) {
+        classBoardCardRefs.countdown.textContent = clock.finished ? t("class.time_up") : formatClock(clock.segmentRemainingMs);
+      }
+      if (classBoardCardRefs.totalRemaining) {
+        classBoardCardRefs.totalRemaining.textContent = formatClock(clock.totalRemainingMs);
+      }
+      if (classBoardCardRefs.progressFill && sessionData.class_plan && sessionData.class_plan.segments) {
+        const totalDurationMs = sessionData.class_plan.segments.reduce(function (sum, s) { return sum + s.duration_sec * 1000; }, 0);
+        classBoardCardRefs.progressFill.style.width = computeClassProgressPercentForPatch(totalDurationMs, clock.totalRemainingMs, clock.finished) + "%";
+      }
+      if (classBoardCardRefs.announcementContainer) {
+        const announcement = computeUpcomingSegmentAnnouncementForPatch(clock, sessionData.class_plan);
+        classBoardCardRefs.announcementContainer.style.display = announcement ? "block" : "none";
+        if (classBoardCardRefs.announcementKind) {
+          classBoardCardRefs.announcementKind.textContent = announcement
+            ? t("class.next_segment_announcement", { kind: classSegmentKindLabelForPatch(announcement.kind) })
+            : "";
+        }
+        if (classBoardCardRefs.announcementWatts) {
+          classBoardCardRefs.announcementWatts.textContent = announcement && announcement.targetWatts !== null
+            ? t("class.target_watts", { watts: numberFormat.format(announcement.targetWatts) })
+            : "";
+        }
+      }
+      return true;
+    }
+
+    // Rotation fallback, for rosters past what even the ultra tier fits.
+    // Pure: which scroll offset comes next. The clamp to maxScroll before
+    // wrapping is what makes the last (partial) page visible at all.
+    function nextRotationScrollTop(scrollTop, clientHeight, scrollHeight) {
+      const maxScroll = scrollHeight - clientHeight;
+      if (maxScroll <= 0) return 0;
+      const next = scrollTop + clientHeight;
+      if (next > maxScroll) return scrollTop >= maxScroll ? 0 : maxScroll;
+      return next;
+    }
+
+    // ponytail: rotate by scrolling the grid, not by paginating cards --
+    // every station stays in the DOM, so applyClassBoardIncrementalUpdate
+    // keeps patching offscreen cards and a page turn never shows stale
+    // numbers. Upgrade path if a venue wants transitions per page: swap
+    // the scroll for a translate on a wrapper, same helper.
+    function updateClassBoardRotation(container) {
+      if (classRotationTimer) {
+        clearInterval(classRotationTimer);
+        classRotationTimer = null;
+      }
+      if (!container) return;
+      const grid = container.querySelector(".class-station-grid");
+      if (!grid) return;
+      // Give the grid exactly the height left below it, so "does it
+      // overflow" is a question about the real screen, not the document.
+      const top = grid.getBoundingClientRect().top;
+      grid.style.maxHeight = Math.max(200, window.innerHeight - top - 24) + "px";
+      grid.style.overflow = "hidden";
+      if (grid.scrollHeight <= grid.clientHeight + 4) return;
+      classRotationTimer = setInterval(function() {
+        if (!grid.isConnected) {
+          clearInterval(classRotationTimer);
+          classRotationTimer = null;
+          return;
+        }
+        grid.scrollTo({
+          top: nextRotationScrollTop(grid.scrollTop, grid.clientHeight, grid.scrollHeight),
+          behavior: "smooth",
+        });
+      }, CLASS_ROTATION_INTERVAL_MS);
+    }
+
+    function renderClassBoard(data) {
+      // DOM wrapper. Computes the clock, then renders.
+      // The classic-leaderboard card cache below belongs to a different
+      // renderer entirely -- if it survived a switch into class mode, the
+      // classic leaderboard fast path could later patch text into rows
+      // that are no longer attached to the visible container. Guarded
+      // because narrow single-function tests extract renderClassBoard
+      // without its sibling caches defined.
+      if (typeof resetLeaderboardCardCache === "function") resetLeaderboardCardCache();
+      let clock;
+      if (data.class_segment && data.state === "RUNNING") {
+        // Use the server class_segment when available. Convert from snake_case to camelCase.
+        clock = toClockShape(data.class_segment);
+      } else {
+        // Compute locally at elapsed=0
+        clock = classClockAt(0, 0, data.class_plan);
+      }
+
+      // state_change is comparatively rare (a real session transition, not
+      // a telemetry tick), so this always does a full rebuild -- but it
+      // still primes the per-station cache afterwards so the very next
+      // ordinary tick (via renderClassBoardFromState) can take the fast
+      // path instead of rebuilding again.
+      const sessionData = { class_plan: data.class_plan, leaderboard: data.leaderboard || {} };
+      const container = document.getElementById("leaderboard-container");
+      container.innerHTML = buildClassBoardHtml(sessionData, clock);
+      if (typeof captureClassBoardRefs === "function") captureClassBoardRefs(container, sessionData, clock);
+      if (typeof updateClassBoardRotation === "function") updateClassBoardRotation(container);
+      if (typeof updateClassSegmentCue === "function") updateClassSegmentCue(clock);
+    }
+
+    function renderClassBoardFromState() {
+      // Renders the class board purely from state already known to the
+      // page (currentClassPlan / currentClassLeaderboard / raceStartTime)
+      // -- no HTTP request. Shared by the periodic class clock tick and by
+      // untyped telemetry broadcasts on the WS, which never carry
+      // session_mode or class_plan of their own. At twenty stations a
+      // full buildClassBoardHtml rebuild on every one of those calls is
+      // the same O(station count) cost the classic leaderboard used to
+      // pay on every tick -- see applyClassBoardIncrementalUpdate, which
+      // patches station numbers and the countdown in place whenever the
+      // station set, segment, and target-met status have not changed.
+      if (!currentClassPlan) return;
+      if (typeof resetLeaderboardCardCache === "function") resetLeaderboardCardCache();
+      const clock = raceStartTime
+        ? classClockAt(Date.now(), raceStartTime, currentClassPlan)
+        : classClockAt(0, 0, currentClassPlan);
+      const sessionData = { class_plan: currentClassPlan, leaderboard: currentClassLeaderboard };
+      const container = document.getElementById("leaderboard-container");
+      if (
+        typeof applyClassBoardIncrementalUpdate === "function" &&
+        applyClassBoardIncrementalUpdate(container, sessionData, clock)
+      ) {
+        if (typeof updateClassSegmentCue === "function") updateClassSegmentCue(clock);
+        return;
+      }
+      container.innerHTML = buildClassBoardHtml(sessionData, clock);
+      if (typeof captureClassBoardRefs === "function") captureClassBoardRefs(container, sessionData, clock);
+      if (typeof updateClassBoardRotation === "function") updateClassBoardRotation(container);
+      if (typeof updateClassSegmentCue === "function") updateClassSegmentCue(clock);
+    }
+
+    function tickClassClock() {
+      if (!raceStartTime || !currentClassPlan) return;
+      renderClassBoardFromState();
+    }
+
+    function resetLeaderboardCardCache() {
+      leaderboardCardRefs = new Map();
+      leaderboardCardSignature = null;
+    }
+
+    // A string that changes exactly when the classic leaderboard would
+    // need a full markup rebuild: the race type (different columns), the
+    // podium/final state, and per node the identity fields that are baked
+    // into markup rather than patched in place (name, team, station,
+    // machine name, avatar, and whether this node has finished -- which
+    // swaps a percent for a finish time). Deliberately excludes the live
+    // numeric fields (power/speed/distance/progress/calories) -- those are
+    // exactly what the fast path in updateLeaderboardCardValues patches
+    // without a rebuild. Order matters here: nodes is already sorted by
+    // rank, so a reorder changes this string too, without a separate
+    // check.
+    function buildLeaderboardCardSignature(nodes, raceType, leaderboardFinal) {
+      const identity = nodes.map((node) => [
+        node.node_id,
+        node.athlete_name || "",
+        node.team_name || "",
+        node.station_number || "",
+        nodeDisplayName(node),
+        node.avatar_url || "",
+        node.finished_time_ms ? "1" : "0",
+      ].join(":"));
+      return raceType + "|" + (leaderboardFinal ? "F" : "R") + "|" + identity.join(",");
+    }
+
+    // Reads the metric-value and progress-fill elements out of a
+    // just-rendered classic leaderboard so future ordinary ticks can patch
+    // them directly. querySelectorAll and dataset reads never force
+    // layout -- only geometry methods like getBoundingClientRect do, and
+    // none are used here.
+    function captureLeaderboardCardRefs(container, nodes) {
+      const refs = new Map();
+      if (!container || typeof container.querySelectorAll !== "function") return refs;
+      container.querySelectorAll(".leaderboard-item").forEach((row) => {
+        const metricEls = row.querySelectorAll(".metric-val");
+        refs.set(row.dataset.nodeId, {
+          metricA: metricEls[0] || null,
+          metricB: metricEls[1] || null,
+          metricC: metricEls[2] || null,
+          progressFill: row.querySelector(".progress-fill"),
+        });
+      });
+      return refs;
+    }
+
+    function setSmoothedCardText(el, key, target, decimals, suffix) {
+      if (!el) return;
+      el.textContent = smoothMetricNumber(key, target).toFixed(decimals) + suffix;
+    }
+
+    // The fast path itself: patches the three metric-value cells and the
+    // progress-fill width of every already-rendered row from cached
+    // element references. No markup is generated, no innerHTML is
+    // touched, and no getBoundingClientRect is called -- this is what
+    // keeps an ordinary telemetry tick cheap regardless of station count.
+    function updateLeaderboardCardValues(nodes, raceType) {
+      nodes.forEach((node) => {
+        const refs = leaderboardCardRefs.get(node.node_id);
+        if (!refs) return;
+        if (raceType === "calories") {
+          setSmoothedCardText(refs.metricA, `${node.node_id}:power`, node.power_watts, 0, "");
+          setSmoothedCardText(refs.metricB, `${node.node_id}:calories`, node.calories, 1, "");
+          if (!node.finished_time_ms) setSmoothedCardText(refs.metricC, `${node.node_id}:progress`, node.progress_percent, 1, "%");
+        } else if (raceType === "max_power" || raceType === "watts") {
+          setSmoothedCardText(refs.metricA, `${node.node_id}:power`, node.power_watts, 0, "");
+          setSmoothedCardText(refs.metricB, `${node.node_id}:max_power`, node.max_power_watts, 0, "");
+          setSmoothedCardText(refs.metricC, `${node.node_id}:progress`, node.progress_percent, 1, "%");
+        } else if (raceType === "time") {
+          setSmoothedCardText(refs.metricA, `${node.node_id}:speed`, node.instantaneous_speed_kph, 1, "");
+          setSmoothedCardText(refs.metricB, `${node.node_id}:distance`, node.distance_m, 0, "");
+          setSmoothedCardText(refs.metricC, `${node.node_id}:progress`, node.progress_percent, 1, "%");
+        } else {
+          setSmoothedCardText(refs.metricA, `${node.node_id}:speed`, node.instantaneous_speed_kph, 1, "");
+          setSmoothedCardText(refs.metricB, `${node.node_id}:distance`, node.distance_m, 0, "");
+          if (!node.finished_time_ms) setSmoothedCardText(refs.metricC, `${node.node_id}:progress`, node.progress_percent, 1, "%");
+        }
+        if (refs.progressFill) {
+          const width = Math.min(100, smoothMetricNumber(`${node.node_id}:progress`, node.progress_percent));
+          refs.progressFill.style.width = width + "%";
+        }
+      });
+    }
+
     function renderLeaderboard(progressData, teamData = null) {
+      // Untyped WS payloads (per-athlete telemetry progress) never carry
+      // session_mode -- only typed state_change messages do. Falling
+      // through to the race leaderboard logic below unconditionally turns
+      // an unranked class into a ranked leaderboard the instant telemetry
+      // ticks, which is exactly the property a class board must never
+      // have. Consult the session mode already known to the page instead,
+      // and route straight to the class board with no HTTP request.
+      if (currentSessionMode === "class") {
+        // A bare empty object is the hub "refresh your node list" ping
+        // (see the else branch in mqtt_subscriber._handle_telemetry), not
+        // a class that has lost every participant. Storing it blanked
+        // every station card on the projector until someone reloaded the
+        // page. A payload that actually names stations still replaces the
+        // board, so a station leaving the class still disappears.
+        // No apostrophes above on purpose: the test helpers that extract
+        // this function scan for quote characters without skipping
+        // comments, so one would truncate the extraction.
+        if (progressData && Object.keys(progressData).length > 0) {
+          currentClassLeaderboard = progressData;
+        }
+        renderClassBoardFromState();
+        return;
+      }
       detectAthleteFinishes(progressData);
-      lastLeaderboardData = progressData || {};
-      lastTeamLeaderboardData = teamData || null;
+      // Every branch below writes race markup into #leaderboard-container.
+      // The class board is a different renderer entirely -- if its cache
+      // survived getting here, a later class-mode tick could patch text
+      // into station cards that are no longer attached to the page.
+      if (typeof resetClassBoardCardCache === "function") resetClassBoardCardCache();
 
       if (leaderboardDisplayMode === "race_track") {
         renderRaceTrackLeaderboard(progressData, teamData);
@@ -4029,14 +5111,10 @@
       }
 
       const container = document.getElementById("leaderboard-container");
-      const previousRects = new Map();
-      container.querySelectorAll(".leaderboard-item").forEach((item) => {
-        previousRects.set(item.dataset.nodeId, item.getBoundingClientRect());
-      });
-
       const nodes = Object.values(progressData);
-      
+
       if (nodes.length === 0) {
+        resetLeaderboardCardCache();
         container.innerHTML = renderRegistrationEmptyState(t("leaderboard.waiting_data"));
         leaderboardNodes = [];
         teamLeaderboardRows = [];
@@ -4048,6 +5126,22 @@
       sortLeaderboardNodes(nodes, raceType);
       leaderboardNodes = nodes;
       const leaderboardFinal = isLeaderboardFinal(raceType, nodes);
+
+      // Fast path: the station set, rank order, and every identity field
+      // baked into markup are exactly what they were on the last full
+      // render -- only live numeric values changed. Patch those in place
+      // and skip building HTML, writing innerHTML, and reading any
+      // element position entirely.
+      const cardSignature = buildLeaderboardCardSignature(nodes, raceType, leaderboardFinal);
+      if (cardSignature === leaderboardCardSignature && leaderboardCardRefs.size === nodes.length) {
+        updateLeaderboardCardValues(nodes, raceType);
+        return;
+      }
+
+      const previousRects = new Map();
+      container.querySelectorAll(".leaderboard-item").forEach((item) => {
+        previousRects.set(item.dataset.nodeId, item.getBoundingClientRect());
+      });
 
       let html = leaderboardFinal ? renderPodium(nodes, raceType) : '';
       html += '<div class="leaderboard-list">';
@@ -4075,14 +5169,19 @@
           ? `<span class="station-pill">${escapeHtml(t("stations.station"))} ${escapeHtml(node.station_number)}</span>`
           : '';
 
-        const athleteName = escapeHtml(node.athlete_name || t("stations.athlete"));
+        // Anonymous participation: no name does not mean no one is here --
+        // fall back to the station number before the generic athlete label,
+        // so this never renders an empty name or a bare Athlete literal
+        // when a station number is available.
+        const rawAthleteName = node.athlete_name || (node.station_number ? `${t("stations.station")} ${node.station_number}` : t("stations.athlete"));
+        const athleteName = escapeHtml(rawAthleteName);
         const displayName = athleteName + (node.team_name ? ` <span class="team-suffix" style="font-size: 0.8rem; color: var(--volt-yellow); opacity: 0.85; font-weight: 600;">(${escapeHtml(node.team_name)})</span>` : '');
 
         let avatarHtml = '';
         if (node.avatar_url) {
           avatarHtml = `<img class="athlete-avatar" src="${escapeHtml(node.avatar_url)}" style="width: 44px; height: 44px; border-radius: 50%; border: 2px solid var(--steel-border); object-fit: cover; flex-shrink: 0;" alt="">`;
         } else {
-          const initial = escapeHtml((node.athlete_name || '?').charAt(0).toUpperCase());
+          const initial = escapeHtml(rawAthleteName.charAt(0).toUpperCase());
           avatarHtml = `<div class="athlete-avatar fallback-avatar" style="width: 44px; height: 44px; border-radius: 50%; border: 2px solid var(--steel-border); background-color: #3f3f46; color: #fff; display: flex; justify-content: center; align-items: center; font-weight: 800; font-size: 1.2rem; font-family: 'Oswald', sans-serif; flex-shrink: 0;">${initial}</div>`;
         }
 
@@ -4192,6 +5291,8 @@
       container.innerHTML = html;
       leaderboardRankByNode = new Map(nodes.map((node, index) => [node.node_id, index + 1]));
       animateLeaderboardReorder(previousRects);
+      leaderboardCardRefs = captureLeaderboardCardRefs(container, nodes);
+      leaderboardCardSignature = cardSignature;
       if (leaderboardFinal) {
         triggerFinishCelebration(nodes);
       }
@@ -4237,6 +5338,45 @@
       if (el) el.innerText = raceStateLabel(state);
     }
 
+    function renderDashboardChrome() {
+      // Header type indicator, config description, and panel title all
+      // describe a RACE by default. In class mode none of that is true --
+      // a class has no config, no race type, and no ranking, so all three
+      // must be swapped for class copy instead of falling through to
+      // "Race: Not configured" / "No race configured" wording.
+      const configDesc = document.getElementById("current-config-desc");
+      const typeIndicator = document.getElementById("race-type-indicator");
+      const panelTitle = document.getElementById("leaderboard-panel-title");
+
+      if (currentSessionMode === "class") {
+        if (configDesc) configDesc.innerText = t("class.config_desc");
+        if (typeIndicator) typeIndicator.innerText = t("class.type_indicator");
+        if (panelTitle) panelTitle.innerText = t("class.leaderboard_title");
+      } else {
+        if (panelTitle) panelTitle.innerText = t("leaderboard.title");
+        if (currentConfig) {
+          const competitionLabel = currentConfig.competition_mode === "team" ? t("stage.team") : t("stage.individual");
+          if (currentConfig.race_type === "distance") {
+            configDesc.innerText = `${competitionLabel} · ${t("race.distance")}: ${currentConfig.target_value}m`;
+            typeIndicator.innerText = `${competitionLabel} · ${t("race.distance")} (${currentConfig.target_value}m)`;
+          } else if (currentConfig.race_type === "calories") {
+            configDesc.innerText = `${competitionLabel} · ${t("race.calories")}: ${currentConfig.target_value} kcal`;
+            typeIndicator.innerText = `${competitionLabel} · ${t("race.calories")} (${currentConfig.target_value} kcal)`;
+          } else if (currentConfig.race_type === "time") {
+            configDesc.innerText = `${competitionLabel} · ${t("race.time")}: ${currentConfig.duration_sec}s`;
+            typeIndicator.innerText = `${competitionLabel} · ${t("race.time")} (${currentConfig.duration_sec}s)`;
+          } else if (currentConfig.race_type === "max_power" || currentConfig.race_type === "watts") {
+            configDesc.innerText = `${competitionLabel} · ${t("race.max_power")}: ${currentConfig.duration_sec}s`;
+            typeIndicator.innerText = `${competitionLabel} · ${t("race.max_power")} (${currentConfig.duration_sec}s)`;
+          }
+        } else {
+          configDesc.innerText = t("status.no_config");
+          typeIndicator.innerText = t("race.unconfigured");
+        }
+      }
+      renderRaceStageBanner();
+    }
+
     function updateUIState(data) {
       console.log("updateUIState data:", data);
       if (!data || data.state === undefined) {
@@ -4248,6 +5388,8 @@
       const previousState = currentState;
       currentState = data.state;
       currentConfig = data.config;
+      currentSessionMode = data.session_mode || "race";
+      currentSoundEnabled = data.start_countdown_sound_enabled !== false;
       raceStartTime = data.start_time_epoch_ms;
       raceEndTime = data.end_time_epoch_ms || null;
       applyLeaderboardDisplayMode(data.leaderboard_display_mode || "classic");
@@ -4267,71 +5409,92 @@
         previousFinishedByNode = new Map();
       }
 
-      if (data.leaderboard) {
+      // Route to class board or race leaderboard
+      if (data.session_mode === "class") {
+        // Class mode: store plan and leaderboard for local ticking
+        currentClassPlan = data.class_plan;
+        currentClassLeaderboard = data.leaderboard || {};
+        renderClassBoard(data);
+      } else if (data.leaderboard) {
+        // Race mode
         renderLeaderboard(data.leaderboard, data.team_leaderboard || null);
       }
 
       // A2: full-screen podium reveal, only on a live RUNNING -> STOPPED
       // transition -- never when the page merely loads into an already-
-      // finished race.
-      if (!isFirstStateUpdate && previousState !== "STOPPED" && currentState === "STOPPED") {
+      // finished race. Gate on race mode only.
+      if (!isFirstStateUpdate && previousState !== "STOPPED" && currentState === "STOPPED" && data.session_mode !== "class") {
         showPodiumOverlay();
       }
 
-      // B2: idle record wall carousel, shown only while IDLE.
-      if (currentState === "IDLE") {
+      // B2: idle record wall carousel, shown only while IDLE and in race mode.
+      if (data.session_mode === "class") {
+        // Class mode never shows idle record wall
+        exitIdleRecordWall();
+      } else if (currentState === "IDLE") {
         enterIdleRecordWall();
       } else {
         exitIdleRecordWall();
       }
 
       renderCurrentStateLabel(currentState);
-      
-      const configDesc = document.getElementById("current-config-desc");
-      const typeIndicator = document.getElementById("race-type-indicator");
+      renderDashboardChrome();
 
-      if (currentConfig) {
-        const competitionLabel = currentConfig.competition_mode === "team" ? t("stage.team") : t("stage.individual");
-        if (currentConfig.race_type === "distance") {
-          configDesc.innerText = `${competitionLabel} · ${t("race.distance")}: ${currentConfig.target_value}m`;
-          typeIndicator.innerText = `${competitionLabel} · ${t("race.distance")} (${currentConfig.target_value}m)`;
-        } else if (currentConfig.race_type === "calories") {
-          configDesc.innerText = `${competitionLabel} · ${t("race.calories")}: ${currentConfig.target_value} kcal`;
-          typeIndicator.innerText = `${competitionLabel} · ${t("race.calories")} (${currentConfig.target_value} kcal)`;
-        } else if (currentConfig.race_type === "time") {
-          configDesc.innerText = `${competitionLabel} · ${t("race.time")}: ${currentConfig.duration_sec}s`;
-          typeIndicator.innerText = `${competitionLabel} · ${t("race.time")} (${currentConfig.duration_sec}s)`;
-        } else if (currentConfig.race_type === "max_power" || currentConfig.race_type === "watts") {
-          configDesc.innerText = `${competitionLabel} · ${t("race.max_power")}: ${currentConfig.duration_sec}s`;
-          typeIndicator.innerText = `${competitionLabel} · ${t("race.max_power")} (${currentConfig.duration_sec}s)`;
+      // Class mode interval management
+      if (data.session_mode === "class") {
+        if (currentState === "RUNNING" && currentClassPlan) {
+          if (!classClockInterval) {
+            classClockInterval = setInterval(tickClassClock, 250);
+          }
+        } else {
+          if (classClockInterval) {
+            clearInterval(classClockInterval);
+            classClockInterval = null;
+          }
         }
       } else {
-        configDesc.innerText = t("status.no_config");
-        typeIndicator.innerText = t("race.unconfigured");
+        // Race mode: clear class interval if it's running (mode switch)
+        if (classClockInterval) {
+          clearInterval(classClockInterval);
+          classClockInterval = null;
+        }
       }
-      renderRaceStageBanner();
 
-      // Stopwatch Display control
-      if (currentState === "RUNNING") {
-        document.getElementById("stopwatch-lbl").style.display = "block";
-        raceStartTime = data.start_time_epoch_ms;
-        if (!stopwatchInterval && raceStartTime) {
-          stopwatchInterval = setInterval(updateStopwatch, 50);
+      // Stopwatch Display control (race mode only, not shown in class mode)
+      if (data.session_mode !== "class") {
+        if (currentState === "RUNNING") {
+          document.getElementById("stopwatch-lbl").style.display = "block";
+          raceStartTime = data.start_time_epoch_ms;
+          if (!stopwatchInterval && raceStartTime) {
+            stopwatchInterval = setInterval(updateStopwatch, 50);
+          }
+        } else {
+          if (stopwatchInterval) {
+            clearInterval(stopwatchInterval);
+            stopwatchInterval = null;
+          }
+          if (currentState === "STOPPED") {
+            document.getElementById("stopwatch-lbl").style.display = "block";
+            if (raceStartTime) {
+              updateStopwatch();
+            }
+          } else {
+            document.getElementById("stopwatch-lbl").style.display = "none";
+            document.getElementById("stopwatch-lbl").innerText = "00:00.0";
+            raceStartTime = null;
+          }
         }
       } else {
+        // Class mode: no stopwatch. Stop any running interval and hide the
+        // label instead of leaving it frozen at whatever it last showed.
         if (stopwatchInterval) {
           clearInterval(stopwatchInterval);
           stopwatchInterval = null;
         }
-        if (currentState === "STOPPED") {
-          document.getElementById("stopwatch-lbl").style.display = "block";
-          if (raceStartTime) {
-            updateStopwatch();
-          }
-        } else {
-          document.getElementById("stopwatch-lbl").style.display = "none";
-          document.getElementById("stopwatch-lbl").innerText = "00:00.0";
-          raceStartTime = null;
+        const stopwatchLbl = document.getElementById("stopwatch-lbl");
+        if (stopwatchLbl) {
+          stopwatchLbl.style.display = "none";
+          stopwatchLbl.innerText = "00:00.0";
         }
       }
 
@@ -4637,7 +5800,6 @@
       toggleConfigFields();
       loadHubVersion();
       connectWebSocket();
-      requestAnimationFrame(renderSmoothLeaderboardFrame);
       fetchNodes();
 
       // Initialize QR codes on the right side of the hero bar and admin card
@@ -4700,6 +5862,19 @@
         }, 3000);
       }
     }
+
+    // The class grid takes its height from window.innerHeight when it
+    // renders, so a display that settles on its real resolution after the
+    // page loaded (HDMI renegotiation, a kiosk window that opens small)
+    // would keep rotating through stations that now fit on one screen.
+    let classBoardResizeTimer = null;
+    window.addEventListener("resize", function() {
+      if (classBoardResizeTimer) window.clearTimeout(classBoardResizeTimer);
+      classBoardResizeTimer = window.setTimeout(function() {
+        classBoardResizeTimer = null;
+        updateClassBoardRotation(document.getElementById("leaderboard-container"));
+      }, 250);
+    });
 
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", initializeDashboard, { once: true });
