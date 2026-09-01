@@ -692,6 +692,24 @@ grants the Edge web-config service user permission to run only
 `/usr/bin/systemctl restart fitracestudio-edge.service`; it does not grant
 reboot, shutdown, arbitrary `systemctl`, or arbitrary service access.
 
+Hub-led shutdown has three gates, and **all three fail silently** — the Hub
+returns 200 and powers itself off while the Edge Nodes ignore the command,
+leaving nothing in the Edge journal unless persistent logging is on. Provision
+them with `deploy_update/systemd/install-node-shutdown.sh install <TOKEN>`, run
+on the Hub box and on every Edge Node with the **same** token:
+
+1. `FITRACE_NODE_COMMAND_TOKEN` on both sides. The Edge check is fail-closed —
+   with no token configured it rejects every command — and the Hub only
+   attaches a token when it has one itself, so "neither side set" does not work.
+2. `FITRACE_POWER_COMMANDS_ENABLED=1` on the Edge runtime, or the node accepts
+   the command and only logs `[Dry Run]`.
+3. Passwordless `systemctl poweroff` for the Edge runtime's service user.
+
+`scripts/deploy.sh edge` verifies all three (plus
+`FITRACE_EDGE_SERVICE_RESTART_ENABLED`) after every edge deploy and fails if a
+node is half-provisioned, so a fresh node cannot quietly reach a race day
+missing them. `--skip-provision-check` overrides it deliberately.
+
 `FITRACE_ADMIN_TOKEN` protects Hub and Edge HTTP management APIs. `FITRACE_NODE_COMMAND_TOKEN` protects MQTT commands sent from the Hub to Edge Nodes, including system shutdown. Hub and Edge services in the same shipped system must share the same `FITRACE_NODE_COMMAND_TOKEN`. If `FITRACE_NODE_COMMAND_TOKEN` is not set, the current implementation falls back to `FITRACE_ADMIN_TOKEN`; production deployments should set both explicitly so browser-facing admin access and machine-to-machine command authorization can rotate independently.
 
 `FITRACE_RACE_RESULTS_PATH` controls where completed race snapshots are stored.
@@ -781,6 +799,18 @@ Local admin authentication before reboot or shutdown
 3. Power on Central Hub.
 4. Confirm Hub is reachable at its reserved IP or hostname.
 5. Confirm `FITRACE_ADMIN_TOKEN` and `FITRACE_NODE_COMMAND_TOKEN` are configured on Hub and Edge services.
+   On a new or reimaged node run both installers before anything else — the
+   Hub's shutdown and the Edge setup page's "save" both fail silently without
+   them, and enable persistent journals (`sudo mkdir -p /var/log/journal`) or
+   the evidence dies with the machine:
+
+   ```bash
+   sudo ./deploy_update/systemd/install-edge-service-restart.sh install
+   sudo ./deploy_update/systemd/install-node-shutdown.sh install <TOKEN>
+   ```
+
+   `scripts/deploy.sh edge` fails the deploy if any of this is missing, so
+   verify it there rather than by eye.
 6. Power on Edge Nodes.
 7. Confirm each Edge Node joins `fitRace26`.
 8. Open each Edge Node web setup page.
