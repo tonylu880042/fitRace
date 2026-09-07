@@ -81,6 +81,30 @@ def _extract_readiness_functions() -> str:
     return script[start:end]
 
 
+def _extract_fetch_nodes() -> str:
+    """The real fetchNodes(), from a comment-stripped script, up to (not
+    including) fetchReadiness(). Extracting the actual body -- rather than
+    grepping the source for the substring "fetchReadiness()" -- means a
+    deleted call is exercised (the recording stub never fires), not just
+    pattern-matched; a regex check would pass even on a commented-out
+    call."""
+    script = _stripped_script()
+    start = script.index("async function fetchNodes")
+    end = script.index("async function fetchReadiness", start)
+    return script[start:end]
+
+
+def _extract_render_race_stage_banner() -> str:
+    """The real renderRaceStageBanner(), from a comment-stripped script, up
+    to (not including) readinessBlockingReasons. Grabbing the actual body
+    means a revert to the old unconditional
+    `...innerText = details.sub` is exercised, not just pattern-matched."""
+    script = _stripped_script()
+    start = script.index("function renderRaceStageBanner")
+    end = script.index("function readinessBlockingReasons", start)
+    return script[start:end]
+
+
 def _run_node(js_source: str) -> str:
     with tempfile.NamedTemporaryFile(mode="w", suffix=".js", delete=False) as tmp_file:
         tmp_file.write(js_source)
@@ -242,6 +266,136 @@ def test_english_blocking_issue_sentence_never_leaks_into_output():
     }
     html = _render(readiness)
     assert leaked_sentence not in html
+
+
+# ---------------------------------------------------------------------------
+# Wiring -- the pure functions above are well covered, but nothing pinned
+# that fetchNodes() actually calls fetchReadiness(), or that
+# renderRaceStageBanner() actually routes readinessNoticeHtml()'s result
+# onto the page. Both edits leave the whole suite green while silently
+# killing the feature on the real screen; these tests fail under either.
+# ---------------------------------------------------------------------------
+
+_FETCH_NODES_HARNESS_PREFIX = """
+const consoleCalls = [];
+const console = {
+  log: (...args) => consoleCalls.push(["log", args]),
+  error: (...args) => consoleCalls.push(["error", args]),
+};
+async function fetch(url) {
+  return { json: async () => ({ nodes: [] }) };
+}
+let renderEdgeNodesCalls = 0;
+function renderEdgeNodes(nodes) { renderEdgeNodesCalls += 1; }
+let checkBuildFreshnessCalls = 0;
+function checkBuildFreshness() { checkBuildFreshnessCalls += 1; }
+let fetchReadinessCalls = 0;
+async function fetchReadiness() { fetchReadinessCalls += 1; }
+"""
+
+
+def test_fetch_nodes_actually_invokes_fetch_readiness():
+    """Regression for deleting `fetchReadiness();` from the end of
+    fetchNodes(): without it, latestReadiness stays null forever and the
+    notice never appears, but every existing test of the pure functions
+    still passes. This runs the real fetchNodes() under node (awaited, so
+    a missing call cannot be mistaken for a timing artefact) with a
+    recording stub for fetchReadiness and asserts it actually fired."""
+    body = _extract_fetch_nodes()
+    harness = f"""
+{_FETCH_NODES_HARNESS_PREFIX}
+{body}
+
+(async () => {{
+  await fetchNodes();
+  process.stdout.write(JSON.stringify({{
+    fetchReadinessCalls,
+    renderEdgeNodesCalls,
+    checkBuildFreshnessCalls,
+  }}));
+}})();
+"""
+    output = _run_node(harness)
+    result = json.loads(output.strip().splitlines()[-1])
+    assert result["fetchReadinessCalls"] == 1
+    assert result["renderEdgeNodesCalls"] == 1
+    assert result["checkBuildFreshnessCalls"] == 1
+
+
+def _make_stage_banner_dom_harness(notice_html):
+    return f"""
+function makeEl() {{
+  return {{
+    _innerText: null,
+    _innerHTML: null,
+    _className: null,
+    set innerText(v) {{ this._innerText = v; }},
+    get innerText() {{ return this._innerText; }},
+    set innerHTML(v) {{ this._innerHTML = v; }},
+    get innerHTML() {{ return this._innerHTML; }},
+    set className(v) {{ this._className = v; }},
+    get className() {{ return this._className; }},
+  }};
+}}
+const elements = {{
+  "race-stage-banner": makeEl(),
+  "race-stage-kicker": makeEl(),
+  "race-stage-main": makeEl(),
+  "race-stage-sub": makeEl(),
+  "race-stage-timer": makeEl(),
+}};
+const document = {{ getElementById: (id) => elements[id] || null }};
+
+let currentState = "READY";
+let raceStageOverride = null;
+let latestReadiness = null;
+
+function getRaceStageDetails(stage) {{
+  return {{ className: "ready", kicker: "KICKER", main: "MAIN", sub: "DETAILS_SUB", timer: "TIMER" }};
+}}
+
+function readinessNoticeHtml(readiness, raceState) {{
+  return {json.dumps(notice_html)};
+}}
+"""
+
+
+def _render_stage_banner(notice_html):
+    body = _extract_render_race_stage_banner()
+    harness = f"""
+{_make_stage_banner_dom_harness(notice_html)}
+{body}
+
+renderRaceStageBanner();
+
+console.log(JSON.stringify({{
+  subInnerHTML: elements["race-stage-sub"]._innerHTML,
+  subInnerText: elements["race-stage-sub"]._innerText,
+}}));
+"""
+    output = _run_node(harness)
+    return json.loads(output.strip().splitlines()[-1])
+
+
+def test_render_race_stage_banner_routes_notice_html_onto_sub_element():
+    """Regression for reverting the `#race-stage-sub` block back to the old
+    unconditional `...innerText = details.sub`: readinessNoticeHtml() would
+    still compute the right string, but it would never reach the page. This
+    runs the real renderRaceStageBanner() under node with a stubbed DOM and
+    a readinessNoticeHtml() stub returning a fixed string, and asserts that
+    string actually lands on race-stage-sub's innerHTML (not innerText)."""
+    result = _render_stage_banner("NOTICE_HTML")
+    assert result["subInnerHTML"] == "NOTICE_HTML"
+    assert result["subInnerText"] is None
+
+
+def test_render_race_stage_banner_falls_back_to_details_sub_when_no_notice():
+    """The other half of the same wiring: when readinessNoticeHtml()
+    returns null (ready, or race RUNNING), the banner must fall back to
+    details.sub via innerText, not leave stale notice HTML in place."""
+    result = _render_stage_banner(None)
+    assert result["subInnerText"] == "DETAILS_SUB"
+    assert result["subInnerHTML"] is None
 
 
 # ---------------------------------------------------------------------------
