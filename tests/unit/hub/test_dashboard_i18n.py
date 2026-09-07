@@ -602,10 +602,16 @@ _EDGE_NODES_FIXTURE = """[
 
 
 def test_render_edge_nodes_stream_name_and_status_fallbacks_are_translated():
+    # NOTE (feature/class-mode liveness-dot change): the stream pill's status
+    # text no longer echoes stream.status / falls back to t("status.unknown")
+    # -- it is now derived purely from stream.last_telemetry_epoch_ms
+    # liveness via t("connection.online")/t("connection.offline"). The
+    # fixture's `equipment_streams: [{}]` entry has no
+    # last_telemetry_epoch_ms, so it renders as offline/grey.
     result = _run_render_edge_nodes(_EDGE_NODES_FIXTURE)
     html = result["listHtml"]
     assert "T[edge.unbound]" in html
-    assert "T[status.unknown]" in html
+    assert "T[connection.offline]" in html
     assert "UNBOUND" not in html
     assert ">unknown<" not in html
 

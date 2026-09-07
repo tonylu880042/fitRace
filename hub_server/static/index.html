@@ -19,6 +19,7 @@
       --mid-grey: #3f3f46;
       --dim-grey: #52525b;
       --changeover-violet: #a78bfa;
+      --signal-green: #34d399;
     }
 
     * {
@@ -1702,13 +1703,18 @@
       border-radius: 999px;
       flex: 0 0 auto;
       margin-top: 0.35rem;
-      background: var(--crimson-red);
-      box-shadow: 0 0 8px rgba(244, 63, 94, 0.75);
+      background: var(--dim-grey);
     }
 
     .node-status-dot.online {
-      background: var(--volt-yellow);
-      box-shadow: 0 0 8px rgba(226, 255, 59, 0.75);
+      background: var(--signal-green);
+      box-shadow: 0 0 8px rgba(52, 211, 153, 0.75);
+    }
+
+    .stream-pill .node-status-dot {
+      width: 6px;
+      height: 6px;
+      margin-top: 0;
     }
 
     .edge-node-name {
@@ -3083,10 +3089,13 @@
         const streamHtml = streams.length
           ? streams.map((stream) => {
               const channel = stream.antenna_channel ? ` · ${escapeHtml(stream.antenna_channel)}` : "";
+              const streamOnline = Boolean(stream.last_telemetry_epoch_ms) && (Date.now() - Number(stream.last_telemetry_epoch_ms)) < 15000;
+              const streamStatusText = streamOnline ? t("connection.online") : t("connection.offline");
               return `
                 <span class="stream-pill" title="${escapeHtml(stream.display_name || stream.equipment_id || stream.node_id || "")}">
+                  <span class="node-status-dot ${streamOnline ? "online" : ""}"></span>
                   <strong>${escapeHtml(stream.display_name || stream.equipment_id || stream.node_id || t("edge.unbound"))}</strong>
-                  <span>${escapeHtml(stream.status || t("status.unknown"))}${channel}</span>
+                  <span>${escapeHtml(streamStatusText)}${channel}</span>
                 </span>`;
             }).join("")
           : `<span class="stream-pill"><strong>${escapeHtml(t("edge.zero_streams"))}</strong><span>${escapeHtml(t("edge.unbound"))}</span></span>`;
