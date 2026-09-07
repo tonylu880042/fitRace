@@ -1468,7 +1468,9 @@
         "dialog.unassigned_title": "Unassigned telemetry streams",
         "dialog.unassigned_message": "{count} telemetry stream(s) became unassigned. They will not take part in a race until you assign them to a station.",
         "button.assign_all_unassigned": "Assign all to next open stations",
-        "message.assign_all_partial_failure": "Could not assign: {streams}. They are still unassigned."
+        "message.assign_all_partial_failure": "Could not assign: {streams}. They are still unassigned.",
+        "message.station_loaded": "Station {stationNumber} loaded into the form above — adjust and press Assign.",
+        "text.edit_in_form": "Edit in form above"
       }
     };
 
@@ -1601,7 +1603,9 @@
       "dialog.unassigned_title": "尚未指派的遙測資料流",
       "dialog.unassigned_message": "有 {count} 個資料流變成未指派狀態。在指派站位前,它們不會參與比賽。",
       "button.assign_all_unassigned": "全部指派至下一個空站位",
-      "message.assign_all_partial_failure": "無法指派:{streams}。這些資料流仍為未指派狀態。"
+      "message.assign_all_partial_failure": "無法指派:{streams}。這些資料流仍為未指派狀態。",
+      "message.station_loaded": "站位 {stationNumber} 已載入上方表單,請調整後按「指派」。",
+      "text.edit_in_form": "在上方表單中編輯"
     };
 
     function t(key, params = {}) {
@@ -2013,7 +2017,7 @@
             <td><span class="dot ${bound ? "online" : ""}"></span>${escapeHtml(assignmentStatus)}${who}</td>
             <td class="mono">${escapeHtml(streamDisplayLabel(station.node_id, station.equipment_type, catalog))}</td>
             <td>
-              <button type="button" class="icon-btn" title="Edit in form above" onclick="selectStation(${Number(key)}, '${escapeHtml(station.node_id || "")}')">✎</button>
+              <button type="button" class="icon-btn" title="${escapeHtml(t("text.edit_in_form"))}" onclick="selectStation(${Number(key)}, '${escapeHtml(station.node_id || "")}')">✎</button>
               <button type="button" class="icon-btn" title="${escapeHtml(t("text.unassign_title"))}" onclick="unassignStation(${Number(key)})">✕</button>
             </td>
           </tr>
@@ -2064,9 +2068,13 @@
     }
 
     function selectStation(stationNumber, nodeId) {
-      $("station-number").value = stationNumber;
+      const input = $("station-number");
+      input.value = stationNumber;
+      input.focus();
+      input.select();
       updateSignupLink();
       if (nodeId) $("node-select").value = nodeId;
+      setMessage("station-message", t("message.station_loaded", { stationNumber }), "ok");
     }
 
     async function assignStation(stationNumber, nodeId) {
