@@ -2076,6 +2076,10 @@
           const saved = await configureRace();
           if (!saved) return;
         }
+        if (state.race?.session_mode !== "race") {
+          const switched = await switchToRaceMode();
+          if (!switched) return;
+        }
         await startRace();
       } finally {
         state.raceActionPending = null;
@@ -2135,8 +2139,10 @@
         });
         renderRace();
         setMessage("race-message", t("message.mode_switched_to_race"), "ok");
+        return true;
       } catch (error) {
         setMessage("race-message", error.message, "error");
+        return false;
       }
     }
 
