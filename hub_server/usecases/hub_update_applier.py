@@ -51,6 +51,28 @@ def _release_version(release_path: Path) -> str:
     return name[len("hub-") :] if name.startswith("hub-") else name
 
 
+def _write_pending_verify_marker(
+    marker_path: Path, previous_target: Path | None, target: Path
+) -> None:
+    marker_path.parent.mkdir(parents=True, exist_ok=True)
+    data = {
+        "previous": str(previous_target) if previous_target is not None else None,
+        "applied": target.name,
+        "applied_at_epoch_ms": int(time.time() * 1000),
+    }
+    tmp = marker_path.with_suffix(marker_path.suffix + ".tmp")
+    with tmp.open("w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
+    os.replace(tmp, marker_path)  # atomic on POSIX -- no half-written marker
+
+
+def _clear_pending_verify_marker(marker_path: Path) -> None:
+    try:
+        marker_path.unlink()
+    except FileNotFoundError:
+        pass
+
+
 def apply_hub_update(
     cache_dir: str | Path,
     release_root: str | Path,
@@ -62,10 +84,16 @@ def apply_hub_update(
     health_check_retries: int = 15,
     health_check_interval_sec: float = 2.0,
     sleep: Callable[[float], None] = time.sleep,
+    pending_verify_marker_path: str | Path | None = None,
 ) -> dict:
     cache_dir = Path(cache_dir)
     release_root = Path(release_root)
     current_link = Path(current_link)
+    marker_path = (
+        Path(pending_verify_marker_path)
+        if pending_verify_marker_path is not None
+        else current_link.parent / "pending-verify.json"
+    )
     version = (cache_dir / "active-hub-version").read_text().strip()
     source = cache_dir / "installed" / f"hub-{version}"
     if not source.exists():
@@ -81,9 +109,14 @@ def apply_hub_update(
         shutil.rmtree(target)
     shutil.copytree(source, target)
 
+    # Persist what we're about to do *before* the symlink moves, so a crash
+    # or reboot mid-verification leaves fitrace-guard enough to recover from.
+    _write_pending_verify_marker(marker_path, previous_target, target)
+
     _point_symlink(current_link, target)
 
     if not restart:
+        _clear_pending_verify_marker(marker_path)
         return {
             "state": "applied",
             "version": version,
@@ -102,6 +135,7 @@ def apply_hub_update(
         interval_sec=health_check_interval_sec,
         sleep=sleep,
     ):
+        _clear_pending_verify_marker(marker_path)
         return {
             "state": "applied",
             "version": version,
@@ -115,6 +149,7 @@ def apply_hub_update(
     if previous_target is not None:
         _point_symlink(current_link, previous_target)
         runner(["systemctl", "restart", service_name])
+        _clear_pending_verify_marker(marker_path)
         return {
             "state": "rolled_back",
             "version": version,
@@ -126,6 +161,9 @@ def apply_hub_update(
             "applied_at_epoch_ms": int(time.time() * 1000),
         }
 
+    # In-process verification failed and there is nothing to roll back to.
+    # Leave the marker pending -- its null `previous` already tells a later
+    # guard reader there is no safe rollback target either.
     return {
         "state": "failed",
         "version": version,
