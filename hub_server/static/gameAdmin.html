@@ -1819,7 +1819,7 @@
 
       const needsSave = state.raceConfigDirty || raceState !== "READY";
       saveBtn.disabled = !needsSave || raceState === "RUNNING" || busy;
-      startBtn.disabled = raceState === "RUNNING" || state.raceConfigDirty || !readinessReady || busy;
+      startBtn.disabled = raceState === "RUNNING" || !readinessReady || busy;
 
       saveBtn.textContent = state.raceActionPending === "save" ? t("text.processing_race_action") : t("button.save_race");
       startBtn.textContent = state.countdownActive
@@ -2072,6 +2072,10 @@
       state.raceActionPending = "start";
       renderRaceActionButtons();
       try {
+        if (state.raceConfigDirty) {
+          const saved = await configureRace();
+          if (!saved) return;
+        }
         await startRace();
       } finally {
         state.raceActionPending = null;

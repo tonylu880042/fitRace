@@ -151,14 +151,20 @@ def test_configured_and_ready_start_is_enabled_not_save():
 
 
 # ---------------------------------------------------------------------------
-# 3. Configured, ready, but edited since: must save before starting again.
+# 3. Configured, ready, but edited since: Save stays available, and Start
+#    stays enabled too -- startRaceAction() now auto-saves a dirty config
+#    before starting (see test_game_admin_start_autosaves_dirty_config.py),
+#    so the operator is no longer forced through a separate Save step.
 # ---------------------------------------------------------------------------
 
 
-def test_ready_but_dirty_save_is_enabled_start_is_blocked():
+def test_ready_but_dirty_save_and_start_are_both_enabled():
     result = _render(race_state="READY", ready=True, dirty=True)
     assert result["save_disabled"] is False, "Unsaved edits must be savable."
-    assert result["start_disabled"] is True, "Must not start with unsaved changes."
+    assert result["start_disabled"] is False, (
+        "Start must stay enabled with unsaved changes -- startRaceAction() "
+        "auto-saves before starting."
+    )
 
 
 # ---------------------------------------------------------------------------
