@@ -268,5 +268,11 @@
   "results.meta_athletes": "選手數",
   "results.updating": "更新中",
   "results.empty_title": "尚無比賽",
-  "results.empty_hint": "比賽結束後結果會在這裡出現"
+  "results.empty_hint": "比賽結束後結果會在這裡出現",
+  "readiness.blocked_title": "尚無法開始",
+  "readiness.reason_state": "尚未儲存賽事設定",
+  "readiness.reason_target": "尚未設定賽事目標",
+  "readiness.reason_registrations": "尚無選手報名",
+  "readiness.reason_teams": "隊伍設定未完成",
+  "readiness.reason_stations": "站位 {stations} 未連線"
 }

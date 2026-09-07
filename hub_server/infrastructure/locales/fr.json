@@ -268,5 +268,11 @@
   "results.meta_athletes": "Athlètes",
   "results.updating": "Mise à jour",
   "results.empty_title": "Aucune course pour le moment",
-  "results.empty_hint": "Les résultats apparaîtront ici une fois une course terminée."
+  "results.empty_hint": "Les résultats apparaîtront ici une fois une course terminée.",
+  "readiness.blocked_title": "Départ impossible",
+  "readiness.reason_state": "Réglages de course non enregistrés",
+  "readiness.reason_target": "Objectif de course non défini",
+  "readiness.reason_registrations": "Aucun athlète inscrit",
+  "readiness.reason_teams": "Configuration des équipes incomplète",
+  "readiness.reason_stations": "Station {stations} hors ligne"
 }

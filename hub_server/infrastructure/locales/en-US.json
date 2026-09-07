@@ -268,5 +268,11 @@
   "results.meta_athletes": "Athletes",
   "results.updating": "Updating",
   "results.empty_title": "No Races Yet",
-  "results.empty_hint": "Results will appear here when a race finishes"
+  "results.empty_hint": "Results will appear here when a race finishes",
+  "readiness.blocked_title": "Not ready to start",
+  "readiness.reason_state": "Race settings not saved",
+  "readiness.reason_target": "Race target not set",
+  "readiness.reason_registrations": "No athletes registered",
+  "readiness.reason_teams": "Team setup incomplete",
+  "readiness.reason_stations": "Station {stations} offline"
 }
