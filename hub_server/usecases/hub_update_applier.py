@@ -146,6 +146,7 @@ def main():
         restart=os.getenv("FITRACE_UPDATE_RESTART_SERVICE", "1") != "0",
     )
     print(json.dumps(result, ensure_ascii=False))
+    raise SystemExit(0 if result["state"] == "applied" else 1)
 
 
 if __name__ == "__main__":
