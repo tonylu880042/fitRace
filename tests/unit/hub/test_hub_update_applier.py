@@ -18,6 +18,7 @@ def test_apply_hub_update_switches_current_symlink_and_restarts(tmp_path):
         current_link=tmp_path / "current",
         service_name="fitracestudio-hub.service",
         runner=lambda command: calls.append(command),
+        health_check=lambda: True,
     )
 
     target = tmp_path / "releases" / "hub-0.1.1"

@@ -5,12 +5,50 @@ import json
 import shutil
 import subprocess
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Callable
 
 
 def run_command(command: list[str]):
     subprocess.run(command, check=True, timeout=30)
+
+
+def check_hub_health(url: str = "http://localhost:8000/health") -> bool:
+    try:
+        with urllib.request.urlopen(url, timeout=8) as response:
+            body = json.loads(response.read())
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError):
+        return False
+    return body.get("status") == "ok"
+
+
+def wait_for_health(
+    health_check: Callable[[], bool],
+    retries: int = 15,
+    interval_sec: float = 2.0,
+    sleep: Callable[[float], None] = time.sleep,
+) -> bool:
+    for attempt in range(retries):
+        if health_check():
+            return True
+        if attempt < retries - 1:
+            sleep(interval_sec)
+    return False
+
+
+def _point_symlink(link_path: Path, target: Path) -> None:
+    tmp_link = link_path.with_name(f".{link_path.name}.tmp")
+    if tmp_link.exists() or tmp_link.is_symlink():
+        tmp_link.unlink()
+    tmp_link.symlink_to(target)
+    os.replace(tmp_link, link_path)
+
+
+def _release_version(release_path: Path) -> str:
+    name = release_path.name
+    return name[len("hub-") :] if name.startswith("hub-") else name
 
 
 def apply_hub_update(
@@ -20,6 +58,10 @@ def apply_hub_update(
     service_name: str,
     restart: bool = True,
     runner: Callable[[list[str]], None] = run_command,
+    health_check: Callable[[], bool] = check_hub_health,
+    health_check_retries: int = 15,
+    health_check_interval_sec: float = 2.0,
+    sleep: Callable[[float], None] = time.sleep,
 ) -> dict:
     cache_dir = Path(cache_dir)
     release_root = Path(release_root)
@@ -29,30 +71,68 @@ def apply_hub_update(
     if not source.exists():
         raise FileNotFoundError(f"staged hub release not found: {source}")
 
+    # Capture the release we are about to replace, before it is overwritten,
+    # so a bad update can be rolled back to it.
+    previous_target = current_link.resolve() if current_link.is_symlink() else None
+
     release_root.mkdir(parents=True, exist_ok=True)
     target = release_root / f"hub-{version}"
     if target.exists():
         shutil.rmtree(target)
     shutil.copytree(source, target)
 
-    tmp_link = current_link.with_name(f".{current_link.name}.tmp")
-    if tmp_link.exists() or tmp_link.is_symlink():
-        tmp_link.unlink()
-    tmp_link.symlink_to(target)
-    os.replace(tmp_link, current_link)
+    _point_symlink(current_link, target)
 
-    service_restart = "not_run"
-    if restart:
+    if not restart:
+        return {
+            "state": "applied",
+            "version": version,
+            "release_path": str(target),
+            "current_link": str(current_link),
+            "service_name": service_name,
+            "service_restart": "not_run",
+            "applied_at_epoch_ms": int(time.time() * 1000),
+        }
+
+    runner(["systemctl", "restart", service_name])
+
+    if wait_for_health(
+        health_check,
+        retries=health_check_retries,
+        interval_sec=health_check_interval_sec,
+        sleep=sleep,
+    ):
+        return {
+            "state": "applied",
+            "version": version,
+            "release_path": str(target),
+            "current_link": str(current_link),
+            "service_name": service_name,
+            "service_restart": "restarted",
+            "applied_at_epoch_ms": int(time.time() * 1000),
+        }
+
+    if previous_target is not None:
+        _point_symlink(current_link, previous_target)
         runner(["systemctl", "restart", service_name])
-        service_restart = "restarted"
+        return {
+            "state": "rolled_back",
+            "version": version,
+            "rolled_back_to": _release_version(previous_target),
+            "release_path": str(target),
+            "current_link": str(current_link),
+            "service_name": service_name,
+            "service_restart": "restarted",
+            "applied_at_epoch_ms": int(time.time() * 1000),
+        }
 
     return {
-        "state": "applied",
+        "state": "failed",
         "version": version,
         "release_path": str(target),
         "current_link": str(current_link),
         "service_name": service_name,
-        "service_restart": service_restart,
+        "service_restart": "restarted",
         "applied_at_epoch_ms": int(time.time() * 1000),
     }
 
