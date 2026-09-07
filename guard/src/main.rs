@@ -45,17 +45,18 @@ fn main() {
     let boot_id = sysinfo::read_boot_id(Path::new(BOOT_ID_PATH)).unwrap_or_default();
     let uptime_sec = sysinfo::read_uptime_sec(Path::new(UPTIME_PATH)).unwrap_or(0.0);
 
-    // TODO(phase 2, network): wire a real /health probe. Until the network
-    // phase lands, health is unverified -- a recovery watchdog should never
-    // treat "we don't know" as "it's fine".
-    let health_ok = false;
+    // TODO(phase 2, network): wire a real /health probe. Phase 2 supplies
+    // the real probe; until then guard deliberately takes no action rather
+    // than guessing -- decide() treats unknown health as NoAction, never as
+    // healthy or unhealthy.
+    let health: Option<bool> = None;
 
     let input = DecisionInput {
         marker: marker.as_ref(),
         state: stored_state.as_ref(),
         current_boot_id: &boot_id,
         current_uptime_sec: uptime_sec,
-        health_ok,
+        health,
         t_verify_sec: config.t_verify_sec,
     };
 

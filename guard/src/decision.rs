@@ -9,7 +9,7 @@ pub struct DecisionInput<'a> {
     pub state: Option<&'a GuardState>,
     pub current_boot_id: &'a str,
     pub current_uptime_sec: f64,
-    pub health_ok: bool,
+    pub health: Option<bool>,
     pub t_verify_sec: f64,
 }
 
@@ -40,8 +40,13 @@ pub fn decide(input: &DecisionInput) -> Decision {
         _ => return Decision::NoAction,
     };
 
-    if input.health_ok {
-        return Decision::HealthyClearMarker;
+    match input.health {
+        // No probe available, or it failed to run: guard must never act on
+        // an unverified premise -- "we don't know" is not "it's fine" and
+        // not "it's broken" either.
+        None => return Decision::NoAction,
+        Some(true) => return Decision::HealthyClearMarker,
+        Some(false) => {}
     }
 
     let (first_seen_uptime_sec, boot_count) = match input.state {
@@ -96,7 +101,7 @@ mod tests {
             state: None,
             current_boot_id: "boot-a",
             current_uptime_sec: 100.0,
-            health_ok: false,
+            health: Some(false),
             t_verify_sec: 600.0,
         };
         assert_eq!(decide(&input), Decision::NoAction);
@@ -110,7 +115,7 @@ mod tests {
             state: None,
             current_boot_id: "boot-a",
             current_uptime_sec: 10_000.0,
-            health_ok: false,
+            health: Some(false),
             t_verify_sec: 600.0,
         };
         assert_eq!(decide(&input), Decision::NoAction);
@@ -125,7 +130,7 @@ mod tests {
             state: Some(&s),
             current_boot_id: "boot-a",
             current_uptime_sec: 999_999.0,
-            health_ok: true,
+            health: Some(true),
             t_verify_sec: 600.0,
         };
         assert_eq!(decide(&input), Decision::HealthyClearMarker);
@@ -139,7 +144,7 @@ mod tests {
             state: None,
             current_boot_id: "boot-a",
             current_uptime_sec: 50.0,
-            health_ok: false,
+            health: Some(false),
             t_verify_sec: 600.0,
         };
         assert_eq!(
@@ -159,7 +164,7 @@ mod tests {
             state: Some(&s),
             current_boot_id: "boot-a",
             current_uptime_sec: 599.999,
-            health_ok: false,
+            health: Some(false),
             t_verify_sec: 600.0,
         };
         assert_eq!(
@@ -179,7 +184,7 @@ mod tests {
             state: Some(&s),
             current_boot_id: "boot-a",
             current_uptime_sec: 600.0,
-            health_ok: false,
+            health: Some(false),
             t_verify_sec: 600.0,
         };
         assert_eq!(
@@ -200,7 +205,7 @@ mod tests {
             state: Some(&s),
             current_boot_id: "boot-a",
             current_uptime_sec: 10_000.0,
-            health_ok: false,
+            health: Some(false),
             t_verify_sec: 600.0,
         };
         assert_eq!(
@@ -221,7 +226,7 @@ mod tests {
             state: Some(&s),
             current_boot_id: "boot-b",
             current_uptime_sec: 5.0,
-            health_ok: false,
+            health: Some(false),
             t_verify_sec: 600.0,
         };
         // boot_count becomes 2 -> the boot-count arm fires immediately,
@@ -244,7 +249,7 @@ mod tests {
             state: Some(&s),
             current_boot_id: "boot-a",
             current_uptime_sec: 5.0,
-            health_ok: false,
+            health: Some(false),
             t_verify_sec: 600.0,
         };
         assert_eq!(
@@ -280,12 +285,63 @@ mod tests {
                 state: Some(&s),
                 current_boot_id: "boot-a",
                 current_uptime_sec: 5.0,
-                health_ok: false,
+                health: Some(false),
                 t_verify_sec: 600.0,
             })
         };
 
         assert_eq!(input_for(&future), expected);
         assert_eq!(input_for(&past), expected);
+    }
+
+    #[test]
+    fn unknown_health_well_past_t_verify_is_no_action_not_rollback() {
+        let m = marker(Some(PREV));
+        let s = state("boot-a", 0.0, 1);
+        let input = DecisionInput {
+            marker: Some(&m),
+            state: Some(&s),
+            current_boot_id: "boot-a",
+            current_uptime_sec: 10_000.0,
+            health: None,
+            t_verify_sec: 600.0,
+        };
+        assert_eq!(decide(&input), Decision::NoAction);
+    }
+
+    #[test]
+    fn unknown_health_at_rollback_boot_count_threshold_is_no_action_not_rollback() {
+        let m = marker(Some(PREV));
+        let s = state("boot-a", 0.0, 1);
+        let input = DecisionInput {
+            marker: Some(&m),
+            state: Some(&s),
+            current_boot_id: "boot-b",
+            current_uptime_sec: 5.0,
+            health: None,
+            t_verify_sec: 600.0,
+        };
+        // boot_count would become 2 (the rollback threshold) if health were
+        // known -- with health unknown, guard must still take no action.
+        assert_eq!(decide(&input), Decision::NoAction);
+    }
+
+    #[test]
+    fn unknown_health_does_not_clear_the_marker_either() {
+        // Decision::NoAction leaves the marker file untouched -- unknown
+        // health must never be mistaken for success (HealthyClearMarker).
+        let m = marker(Some(PREV));
+        let s = state("boot-a", 0.0, 1);
+        let input = DecisionInput {
+            marker: Some(&m),
+            state: Some(&s),
+            current_boot_id: "boot-a",
+            current_uptime_sec: 10_000.0,
+            health: None,
+            t_verify_sec: 600.0,
+        };
+        let decision = decide(&input);
+        assert_ne!(decision, Decision::HealthyClearMarker);
+        assert_eq!(decision, Decision::NoAction);
     }
 }
