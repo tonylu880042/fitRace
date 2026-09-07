@@ -890,9 +890,19 @@
     @media (max-width: 640px) {
       .grid-2,
       .grid-3,
-      .guidance-grid,
-      .summary-grid {
+      .guidance-grid {
         grid-template-columns: 1fr;
+      }
+      .summary-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .top-actions {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        min-width: 0;
+      }
+      .top-actions > * {
+        flex: 0 0 auto;
       }
       .button-row button {
         width: 100%;
