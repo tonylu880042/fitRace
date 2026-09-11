@@ -1003,6 +1003,27 @@
     }
 
     @media (max-width: 820px) {
+      /* Destructive "Disconnect all & clear bindings" used to sit first
+         under the header -- the most prominent control on the phone's
+         first screen. Push it to the end of .app via flex order (header,
+         the two banners, and #edge-workspace all stay direct children of
+         .app at the default order: 0) and de-emphasise it as a danger
+         outline instead of the bright btn-primary accent. */
+      .app {
+        display: flex;
+        flex-direction: column;
+      }
+
+      .disconnect-all-bar {
+        order: 1;
+      }
+
+      .disconnect-all-button {
+        background: transparent;
+        border-color: var(--danger);
+        color: var(--danger);
+      }
+
       .workspace {
         grid-template-columns: 1fr;
       }

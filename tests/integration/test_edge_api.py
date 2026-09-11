@@ -4152,3 +4152,58 @@ def test_edge_operator_shows_a_hub_setup_link_while_pairing_is_blocked():
 
     assert '"hub.go_to_setup": "Go to Central Hub setup"' in source
     assert '"hub.go_to_setup": "前往 Central Hub 設定"' in source
+
+
+def test_edge_operator_disconnect_all_bar_moves_to_the_end_on_phones():
+    # Destructive "Disconnect all & clear bindings" used to be the first
+    # thing under the header on a phone -- the most prominent control on
+    # the first screen. Push it to the end of .app via flex order, restyle
+    # as a danger outline (not the bright btn-primary accent), and leave
+    # desktop (and the 1100px stacking breakpoint) untouched.
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    # .app's direct children -- header, the two banners, the disconnect bar,
+    # and the workspace -- must stay siblings for the `order` swap to work.
+    app_open = source.index('<div class="app" id="app">')
+    header_index = source.index('<header class="op-header">', app_open)
+    admin_banner_index = source.index('id="admin-auth-banner"', app_open)
+    power_banner_index = source.index('id="power-dry-run-banner"', app_open)
+    disconnect_bar_index = source.index('class="disconnect-all-bar"', app_open)
+    workspace_index = source.index('id="edge-workspace"', app_open)
+    assert (
+        app_open
+        < header_index
+        < admin_banner_index
+        < power_banner_index
+        < disconnect_bar_index
+        < workspace_index
+    )
+
+    mobile_start = source.index("@media (max-width: 820px)")
+    mobile_end = source.index("</style>", mobile_start)
+    mobile_source = _strip_js_comments(source[mobile_start:mobile_end])
+
+    app_rule_index = mobile_source.index(".app {")
+    app_rule = mobile_source[app_rule_index : mobile_source.index("}", app_rule_index)]
+    assert "display: flex;" in app_rule
+    assert "flex-direction: column;" in app_rule
+
+    bar_rule_index = mobile_source.index(".disconnect-all-bar {")
+    bar_rule = mobile_source[bar_rule_index : mobile_source.index("}", bar_rule_index)]
+    assert "order: 1;" in bar_rule
+
+    button_rule_index = mobile_source.index(".disconnect-all-button {")
+    button_rule = mobile_source[
+        button_rule_index : mobile_source.index("}", button_rule_index)
+    ]
+    assert "background: transparent;" in button_rule
+    assert "border-color: var(--danger);" in button_rule
+    assert "color: var(--danger);" in button_rule
+
+    # Must not touch the 1100px stacking breakpoint or its test.
+    responsive_start = source.index("@media (max-width: 1100px)")
+    responsive_end = source.index("@media (max-width: 820px)", responsive_start)
+    responsive_source = source[responsive_start:responsive_end]
+    assert "order:" not in responsive_source
+    assert "display: flex;" not in responsive_source
