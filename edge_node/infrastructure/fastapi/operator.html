@@ -1024,6 +1024,14 @@
         color: var(--danger);
       }
 
+      /* iOS Safari zooms the whole page when a <16px form control gets
+         focus -- keep this select's tap target and text large enough to
+         avoid that. */
+      .language-select {
+        height: 44px;
+        font-size: 16px;
+      }
+
       .workspace {
         grid-template-columns: 1fr;
       }
@@ -1147,7 +1155,7 @@
           <div class="connection-form">
             <div class="field">
               <label for="central-hub-host" data-i18n="hub.host_label">Host name or IP</label>
-              <input id="central-hub-host" type="text" autocomplete="off" placeholder="192.168.0.10">
+              <input id="central-hub-host" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="192.168.0.10">
             </div>
             <div class="field">
               <label for="central-hub-port" data-i18n="hub.port_label">MQTT port</label>

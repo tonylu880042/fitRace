@@ -4207,3 +4207,53 @@ def test_edge_operator_disconnect_all_bar_moves_to_the_end_on_phones():
     responsive_source = source[responsive_start:responsive_end]
     assert "order:" not in responsive_source
     assert "display: flex;" not in responsive_source
+
+
+def test_edge_operator_language_select_and_hub_host_are_phone_friendly():
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    mobile_start = source.index("@media (max-width: 820px)")
+    mobile_end = source.index("</style>", mobile_start)
+    mobile_source = _strip_js_comments(source[mobile_start:mobile_end])
+
+    select_rule_index = mobile_source.index(".language-select {")
+    select_rule = mobile_source[
+        select_rule_index : mobile_source.index("}", select_rule_index)
+    ]
+    assert "height: 44px;" in select_rule
+    assert "font-size: 16px;" in select_rule
+
+    host_input_index = source.index('id="central-hub-host"')
+    host_input_tag = source[host_input_index : source.index(">", host_input_index)]
+    assert 'autocapitalize="off"' in host_input_tag
+    assert 'autocorrect="off"' in host_input_tag
+    assert 'spellcheck="false"' in host_input_tag
+
+
+def test_edge_maintenance_hub_input_and_tap_targets_are_phone_friendly():
+    client = TestClient(edge_app_module.app)
+    source = client.get("/maintenance").text
+
+    hub_input_index = source.index('id="central-hub-input"')
+    hub_input_tag = source[hub_input_index : source.index(">", hub_input_index)]
+    assert 'autocapitalize="off"' in hub_input_tag
+    assert 'autocorrect="off"' in hub_input_tag
+    assert 'spellcheck="false"' in hub_input_tag
+
+    mobile_start = source.index("@media (max-width: 820px)")
+    mobile_end = source.index("</style>", mobile_start)
+    mobile_source = _strip_js_comments(source[mobile_start:mobile_end])
+
+    summary_rule_index = mobile_source.index(".antenna-advanced summary {")
+    summary_rule = mobile_source[
+        summary_rule_index : mobile_source.index("}", summary_rule_index)
+    ]
+    assert "min-height: 44px;" in summary_rule
+    assert "display" not in summary_rule
+
+    button_rule_index = mobile_source.index(".button-grid button {")
+    button_rule = mobile_source[
+        button_rule_index : mobile_source.index("}", button_rule_index)
+    ]
+    assert "min-height: 44px;" in button_rule

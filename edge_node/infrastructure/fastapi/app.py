@@ -1566,6 +1566,8 @@ EDGE_SETUP_HTML = """
       main { grid-template-columns: 1fr; }
       header { align-items: flex-start; flex-direction: column; }
       .button-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .button-grid button { min-height: 44px; }
+      .antenna-advanced summary { padding: 10px 0; min-height: 44px; }
       .binding-row { grid-template-columns: 1fr; }
       .binding-row .binding-target { grid-column: auto; }
       .monitor-grid { grid-template-columns: 1fr; }
@@ -1706,7 +1708,7 @@ EDGE_SETUP_HTML = """
           <div class="status-line"><span data-i18n="bindings.node_id">Edge node</span><strong id="config-node-id">--</strong></div>
           <div class="field" style="margin-top:12px;">
             <label data-i18n="hub.address_label">Central Hub address</label>
-            <input id="central-hub-input" type="text" autocomplete="off" placeholder="localhost">
+            <input id="central-hub-input" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="localhost">
             <div class="sub" data-i18n="hub.address_hint">Use "localhost" when the hub runs on this device, or a .local hostname for a separate hub. "auto" also works.</div>
           </div>
           <div class="binding-list" id="binding-list" style="margin-top:14px;"></div>
