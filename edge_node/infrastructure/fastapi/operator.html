@@ -439,6 +439,14 @@
     .message.error { color: var(--danger); }
     .message.ok { color: var(--ok); }
 
+    #hub-setup-link {
+      display: flex;
+      align-items: center;
+      min-height: 44px;
+      color: var(--accent);
+      font-weight: 700;
+    }
+
     .op-footer {
       margin-top: 22px;
       text-align: center;
@@ -1170,6 +1178,7 @@
           </section>
           <button id="add-device-btn" class="btn-primary" type="button" data-i18n="operator.add_device">+ Add device</button>
           <div class="message" id="add-device-message"></div>
+          <a id="hub-setup-link" href="#central-hub-title" data-i18n="hub.go_to_setup" hidden>Go to Central Hub setup</a>
           <footer class="op-footer">
             <a href="/maintenance" id="maintenance-link" data-i18n="operator.maintenance_link">Maintenance mode</a>
           </footer>
@@ -1800,6 +1809,7 @@
       document.getElementById("add-device-message").textContent = centralHubFormDirty
         ? t("hub.unsaved")
         : (!centralHubReady ? t("hub.required") : (full ? t("operator.add_device_full") : ""));
+      document.getElementById("hub-setup-link").hidden = centralHubReady && !centralHubFormDirty;
     }
 
     function updateBindingCardLeaves() {

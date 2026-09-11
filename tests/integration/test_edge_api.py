@@ -4123,3 +4123,32 @@ def test_edge_locales_have_uart_monitor_toggle_labels():
         assert key in en, key
         assert key in zh_tw, key
     assert set(en.keys()) == set(zh_tw.keys())
+
+
+def test_edge_operator_shows_a_hub_setup_link_while_pairing_is_blocked():
+    # Phone review: the Wi-Fi/Central Hub panels sit ~3 screens below
+    # "+ Add device" (deliberate -- work area first). When the hub isn't
+    # ready, add-device-message says hub.required/hub.unsaved but nothing
+    # leads the customer to the Hub form. A native in-page anchor jump
+    # (no JS scrolling) fixes that.
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    message_index = source.index('id="add-device-message"')
+    link_index = source.index('id="hub-setup-link"')
+    assert message_index < link_index
+    assert (
+        '<a id="hub-setup-link" href="#central-hub-title" '
+        'data-i18n="hub.go_to_setup" hidden'
+    ) in source
+
+    render_start = source.index("function renderBindingCards()")
+    render_end = source.index("function updateBindingCardLeaves()")
+    render_fn = _strip_js_comments(source[render_start:render_end])
+    assert (
+        'document.getElementById("hub-setup-link").hidden = '
+        "centralHubReady && !centralHubFormDirty;"
+    ) in render_fn
+
+    assert '"hub.go_to_setup": "Go to Central Hub setup"' in source
+    assert '"hub.go_to_setup": "前往 Central Hub 設定"' in source
