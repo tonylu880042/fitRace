@@ -4197,9 +4197,27 @@ def test_edge_operator_disconnect_all_bar_moves_to_the_end_on_phones():
     button_rule = mobile_source[
         button_rule_index : mobile_source.index("}", button_rule_index)
     ]
-    assert "background: transparent;" in button_rule
-    assert "border-color: var(--danger);" in button_rule
-    assert "color: var(--danger);" in button_rule
+    # Plain substring checks are fragile here: "color: var(--danger);" is
+    # also a substring of "border-color: var(--danger);", so a weakened
+    # `color:` declaration (e.g. var(--text)) would slip through a
+    # substring-only assertion undetected. Compare whole trimmed
+    # declaration lines instead.
+    button_declarations = {
+        line.strip().rstrip(";").strip()
+        for line in button_rule.splitlines()
+        if ":" in line
+    }
+    assert "background: transparent" in button_declarations
+    assert "border-color: var(--danger)" in button_declarations
+    assert "color: var(--danger)" in button_declarations
+
+    # .btn-primary (a single class selector, same specificity as
+    # .disconnect-all-button) sets the bright accent background/text --
+    # this rule only wins the cascade because it comes later in the
+    # stylesheet, so pin that source-order dependency down explicitly.
+    btn_primary_index = source.index(".btn-primary {")
+    danger_outline_index = source.index(".disconnect-all-button {", mobile_start)
+    assert btn_primary_index < danger_outline_index
 
     # Must not touch the 1100px stacking breakpoint or its test.
     responsive_start = source.index("@media (max-width: 1100px)")
