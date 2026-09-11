@@ -4257,3 +4257,109 @@ def test_edge_maintenance_hub_input_and_tap_targets_are_phone_friendly():
         button_rule_index : mobile_source.index("}", button_rule_index)
     ]
     assert "min-height: 44px;" in button_rule
+
+
+_CSS_RULE_DISPLAY_RE = re.compile(r"display\s*:\s*([a-zA-Z-]+)")
+_HIDDEN_TAG_RE = re.compile(r"<[a-zA-Z][^>]*\bhidden\b[^>]*>")
+_TAG_ID_RE = re.compile(r'id="([^"]+)"')
+_TAG_CLASS_RE = re.compile(r'class="([^"]+)"')
+
+
+def _flatten_css_rules(css):
+    """Yield (selector-header, declaration-body) for every rule in `css`,
+    recursing into @media (and other @-block) wrappers so a rule inside a
+    breakpoint is reported the same as a top-level one. Comments must
+    already be stripped -- unbalanced braces inside a comment would
+    confuse the brace matching below."""
+    rules = []
+
+    def _walk(text):
+        i = 0
+        n = len(text)
+        while i < n:
+            brace_open = text.find("{", i)
+            if brace_open == -1:
+                break
+            header = text[i:brace_open].strip()
+            depth = 1
+            j = brace_open + 1
+            while depth > 0 and j < n:
+                if text[j] == "{":
+                    depth += 1
+                elif text[j] == "}":
+                    depth -= 1
+                j += 1
+            body = text[brace_open + 1 : j - 1]
+            if header.startswith("@"):
+                _walk(body)
+            else:
+                rules.append((header, body))
+            i = j
+
+    _walk(css)
+    return rules
+
+
+def _rule_display_value(body):
+    match = _CSS_RULE_DISPLAY_RE.search(body)
+    return match.group(1) if match else None
+
+
+def test_edge_operator_hidden_elements_have_a_matching_hidden_display_none_rule():
+    # Regression: #hub-setup-link shipped with `hidden` in markup and a JS
+    # toggle (`.hidden = ...`), but its only CSS rule was the bare
+    # `#hub-setup-link { display: flex; ... }` selector -- an author ID
+    # selector beats the UA `[hidden] { display: none }` rule, so the link
+    # was visible at all times regardless of what the JS set `.hidden` to.
+    # This page already has the correct pattern in two other places
+    # (.wifi-picker-body[hidden], .batch-progress-overlay[hidden]); this
+    # test makes sure every element that ships `hidden` in markup AND has
+    # an id/class rule setting a non-none `display` also has a matching
+    # `<selector>[hidden] { display: none; }` guard, so this class of bug
+    # can't silently regress on some other element either.
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    style_start = source.index("<style>")
+    style_end = source.index("</style>")
+    css = _strip_js_comments(source[style_start + len("<style>") : style_end])
+    rules = _flatten_css_rules(css)
+
+    rules_by_selector = {}
+    for header, body in rules:
+        for selector in (piece.strip() for piece in header.split(",")):
+            rules_by_selector.setdefault(selector, []).append(body)
+
+    checked_hub_setup_link = False
+    violations = []
+    for tag in _HIDDEN_TAG_RE.findall(source):
+        selectors = []
+        id_match = _TAG_ID_RE.search(tag)
+        if id_match:
+            selectors.append(f"#{id_match.group(1)}")
+        class_match = _TAG_CLASS_RE.search(tag)
+        if class_match:
+            selectors.extend(f".{c}" for c in class_match.group(1).split())
+
+        for selector in selectors:
+            if selector == "#hub-setup-link":
+                checked_hub_setup_link = True
+            bodies = rules_by_selector.get(selector, [])
+            sets_visible_display = any(
+                _rule_display_value(body) not in (None, "none") for body in bodies
+            )
+            if not sets_visible_display:
+                continue
+            guard_bodies = rules_by_selector.get(f"{selector}[hidden]", [])
+            guarded = any(_rule_display_value(body) == "none" for body in guard_bodies)
+            if not guarded:
+                violations.append(selector)
+
+    # Sanity check that the scan actually walked #hub-setup-link's markup --
+    # otherwise this test would pass vacuously if the id or the `hidden`
+    # attribute were ever removed from that tag.
+    assert checked_hub_setup_link
+    assert not violations, (
+        "elements with a non-none `display` rule but no [hidden] display:none "
+        f"guard: {violations}"
+    )
