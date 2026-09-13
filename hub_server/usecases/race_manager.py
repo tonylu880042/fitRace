@@ -43,6 +43,9 @@ class RaceManager:
         self._station_divisions: Dict[int, Optional[str]] = (
             {}
         )  # station_number (int) -> division ("men"/"women"/None)
+        self._station_relay_members: Dict[int, Optional[list]] = (
+            {}
+        )  # station_number (int) -> list of member names (str) for relay, or None
         self._station_has_avatar: Dict[int, bool] = (
             {}
         )  # station_number (int) -> has_avatar (bool)
@@ -594,6 +597,7 @@ class RaceManager:
             self._station_registrations.clear()
             self._station_teams.clear()
             self._station_divisions.clear()
+            self._station_relay_members.clear()
             self._station_has_avatar.clear()
             self._active_nodes.clear()
 
@@ -620,6 +624,7 @@ class RaceManager:
             self._station_registrations.clear()
             self._station_teams.clear()
             self._station_divisions.clear()
+            self._station_relay_members.clear()
             self._station_has_avatar.clear()
             self._active_nodes.clear()
 
@@ -711,6 +716,8 @@ class RaceManager:
                 del self._station_teams[station_number]
             if station_number in self._station_divisions:
                 del self._station_divisions[station_number]
+            if station_number in self._station_relay_members:
+                del self._station_relay_members[station_number]
             if station_number in self._station_has_avatar:
                 del self._station_has_avatar[station_number]
             self._persist_settings()
@@ -733,12 +740,14 @@ class RaceManager:
         team_name: Optional[str] = None,
         has_avatar: bool = False,
         division: Optional[str] = None,
+        relay_members: Optional[list] = None,
     ):
         if self._state not in (RaceState.IDLE, RaceState.READY):
             raise ValueError(f"Cannot register athletes in state {self._state}")
         self._station_registrations[station_number] = athlete_name
         self._station_teams[station_number] = team_name
         self._station_divisions[station_number] = division
+        self._station_relay_members[station_number] = relay_members
         self._station_has_avatar[station_number] = has_avatar
 
     def get_stations_status(self) -> dict:
@@ -762,6 +771,7 @@ class RaceManager:
                 "registered": sn in self._station_registrations,
                 "team_name": self._station_teams.get(sn),
                 "division": self._station_divisions.get(sn),
+                "relay_members": self._station_relay_members.get(sn),
                 "has_avatar": self._station_has_avatar.get(sn, False),
             }
 
@@ -775,6 +785,7 @@ class RaceManager:
                     "registered": True,
                     "team_name": self._station_teams.get(sn),
                     "division": self._station_divisions.get(sn),
+                    "relay_members": self._station_relay_members.get(sn),
                     "has_avatar": self._station_has_avatar.get(sn, False),
                 }
 
@@ -891,6 +902,7 @@ class RaceManager:
         self._station_registrations.clear()
         self._station_teams.clear()
         self._station_divisions.clear()
+        self._station_relay_members.clear()
         self._station_has_avatar.clear()
         self._active_nodes.clear()
         # Reset must actually stick: without this, race_settings.json still

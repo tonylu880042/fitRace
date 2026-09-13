@@ -162,6 +162,7 @@ class ConfigurePayload(BaseModel):
     team_completion_policy: str = "aggregate"
     target_value: float = 0.0
     duration_sec: int = 0
+    relay_legs: Optional[int] = None
 
 
 class LeaderboardDisplayPayload(BaseModel):
@@ -201,6 +202,11 @@ class RegisterAthletePayload(BaseModel):
     # entirely, same normalization as athlete_name below.
     division: Optional[Literal["men", "women"]] = None
     avatar_base64: Optional[str] = None
+    # Relay team roster: each member runs one leg on this station's machine,
+    # one after another. An empty list behaves like omitting the field
+    # entirely (normalized to None below), matching the athlete_name/
+    # division blank-is-none convention above.
+    relay_members: Optional[list[str]] = Field(None, min_length=1, max_length=10)
 
     @field_validator("athlete_name", mode="before")
     @classmethod
@@ -218,6 +224,27 @@ class RegisterAthletePayload(BaseModel):
             return None
         if isinstance(value, str) and not value.strip():
             return None
+        return value
+
+    @field_validator("relay_members", mode="before")
+    @classmethod
+    def _clean_relay_members(cls, value):
+        if value is None:
+            return None
+        cleaned = [member.strip() for member in value if isinstance(member, str)]
+        cleaned = [member for member in cleaned if member]
+        if not cleaned:
+            return None
+        return cleaned
+
+    @field_validator("relay_members")
+    @classmethod
+    def _relay_members_length(cls, value):
+        if value is None:
+            return None
+        for member in value:
+            if len(member) > 80:
+                raise ValueError("Relay member names must be 80 characters or fewer")
         return value
 
 
@@ -632,7 +659,8 @@ def get_race_readiness_status() -> dict:
     registered_stations.sort(key=lambda item: item[0])
 
     is_team_race = bool(config and config.competition_mode == "team")
-    if is_team_race:
+    is_relay_race = bool(config and config.competition_mode == "relay")
+    if is_team_race or is_relay_race:
         participant_stations = registered_stations
         if not registered_stations:
             blocking_issues.append("Register at least one athlete before starting.")
@@ -668,19 +696,19 @@ def get_race_readiness_status() -> dict:
         station_health.append(health_item)
         if health["health"] in ("missing", "stale"):
             issue = station_block_message(station_number, health.get("reason"))
-            if is_team_race:
+            if is_team_race or is_relay_race:
                 blocking_issues.append(issue)
             else:
                 individual_station_issues.append(issue)
 
     unhealthy = [s for s in station_health if s.get("health") != "online"]
-    if is_team_race and unhealthy:
+    if (is_team_race or is_relay_race) and unhealthy:
         station_list = ", ".join(str(s["station_number"]) for s in unhealthy)
         checks["stations"] = build_check(
             "block",
             f"{len(unhealthy)} station(s) need attention (Station {station_list}).",
         )
-    elif not is_team_race and assigned_stations:
+    elif not (is_team_race or is_relay_race) and assigned_stations:
         online_count = sum(
             1 for station in station_health if station.get("health") == "online"
         )
@@ -714,6 +742,31 @@ def get_race_readiness_status() -> dict:
             checks["teams"] = build_check("block", "Team setup needs review.")
         else:
             checks["teams"] = build_check("ok", f"{len(team_names)} teams ready.")
+    elif is_relay_race:
+        relay_issue_count = 0
+        for station_number, station in registered_stations:
+            team_name = (station.get("team_name") or "").strip()
+            relay_members = station.get("relay_members") or []
+            if not team_name:
+                blocking_issues.append(
+                    f"Station {station_number}: relay team needs a team name."
+                )
+                relay_issue_count += 1
+            elif (
+                config.relay_legs is not None
+                and len(relay_members) != config.relay_legs
+            ):
+                blocking_issues.append(
+                    f"Station {station_number}: relay team needs exactly "
+                    f"{config.relay_legs} member(s); has {len(relay_members)}."
+                )
+                relay_issue_count += 1
+        if relay_issue_count:
+            checks["teams"] = build_check("block", "Relay team setup needs review.")
+        else:
+            checks["teams"] = build_check(
+                "ok", f"{len(registered_stations)} relay team(s) ready."
+            )
     elif config:
         checks["teams"] = build_check(
             "info", "Individual race; team rules are not applied."
@@ -1062,6 +1115,7 @@ async def configure_race(payload: ConfigurePayload, request: Request):
             team_completion_policy=payload.team_completion_policy,
             target_value=payload.target_value,
             duration_sec=payload.duration_sec,
+            relay_legs=payload.relay_legs,
         )
         prev_state = race_manager.get_state()
         race_manager.configure(config)
@@ -1276,6 +1330,7 @@ async def register_athlete(payload: RegisterAthletePayload):
             team_name=payload.team_name,
             has_avatar=has_avatar,
             division=payload.division,
+            relay_members=payload.relay_members,
         )
 
         # Broadcast registration success to the dashboard

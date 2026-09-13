@@ -1720,6 +1720,195 @@ def test_team_race_readiness_and_start_succeed_with_a_mix_of_named_and_anonymous
     client.post("/api/race/reset")
 
 
+def test_relay_configure_and_register_round_trip():
+    client.post("/api/race/reset")
+    configured = client.post(
+        "/api/race/configure",
+        json={
+            "race_type": "distance",
+            "target_value": 1000,
+            "competition_mode": "relay",
+            "relay_legs": 4,
+        },
+    )
+    assert configured.status_code == 200
+    assert configured.json()["config"]["relay_legs"] == 4
+    assert configured.json()["config"]["competition_mode"] == "relay"
+
+    set_online_station(1, "node-relay-01")
+    registered = client.post(
+        "/api/race/register",
+        json={
+            "station_number": 1,
+            "team_name": "Volt",
+            "relay_members": ["Alice", "Bob", "Cara", "Dee"],
+        },
+    )
+    assert registered.status_code == 200
+    station = registered.json()["stations"]["1"]
+    assert station["team_name"] == "Volt"
+    assert station["relay_members"] == ["Alice", "Bob", "Cara", "Dee"]
+    client.post("/api/race/reset")
+
+
+def test_relay_register_normalizes_blank_and_whitespace_members():
+    client.post("/api/race/reset")
+    set_online_station(1, "node-relay-blank")
+    registered = client.post(
+        "/api/race/register",
+        json={
+            "station_number": 1,
+            "team_name": "Volt",
+            "relay_members": ["  Alice  ", "", "   ", "Bob"],
+        },
+    )
+    assert registered.status_code == 200
+    station = registered.json()["stations"]["1"]
+    assert station["relay_members"] == ["Alice", "Bob"]
+
+    empty = client.post(
+        "/api/race/register",
+        json={"station_number": 1, "team_name": "Volt", "relay_members": ["", "  "]},
+    )
+    assert empty.status_code == 200
+    assert empty.json()["stations"]["1"]["relay_members"] is None
+    client.post("/api/race/reset")
+
+
+def test_relay_register_rejects_more_than_ten_members():
+    client.post("/api/race/reset")
+    set_online_station(1, "node-relay-too-many")
+    response = client.post(
+        "/api/race/register",
+        json={
+            "station_number": 1,
+            "team_name": "Volt",
+            "relay_members": [f"Runner {i}" for i in range(11)],
+        },
+    )
+    assert response.status_code == 422
+    client.post("/api/race/reset")
+
+
+def test_relay_readiness_blocks_with_no_registered_stations():
+    client.post("/api/race/reset")
+    from hub_server.infrastructure.fastapi.app import node_registry
+
+    node_registry.clear()
+    set_online_station(1, "node-relay-01")
+    client.post(
+        "/api/race/configure",
+        json={
+            "race_type": "distance",
+            "target_value": 1000,
+            "competition_mode": "relay",
+            "relay_legs": 4,
+        },
+    )
+
+    readiness = client.get("/api/race/readiness")
+    payload = readiness.json()
+    assert payload["ready"] is False
+    assert (
+        "Register at least one athlete before starting." in payload["blocking_issues"]
+    )
+    client.post("/api/race/reset")
+
+
+def test_relay_readiness_blocks_station_missing_team_name():
+    client.post("/api/race/reset")
+    from hub_server.infrastructure.fastapi.app import node_registry
+
+    node_registry.clear()
+    set_online_station(1, "node-relay-01")
+    client.post(
+        "/api/race/register",
+        json={"station_number": 1, "relay_members": ["Alice", "Bob"]},
+    )
+    client.post(
+        "/api/race/configure",
+        json={
+            "race_type": "distance",
+            "target_value": 1000,
+            "competition_mode": "relay",
+            "relay_legs": 2,
+        },
+    )
+
+    readiness = client.get("/api/race/readiness")
+    payload = readiness.json()
+    assert payload["ready"] is False
+    assert any("needs a team name" in issue for issue in payload["blocking_issues"])
+    assert payload["checks"]["teams"]["status"] == "block"
+    client.post("/api/race/reset")
+
+
+def test_relay_readiness_blocks_station_with_wrong_member_count():
+    client.post("/api/race/reset")
+    from hub_server.infrastructure.fastapi.app import node_registry
+
+    node_registry.clear()
+    set_online_station(1, "node-relay-01")
+    client.post(
+        "/api/race/register",
+        json={
+            "station_number": 1,
+            "team_name": "Volt",
+            "relay_members": ["Alice", "Bob"],
+        },
+    )
+    client.post(
+        "/api/race/configure",
+        json={
+            "race_type": "distance",
+            "target_value": 1000,
+            "competition_mode": "relay",
+            "relay_legs": 4,
+        },
+    )
+
+    readiness = client.get("/api/race/readiness")
+    payload = readiness.json()
+    assert payload["ready"] is False
+    assert any(
+        "needs exactly 4 member(s); has 2" in issue
+        for issue in payload["blocking_issues"]
+    )
+    client.post("/api/race/reset")
+
+
+def test_relay_readiness_passes_when_team_and_member_count_match():
+    client.post("/api/race/reset")
+    from hub_server.infrastructure.fastapi.app import node_registry
+
+    node_registry.clear()
+    set_online_station(1, "node-relay-01")
+    client.post(
+        "/api/race/register",
+        json={
+            "station_number": 1,
+            "team_name": "Volt",
+            "relay_members": ["Alice", "Bob"],
+        },
+    )
+    client.post(
+        "/api/race/configure",
+        json={
+            "race_type": "distance",
+            "target_value": 1000,
+            "competition_mode": "relay",
+            "relay_legs": 2,
+        },
+    )
+
+    readiness = client.get("/api/race/readiness")
+    payload = readiness.json()
+    assert payload["ready"] is True
+    assert payload["blocking_issues"] == []
+    assert payload["checks"]["teams"]["status"] == "ok"
+    client.post("/api/race/reset")
+
+
 def test_stopped_class_is_not_filed_as_a_race_result_but_a_real_race_still_is(
     monkeypatch, tmp_path
 ):

@@ -15,8 +15,15 @@ class RaceConfig(BaseModel):
     race_type: Literal["distance", "time", "calories", "max_power", "watts"] = Field(
         ..., description="Type of race"
     )
-    competition_mode: Literal["individual", "team"] = Field(
+    competition_mode: Literal["individual", "team", "relay"] = Field(
         "individual", description="Whether rankings are scored by athlete or team"
+    )
+    relay_legs: int | None = Field(
+        None,
+        ge=2,
+        le=10,
+        description="Number of relay legs (team size) for a relay race; "
+        "required when competition_mode is relay, must be unset otherwise",
     )
     team_scoring_policy: Literal["average", "total"] = Field(
         "average",
@@ -47,6 +54,23 @@ class RaceConfig(BaseModel):
             raise ValueError(
                 "duration_sec must be greater than 0 for time, max_power, and watts races"
             )
+        return self
+
+    @model_validator(mode="after")
+    def validate_relay_legs(self):
+        if self.competition_mode == "relay":
+            if self.race_type != "distance":
+                raise ValueError("Relay races must use race_type distance")
+            if self.relay_legs is None:
+                raise ValueError(
+                    "relay_legs is required when competition_mode is relay"
+                )
+        elif self.relay_legs is not None:
+            # Non-relay races never carry a leg count -- force it back to
+            # None rather than reject, so a stale value left over from
+            # switching competition_mode away from relay doesn't need to be
+            # scrubbed by every caller.
+            self.relay_legs = None
         return self
 
 
