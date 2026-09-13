@@ -1004,7 +1004,13 @@
                     <select id="competition-mode" onchange="syncCompetitionFields(); renderStations(); markRaceConfigDirty()">
                       <option value="individual" data-i18n="option.individual">Individual Race (Anonymous Allowed)</option>
                       <option value="team" data-i18n="option.team">Team Race</option>
+                      <option value="relay" data-i18n="option.relay">Relay Race (same machine)</option>
                     </select>
+                  </div>
+                  <div class="field" id="relay-legs-field">
+                    <label for="relay-legs" data-i18n="label.relay_legs">Legs</label>
+                    <input type="number" id="relay-legs" min="2" max="10" value="4" oninput="markRaceConfigDirty()">
+                    <p class="field-note" id="relay-legs-note" data-i18n="text.relay_field_note">Applies to relay races only.</p>
                   </div>
                   <div class="field" id="team-scoring-field">
                     <label for="team-scoring-policy" data-i18n="label.team_scoring">Team Scoring</label>
@@ -1271,6 +1277,9 @@
         "label.competition": "Competition",
         "label.team_scoring": "Team Scoring",
         "label.completion_rule": "Completion Rule",
+        "label.relay_legs": "Legs",
+        "label.relay_team_name": "Team Name",
+        "label.relay_members": "Members (one per line)",
         "label.target_distance": "Target Distance (m)",
         "label.target_calories": "Target Calories (kcal)",
         "label.time_limit": "Time Limit (s)",
@@ -1287,6 +1296,7 @@
         "option.max_power": "Max Power Challenge",
         "option.individual": "Individual Race (Anonymous Allowed)",
         "option.team": "Team Race",
+        "option.relay": "Relay Race (same machine)",
         "option.team_average": "Team Average",
         "option.team_total": "Team Total",
         "option.team_target": "Team Target",
@@ -1443,7 +1453,11 @@
         "message.walk_in_added": "Walk-in added.",
         "message.entry_marked_absent": "Marked absent.",
         "message.entry_requeued": "Requeued.",
-        "confirm.skip_unraced_heat": "The current heat ({names}) has not raced yet. Skip it and load the next heat?"
+        "confirm.skip_unraced_heat": "The current heat ({names}) has not raced yet. Skip it and load the next heat?",
+        "text.relay_field_note": "Applies to relay races only.",
+        "text.relay_race": "Relay race: teammates take turns running one leg each on the same machine. The team finishes when the last leg is done.",
+        "button.register_relay_team": "Register Team",
+        "message.relay_team_registered": "Relay team registered."
       }
     };
 
@@ -1464,6 +1478,9 @@
       "label.competition": "競賽模式",
       "label.team_scoring": "隊伍計分",
       "label.completion_rule": "完成規則",
+      "label.relay_legs": "棒數",
+      "label.relay_team_name": "隊伍名稱",
+      "label.relay_members": "隊員（每行一人）",
       "label.target_distance": "目標距離 (m)",
       "label.target_calories": "目標卡路里 (kcal)",
       "label.time_limit": "時間限制 (s)",
@@ -1480,6 +1497,7 @@
       "option.max_power": "最大功率挑戰",
       "option.individual": "個人賽（可匿名參加）",
       "option.team": "隊伍賽",
+      "option.relay": "接力賽（同一台機器）",
       "option.team_average": "隊伍平均",
       "option.team_total": "隊伍總計",
       "option.team_target": "隊伍目標",
@@ -1636,7 +1654,11 @@
       "message.walk_in_added": "現場報名已新增。",
       "message.entry_marked_absent": "已標記缺席。",
       "message.entry_requeued": "已重新排入。",
-      "confirm.skip_unraced_heat": "目前這組（{names}）還沒比賽，確定要跳過並載入下一組嗎？"
+      "confirm.skip_unraced_heat": "目前這組（{names}）還沒比賽，確定要跳過並載入下一組嗎？",
+      "text.relay_field_note": "僅適用於接力賽。",
+      "text.relay_race": "接力賽:隊員輪流在同一台機器上各跑一棒,最後一棒完成即為隊伍完賽。",
+      "button.register_relay_team": "登記隊伍",
+      "message.relay_team_registered": "接力隊伍已登記。"
     };
 
     function t(key, params = {}) {
@@ -1738,6 +1760,38 @@
       return keys[raceType] || keys.distance;
     }
 
+    function isRelayCompetitionMode(mode) {
+      return mode === "relay";
+    }
+
+    // Splits a relay members textarea (one name per line) into a clean
+    // roster: trims each line and drops blanks. Mirrors the hub's own
+    // RegisterAthletePayload._clean_relay_members normalization
+    // (hub_server/infrastructure/fastapi/app.py) so what the operator sees
+    // in the textarea matches what actually gets registered.
+    function relayMembersFromTextarea(text) {
+      return String(text || "")
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+    }
+
+    // Pure markup builder for one station's relay team-registration form
+    // (team name + one-member-per-line roster), so it can be executed and
+    // asserted on directly under node -- see registerRelayTeam() for the
+    // submit handler this form's button wires to.
+    function buildRelayRegistrationFormHtml(stationKey, station) {
+      const teamName = station.team_name || "";
+      const members = (station.relay_members || []).join("\n");
+      return `
+        <div class="relay-registration">
+          <input type="text" id="relay-team-name-${escapeHtml(stationKey)}" class="relay-team-name-input" placeholder="${escapeHtml(t("label.relay_team_name"))}" value="${escapeHtml(teamName)}">
+          <textarea id="relay-members-${escapeHtml(stationKey)}" class="relay-members-input" placeholder="${escapeHtml(t("label.relay_members"))}">${escapeHtml(members)}</textarea>
+          <button type="button" onclick="registerRelayTeam('${escapeHtml(stationKey)}')">${escapeHtml(t("button.register_relay_team"))}</button>
+        </div>
+      `;
+    }
+
     // Single partition over (raceType, isTeamRace): every branch returns both
     // whether the Completion Rule field is disabled AND which note explains
     // why, in one pass -- so there is no separate "is it disabled" check that
@@ -1766,7 +1820,10 @@
       return keys[mode] || keys.classic;
     }
 
-    function teamRuleSummaryText({ isTeamRace, scoring, completion, raceType, targetLabel }) {
+    function teamRuleSummaryText({ isTeamRace, isRelayRace, scoring, completion, raceType, targetLabel }) {
+      if (isRelayRace) {
+        return t("text.relay_race");
+      }
       if (!isTeamRace) {
         return t("text.individual_race");
       }
@@ -1802,7 +1859,26 @@
 
     function syncCompetitionFields() {
       const isTeamRace = $("competition-mode").value === "team";
+      const isRelayRace = isRelayCompetitionMode($("competition-mode").value);
+
+      // A relay race is always a distance race split into equal legs --
+      // force the race type here (not just at configure time) so the rest
+      // of this function, and every guidance text it drives, reasons about
+      // the race the operator will actually get.
+      $("race-type").disabled = isRelayRace;
+      if (isRelayRace && $("race-type").value !== "distance") {
+        $("race-type").value = "distance";
+        const raceNote = $("race-type-note");
+        const raceNoteKey = raceRuleNoteKey("distance");
+        raceNote.dataset.i18n = raceNoteKey;
+        raceNote.textContent = t(raceNoteKey);
+        $("race-target-label").textContent = t("label.target_distance");
+      }
       const raceType = $("race-type").value;
+
+      $("relay-legs-field").classList.toggle("is-disabled", !isRelayRace);
+      $("relay-legs").disabled = !isRelayRace;
+
       $("team-scoring-field").classList.toggle("is-disabled", !isTeamRace);
       $("team-scoring-policy").disabled = !isTeamRace;
       $("team-scoring-note").classList.toggle("show", !isTeamRace);
@@ -1830,6 +1906,7 @@
 
     function updateControlGuidance() {
       const isTeamRace = $("competition-mode").value === "team";
+      const isRelayRace = isRelayCompetitionMode($("competition-mode").value);
       const scoring = $("team-scoring-policy").value;
       const completion = $("team-completion-policy").value;
       const raceType = $("race-type").value;
@@ -1843,7 +1920,7 @@
         sprint_board: [["P1", 96, t("status.fast")], ["P2", 84, t("status.hot")], ["P3", 68, t("status.next")]],
       };
 
-      $("team-rule-summary").textContent = teamRuleSummaryText({ isTeamRace, scoring, completion, raceType, targetLabel });
+      $("team-rule-summary").textContent = teamRuleSummaryText({ isTeamRace, isRelayRace, scoring, completion, raceType, targetLabel });
 
       $("leaderboard-mode-summary").textContent = t(leaderboardModeNoteKey(mode, raceType));
       $("leaderboard-mode-preview").innerHTML = previewRows[mode].map(([label, width, value]) => `
@@ -1953,6 +2030,7 @@
         $("competition-mode").value = config.competition_mode || "individual";
         $("team-scoring-policy").value = config.team_scoring_policy || "average";
         $("team-completion-policy").value = config.team_completion_policy || "aggregate";
+        $("relay-legs").value = config.relay_legs || 4;
         syncRaceFields();
         syncCompetitionFields();
         $("race-target").value = (config.race_type === "distance" || config.race_type === "calories")
@@ -2139,10 +2217,12 @@
         </div>
       `).join("");
 
+      const isRelayRace = isRelayCompetitionMode(state.race?.config?.competition_mode);
       const assigned = keys.map((key) => {
         const station = stations[key] || {};
         const health = getStationHealth(key);
         const signupUrl = `${window.location.origin}/static/signup.html?station=${encodeURIComponent(key)}`;
+        const relayFormHtml = isRelayRace ? buildRelayRegistrationFormHtml(key, station) : "";
         return `
           <div class="row-card">
             <div class="row-main">
@@ -2154,6 +2234,7 @@
               </div>
               <span class="health-pill ${escapeHtml(health.health || "missing")}">${escapeHtml(health.health || "missing")}</span>
             </div>
+            ${relayFormHtml}
           </div>
         `;
       }).join("");
@@ -2166,6 +2247,27 @@
       if (division === "women") return t("option.division_women");
       return "";
     }
+    async function registerRelayTeam(stationKey) {
+      const teamName = $(`relay-team-name-${stationKey}`).value.trim();
+      const members = relayMembersFromTextarea($(`relay-members-${stationKey}`).value);
+      try {
+        state.stations = await fetchJson("/api/race/register", {
+          method: "POST",
+          headers: adminHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({
+            station_number: Number(stationKey),
+            team_name: teamName,
+            relay_members: members,
+          }),
+        });
+        renderStations();
+        await refreshReadiness();
+        setMessage("race-message", t("message.relay_team_registered"), "ok");
+      } catch (error) {
+        setMessage("race-message", error.message, "error");
+      }
+    }
+
 
     function renderRosterHeatList(elementId, entries, emptyKey, withStation) {
       const list = $(elementId);
@@ -2385,7 +2487,8 @@
     }
 
     async function configureRace() {
-      const type = $("race-type").value;
+      const isRelayRace = isRelayCompetitionMode($("competition-mode").value);
+      const type = isRelayRace ? "distance" : $("race-type").value;
       const competitionMode = $("competition-mode").value;
       const teamScoringPolicy = $("team-scoring-policy").value;
       const teamCompletionPolicy = $("team-completion-policy").value;
@@ -2397,6 +2500,7 @@
         team_completion_policy: teamCompletionPolicy,
         target_value: 0,
         duration_sec: 0,
+        relay_legs: isRelayRace ? Number($("relay-legs").value) : null,
       };
       if (type === "distance" || type === "calories") payload.target_value = value;
       else payload.duration_sec = Math.round(value);

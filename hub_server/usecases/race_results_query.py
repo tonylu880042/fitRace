@@ -58,13 +58,17 @@ class RaceResultsQuery:
     def get_records(self) -> dict[str, Any]:
         """Best-of leaderboard per race category, most-recently-contested first.
 
-        A "category" is (race_type, target label, division) e.g.
-        ("distance", "1000 m", None) or ("distance", "500 m", "women").
-        Entries are the top 3 rows across all stored races in that category,
-        ranked by the metric that matters for the race type (see
+        A "category" is (race_type, target label, division, relay_legs)
+        e.g. ("distance", "1000 m", None, None) or ("distance", "500 m",
+        "women", None). relay_legs is None for every non-relay race, so a
+        relay race never mixes into the same category as an individual race
+        at the same distance -- a 1000 m 4-leg relay and a 1000 m
+        individual race both label "1000 m" but must never share a record
+        slate. Entries are the top 3 rows across all stored races in that
+        category, ranked by the metric that matters for the race type (see
         `_record_value`/`_top_three`).
         """
-        categories: dict[tuple[str, str, Any], dict[str, Any]] = {}
+        categories: dict[tuple[str, str, Any, Any], dict[str, Any]] = {}
 
         # Newest-first, so the first race we see for a category is also the
         # most recently contested one -- dict insertion order then gives us
@@ -82,6 +86,7 @@ class RaceResultsQuery:
             label = self._category_label(race_type, config)
             if label is None:
                 continue
+            relay_legs = config.get("relay_legs")
 
             end_time = snapshot.get("end_time_epoch_ms")
             leaderboard = snapshot.get("leaderboard")
@@ -95,11 +100,12 @@ class RaceResultsQuery:
                     continue
                 division = row.get("division")
                 bucket = categories.setdefault(
-                    (race_type, label, division),
+                    (race_type, label, division, relay_legs),
                     {
                         "race_type": race_type,
                         "label": label,
                         "division": division,
+                        "relay_legs": relay_legs,
                         "rows": [],
                     },
                 )
@@ -123,6 +129,7 @@ class RaceResultsQuery:
                     "race_type": bucket["race_type"],
                     "label": bucket["label"],
                     "division": bucket["division"],
+                    "relay_legs": bucket["relay_legs"],
                     "entries": entries,
                 }
             )

@@ -225,16 +225,24 @@ def test_get_athlete_result_not_found_returns_none(tmp_path):
 
 
 def _distance_snapshot_variant(
-    target_value, start_ms, end_ms, race_type="distance", rows=None, duration_sec=0
+    target_value,
+    start_ms,
+    end_ms,
+    race_type="distance",
+    rows=None,
+    duration_sec=0,
+    competition_mode="individual",
+    relay_legs=None,
 ):
     return {
         "state": "STOPPED",
         "config": {
             "race_type": race_type,
-            "competition_mode": "individual",
+            "competition_mode": competition_mode,
             "team_scoring_policy": None,
             "target_value": target_value,
             "duration_sec": duration_sec,
+            "relay_legs": relay_legs,
         },
         "start_time_epoch_ms": start_ms,
         "end_time_epoch_ms": end_ms,
@@ -536,6 +544,108 @@ def test_get_records_no_division_is_its_own_category(tmp_path):
     assert len(records) == 1
     assert records[0]["division"] is None
     assert [e["athlete_name"] for e in records[0]["entries"]] == ["Cara"]
+
+
+def test_get_records_keeps_relay_separate_from_individual_at_same_distance(tmp_path):
+    # A 1000 m relay and a 1000 m individual race must never mix into one
+    # record category, even though race_type/label are identical.
+    store = RaceResultStore(tmp_path / "race_results.jsonl")
+    store.save_finished_snapshot(
+        _distance_snapshot_variant(
+            1000,
+            1000,
+            2000,
+            competition_mode="relay",
+            relay_legs=4,
+            rows={
+                "node-01": _row(
+                    "node-01", "Volt", distance_m=1000, finished_time_ms=90000
+                ),
+            },
+        )
+    )
+    store.save_finished_snapshot(
+        _distance_snapshot_variant(
+            1000,
+            3000,
+            4000,
+            rows={
+                "node-01": _row(
+                    "node-01", "Erin", distance_m=1000, finished_time_ms=80000
+                ),
+            },
+        )
+    )
+    query = RaceResultsQuery(store)
+
+    records = query.get_records()["records"]
+
+    assert len(records) == 2
+    relay_record = next(r for r in records if r["relay_legs"] == 4)
+    individual_record = next(r for r in records if r["relay_legs"] is None)
+    assert relay_record["label"] == "1000 m" == individual_record["label"]
+    assert [e["athlete_name"] for e in relay_record["entries"]] == ["Volt"]
+    assert [e["athlete_name"] for e in individual_record["entries"]] == ["Erin"]
+
+
+def test_get_records_relay_with_different_leg_counts_are_separate_categories(tmp_path):
+    store = RaceResultStore(tmp_path / "race_results.jsonl")
+    store.save_finished_snapshot(
+        _distance_snapshot_variant(
+            1000,
+            1000,
+            2000,
+            competition_mode="relay",
+            relay_legs=4,
+            rows={
+                "node-01": _row(
+                    "node-01", "Volt", distance_m=1000, finished_time_ms=90000
+                ),
+            },
+        )
+    )
+    store.save_finished_snapshot(
+        _distance_snapshot_variant(
+            1000,
+            3000,
+            4000,
+            competition_mode="relay",
+            relay_legs=2,
+            rows={
+                "node-01": _row(
+                    "node-01", "Apex", distance_m=1000, finished_time_ms=70000
+                ),
+            },
+        )
+    )
+    query = RaceResultsQuery(store)
+
+    records = query.get_records()["records"]
+
+    relay_categories = {r["relay_legs"] for r in records}
+    assert relay_categories == {4, 2}
+
+
+def test_get_records_no_relay_legs_is_not_confused_with_zero(tmp_path):
+    store = RaceResultStore(tmp_path / "race_results.jsonl")
+    store.save_finished_snapshot(
+        _distance_snapshot_variant(
+            1000,
+            1000,
+            2000,
+            rows={
+                "node-01": _row(
+                    "node-01", "Erin", distance_m=1000, finished_time_ms=80000
+                ),
+            },
+        )
+    )
+    query = RaceResultsQuery(store)
+
+    records = query.get_records()["records"]
+
+    assert len(records) == 1
+    assert records[0]["relay_legs"] is None
 
 
 def test_get_records_orders_categories_most_recently_contested_first(tmp_path):

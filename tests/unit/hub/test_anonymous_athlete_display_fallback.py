@@ -267,6 +267,7 @@ def _run_classic_leaderboard_row(nodes_js: str, race_type: str = "distance") -> 
         + _escape_html_stub()
         + _smooth_metric_number_stub()
         + _node_display_name_stub()
+        + 'function relayLegLine() { return ""; }\n'
         + f"const raceType = {json.dumps(race_type)};\n"
         + "const leaderboardFinal = false;\n"
         + "const leaderboardRankByNode = new Map();\n"
@@ -482,6 +483,8 @@ def _run_game_admin_assigned_stations(
         + get_health_fn
         + "\n"
         + "const window = { location: { origin: 'http://test.local' } };\n"
+        + "const isRelayRace = false;\n"
+        + "function buildRelayRegistrationFormHtml() { return ''; }\n"
         + f"const stations = {stations_js};\n"
         + "const keys = Object.keys(stations).sort((a, b) => Number(a) - Number(b));\n"
         + f"const assigned = keys.map((key) => {body}).join('');\n"
