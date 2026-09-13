@@ -202,13 +202,15 @@ class RegisterAthletePayload(BaseModel):
     division: Optional[Literal["men", "women"]] = None
     avatar_base64: Optional[str] = None
 
-    @field_validator("athlete_name", mode="before")
+    @field_validator("athlete_name", "team_name", mode="before")
     @classmethod
     def _blank_name_is_none(cls, value):
         if value is None:
             return None
-        if isinstance(value, str) and not value.strip():
-            return None
+        if isinstance(value, str):
+            value = value.strip()
+            if not value:
+                return None
         return value
 
     @field_validator("division", mode="before")
