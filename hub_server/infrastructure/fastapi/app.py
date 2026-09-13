@@ -27,6 +27,11 @@ from hub_server.usecases.race_event_engine import RaceEventEngine
 from hub_server.usecases.race_result_store import RaceResultStore
 from hub_server.usecases.race_results_query import RaceResultsQuery
 from hub_server.usecases.race_settings_store import RaceSettingsStore
+from hub_server.usecases.roster import (
+    MAX_NAME_LENGTH,
+    MAX_TEAM_LENGTH,
+    RosterManager,
+)
 from hub_server.adapters.websocket_manager import WebSocketManager
 from hub_server.infrastructure.build_fingerprint import compute_build_fingerprint
 from hub_server.infrastructure.locales import DEFAULT_LOCALE, list_locales, load_locale
@@ -104,6 +109,9 @@ race_manager = RaceManager(
     settings_store=RaceSettingsStore(
         os.getenv("FITRACE_RACE_SETTINGS_PATH", "data/race_settings.json")
     )
+)
+roster_manager = RosterManager(
+    RaceSettingsStore(os.getenv("FITRACE_ROSTER_PATH", "data/roster.json"))
 )
 ws_manager = WebSocketManager()
 node_registry = NodeRegistry()
@@ -205,6 +213,36 @@ class RegisterAthletePayload(BaseModel):
     @field_validator("athlete_name", "team_name", mode="before")
     @classmethod
     def _blank_name_is_none(cls, value):
+        if value is None:
+            return None
+        if isinstance(value, str):
+            value = value.strip()
+            if not value:
+                return None
+        return value
+
+    @field_validator("division", mode="before")
+    @classmethod
+    def _blank_division_is_none(cls, value):
+        if value is None:
+            return None
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+
+class RosterImportPayload(BaseModel):
+    csv: str
+
+
+class RosterWalkInPayload(BaseModel):
+    name: str = Field(..., max_length=MAX_NAME_LENGTH)
+    division: Optional[Literal["men", "women"]] = None
+    team: Optional[str] = Field(None, max_length=MAX_TEAM_LENGTH)
+
+    @field_validator("name", "team", mode="before")
+    @classmethod
+    def _blank_is_none_or_strip(cls, value):
         if value is None:
             return None
         if isinstance(value, str):
@@ -1053,6 +1091,24 @@ def get_locale(locale: str):
     return load_locale(locale)
 
 
+def apply_race_config(config: RaceConfig) -> None:
+    """Shared by POST /api/race/configure and the roster next-heat turnover:
+    apply a (possibly re-applied) RaceConfig and reset the event engine iff
+    the race was STOPPED -- exactly what the configure endpoint has always
+    done, just factored out so next-heat can reuse it instead of
+    duplicating it."""
+    prev_state = race_manager.get_state()
+    race_manager.configure(config)
+    if prev_state == RaceState.STOPPED:
+        race_event_engine.reset()
+
+
+def reset_race_state() -> None:
+    """Shared by POST /api/race/reset and the roster next-heat turnover."""
+    race_manager.reset_race()
+    race_event_engine.reset()
+
+
 @app.post("/api/race/configure")
 async def configure_race(payload: ConfigurePayload, request: Request):
     require_admin(request)
@@ -1065,10 +1121,7 @@ async def configure_race(payload: ConfigurePayload, request: Request):
             target_value=payload.target_value,
             duration_sec=payload.duration_sec,
         )
-        prev_state = race_manager.get_state()
-        race_manager.configure(config)
-        if prev_state == RaceState.STOPPED:
-            race_event_engine.reset()
+        apply_race_config(config)
         return await broadcast_race_state()
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -1210,8 +1263,7 @@ async def close_race(request: Request):
 @app.post("/api/race/reset")
 async def reset_race(request: Request):
     require_admin(request)
-    race_manager.reset_race()
-    race_event_engine.reset()
+    reset_race_state()
     return await broadcast_race_state()
 
 
@@ -1232,6 +1284,116 @@ async def assign_station(payload: AssignStationPayload, request: Request):
         raise HTTPException(status_code=409, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+def assigned_station_numbers() -> list[int]:
+    """Stations that currently have a node assigned, ascending -- the heat
+    size and the destinations the roster's next-heat turnover registers
+    athletes onto."""
+    stations = race_manager.get_stations_status()["stations"]
+    return sorted(
+        int(station_number)
+        for station_number, station in stations.items()
+        if station.get("node_id")
+    )
+
+
+def has_any_station_registration() -> bool:
+    stations = race_manager.get_stations_status()["stations"]
+    return any(station.get("registered") for station in stations.values())
+
+
+def roster_summary_response() -> dict:
+    return roster_manager.summary(assigned_station_numbers())
+
+
+@app.get("/api/roster")
+async def get_roster(request: Request):
+    require_admin(request)
+    return roster_summary_response()
+
+
+@app.post("/api/roster/import")
+async def import_roster(payload: RosterImportPayload, request: Request):
+    require_admin(request)
+    if race_manager.get_state() == RaceState.RUNNING:
+        raise HTTPException(status_code=409, detail="Race is running")
+    errors = roster_manager.import_csv(payload.csv)
+    if errors:
+        raise HTTPException(status_code=422, detail=errors)
+    return roster_summary_response()
+
+
+@app.delete("/api/roster")
+async def clear_roster(request: Request):
+    require_admin(request)
+    roster_manager.clear()
+    return roster_summary_response()
+
+
+@app.post("/api/roster/entries")
+async def add_roster_walk_in(payload: RosterWalkInPayload, request: Request):
+    require_admin(request)
+    try:
+        roster_manager.add_walk_in(payload.name, payload.division, payload.team)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return roster_summary_response()
+
+
+@app.post("/api/roster/entries/{entry_id}/absent")
+async def mark_roster_entry_absent(entry_id: str, request: Request):
+    require_admin(request)
+    try:
+        roster_manager.mark_absent(entry_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return roster_summary_response()
+
+
+@app.post("/api/roster/entries/{entry_id}/requeue")
+async def requeue_roster_entry(entry_id: str, request: Request):
+    require_admin(request)
+    try:
+        roster_manager.requeue(entry_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return roster_summary_response()
+
+
+@app.post("/api/roster/next-heat")
+async def load_next_heat(request: Request):
+    require_admin(request)
+    if race_manager.get_state() == RaceState.RUNNING:
+        raise HTTPException(status_code=409, detail="Race is running")
+
+    config = race_manager.get_config()
+    if config is None:
+        raise HTTPException(status_code=409, detail="save race settings first")
+
+    station_numbers = assigned_station_numbers()
+    try:
+        if (
+            race_manager.get_state() == RaceState.STOPPED
+            or has_any_station_registration()
+        ):
+            reset_race_state()
+            apply_race_config(config)
+
+        race_manager.clear_station_registrations()
+        loaded = roster_manager.load_next_heat(station_numbers)
+        for entry in loaded:
+            race_manager.register_athlete(
+                entry["station_number"],
+                entry["name"],
+                team_name=entry["team"],
+                division=entry["division"],
+            )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    await broadcast_race_state()
+    return roster_summary_response()
 
 
 @app.post("/api/race/register")
