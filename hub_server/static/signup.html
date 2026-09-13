@@ -370,6 +370,15 @@
         <input type="text" id="team-name" class="form-control" placeholder="Example: RD, Red Team, 17Fit..." data-i18n-placeholder="signup.team_placeholder" maxlength="10">
       </div>
 
+      <div class="form-group">
+        <label for="division-select" data-i18n="signup.division">Division (Optional)</label>
+        <select id="division-select" class="form-control">
+          <option value="" data-i18n="signup.division_none">No division</option>
+          <option value="men" data-i18n="signup.division_men">Men</option>
+          <option value="women" data-i18n="signup.division_women">Women</option>
+        </select>
+      </div>
+
       <button type="submit" class="btn" id="submit-btn">
         <span id="btn-text" data-i18n="signup.submit">Register</span>
         <div class="spinner" id="btn-spinner"></div>
@@ -390,6 +399,7 @@
     const submitBtn = document.getElementById('submit-btn');
     const athleteNameInput = document.getElementById('athlete-name');
     const teamNameInput = document.getElementById('team-name');
+    const divisionSelect = document.getElementById('division-select');
     const avatarFileInput = document.getElementById('avatar-file');
     const customOption = document.getElementById('custom-option');
     const customPreview = document.getElementById('custom-preview-circle');
@@ -443,6 +453,10 @@
       "signup.athlete_placeholder": "Enter name...",
       "signup.team": "Team (Optional)",
       "signup.team_placeholder": "Example: RD, Red Team, 17Fit...",
+      "signup.division": "Division (Optional)",
+      "signup.division_none": "No division",
+      "signup.division_men": "Men",
+      "signup.division_women": "Women",
       "signup.submit": "Register",
       "signup.success": "Registration complete. Please check the venue screen for your station.",
       "signup.error": "Registration failed. Please try again.",
@@ -480,6 +494,10 @@
         "signup.athlete_placeholder": "請輸入姓名...",
         "signup.team": "組別隊伍（選填）",
         "signup.team_placeholder": "例如：RD、紅隊、17Fit...",
+        "signup.division": "組別（選填）",
+        "signup.division_none": "不分組",
+        "signup.division_men": "男子組",
+        "signup.division_women": "女子組",
         "signup.submit": "確認報名",
         "signup.success": "報名成功！請至現場大螢幕確認您的站位。",
         "signup.error": "報名失敗，請稍後再試。",
@@ -505,6 +523,10 @@
         "signup.athlete_name": "Nome atleta (facoltativo)",
         "signup.athlete_placeholder": "Inserisci il nome...",
         "signup.team": "Team (opzionale)",
+        "signup.division": "Categoria (facoltativo)",
+        "signup.division_none": "Nessuna categoria",
+        "signup.division_men": "Uomini",
+        "signup.division_women": "Donne",
         "signup.submit": "Registrati"
       },
       "fr": {
@@ -514,6 +536,10 @@
         "signup.athlete_name": "Nom de l'athlète (facultatif)",
         "signup.athlete_placeholder": "Saisir le nom...",
         "signup.team": "Équipe (facultatif)",
+        "signup.division": "Catégorie (facultatif)",
+        "signup.division_none": "Aucune catégorie",
+        "signup.division_men": "Hommes",
+        "signup.division_women": "Femmes",
         "signup.submit": "S'inscrire"
       },
       "de-CH": {
@@ -523,6 +549,10 @@
         "signup.athlete_name": "Name (optional)",
         "signup.athlete_placeholder": "Name eingeben...",
         "signup.team": "Team (optional)",
+        "signup.division": "Kategorie (optional)",
+        "signup.division_none": "Keine Kategorie",
+        "signup.division_men": "Männer",
+        "signup.division_women": "Frauen",
         "signup.submit": "Registrieren"
       },
       "sv": {
@@ -532,6 +562,10 @@
         "signup.athlete_name": "Deltagarens namn (valfritt)",
         "signup.athlete_placeholder": "Ange namn...",
         "signup.team": "Lag (valfritt)",
+        "signup.division": "Kategori (valfritt)",
+        "signup.division_none": "Ingen kategori",
+        "signup.division_men": "Herrar",
+        "signup.division_women": "Damer",
         "signup.submit": "Registrera"
       }
     };
@@ -883,6 +917,7 @@
       // the hub treats it identically to the field being omitted.
       const name = athleteNameInput.value.trim() || null;
       const team = teamNameInput.value.trim() || null;
+      const division = (divisionSelect && divisionSelect.value) || null;
 
       let finalStation = station;
       if (!hasQueryStation) {
@@ -909,6 +944,7 @@
             station_number: finalStation,
             athlete_name: name,
             team_name: team,
+            division: division,
             avatar_base64: avatarBase64
           })
         });
@@ -917,6 +953,7 @@
           successMsg.style.display = 'block';
           athleteNameInput.value = '';
           teamNameInput.value = '';
+          divisionSelect.value = '';
           avatarBase64 = null;
           setActiveAvatarOption(defaultAvatarOption);
           setAvatarProcessing(false);

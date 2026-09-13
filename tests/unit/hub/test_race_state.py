@@ -233,7 +233,11 @@ def test_calorie_challenge():
         }
     )
     assert progress["bike-01"]["progress_percent"] >= 100.0
-    assert progress["bike-01"]["finished_time_ms"] == 25000
+    # Interpolated between the 20 kcal/10000ms sample and the 52 kcal/25000ms
+    # crossing sample, not simply the crossing sample's own elapsed time:
+    # 10000 + (50-20)/(52-20) * (25000-10000) = 24062.5 -> 24062 (banker's
+    # rounding to the nearest even integer).
+    assert progress["bike-01"]["finished_time_ms"] == 24062
 
     # Step 3: Send more telemetry, should remain locked to Step 2 values
     progress = manager.update_telemetry(
@@ -244,7 +248,7 @@ def test_calorie_challenge():
             "calories": 70.0,
         }
     )
-    assert progress["bike-01"]["finished_time_ms"] == 25000
+    assert progress["bike-01"]["finished_time_ms"] == 24062
     assert progress["bike-01"]["elapsed_time_ms"] == 25000
     assert progress["bike-01"]["calories"] == 52.0
 

@@ -58,12 +58,13 @@ class RaceResultsQuery:
     def get_records(self) -> dict[str, Any]:
         """Best-of leaderboard per race category, most-recently-contested first.
 
-        A "category" is (race_type, target label) e.g. ("distance", "1000 m")
-        or ("time", "10 min"). Entries are the top 3 rows across all stored
-        races in that category, ranked by the metric that matters for the
-        race type (see `_record_value`/`_top_three`).
+        A "category" is (race_type, target label, division) e.g.
+        ("distance", "1000 m", None) or ("distance", "500 m", "women").
+        Entries are the top 3 rows across all stored races in that category,
+        ranked by the metric that matters for the race type (see
+        `_record_value`/`_top_three`).
         """
-        categories: dict[tuple[str, str], dict[str, Any]] = {}
+        categories: dict[tuple[str, str, Any], dict[str, Any]] = {}
 
         # Newest-first, so the first race we see for a category is also the
         # most recently contested one -- dict insertion order then gives us
@@ -88,17 +89,25 @@ class RaceResultsQuery:
                 leaderboard if isinstance(leaderboard, dict) else {}
             )
 
-            bucket = categories.setdefault(
-                (race_type, label), {"race_type": race_type, "label": label, "rows": []}
-            )
             for row in rows:
                 value = self._record_value(race_type, row)
                 if value is None:
                     continue
+                division = row.get("division")
+                bucket = categories.setdefault(
+                    (race_type, label, division),
+                    {
+                        "race_type": race_type,
+                        "label": label,
+                        "division": division,
+                        "rows": [],
+                    },
+                )
                 bucket["rows"].append(
                     {
                         "athlete_name": row.get("athlete_name"),
                         "team_name": row.get("team_name"),
+                        "division": division,
                         "value": value,
                         "end_time_epoch_ms": end_time,
                     }
@@ -113,6 +122,7 @@ class RaceResultsQuery:
                 {
                     "race_type": bucket["race_type"],
                     "label": bucket["label"],
+                    "division": bucket["division"],
                     "entries": entries,
                 }
             )
@@ -263,14 +273,34 @@ class RaceResultsQuery:
         # everything else ranks the biggest number (descending).
         ascending = race_type in _TARGET_RACE_TYPES
         ordered = sorted(rows, key=lambda r: r["value"], reverse=not ascending)
+
+        # A named athlete who raced this category more than once must only
+        # occupy one record slot -- keep their best row (the first one we
+        # meet in `ordered`, since it's already sorted best-first) and drop
+        # the rest. Anonymous rows (athlete_name is None) are never merged
+        # with each other -- only a shared, stripped, non-empty name (within
+        # the same division) merges.
+        deduped = []
+        seen_names: set[tuple[str, Any]] = set()
+        for row in ordered:
+            name = row.get("athlete_name")
+            stripped = name.strip() if isinstance(name, str) else None
+            if stripped is not None:
+                key = (stripped, row.get("division"))
+                if key in seen_names:
+                    continue
+                seen_names.add(key)
+            deduped.append(row)
+
         return [
             {
                 "athlete_name": r["athlete_name"],
                 "team_name": r["team_name"],
+                "division": r.get("division"),
                 "value": r["value"],
                 "end_time_epoch_ms": r["end_time_epoch_ms"],
             }
-            for r in ordered[:3]
+            for r in deduped[:3]
         ]
 
     @staticmethod

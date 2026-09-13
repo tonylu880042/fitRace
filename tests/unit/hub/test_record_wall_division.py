@@ -1,0 +1,167 @@
+"""The record wall (hub_server/static/index.html, buildRecordWallSlides)
+must append a translated division suffix to a record's title when the
+record carries a division (men/women), so a 500 m men's record and a 500 m
+women's record read as two distinct slides rather than looking identical.
+
+This executes the REAL, unmodified functions pulled out of index.html's
+inline <script> via brace-depth matching (the same technique as
+test_dashboard_anonymous_everywhere.py) under node -- never a source-text
+grep -- so deleting the real division-suffix wiring turns this red instead
+of being satisfied by a nearby comment.
+"""
+
+import re
+import subprocess
+from pathlib import Path
+
+STATIC_DIR = Path(__file__).resolve().parents[3] / "hub_server" / "static"
+
+_LINE_COMMENT_RE = re.compile(r"^[ \t]*//.*$\n?", re.MULTILINE)
+_BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
+
+
+def _strip_js_comments(code: str) -> str:
+    without_blocks = _BLOCK_COMMENT_RE.sub("", code)
+    return _LINE_COMMENT_RE.sub("", without_blocks)
+
+
+def _read_index() -> str:
+    return (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+
+
+def _matching_bracket_end(
+    source: str, open_idx: int, open_ch: str, close_ch: str
+) -> int:
+    depth = 0
+    i = open_idx
+    in_str = None
+    while i < len(source):
+        char = source[i]
+        if in_str:
+            if char == "\\":
+                i += 2
+                continue
+            if char == in_str:
+                in_str = None
+        elif char in ('"', "'", "`"):
+            in_str = char
+        elif char == open_ch:
+            depth += 1
+        elif char == close_ch:
+            depth -= 1
+            if depth == 0:
+                return i
+        i += 1
+    raise ValueError("no matching close bracket found")
+
+
+def _extract_function(source: str, name: str) -> str:
+    marker = f"function {name}("
+    start = source.index(marker)
+    brace_open = source.index("{", start)
+    brace_end = _matching_bracket_end(source, brace_open, "{", "}")
+    return source[start : brace_end + 1]
+
+
+def _t_stub() -> str:
+    return (
+        "const t = (key) => ({"
+        '"record_wall.title": "Record Wall",'
+        '"record_wall.type_distance": "Distance",'
+        '"record_wall.division_men": "Men",'
+        '"record_wall.division_women": "Women",'
+        '"stations.station": "Station",'
+        '"stations.athlete": "Athlete"'
+        "}[key] || key);\n"
+    )
+
+
+def _metric_number_stub() -> str:
+    return (
+        "function metricNumber(value, fallback) {\n"
+        "  const fb = fallback === undefined ? 0 : fallback;\n"
+        "  const n = Number(value);\n"
+        "  return Number.isFinite(n) ? n : fb;\n"
+        "}\n"
+    )
+
+
+def _escape_html_stub() -> str:
+    return (
+        "function escapeHtml(value) {\n"
+        "  return String(value === null || value === undefined ? '' : value)\n"
+        "    .replace(/&/g, '&amp;')\n"
+        "    .replace(/</g, '&lt;')\n"
+        "    .replace(/>/g, '&gt;');\n"
+        "}\n"
+    )
+
+
+def _run_node(script: str) -> str:
+    result = subprocess.run(
+        ["node", "-e", script], capture_output=True, text=True, timeout=5
+    )
+    if result.returncode != 0:
+        raise AssertionError(f"node failed: {result.stderr}\nScript:\n{script}")
+    return result.stdout.strip()
+
+
+def _build_slides(records_js: str) -> str:
+    source = _strip_js_comments(_read_index())
+    fns = "\n".join(
+        _extract_function(source, name)
+        for name in (
+            "recordWallTypeLabel",
+            "recordWallDivisionLabel",
+            "formatRecordEntryValue",
+            "renderRecordWallRows",
+            "buildRecordWallSlides",
+        )
+    )
+    script = (
+        _t_stub()
+        + _metric_number_stub()
+        + _escape_html_stub()
+        + fns
+        + "\n"
+        + f"console.log(JSON.stringify(buildRecordWallSlides({records_js}, null)));"
+    )
+    output = _run_node(script)
+    import json
+
+    return json.loads(output)
+
+
+def test_record_wall_title_shows_men_division_suffix():
+    slides = _build_slides(
+        '[{race_type: "distance", label: "500 m", division: "men", entries: []}]'
+    )
+    assert "Men" in slides[0]
+    assert "Distance" in slides[0]
+    assert "500 m" in slides[0]
+
+
+def test_record_wall_title_shows_women_division_suffix():
+    slides = _build_slides(
+        '[{race_type: "distance", label: "500 m", division: "women", entries: []}]'
+    )
+    assert "Women" in slides[0]
+
+
+def test_record_wall_title_has_no_division_suffix_when_unset():
+    slides = _build_slides(
+        '[{race_type: "distance", label: "500 m", division: null, entries: []}]'
+    )
+    assert "Men" not in slides[0]
+    assert "Women" not in slides[0]
+
+
+def test_record_wall_splits_men_and_women_into_distinct_slides():
+    slides = _build_slides(
+        "["
+        '{race_type: "distance", label: "500 m", division: "men", entries: []},'
+        '{race_type: "distance", label: "500 m", division: "women", entries: []}'
+        "]"
+    )
+    assert len(slides) == 2
+    assert slides[0] != slides[1]
