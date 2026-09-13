@@ -352,6 +352,7 @@ def _run_race_track_row_name(node_js: str) -> str:
         + station_label_fn
         + "\n"
         + 'function formatResultScore() { return { value: "", label: "" }; }\n'
+        + 'function relayLegLine() { return ""; }\n'
         + 'const raceType = "distance";\n'
         + f"const rowFn = {callback};\n"
         + f"console.log(JSON.stringify(rowFn({node_js}).name));"

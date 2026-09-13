@@ -129,6 +129,8 @@
   "rank.second": "Secondo posto",
   "rank.third": "Terzo posto",
   "dashboard.stale_notice": "Questa pagina mostra una versione obsoleta. Ricaricare la pagina.",
+  "dashboard.relay_leg": "Frazione {leg}/{legs}",
+  "dashboard.relay_handoff": "Cambio! Tocca a: {runner}",
   "fallback.team": "Squadra",
   "fallback.unassigned_team": "Non assegnata",
   "fallback.node": "Nodo",

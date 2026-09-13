@@ -129,6 +129,8 @@
   "rank.second": "Runner-up",
   "rank.third": "Third place",
   "dashboard.stale_notice": "This page is showing an outdated version. Please reload.",
+  "dashboard.relay_leg": "Leg {leg}/{legs}",
+  "dashboard.relay_handoff": "Handoff! Next up: {runner}",
   "fallback.team": "Team",
   "fallback.unassigned_team": "Unassigned",
   "fallback.node": "Node",

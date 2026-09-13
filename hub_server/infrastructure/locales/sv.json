@@ -129,6 +129,8 @@
   "rank.second": "Tvåa",
   "rank.third": "Trea",
   "dashboard.stale_notice": "Den här sidan visar en föråldrad version. Ladda om sidan.",
+  "dashboard.relay_leg": "Sträcka {leg}/{legs}",
+  "dashboard.relay_handoff": "Växling! Nästa: {runner}",
   "fallback.team": "Lag",
   "fallback.unassigned_team": "Ej tilldelat",
   "fallback.node": "Nod",

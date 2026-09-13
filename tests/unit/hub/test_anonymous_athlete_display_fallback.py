@@ -267,6 +267,7 @@ def _run_classic_leaderboard_row(nodes_js: str, race_type: str = "distance") -> 
         + _escape_html_stub()
         + _smooth_metric_number_stub()
         + _node_display_name_stub()
+        + 'function relayLegLine() { return ""; }\n'
         + f"const raceType = {json.dumps(race_type)};\n"
         + "const leaderboardFinal = false;\n"
         + "const leaderboardRankByNode = new Map();\n"

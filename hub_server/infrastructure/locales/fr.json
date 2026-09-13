@@ -129,6 +129,8 @@
   "rank.second": "Deuxième",
   "rank.third": "Troisième",
   "dashboard.stale_notice": "Cette page affiche une version obsolète. Veuillez la recharger.",
+  "dashboard.relay_leg": "Étape {leg}/{legs}",
+  "dashboard.relay_handoff": "Relais ! Au tour de : {runner}",
   "fallback.team": "Équipe",
   "fallback.unassigned_team": "Non assigné",
   "fallback.node": "Nœud",

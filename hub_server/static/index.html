@@ -2435,6 +2435,8 @@
     let currentSignupQrUrl = "";
     let hasReceivedFirstState = false;
     let previousFinishedByNode = new Map();
+    let previousRelayLegByNode = new Map();
+    let relayHandoffToastTimer = null;
     let finishBannerQueue = [];
     let finishBannerActive = false;
     let finishBannerTimer = null;
@@ -2986,6 +2988,18 @@
       const machine = nodeDisplayName(node);
       if (machine && machine !== "--") parts.push(machine);
       return parts.join(" · ");
+    }
+
+    // Relay-only secondary line ("Leg 2/4 · Bob") shared by all three
+    // leaderboard render modes that show individual rows (classic,
+    // race_track, sprint_board). Plain text, not HTML -- callers escape it
+    // at the same interpolation point they escape every other row field.
+    // Empty string for a non-relay row so callers can render it
+    // unconditionally without an extra branch.
+    function relayLegLine(node) {
+      if (!node || !node.relay_legs) return "";
+      const legText = t("dashboard.relay_leg", { leg: node.relay_leg || 1, legs: node.relay_legs });
+      return node.relay_current_runner ? `${legText} · ${node.relay_current_runner}` : legText;
     }
 
     function metricNumber(value, fallback = 0) {
@@ -3563,6 +3577,63 @@
       });
     }
 
+    // -- Relay handoff cue ---------------------------------------------
+    //
+    // Pure decision, no DOM: given the latest progress rows and the leg
+    // this function itself recorded for each node_id last time it ran,
+    // returns one {team, runner} cue per node_id whose relay_leg just
+    // increased. previousLegByNode is mutated in place (like
+    // leaderboardRankByNode elsewhere in this file) so the caller doesn't
+    // have to thread a new Map through every call. Outside a live race no
+    // cue ever fires, but the seen-set still tracks each row's current leg
+    // so a resumed race doesn't replay a stale handoff.
+    function computeRelayHandoffCues(progressData, previousLegByNode, raceState) {
+      const rows = progressData || {};
+      const cues = [];
+      if (raceState !== "RUNNING") {
+        Object.entries(rows).forEach(([nodeId, row]) => {
+          if (row && row.relay_legs) previousLegByNode.set(nodeId, row.relay_leg);
+        });
+        return cues;
+      }
+
+      Object.entries(rows).forEach(([nodeId, row]) => {
+        if (!row || !row.relay_legs) return;
+        const previousLeg = previousLegByNode.get(nodeId);
+        const currentLeg = row.relay_leg;
+        if (previousLeg !== undefined && currentLeg > previousLeg) {
+          cues.push({ team: row.athlete_name, runner: row.relay_current_runner });
+        }
+        previousLegByNode.set(nodeId, currentLeg);
+      });
+      return cues;
+    }
+
+    function showRelayHandoffBanner(team, runner) {
+      let toast = document.getElementById("relay-handoff-toast");
+      if (!toast) {
+        toast = document.createElement("div");
+        toast.id = "relay-handoff-toast";
+        toast.className = "marquee-toast";
+        document.body.appendChild(toast);
+      }
+      const teamLabel = team || t("fallback.team");
+      const runnerLabel = runner || t("stations.athlete");
+      const text = `${teamLabel} ${t("dashboard.relay_handoff", { runner: runnerLabel })}`;
+      toast.innerHTML = `<div class="marquee-icon">🔁</div><div class="marquee-text"><span>${escapeHtml(text)}</span></div>`;
+
+      toast.classList.add("show");
+      if (relayHandoffToastTimer) window.clearTimeout(relayHandoffToastTimer);
+      relayHandoffToastTimer = window.setTimeout(() => {
+        toast.classList.remove("show");
+      }, 3000);
+    }
+
+    function detectRelayHandoffs(progressData) {
+      const cues = computeRelayHandoffCues(progressData, previousRelayLegByNode, currentState);
+      cues.forEach((cue) => showRelayHandoffBanner(cue.team, cue.runner));
+    }
+
     // -- Podium reveal overlay (A2) -----------------------------------
 
     function buildPodiumOverlayCard(rank, name, teamName, scoreValue, avatarUrl) {
@@ -4015,6 +4086,7 @@
               id: node.node_id,
               name: node.athlete_name || (node.station_number ? `${t("stations.station")} ${node.station_number}` : t("stations.athlete")),
               meta: `${station || t("fallback.node")}${teamSuffix}`,
+              relay: relayLegLine(node),
               score,
               progress: metricNumber(node.progress_percent),
               members: [],
@@ -4059,6 +4131,7 @@
             <div class="race-track-main">
               <div class="race-track-name">${escapeHtml(row.name)}</div>
               <div class="race-track-meta">${escapeHtml(row.meta)}</div>
+              ${row.relay ? `<div class="race-track-relay-leg">${escapeHtml(row.relay)}</div>` : ""}
             </div>
             <div class="race-track-stage" aria-label="${escapeHtml(row.name)} progress ${progress.toFixed(1)}%">
               <div class="race-track-rail">
@@ -4263,6 +4336,7 @@
                 <div class="sprint-board-rank">#${currentRank}</div>
                 <div class="sprint-board-name">${escapeHtml(row.name)}</div>
                 <div class="sprint-board-meta">${escapeHtml(row.meta)}</div>
+                ${row.kind === "individual" && relayLegLine(row.raw) ? `<div class="sprint-board-relay-leg">${escapeHtml(relayLegLine(row.raw))}</div>` : ""}
               </div>
               <div class="sprint-board-signal">
                 ${escapeHtml(sprintSignal.value)}
@@ -5150,6 +5224,7 @@
         return;
       }
       detectAthleteFinishes(progressData);
+      detectRelayHandoffs(progressData);
       // Every branch below writes race markup into #leaderboard-container.
       // The class board is a different renderer entirely -- if its cache
       // survived getting here, a later class-mode tick could patch text
@@ -5344,6 +5419,7 @@
               <div style="display: flex; flex-direction: column;">
                 <div class="athlete-name">${stationBadge}${displayName}</div>
                 <div class="equipment-tag">${escapeHtml(nodeDisplayName(node))}</div>
+                ${relayLegLine(node) ? `<div class="relay-leg-line">${escapeHtml(relayLegLine(node))}</div>` : ""}
               </div>
             </div>
             ${metricCols}
@@ -5482,8 +5558,10 @@
       }
       if (previousState !== "RUNNING" && currentState === "RUNNING") {
         // Fresh race: forget which nodes had already finished so the finish
-        // banner can fire again for this run.
+        // banner can fire again for this run, and forget every relay leg
+        // seen so a NEW relay race doesn't replay last race's handoff cues.
         previousFinishedByNode = new Map();
+        previousRelayLegByNode = new Map();
       }
 
       // Route to class board or race leaderboard

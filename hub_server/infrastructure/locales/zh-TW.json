@@ -129,6 +129,8 @@
   "rank.second": "亞軍",
   "rank.third": "季軍",
   "dashboard.stale_notice": "此頁面顯示的版本已過期，請重新整理頁面。",
+  "dashboard.relay_leg": "第 {leg}/{legs} 棒",
+  "dashboard.relay_handoff": "換棒！下一棒：{runner}",
   "fallback.team": "隊伍",
   "fallback.unassigned_team": "未分隊",
   "fallback.node": "節點",
