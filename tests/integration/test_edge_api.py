@@ -4123,3 +4123,261 @@ def test_edge_locales_have_uart_monitor_toggle_labels():
         assert key in en, key
         assert key in zh_tw, key
     assert set(en.keys()) == set(zh_tw.keys())
+
+
+def test_edge_operator_shows_a_hub_setup_link_while_pairing_is_blocked():
+    # Phone review: the Wi-Fi/Central Hub panels sit ~3 screens below
+    # "+ Add device" (deliberate -- work area first). When the hub isn't
+    # ready, add-device-message says hub.required/hub.unsaved but nothing
+    # leads the customer to the Hub form. A native in-page anchor jump
+    # (no JS scrolling) fixes that.
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    message_index = source.index('id="add-device-message"')
+    link_index = source.index('id="hub-setup-link"')
+    assert message_index < link_index
+    assert (
+        '<a id="hub-setup-link" href="#central-hub-title" '
+        'data-i18n="hub.go_to_setup" hidden'
+    ) in source
+
+    render_start = source.index("function renderBindingCards()")
+    render_end = source.index("function updateBindingCardLeaves()")
+    render_fn = _strip_js_comments(source[render_start:render_end])
+    assert (
+        'document.getElementById("hub-setup-link").hidden = '
+        "centralHubReady && !centralHubFormDirty;"
+    ) in render_fn
+
+    assert '"hub.go_to_setup": "Go to Central Hub setup"' in source
+    assert '"hub.go_to_setup": "前往 Central Hub 設定"' in source
+
+
+def test_edge_operator_disconnect_all_bar_moves_to_the_end_on_phones():
+    # Destructive "Disconnect all & clear bindings" used to be the first
+    # thing under the header on a phone -- the most prominent control on
+    # the first screen. Push it to the end of .app via flex order, restyle
+    # as a danger outline (not the bright btn-primary accent), and leave
+    # desktop (and the 1100px stacking breakpoint) untouched.
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    # .app's direct children -- header, the two banners, the disconnect bar,
+    # and the workspace -- must stay siblings for the `order` swap to work.
+    app_open = source.index('<div class="app" id="app">')
+    header_index = source.index('<header class="op-header">', app_open)
+    admin_banner_index = source.index('id="admin-auth-banner"', app_open)
+    power_banner_index = source.index('id="power-dry-run-banner"', app_open)
+    disconnect_bar_index = source.index('class="disconnect-all-bar"', app_open)
+    workspace_index = source.index('id="edge-workspace"', app_open)
+    assert (
+        app_open
+        < header_index
+        < admin_banner_index
+        < power_banner_index
+        < disconnect_bar_index
+        < workspace_index
+    )
+
+    mobile_start = source.index("@media (max-width: 820px)")
+    mobile_end = source.index("</style>", mobile_start)
+    mobile_source = _strip_js_comments(source[mobile_start:mobile_end])
+
+    app_rule_index = mobile_source.index(".app {")
+    app_rule = mobile_source[app_rule_index : mobile_source.index("}", app_rule_index)]
+    assert "display: flex;" in app_rule
+    assert "flex-direction: column;" in app_rule
+
+    bar_rule_index = mobile_source.index(".disconnect-all-bar {")
+    bar_rule = mobile_source[bar_rule_index : mobile_source.index("}", bar_rule_index)]
+    assert "order: 1;" in bar_rule
+
+    button_rule_index = mobile_source.index(".disconnect-all-button {")
+    button_rule = mobile_source[
+        button_rule_index : mobile_source.index("}", button_rule_index)
+    ]
+    # Plain substring checks are fragile here: "color: var(--danger);" is
+    # also a substring of "border-color: var(--danger);", so a weakened
+    # `color:` declaration (e.g. var(--text)) would slip through a
+    # substring-only assertion undetected. Compare whole trimmed
+    # declaration lines instead.
+    button_declarations = {
+        line.strip().rstrip(";").strip()
+        for line in button_rule.splitlines()
+        if ":" in line
+    }
+    assert "background: transparent" in button_declarations
+    assert "border-color: var(--danger)" in button_declarations
+    assert "color: var(--danger)" in button_declarations
+
+    # .btn-primary (a single class selector, same specificity as
+    # .disconnect-all-button) sets the bright accent background/text --
+    # this rule only wins the cascade because it comes later in the
+    # stylesheet, so pin that source-order dependency down explicitly.
+    btn_primary_index = source.index(".btn-primary {")
+    danger_outline_index = source.index(".disconnect-all-button {", mobile_start)
+    assert btn_primary_index < danger_outline_index
+
+    # Must not touch the 1100px stacking breakpoint or its test.
+    responsive_start = source.index("@media (max-width: 1100px)")
+    responsive_end = source.index("@media (max-width: 820px)", responsive_start)
+    responsive_source = source[responsive_start:responsive_end]
+    assert "order:" not in responsive_source
+    assert "display: flex;" not in responsive_source
+
+
+def test_edge_operator_language_select_and_hub_host_are_phone_friendly():
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    mobile_start = source.index("@media (max-width: 820px)")
+    mobile_end = source.index("</style>", mobile_start)
+    mobile_source = _strip_js_comments(source[mobile_start:mobile_end])
+
+    select_rule_index = mobile_source.index(".language-select {")
+    select_rule = mobile_source[
+        select_rule_index : mobile_source.index("}", select_rule_index)
+    ]
+    assert "height: 44px;" in select_rule
+    assert "font-size: 16px;" in select_rule
+
+    host_input_index = source.index('id="central-hub-host"')
+    host_input_tag = source[host_input_index : source.index(">", host_input_index)]
+    assert 'autocapitalize="off"' in host_input_tag
+    assert 'autocorrect="off"' in host_input_tag
+    assert 'spellcheck="false"' in host_input_tag
+
+
+def test_edge_maintenance_hub_input_and_tap_targets_are_phone_friendly():
+    client = TestClient(edge_app_module.app)
+    source = client.get("/maintenance").text
+
+    hub_input_index = source.index('id="central-hub-input"')
+    hub_input_tag = source[hub_input_index : source.index(">", hub_input_index)]
+    assert 'autocapitalize="off"' in hub_input_tag
+    assert 'autocorrect="off"' in hub_input_tag
+    assert 'spellcheck="false"' in hub_input_tag
+
+    mobile_start = source.index("@media (max-width: 820px)")
+    mobile_end = source.index("</style>", mobile_start)
+    mobile_source = _strip_js_comments(source[mobile_start:mobile_end])
+
+    summary_rule_index = mobile_source.index(".antenna-advanced summary {")
+    summary_rule = mobile_source[
+        summary_rule_index : mobile_source.index("}", summary_rule_index)
+    ]
+    assert "min-height: 44px;" in summary_rule
+    assert "display" not in summary_rule
+
+    button_rule_index = mobile_source.index(".button-grid button {")
+    button_rule = mobile_source[
+        button_rule_index : mobile_source.index("}", button_rule_index)
+    ]
+    assert "min-height: 44px;" in button_rule
+
+
+_CSS_RULE_DISPLAY_RE = re.compile(r"display\s*:\s*([a-zA-Z-]+)")
+_HIDDEN_TAG_RE = re.compile(r"<[a-zA-Z][^>]*\bhidden\b[^>]*>")
+_TAG_ID_RE = re.compile(r'id="([^"]+)"')
+_TAG_CLASS_RE = re.compile(r'class="([^"]+)"')
+
+
+def _flatten_css_rules(css):
+    """Yield (selector-header, declaration-body) for every rule in `css`,
+    recursing into @media (and other @-block) wrappers so a rule inside a
+    breakpoint is reported the same as a top-level one. Comments must
+    already be stripped -- unbalanced braces inside a comment would
+    confuse the brace matching below."""
+    rules = []
+
+    def _walk(text):
+        i = 0
+        n = len(text)
+        while i < n:
+            brace_open = text.find("{", i)
+            if brace_open == -1:
+                break
+            header = text[i:brace_open].strip()
+            depth = 1
+            j = brace_open + 1
+            while depth > 0 and j < n:
+                if text[j] == "{":
+                    depth += 1
+                elif text[j] == "}":
+                    depth -= 1
+                j += 1
+            body = text[brace_open + 1 : j - 1]
+            if header.startswith("@"):
+                _walk(body)
+            else:
+                rules.append((header, body))
+            i = j
+
+    _walk(css)
+    return rules
+
+
+def _rule_display_value(body):
+    match = _CSS_RULE_DISPLAY_RE.search(body)
+    return match.group(1) if match else None
+
+
+def test_edge_operator_hidden_elements_have_a_matching_hidden_display_none_rule():
+    # Regression: #hub-setup-link shipped with `hidden` in markup and a JS
+    # toggle (`.hidden = ...`), but its only CSS rule was the bare
+    # `#hub-setup-link { display: flex; ... }` selector -- an author ID
+    # selector beats the UA `[hidden] { display: none }` rule, so the link
+    # was visible at all times regardless of what the JS set `.hidden` to.
+    # This page already has the correct pattern in two other places
+    # (.wifi-picker-body[hidden], .batch-progress-overlay[hidden]); this
+    # test makes sure every element that ships `hidden` in markup AND has
+    # an id/class rule setting a non-none `display` also has a matching
+    # `<selector>[hidden] { display: none; }` guard, so this class of bug
+    # can't silently regress on some other element either.
+    client = TestClient(edge_app_module.app)
+    source = client.get("/").text
+
+    style_start = source.index("<style>")
+    style_end = source.index("</style>")
+    css = _strip_js_comments(source[style_start + len("<style>") : style_end])
+    rules = _flatten_css_rules(css)
+
+    rules_by_selector = {}
+    for header, body in rules:
+        for selector in (piece.strip() for piece in header.split(",")):
+            rules_by_selector.setdefault(selector, []).append(body)
+
+    checked_hub_setup_link = False
+    violations = []
+    for tag in _HIDDEN_TAG_RE.findall(source):
+        selectors = []
+        id_match = _TAG_ID_RE.search(tag)
+        if id_match:
+            selectors.append(f"#{id_match.group(1)}")
+        class_match = _TAG_CLASS_RE.search(tag)
+        if class_match:
+            selectors.extend(f".{c}" for c in class_match.group(1).split())
+
+        for selector in selectors:
+            if selector == "#hub-setup-link":
+                checked_hub_setup_link = True
+            bodies = rules_by_selector.get(selector, [])
+            sets_visible_display = any(
+                _rule_display_value(body) not in (None, "none") for body in bodies
+            )
+            if not sets_visible_display:
+                continue
+            guard_bodies = rules_by_selector.get(f"{selector}[hidden]", [])
+            guarded = any(_rule_display_value(body) == "none" for body in guard_bodies)
+            if not guarded:
+                violations.append(selector)
+
+    # Sanity check that the scan actually walked #hub-setup-link's markup --
+    # otherwise this test would pass vacuously if the id or the `hidden`
+    # attribute were ever removed from that tag.
+    assert checked_hub_setup_link
+    assert not violations, (
+        "elements with a non-none `display` rule but no [hidden] display:none "
+        f"guard: {violations}"
+    )

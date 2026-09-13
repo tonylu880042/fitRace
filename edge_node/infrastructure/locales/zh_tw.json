@@ -138,6 +138,7 @@
   "hub.invalid": "請輸入有效的主機名稱或 IP，以及 MQTT 連接埠。",
   "hub.required": "請先連線 Central Hub，才能新增設備。",
   "hub.unsaved": "Central Hub 位址尚未儲存，請先儲存後再新增設備。",
+  "hub.go_to_setup": "前往 Central Hub 設定",
   "diagnostics.title": "現場診斷",
   "diagnostics.help": "將唯讀診斷命令送到所有已設定的天線通道。",
   "diagnostics.ping": "PING",

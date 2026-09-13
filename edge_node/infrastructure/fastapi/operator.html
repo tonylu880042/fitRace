@@ -439,6 +439,18 @@
     .message.error { color: var(--danger); }
     .message.ok { color: var(--ok); }
 
+    #hub-setup-link {
+      display: flex;
+      align-items: center;
+      min-height: 44px;
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    #hub-setup-link[hidden] {
+      display: none;
+    }
+
     .op-footer {
       margin-top: 22px;
       text-align: center;
@@ -995,6 +1007,35 @@
     }
 
     @media (max-width: 820px) {
+      /* Destructive "Disconnect all & clear bindings" used to sit first
+         under the header -- the most prominent control on the phone's
+         first screen. Push it to the end of .app via flex order (header,
+         the two banners, and #edge-workspace all stay direct children of
+         .app at the default order: 0) and de-emphasise it as a danger
+         outline instead of the bright btn-primary accent. */
+      .app {
+        display: flex;
+        flex-direction: column;
+      }
+
+      .disconnect-all-bar {
+        order: 1;
+      }
+
+      .disconnect-all-button {
+        background: transparent;
+        border-color: var(--danger);
+        color: var(--danger);
+      }
+
+      /* iOS Safari zooms the whole page when a <16px form control gets
+         focus -- keep this select's tap target and text large enough to
+         avoid that. */
+      .language-select {
+        height: 44px;
+        font-size: 16px;
+      }
+
       .workspace {
         grid-template-columns: 1fr;
       }
@@ -1118,7 +1159,7 @@
           <div class="connection-form">
             <div class="field">
               <label for="central-hub-host" data-i18n="hub.host_label">Host name or IP</label>
-              <input id="central-hub-host" type="text" autocomplete="off" placeholder="192.168.0.10">
+              <input id="central-hub-host" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="192.168.0.10">
             </div>
             <div class="field">
               <label for="central-hub-port" data-i18n="hub.port_label">MQTT port</label>
@@ -1170,6 +1211,7 @@
           </section>
           <button id="add-device-btn" class="btn-primary" type="button" data-i18n="operator.add_device">+ Add device</button>
           <div class="message" id="add-device-message"></div>
+          <a id="hub-setup-link" href="#central-hub-title" data-i18n="hub.go_to_setup" hidden>Go to Central Hub setup</a>
           <footer class="op-footer">
             <a href="/maintenance" id="maintenance-link" data-i18n="operator.maintenance_link">Maintenance mode</a>
           </footer>
@@ -1800,6 +1842,7 @@
       document.getElementById("add-device-message").textContent = centralHubFormDirty
         ? t("hub.unsaved")
         : (!centralHubReady ? t("hub.required") : (full ? t("operator.add_device_full") : ""));
+      document.getElementById("hub-setup-link").hidden = centralHubReady && !centralHubFormDirty;
     }
 
     function updateBindingCardLeaves() {
