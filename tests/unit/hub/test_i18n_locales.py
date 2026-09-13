@@ -38,6 +38,18 @@ def test_zh_tw_division_translations():
     assert messages["signup.division_women"] == "女子組"
 
 
+def test_relay_legs_record_wall_key_present_in_every_locale():
+    for locale in SUPPORTED_LOCALES:
+        messages = load_locale(locale)["messages"]
+        assert "record_wall.relay_legs" in messages
+        assert "{legs}" in messages["record_wall.relay_legs"]
+
+
+def test_zh_tw_relay_legs_translation():
+    messages = load_locale("zh-TW")["messages"]
+    assert messages["record_wall.relay_legs"] == "接力 {legs} 棒"
+
+
 def test_locale_json_files_are_valid():
     locale_dir = (
         Path(__file__).resolve().parents[3]

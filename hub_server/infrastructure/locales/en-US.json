@@ -95,6 +95,7 @@
   "record_wall.type_max_power": "Max Power",
   "record_wall.division_men": "Men",
   "record_wall.division_women": "Women",
+  "record_wall.relay_legs": "{legs}-Leg Relay",
   "signup.division": "Division",
   "signup.division_none": "No division",
   "signup.division_men": "Men",

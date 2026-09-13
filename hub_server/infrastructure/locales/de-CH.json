@@ -95,6 +95,7 @@
   "record_wall.type_max_power": "Max Power",
   "record_wall.division_men": "Männer",
   "record_wall.division_women": "Frauen",
+  "record_wall.relay_legs": "Staffel mit {legs} Etappen",
   "signup.division": "Kategorie",
   "signup.division_none": "Keine Kategorie",
   "signup.division_men": "Männer",

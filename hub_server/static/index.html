@@ -3688,10 +3688,13 @@
       (records || []).forEach((record) => {
         const divisionLabel = recordWallDivisionLabel(record.division);
         const divisionSuffix = divisionLabel ? ` &middot; ${escapeHtml(divisionLabel)}` : "";
+        const relaySuffix = record.relay_legs
+          ? ` &middot; ${escapeHtml(t("record_wall.relay_legs", { legs: record.relay_legs }))}`
+          : "";
         slides.push(`
           <div class="record-wall-slide">
             <div class="record-wall-kicker">${escapeHtml(t("record_wall.title"))}</div>
-            <div class="record-wall-title">${escapeHtml(recordWallTypeLabel(record.race_type))} &middot; ${escapeHtml(record.label)}${divisionSuffix}</div>
+            <div class="record-wall-title">${escapeHtml(recordWallTypeLabel(record.race_type))} &middot; ${escapeHtml(record.label)}${relaySuffix}${divisionSuffix}</div>
             <div class="record-wall-list">${renderRecordWallRows(record.entries || [], record.race_type)}</div>
           </div>
         `);

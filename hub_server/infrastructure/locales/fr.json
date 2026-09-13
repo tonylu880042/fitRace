@@ -95,6 +95,7 @@
   "record_wall.type_max_power": "Max Power",
   "record_wall.division_men": "Hommes",
   "record_wall.division_women": "Femmes",
+  "record_wall.relay_legs": "Relais à {legs} étapes",
   "signup.division": "Catégorie",
   "signup.division_none": "Aucune catégorie",
   "signup.division_men": "Hommes",

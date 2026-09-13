@@ -95,6 +95,7 @@
   "record_wall.type_max_power": "Max Power",
   "record_wall.division_men": "Uomini",
   "record_wall.division_women": "Donne",
+  "record_wall.relay_legs": "Staffetta a {legs} frazioni",
   "signup.division": "Categoria",
   "signup.division_none": "Nessuna categoria",
   "signup.division_men": "Uomini",
