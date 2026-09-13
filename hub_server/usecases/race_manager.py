@@ -342,9 +342,12 @@ class RaceManager:
                     if has_avatar
                     else None
                 )
+                relay_fields = self._placeholder_relay_fields(station_number)
                 progress[key] = {
                     "node_id": node_id or key,
-                    "athlete_name": athlete_name,
+                    "athlete_name": (
+                        team_name if relay_fields and team_name else athlete_name
+                    ),
                     "station_number": station_number,
                     "team_name": team_name,
                     "division": division,
@@ -357,6 +360,7 @@ class RaceManager:
                     "power_watts": 0,
                     "max_power_watts": 0,
                     "finished_time_ms": None,
+                    **relay_fields,
                 }
         return progress
 
@@ -852,10 +856,13 @@ class RaceManager:
                     if has_avatar
                     else None
                 )
+                relay_fields = self._placeholder_relay_fields(station_number)
 
                 self._progress[key] = {
                     "node_id": node_id or key,
-                    "athlete_name": athlete_name,
+                    "athlete_name": (
+                        team_name if relay_fields and team_name else athlete_name
+                    ),
                     "station_number": station_number,
                     "team_name": team_name,
                     "division": division,
@@ -868,6 +875,7 @@ class RaceManager:
                     "power_watts": 0,
                     "max_power_watts": 0,
                     "finished_time_ms": None,
+                    **relay_fields,
                 }
 
     def stop_race(self):
@@ -1046,9 +1054,24 @@ class RaceManager:
                 finished_time_ms = elapsed_time_ms
 
         # Update metrics
+        row_athlete_name = athlete_name
+        is_relay = (
+            self._session_mode != "class"
+            and self._config is not None
+            and self._config.competition_mode == "relay"
+            and station_number is not None
+        )
+        relay_fields: Dict[str, Any] = {}
+        if is_relay:
+            relay_fields = self._relay_leg_fields(
+                station_number, team_name, prev_progress, distance_m, elapsed_time_ms
+            )
+            if team_name:
+                row_athlete_name = team_name
+
         self._progress[node_id] = {
             "node_id": node_id,
-            "athlete_name": athlete_name,
+            "athlete_name": row_athlete_name,
             "equipment_type": self._active_nodes.get(node_id, "unknown"),
             "station_number": station_number,
             "team_name": team_name,
@@ -1062,6 +1085,7 @@ class RaceManager:
             "power_watts": power_watts,
             "max_power_watts": max_power_watts,
             "finished_time_ms": finished_time_ms,
+            **relay_fields,
         }
 
         # Check if all participants have finished the race. A class is a
@@ -1126,6 +1150,92 @@ class RaceManager:
                 interpolated = elapsed_prev + fraction * (elapsed_cur - elapsed_prev)
                 return int(min(elapsed_cur, max(elapsed_prev, round(interpolated))))
         return elapsed_cur
+
+    def _placeholder_relay_fields(self, station_number: int) -> Dict[str, Any]:
+        """Relay fields for a progress row that exists before any telemetry
+        has arrived (start_race()/get_leaderboard_progress() init) -- always
+        leg 1, the roster's first runner, and no splits yet. Empty dict for
+        a non-relay race so callers can both use it as a truthy "is this
+        relay?" flag and splat it into the row unconditionally."""
+        if not (self._config and self._config.competition_mode == "relay"):
+            return {}
+        relay_members = self._station_relay_members.get(station_number) or []
+        return {
+            "relay_legs": self._config.relay_legs,
+            "relay_members": relay_members,
+            "relay_leg": 1,
+            "relay_current_runner": relay_members[0] if relay_members else None,
+            "relay_splits": [],
+        }
+
+    def _relay_leg_fields(
+        self,
+        station_number: int,
+        team_name: Optional[str],
+        prev_progress: Dict[str, Any],
+        distance_m: float,
+        elapsed_time_ms: int,
+    ) -> Dict[str, Any]:
+        """Relay-only progress fields: the target distance is split equally
+        into self._config.relay_legs legs, and this station's cumulative
+        distance_m crossing each leg boundary advances relay_leg / records a
+        split (see the module docstring pattern in
+        test_relay_leg_tracking.py for the exact math). Splits are only ever
+        appended, never rewritten, so a late/duplicate packet can't move an
+        already-recorded split.
+        """
+        relay_legs = self._config.relay_legs
+        relay_members = self._station_relay_members.get(station_number) or []
+        target_value = self._config.target_value
+
+        if not relay_legs or target_value <= 0:
+            return {
+                "relay_legs": relay_legs,
+                "relay_members": relay_members,
+                "relay_leg": 1,
+                "relay_current_runner": relay_members[0] if relay_members else None,
+                "relay_splits": [],
+            }
+
+        leg_distance = target_value / relay_legs
+        # The final boundary uses target_value directly (not
+        # relay_legs * leg_distance) so it exactly matches the finish-line
+        # target used elsewhere -- floating-point division can otherwise
+        # make the two differ by a fraction of a meter.
+        thresholds = [
+            target_value if leg == relay_legs else leg * leg_distance
+            for leg in range(1, relay_legs + 1)
+        ]
+
+        epsilon = 1e-9
+        crossed_count = min(
+            sum(1 for threshold in thresholds if distance_m >= threshold - epsilon),
+            relay_legs,
+        )
+
+        splits = list(prev_progress.get("relay_splits") or [])
+        for leg_index in range(len(splits), crossed_count):
+            split_ms = self._interpolated_finish_time_ms(
+                prev_progress,
+                "distance_m",
+                thresholds[leg_index],
+                distance_m,
+                elapsed_time_ms,
+            )
+            splits.append(split_ms)
+
+        relay_leg = min(len(splits) + 1, relay_legs)
+        current_runner = (
+            relay_members[relay_leg - 1] if relay_leg - 1 < len(relay_members) else None
+        )
+
+        return {
+            "relay_legs": relay_legs,
+            "relay_members": relay_members,
+            "relay_leg": relay_leg,
+            "relay_current_runner": current_runner,
+            "relay_splits": splits,
+        }
 
     def _session_metric_value(
         self,
