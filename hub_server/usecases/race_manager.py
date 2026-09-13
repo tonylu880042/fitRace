@@ -993,7 +993,24 @@ class RaceManager:
             and progress_percent >= 100.0
             and finished_time_ms is None
         ):
-            finished_time_ms = elapsed_time_ms
+            if self._config and self._config.race_type == "distance":
+                finished_time_ms = self._interpolated_finish_time_ms(
+                    prev_progress,
+                    "distance_m",
+                    self._config.target_value,
+                    distance_m,
+                    elapsed_time_ms,
+                )
+            elif self._config and self._config.race_type == "calories":
+                finished_time_ms = self._interpolated_finish_time_ms(
+                    prev_progress,
+                    "calories",
+                    self._config.target_value,
+                    calories,
+                    elapsed_time_ms,
+                )
+            else:
+                finished_time_ms = elapsed_time_ms
 
         # Update metrics
         self._progress[node_id] = {
@@ -1036,6 +1053,45 @@ class RaceManager:
                 self._end_time_epoch_ms = int(time.time() * 1000)
 
         return self._progress
+
+    @staticmethod
+    def _interpolated_finish_time_ms(
+        prev_progress: Dict[str, Any],
+        metric_field: str,
+        target_value: float,
+        metric_cur: float,
+        elapsed_cur: int,
+    ) -> int:
+        """Estimate the instant a target-based metric (distance_m/calories)
+        actually crossed target_value, linearly interpolating between the
+        last sample that was still short of the target and the sample that
+        first reaches/exceeds it.
+
+        The antenna reports these metrics only once per poll interval
+        (0.25s-1s+), so the first sample AT OR PAST the target is late by up
+        to a full interval -- and that lateness varies per lane depending on
+        exactly when their antenna happened to poll, which can flip who
+        "won" a close race. Falls back to elapsed_cur (today's behaviour)
+        when there is no usable previous sample, e.g. this node's very
+        first telemetry already reads past the target.
+
+        Pure computation, no I/O -- prev_progress is the caller's own
+        previously stored progress row for this node.
+        """
+        if prev_progress:
+            metric_prev = prev_progress.get(metric_field)
+            elapsed_prev = prev_progress.get("elapsed_time_ms")
+            if (
+                metric_prev is not None
+                and elapsed_prev is not None
+                and metric_prev < target_value
+                and elapsed_prev < elapsed_cur
+                and metric_cur > metric_prev
+            ):
+                fraction = (target_value - metric_prev) / (metric_cur - metric_prev)
+                interpolated = elapsed_prev + fraction * (elapsed_cur - elapsed_prev)
+                return int(min(elapsed_cur, max(elapsed_prev, round(interpolated))))
+        return elapsed_cur
 
     def _session_metric_value(
         self,
