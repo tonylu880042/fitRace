@@ -28,17 +28,17 @@ pattern-matches the source text (e.g. `assert "raceState !== " in line`)
 cannot catch a wrong boolean combination -- it has to actually run.
 
 renderRace() also calls normalizeLeaderboardDisplayMode(),
-renderRaceActionButtons(), updateControlGuidance() and
-renderReadinessPanel() unconditionally, plus metricNumber() /
-syncRaceFields() / syncCompetitionFields() when `race.config` is set and
-the form isn't dirty. Stubbing every one of those as a no-op would work,
-but the config-dependent calls are avoidable entirely: `state.race` below
-carries no `config` key, so that branch's condition
-(`config && !state.raceConfigDirty`) is false and those three helpers are
-never reached -- only normalizeLeaderboardDisplayMode,
-renderRaceActionButtons, updateControlGuidance and renderReadinessPanel
-need stubs. Each stub is a real, callable no-op (not a name left undefined)
-so renderRace() runs to completion and actually reaches the two lines under
+renderRaceActionButtons(), updateControlGuidance(), renderReadinessPanel()
+and renderRoster() unconditionally, plus metricNumber() / syncRaceFields()
+/ syncCompetitionFields() when `race.config` is set and the form isn't
+dirty. Stubbing every one of those as a no-op would work, but the
+config-dependent calls are avoidable entirely: `state.race` below carries
+no `config` key, so that branch's condition (`config && !state.
+raceConfigDirty`) is false and those three helpers are never reached --
+only normalizeLeaderboardDisplayMode, renderRaceActionButtons,
+updateControlGuidance, renderReadinessPanel and renderRoster need stubs.
+Each stub is a real, callable no-op (not a name left undefined) so
+renderRace() runs to completion and actually reaches the two lines under
 test, rather than throwing before it gets there.
 """
 
@@ -119,6 +119,7 @@ function normalizeLeaderboardDisplayMode(v) { return v; }
 function renderRaceActionButtons() {}
 function updateControlGuidance() {}
 function renderReadinessPanel() {}
+function renderRoster() {}
 const state = {};
 """
 

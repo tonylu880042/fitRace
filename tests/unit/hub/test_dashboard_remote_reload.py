@@ -187,7 +187,7 @@ def test_new_i18n_keys_present_in_both_dictionaries():
     en_start = source.index('"en-US": {')
     zh_start = source.index('dictionaries["zh-TW"] = {')
     en_block = source[en_start:zh_start]
-    zh_block = source[zh_start : zh_start + 8000]
+    zh_block = source[zh_start : zh_start + 12000]
 
     for key in NEW_I18N_KEYS:
         assert (
@@ -203,7 +203,7 @@ def test_i18n_keys_are_symmetric():
     en_start = source.index('"en-US": {')
     zh_start = source.index('dictionaries["zh-TW"] = {')
     en_block = source[en_start:zh_start]
-    zh_block = source[zh_start : zh_start + 8000]
+    zh_block = source[zh_start : zh_start + 12000]
 
     en_keys = set(re.findall(r'"([^"]+)":\s*"', en_block))
     zh_keys = set(re.findall(r'"([^"]+)":\s*"', zh_block))
