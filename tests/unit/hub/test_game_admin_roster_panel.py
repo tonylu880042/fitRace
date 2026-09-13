@@ -53,6 +53,21 @@ def _matching_brace_end(source: str, open_idx: int) -> int:
     raise ValueError("no matching closing brace found")
 
 
+def _matching_paren_end(source: str, open_idx: int) -> int:
+    depth = 0
+    i = open_idx
+    while i < len(source):
+        char = source[i]
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth == 0:
+                return i
+        i += 1
+    raise ValueError("no matching closing paren found")
+
+
 def _extract_function(source: str, name: str) -> str:
     marker = f"function {name}("
     start = source.index(marker)
@@ -62,7 +77,12 @@ def _extract_function(source: str, name: str) -> str:
     async_start = source.rfind("async ", 0, start)
     if async_start != -1 and source[async_start:start] == "async ":
         start = async_start
-    brace_open = source.index("{", start)
+    # Skip past the parameter list before looking for the body's opening
+    # brace -- a default parameter value like `options = {}` has its own
+    # "{" that would otherwise be mistaken for the function body.
+    paren_open = source.index("(", start)
+    paren_end = _matching_paren_end(source, paren_open)
+    brace_open = source.index("{", paren_end)
     brace_end = _matching_brace_end(source, brace_open)
     return source[start : brace_end + 1]
 
@@ -305,6 +325,107 @@ console.log(JSON.stringify({{
     assert result["confirmCalled"] is True
     assert result["importedWith"] == "name\nAlice\n"
     assert result["inputCleared"] is True
+
+
+def test_load_next_heat_retries_with_force_only_after_confirm_returns_true():
+    source = _strip_js_comments(_read())
+    load_next_heat_fn = _extract_function(source, "loadNextHeat")
+    assert "current_heat_not_raced" in load_next_heat_fn  # sanity: real source
+
+    harness = f"""
+{_DOM_STUB}
+function adminHeaders(extra = {{}}) {{ return {{ ...extra }}; }}
+function renderRoster() {{}}
+async function refreshOperationalState() {{}}
+function setMessage(id, text, kind) {{ el(id).textContent = text; }}
+
+let state = {{ race: {{ state: "READY" }} }};
+
+let confirmCalled = false;
+let confirmArg = null;
+global.window = {{
+  confirm: (message) => {{ confirmCalled = true; confirmArg = message; return true; }},
+}};
+
+let callCount = 0;
+const capturedBodies = [];
+global.fetch = async (url, options) => {{
+  callCount += 1;
+  capturedBodies.push(JSON.parse(options.body));
+  if (callCount === 1) {{
+    return {{
+      ok: false,
+      status: 409,
+      json: async () => ({{
+        detail: {{
+          reason: "current_heat_not_raced",
+          message: "current heat has not raced",
+          current_heat: [{{ name: "Alice" }}, {{ name: "Bob" }}],
+        }},
+      }}),
+    }};
+  }}
+  return {{ ok: true, status: 200, json: async () => ({{ entries: [] }}) }};
+}};
+
+{load_next_heat_fn}
+
+(async () => {{
+  await loadNextHeat();
+  console.log(JSON.stringify({{ confirmCalled, confirmArg, callCount, capturedBodies }}));
+}})();
+"""
+    output = _run_node(harness)
+    result = json.loads(output)
+    assert result["confirmCalled"] is True
+    assert "Alice, Bob" in result["confirmArg"]
+    assert result["callCount"] == 2
+    assert result["capturedBodies"] == [{"force": False}, {"force": True}]
+
+
+def test_load_next_heat_does_not_retry_when_confirm_declined():
+    source = _strip_js_comments(_read())
+    load_next_heat_fn = _extract_function(source, "loadNextHeat")
+
+    harness = f"""
+{_DOM_STUB}
+function adminHeaders(extra = {{}}) {{ return {{ ...extra }}; }}
+function renderRoster() {{}}
+async function refreshOperationalState() {{}}
+function setMessage(id, text, kind) {{ el(id).textContent = text; }}
+
+let state = {{ race: {{ state: "READY" }} }};
+
+let confirmCalled = false;
+global.window = {{ confirm: () => {{ confirmCalled = true; return false; }} }};
+
+let callCount = 0;
+global.fetch = async (url, options) => {{
+  callCount += 1;
+  return {{
+    ok: false,
+    status: 409,
+    json: async () => ({{
+      detail: {{
+        reason: "current_heat_not_raced",
+        message: "current heat has not raced",
+        current_heat: [{{ name: "Alice" }}],
+      }},
+    }}),
+  }};
+}};
+
+{load_next_heat_fn}
+
+(async () => {{
+  await loadNextHeat();
+  console.log(JSON.stringify({{ confirmCalled, callCount }}));
+}})();
+"""
+    output = _run_node(harness)
+    result = json.loads(output)
+    assert result["confirmCalled"] is True
+    assert result["callCount"] == 1
 
 
 def test_handle_roster_file_selected_skips_import_when_confirm_declined():

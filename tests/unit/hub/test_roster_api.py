@@ -160,6 +160,94 @@ def test_next_heat_returns_409_while_running():
     app_module.race_manager.stop_race()
 
 
+def test_next_heat_double_press_without_force_is_blocked_and_changes_nothing():
+    """A loaded heat that has NOT raced yet (race still READY/IDLE) must
+    not be silently skipped by a second next-heat press -- see the
+    "current_heat_not_raced" 409 in POST /api/roster/next-heat."""
+    _assign_two_stations()
+    client.post(
+        "/api/roster/import",
+        json={"csv": "name\nAlice\nBob\nCarol\nDave\n"},
+    )
+    client.post(
+        "/api/race/configure", json={"race_type": "distance", "target_value": 500}
+    )
+
+    res = client.post("/api/roster/next-heat")
+    assert res.status_code == 200
+    roster_before = client.get("/api/roster").json()
+    stations_before = client.get("/api/stations").json()
+    state_before = client.get("/api/race/state").json()
+
+    # Race is still READY -- heat 1 (Alice, Bob) has not raced. A second
+    # press without force must be rejected and change nothing.
+    res = client.post("/api/roster/next-heat")
+    assert res.status_code == 409
+    detail = res.json()["detail"]
+    assert detail["reason"] == "current_heat_not_raced"
+    names = {entry["name"] for entry in detail["current_heat"]}
+    assert names == {"Alice", "Bob"}
+
+    assert client.get("/api/roster").json() == roster_before
+    assert client.get("/api/stations").json() == stations_before
+    assert client.get("/api/race/state").json() == state_before
+
+
+def test_next_heat_with_force_skips_the_unraced_heat():
+    _assign_two_stations()
+    client.post(
+        "/api/roster/import",
+        json={"csv": "name\nAlice\nBob\nCarol\nDave\n"},
+    )
+    client.post(
+        "/api/race/configure", json={"race_type": "distance", "target_value": 500}
+    )
+    client.post("/api/roster/next-heat")  # heat 1: Alice, Bob (unraced)
+
+    res = client.post("/api/roster/next-heat", json={"force": True})
+    assert res.status_code == 200
+
+    roster = client.get("/api/roster").json()
+    statuses = {entry["name"]: entry["status"] for entry in roster["entries"]}
+    assert statuses["Alice"] == "done"
+    assert statuses["Bob"] == "done"
+    assert statuses["Carol"] == "loaded"
+    assert statuses["Dave"] == "loaded"
+
+    stations = client.get("/api/stations").json()["stations"]
+    assert stations["1"]["athlete_name"] == "Carol"
+    assert stations["2"]["athlete_name"] == "Dave"
+
+
+def test_next_heat_exhausted_returns_409_and_leaves_race_and_registrations_intact():
+    _assign_two_stations()
+    client.post("/api/roster/import", json={"csv": "name\nAlice\nBob\n"})
+    client.post(
+        "/api/race/configure", json={"race_type": "distance", "target_value": 500}
+    )
+    client.post("/api/roster/next-heat")  # heat 1: Alice, Bob loaded
+
+    # Heat 1 actually races through to STOPPED -- the normal path.
+    app_module.race_manager.start_race()
+    app_module.race_manager.stop_race()
+
+    stations_before = client.get("/api/stations").json()
+
+    res = client.post("/api/roster/next-heat")
+    assert res.status_code == 409
+    assert res.json()["detail"] == "roster exhausted"
+
+    # Nothing was reset or cleared: race is still STOPPED and the finished
+    # heat's registrations (the dashboard's podium data) are untouched.
+    state = client.get("/api/race/state").json()
+    assert state["state"] == "STOPPED"
+    assert client.get("/api/stations").json() == stations_before
+
+    roster = client.get("/api/roster").json()
+    statuses = {entry["name"]: entry["status"] for entry in roster["entries"]}
+    assert statuses == {"Alice": "loaded", "Bob": "loaded"}
+
+
 def test_roster_endpoints_require_admin_token_when_configured(monkeypatch):
     monkeypatch.setenv("FITRACE_ADMIN_TOKEN", "admin-secret")
 

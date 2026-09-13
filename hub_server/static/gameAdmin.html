@@ -1442,7 +1442,8 @@
         "message.heat_load_failed": "Failed to load next heat: {error}",
         "message.walk_in_added": "Walk-in added.",
         "message.entry_marked_absent": "Marked absent.",
-        "message.entry_requeued": "Requeued."
+        "message.entry_requeued": "Requeued.",
+        "confirm.skip_unraced_heat": "The current heat ({names}) has not raced yet. Skip it and load the next heat?"
       }
     };
 
@@ -1634,7 +1635,8 @@
       "message.heat_load_failed": "載入下一組失敗:{error}",
       "message.walk_in_added": "現場報名已新增。",
       "message.entry_marked_absent": "已標記缺席。",
-      "message.entry_requeued": "已重新排入。"
+      "message.entry_requeued": "已重新排入。",
+      "confirm.skip_unraced_heat": "目前這組（{names}）還沒比賽，確定要跳過並載入下一組嗎？"
     };
 
     function t(key, params = {}) {
@@ -2349,13 +2351,31 @@
       }
     }
 
-    async function loadNextHeat() {
+    async function loadNextHeat(options = {}) {
       if (state.race?.state === "RUNNING") return;
       try {
-        state.roster = await fetchJson("/api/roster/next-heat", {
+        const response = await fetch("/api/roster/next-heat", {
           method: "POST",
-          headers: adminHeaders(),
+          headers: adminHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({ force: Boolean(options.force) }),
         });
+        const payload = await response.json();
+        if (!response.ok) {
+          if (response.status === 409 && payload.detail && payload.detail.reason === "current_heat_not_raced") {
+            const names = (payload.detail.current_heat || [])
+              .map((entry) => entry.name)
+              .filter(Boolean)
+              .join(", ");
+            if (window.confirm(t("confirm.skip_unraced_heat", { names }))) {
+              return loadNextHeat({ force: true });
+            }
+            return;
+          }
+          const detailMessage = (payload.detail && payload.detail.message) || payload.detail || response.statusText;
+          setMessage("roster-heat-message", t("message.heat_load_failed", { error: detailMessage }), "error");
+          return;
+        }
+        state.roster = payload;
         await refreshOperationalState();
         renderRoster();
         setMessage("roster-heat-message", t("message.heat_loaded"), "ok");

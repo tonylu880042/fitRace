@@ -243,16 +243,28 @@ class RosterManager:
         return dict(entry)
 
     def load_next_heat(self, station_numbers: list[int]) -> list[dict[str, Any]]:
+        """Move the currently "loaded" heat to "done" and load the next
+        pending entries onto `station_numbers`.
+
+        Builds the result on a working copy and only swaps it into
+        `self._entries` (and persists) once the whole operation is known to
+        succeed -- a raise (no stations, or nothing left pending) must leave
+        both the in-memory entries and the persisted file exactly as they
+        were, never a half-applied loaded->done transition sitting in
+        memory with the "loaded" file still on disk.
+        """
         if not station_numbers:
             raise ValueError("assign stations first")
 
-        for entry in self._entries:
+        working = [dict(entry) for entry in self._entries]
+
+        for entry in working:
             if entry["status"] == "loaded":
                 entry["status"] = "done"
                 entry["station_number"] = None
 
         pending = sorted(
-            (entry for entry in self._entries if entry["status"] == "pending"),
+            (entry for entry in working if entry["status"] == "pending"),
             key=lambda entry: entry["order"],
         )
         if not pending:
@@ -266,6 +278,7 @@ class RosterManager:
             entry["station_number"] = station_number
             loaded.append(dict(entry))
 
+        self._entries = working
         self._persist()
         return loaded
 

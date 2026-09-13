@@ -1361,6 +1361,20 @@ async def requeue_roster_entry(entry_id: str, request: Request):
     return roster_summary_response()
 
 
+async def next_heat_force_requested(request: Request) -> bool:
+    """True if the caller explicitly opted into skipping an unraced heat,
+    via either `?force=true` or a JSON body {"force": true}. Body parsing
+    is defensive: most callers send no body at all (the common, unforced
+    case), and this must not turn that into a 4xx of its own."""
+    if request.query_params.get("force", "").strip().lower() in ("1", "true"):
+        return True
+    try:
+        body = await request.json()
+    except Exception:
+        return False
+    return bool(isinstance(body, dict) and body.get("force"))
+
+
 @app.post("/api/roster/next-heat")
 async def load_next_heat(request: Request):
     require_admin(request)
@@ -1370,6 +1384,37 @@ async def load_next_heat(request: Request):
     config = race_manager.get_config()
     if config is None:
         raise HTTPException(status_code=409, detail="save race settings first")
+
+    force = await next_heat_force_requested(request)
+
+    # A loaded heat that hasn't raced yet (race state is still READY/IDLE,
+    # i.e. never reached STOPPED) means an accidental double press would
+    # silently skip it -- block unless the caller explicitly forces it.
+    # Once the heat has actually raced (state STOPPED), loading the next
+    # one is the normal path and needs no force.
+    current_heat = [
+        entry for entry in roster_manager.entries() if entry.get("status") == "loaded"
+    ]
+    if (
+        current_heat
+        and race_manager.get_state() in (RaceState.IDLE, RaceState.READY)
+        and not force
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "reason": "current_heat_not_raced",
+                "message": "current heat has not raced",
+                "current_heat": current_heat,
+            },
+        )
+
+    # Checked BEFORE any reset/registration change below: an exhausted
+    # roster must leave the race (and the finished heat's registrations --
+    # the dashboard's podium data) completely untouched, not reset first
+    # and only then discover there is nothing left to load.
+    if not any(entry.get("status") == "pending" for entry in roster_manager.entries()):
+        raise HTTPException(status_code=409, detail="roster exhausted")
 
     station_numbers = assigned_station_numbers()
     try:
@@ -1390,7 +1435,8 @@ async def load_next_heat(request: Request):
                 division=entry["division"],
             )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        status = 409 if str(e) == "roster exhausted" else 400
+        raise HTTPException(status_code=status, detail=str(e))
 
     await broadcast_race_state()
     return roster_summary_response()

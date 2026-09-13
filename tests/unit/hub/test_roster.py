@@ -186,6 +186,27 @@ def test_load_next_heat_zero_pending_raises(tmp_path):
         manager.load_next_heat([1])
 
 
+def test_load_next_heat_zero_pending_leaves_state_unchanged_and_persisted(tmp_path):
+    """A raising load_next_heat() must never mutate the loaded->done
+    transition in memory without persisting it -- otherwise entries() would
+    read "done" while the on-disk file (and a freshly reloaded manager)
+    still says "loaded", a silent state divergence."""
+    path = tmp_path / "roster.json"
+    manager = RosterManager(RaceSettingsStore(path))
+    manager.import_csv("name\nAlice\n")
+    manager.load_next_heat([1])  # Alice -> loaded
+    before = manager.entries()
+
+    with pytest.raises(ValueError, match="roster exhausted"):
+        manager.load_next_heat([1])
+
+    assert manager.entries() == before
+    assert manager.entries()[0]["status"] == "loaded"
+
+    reloaded = RosterManager(RaceSettingsStore(path))
+    assert reloaded.entries() == before
+
+
 def test_load_next_heat_no_stations_raises(tmp_path):
     manager = _manager(tmp_path)
     manager.import_csv("name\nAlice\n")
