@@ -274,5 +274,11 @@
   "results.meta_athletes": "Atleti",
   "results.updating": "Aggiornamento",
   "results.empty_title": "Nessuna gara ancora",
-  "results.empty_hint": "I risultati appariranno qui al termine di una gara."
+  "results.empty_hint": "I risultati appariranno qui al termine di una gara.",
+  "readiness.blocked_title": "Avvio non possibile",
+  "readiness.reason_state": "Impostazioni gara non salvate",
+  "readiness.reason_target": "Obiettivo gara non impostato",
+  "readiness.reason_registrations": "Nessun atleta registrato",
+  "readiness.reason_teams": "Configurazione squadre incompleta",
+  "readiness.reason_stations": "Stazione {stations} offline"
 }

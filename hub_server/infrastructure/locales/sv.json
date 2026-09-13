@@ -274,5 +274,11 @@
   "results.meta_athletes": "Idrottare",
   "results.updating": "Uppdaterar",
   "results.empty_title": "Inga tävlingar än",
-  "results.empty_hint": "Resultat visas här när en tävling är avslutad."
+  "results.empty_hint": "Resultat visas här när en tävling är avslutad.",
+  "readiness.blocked_title": "Kan inte starta",
+  "readiness.reason_state": "Tävlingsinställningar ej sparade",
+  "readiness.reason_target": "Inget tävlingsmål inställt",
+  "readiness.reason_registrations": "Inga idrottare registrerade",
+  "readiness.reason_teams": "Lagindelning ofullständig",
+  "readiness.reason_stations": "Station {stations} offline"
 }

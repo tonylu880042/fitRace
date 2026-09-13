@@ -7,7 +7,7 @@ set -euo pipefail
 HUB_TARGET="${HUB_TARGET:-tony@192.168.0.130}"
 EDGE_TARGET="${EDGE_TARGET:-tony@192.168.0.130}"
 EDGE_DEPLOY_PATH="${EDGE_DEPLOY_PATH:-/home/tony/fitRace}"
-DRY_RUN=0 SKIP_TESTS=0 ALLOW_DIRTY=0
+DRY_RUN=0 SKIP_TESTS=0 ALLOW_DIRTY=0 SKIP_PROVISION_CHECK=0
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 info() { echo "[INFO] $*"; }
@@ -103,6 +103,44 @@ deploy_hub() {
   echo ""
 }
 
+# Every gate below fails SILENTLY in production: the operator presses a
+# button, gets a 200 back, and nothing happens on the Edge Node. That has
+# already cost a venue debugging session twice (dry-run restarts, then a
+# hub-led shutdown the nodes ignored), so the deploy refuses to report
+# success while a node is still half-provisioned. See DEPLOYMENT.md §10.
+check_edge_provisioned() {
+  local target="$1"
+  [[ $SKIP_PROVISION_CHECK -eq 1 ]] && { info "Provision check skipped"; return 0; }
+  [[ $DRY_RUN -eq 1 ]] && { info "Provision check skipped (--dry-run)"; return 0; }
+
+  local missing=()
+  local edge_env web_env
+  edge_env=$(ssh -o ConnectTimeout=6 "$target" \
+    "systemctl show fitracestudio-edge.service -p Environment --value" 2>/dev/null || echo "")
+  web_env=$(ssh -o ConnectTimeout=6 "$target" \
+    "systemctl show fitracestudio-edge-web-config.service -p Environment --value" 2>/dev/null || echo "")
+
+  [[ "$edge_env" == *FITRACE_NODE_COMMAND_TOKEN=* ]] || missing+=("FITRACE_NODE_COMMAND_TOKEN (hub-led shutdown is rejected without it)")
+  [[ "$edge_env" == *FITRACE_POWER_COMMANDS_ENABLED=1* ]] || missing+=("FITRACE_POWER_COMMANDS_ENABLED (shutdown would only be a dry run)")
+  [[ "$web_env" == *FITRACE_EDGE_SERVICE_RESTART_ENABLED=1* ]] || missing+=("FITRACE_EDGE_SERVICE_RESTART_ENABLED (saved settings never reach the runtime)")
+  ssh -o ConnectTimeout=6 "$target" "sudo -n -l /usr/bin/systemctl poweroff" >/dev/null 2>&1 \
+    || missing+=("passwordless 'systemctl poweroff' for the Edge service user")
+
+  [[ ${#missing[@]} -eq 0 ]] && { info "Provision check passed."; return 0; }
+
+  echo "" >&2
+  echo "This Edge Node is NOT fully provisioned. Missing:" >&2
+  local item
+  for item in "${missing[@]}"; do echo "  - $item" >&2; done
+  echo "" >&2
+  echo "Fix (use the SAME token on the hub and every edge node):" >&2
+  echo "  scp deploy_update/systemd/install-node-shutdown.sh $target:/tmp/" >&2
+  echo "  ssh -t $target 'sudo bash /tmp/install-node-shutdown.sh install <TOKEN>'" >&2
+  echo "  ssh -t $target 'sudo bash /tmp/install-edge-service-restart.sh install'" >&2
+  echo "" >&2
+  error "Code is deployed, but the node is half-provisioned (pass --skip-provision-check to override)."
+}
+
 deploy_edge() {
   local target="${1:-$EDGE_TARGET}" path="${2:-$EDGE_DEPLOY_PATH}"
   info "Deploying edge to $target at $path..."
@@ -124,6 +162,8 @@ deploy_edge() {
   echo ""
   echo "Edge deploy completed at $target:$path"
   echo ""
+
+  check_edge_provisioned "$target"
 }
 
 rollback_hub() {
@@ -173,6 +213,9 @@ Flags (position-independent):
   --dry-run       Print commands without executing
   --skip-tests    Skip pytest
   --allow-dirty   Allow uncommitted changes
+  --skip-provision-check
+                  Don't fail the edge deploy on a half-provisioned node
+                  (missing power/restart env or sudoers -- see DEPLOYMENT.md §10)
 EOF
   exit 0
 }
@@ -186,6 +229,7 @@ main() {
       --dry-run) DRY_RUN=1; shift ;;
       --skip-tests) SKIP_TESTS=1; shift ;;
       --allow-dirty) ALLOW_DIRTY=1; shift ;;
+      --skip-provision-check) SKIP_PROVISION_CHECK=1; shift ;;
       *) args+=("$1"); shift ;;
     esac
   done

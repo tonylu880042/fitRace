@@ -274,5 +274,11 @@
   "results.meta_athletes": "Athleten",
   "results.updating": "Wird aktualisiert",
   "results.empty_title": "Noch keine Rennen",
-  "results.empty_hint": "Ergebnisse erscheinen hier, sobald ein Rennen beendet ist."
+  "results.empty_hint": "Ergebnisse erscheinen hier, sobald ein Rennen beendet ist.",
+  "readiness.blocked_title": "Start nicht möglich",
+  "readiness.reason_state": "Renneinstellungen nicht gespeichert",
+  "readiness.reason_target": "Kein Rennziel festgelegt",
+  "readiness.reason_registrations": "Keine Athleten angemeldet",
+  "readiness.reason_teams": "Team-Einrichtung unvollständig",
+  "readiness.reason_stations": "Station {stations} offline"
 }

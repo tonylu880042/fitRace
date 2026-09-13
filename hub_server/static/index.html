@@ -19,6 +19,7 @@
       --mid-grey: #3f3f46;
       --dim-grey: #52525b;
       --changeover-violet: #a78bfa;
+      --signal-green: #34d399;
     }
 
     * {
@@ -1702,13 +1703,18 @@
       border-radius: 999px;
       flex: 0 0 auto;
       margin-top: 0.35rem;
-      background: var(--crimson-red);
-      box-shadow: 0 0 8px rgba(244, 63, 94, 0.75);
+      background: var(--dim-grey);
     }
 
     .node-status-dot.online {
-      background: var(--volt-yellow);
-      box-shadow: 0 0 8px rgba(226, 255, 59, 0.75);
+      background: var(--signal-green);
+      box-shadow: 0 0 8px rgba(52, 211, 153, 0.75);
+    }
+
+    .stream-pill .node-status-dot {
+      width: 6px;
+      height: 6px;
+      margin-top: 0;
     }
 
     .edge-node-name {
@@ -2419,6 +2425,7 @@
     let leaderboardCardSignature = null;
     let raceStageOverride = null;
     let raceStageOverrideTimer = null;
+    let latestReadiness = null;
     let autoResetInterval = null;
     let autoResetSecondsLeft = 0;
     let autoResetCancelled = false;
@@ -2740,8 +2747,53 @@
       banner.className = `race-stage-banner ${details.className}`;
       document.getElementById("race-stage-kicker").innerText = details.kicker;
       document.getElementById("race-stage-main").innerText = details.main;
-      document.getElementById("race-stage-sub").innerText = details.sub;
+      const subEl = document.getElementById("race-stage-sub");
+      if (subEl) {
+        const notice = readinessNoticeHtml(latestReadiness, currentState);
+        if (notice !== null) {
+          subEl.innerHTML = notice;
+        } else {
+          subEl.innerText = details.sub;
+        }
+      }
       document.getElementById("race-stage-timer").innerText = details.timer;
+    }
+
+    // Builds the blocked-race reasons from readiness.checks' STABLE keys
+    // (state/target/registrations/teams/stations) -- never from
+    // readiness.blocking_issues, which is hardcoded English and would put
+    // untranslated text on a zh-TW projector.
+    function readinessBlockingReasons(readiness) {
+      const order = ["state", "target", "registrations", "teams", "stations"];
+      const checks = (readiness && readiness.checks) || {};
+      const reasons = [];
+      order.forEach((key) => {
+        const check = checks[key];
+        if (!check || check.status !== "block") return;
+        if (key === "stations") {
+          const offline = (readiness.station_health || [])
+            .filter((station) => station.health !== "online")
+            .map((station) => station.station_number);
+          reasons.push(t("readiness.reason_stations", { stations: offline.join(", ") }));
+        } else {
+          reasons.push(t(`readiness.reason_${key}`));
+        }
+      });
+      return reasons;
+    }
+
+    // Returns escaped HTML for the dashboard's read-only "why can't the
+    // race start" notice, or null when nothing should render (ready, or
+    // the race is already RUNNING) -- callers must fall back to the
+    // banner's normal sub-text in that case.
+    function readinessNoticeHtml(readiness, raceState) {
+      if (!readiness || readiness.ready !== false || raceState === "RUNNING") return null;
+      const reasons = readinessBlockingReasons(readiness);
+      if (!reasons.length) return null;
+      const parts = [escapeHtml(t("readiness.blocked_title"))].concat(
+        reasons.map((reason) => escapeHtml(reason))
+      );
+      return parts.join(" · ");
     }
 
     function setRaceStageOverride(stage, durationMs) {
@@ -3083,10 +3135,13 @@
         const streamHtml = streams.length
           ? streams.map((stream) => {
               const channel = stream.antenna_channel ? ` · ${escapeHtml(stream.antenna_channel)}` : "";
+              const streamOnline = Boolean(stream.last_telemetry_epoch_ms) && (Date.now() - Number(stream.last_telemetry_epoch_ms)) < 15000;
+              const streamStatusText = streamOnline ? t("connection.online") : t("connection.offline");
               return `
                 <span class="stream-pill" title="${escapeHtml(stream.display_name || stream.equipment_id || stream.node_id || "")}">
+                  <span class="node-status-dot ${streamOnline ? "online" : ""}"></span>
                   <strong>${escapeHtml(stream.display_name || stream.equipment_id || stream.node_id || t("edge.unbound"))}</strong>
-                  <span>${escapeHtml(stream.status || t("status.unknown"))}${channel}</span>
+                  <span>${escapeHtml(streamStatusText)}${channel}</span>
                 </span>`;
             }).join("")
           : `<span class="stream-pill"><strong>${escapeHtml(t("edge.zero_streams"))}</strong><span>${escapeHtml(t("edge.unbound"))}</span></span>`;
@@ -5326,9 +5381,20 @@
       }
       // fetchNodes() already runs on the dashboard's existing poll cadence
       // (initial load, websocket reconnect, and the offline fallback
-      // timer), so the staleness check rides along here instead of a
-      // dedicated timer.
+      // timer), so the staleness check and the readiness notice ride
+      // along here instead of a dedicated timer.
       checkBuildFreshness();
+      fetchReadiness();
+    }
+
+    async function fetchReadiness() {
+      try {
+        const res = await fetch(`/api/race/readiness?t=${Date.now()}`);
+        latestReadiness = await res.json();
+      } catch (err) {
+        console.error("Failed to fetch readiness:", err);
+      }
+      renderRaceStageBanner();
     }
 
     let raceEndTime = null;

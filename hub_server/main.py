@@ -73,8 +73,9 @@ def main():
         asyncio.run(main_async())
     except KeyboardInterrupt:
         logger.info("Hub Server stopped by user interrupt")
-    except Exception as e:
-        logger.critical(f"Hub Server crashed: {e}")
+    except Exception:
+        logger.critical("Hub Server crashed", exc_info=True)
+        raise
 
 
 if __name__ == "__main__":
