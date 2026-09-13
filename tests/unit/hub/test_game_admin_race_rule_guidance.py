@@ -454,12 +454,14 @@ def test_sync_race_fields_renders_distance_note_text_on_screen():
 def _run_sync_competition_fields(race_type: str, is_team_race: bool) -> dict:
     source = _stripped_script()
     completion_field_state_fn = _extract_function(source, "completionFieldState")
+    is_relay_mode_fn = _extract_function(source, "isRelayCompetitionMode")
     sync_competition_fields_fn = _extract_function(source, "syncCompetitionFields")
     script = (
         "const mockElements = {};\n"
         "function makeEl() {\n"
         "  return {\n"
         "    textContent: '',\n"
+        "    value: '',\n"
         "    dataset: {},\n"
         "    disabled: false,\n"
         "    classList: { toggled: {}, toggle: function (cls, force) { this.toggled[cls] = force; } },\n"
@@ -471,6 +473,8 @@ def _run_sync_competition_fields(race_type: str, is_team_race: bool) -> dict:
         "}\n"
         "function t(key) { return `T[${key}]`; }\n"
         "function updateControlGuidance() {}\n"
+        + is_relay_mode_fn
+        + "\n"
         + completion_field_state_fn
         + "\n"
         + sync_competition_fields_fn

@@ -483,6 +483,8 @@ def _run_game_admin_assigned_stations(
         + get_health_fn
         + "\n"
         + "const window = { location: { origin: 'http://test.local' } };\n"
+        + "const isRelayRace = false;\n"
+        + "function buildRelayRegistrationFormHtml() { return ''; }\n"
         + f"const stations = {stations_js};\n"
         + "const keys = Object.keys(stations).sort((a, b) => Number(a) - Number(b));\n"
         + f"const assigned = keys.map((key) => {body}).join('');\n"
