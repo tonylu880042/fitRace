@@ -263,6 +263,23 @@ class RaceResultsQuery:
         # everything else ranks the biggest number (descending).
         ascending = race_type in _TARGET_RACE_TYPES
         ordered = sorted(rows, key=lambda r: r["value"], reverse=not ascending)
+
+        # A named athlete who raced this category more than once must only
+        # occupy one record slot -- keep their best row (the first one we
+        # meet in `ordered`, since it's already sorted best-first) and drop
+        # the rest. Anonymous rows (athlete_name is None) are never merged
+        # with each other -- only a shared, stripped, non-empty name merges.
+        deduped = []
+        seen_names: set[str] = set()
+        for row in ordered:
+            name = row.get("athlete_name")
+            key = name.strip() if isinstance(name, str) else None
+            if key is not None:
+                if key in seen_names:
+                    continue
+                seen_names.add(key)
+            deduped.append(row)
+
         return [
             {
                 "athlete_name": r["athlete_name"],
@@ -270,7 +287,7 @@ class RaceResultsQuery:
                 "value": r["value"],
                 "end_time_epoch_ms": r["end_time_epoch_ms"],
             }
-            for r in ordered[:3]
+            for r in deduped[:3]
         ]
 
     @staticmethod

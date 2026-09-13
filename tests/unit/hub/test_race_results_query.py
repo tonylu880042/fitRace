@@ -368,6 +368,111 @@ def test_get_records_max_power_ordered_descending(tmp_path):
     assert [e["athlete_name"] for e in records[0]["entries"]] == ["Hank", "Gina"]
 
 
+def test_get_records_keeps_only_each_athletes_best_distance_result(tmp_path):
+    # A named athlete who raced the same 1000 m category twice must only
+    # occupy one of the three record slots, with their BEST (fastest) time
+    # -- not both, and not their worse run.
+    store = RaceResultStore(tmp_path / "race_results.jsonl")
+    store.save_finished_snapshot(
+        _distance_snapshot_variant(
+            1000,
+            1000,
+            2000,
+            rows={
+                "node-01": _row(
+                    "node-01", "Alice", distance_m=1000, finished_time_ms=31000
+                ),
+            },
+        )
+    )
+    store.save_finished_snapshot(
+        _distance_snapshot_variant(
+            1000,
+            3000,
+            4000,
+            rows={
+                "node-02": _row(
+                    "node-02", "Alice", distance_m=1000, finished_time_ms=30000
+                ),
+                "node-03": _row(
+                    "node-03", "Bob", distance_m=1000, finished_time_ms=35000
+                ),
+                "node-04": _row(
+                    "node-04", "Cara", distance_m=1000, finished_time_ms=36000
+                ),
+            },
+        )
+    )
+    query = RaceResultsQuery(store)
+
+    entries = query.get_records()["records"][0]["entries"]
+
+    assert [e["athlete_name"] for e in entries].count("Alice") == 1
+    alice = next(e for e in entries if e["athlete_name"] == "Alice")
+    assert alice["value"] == 30000  # her best (fastest) run, not 31000
+    assert [e["athlete_name"] for e in entries] == ["Alice", "Bob", "Cara"]
+
+
+def test_get_records_keeps_only_each_athletes_best_time_boxed_result(tmp_path):
+    # Time-boxed races (time/watts) rank by distance covered, largest wins
+    # -- a repeated name must keep its LARGEST distance, not the smallest.
+    store = RaceResultStore(tmp_path / "race_results.jsonl")
+    store.save_finished_snapshot(
+        _distance_snapshot_variant(
+            0,
+            1000,
+            2000,
+            race_type="time",
+            duration_sec=600,
+            rows={"node-01": _row("node-01", "Alice", distance_m=500)},
+        )
+    )
+    store.save_finished_snapshot(
+        _distance_snapshot_variant(
+            0,
+            3000,
+            4000,
+            race_type="time",
+            duration_sec=600,
+            rows={"node-02": _row("node-02", "Alice", distance_m=700)},
+        )
+    )
+    query = RaceResultsQuery(store)
+
+    entries = query.get_records()["records"][0]["entries"]
+
+    assert len(entries) == 1
+    assert entries[0]["athlete_name"] == "Alice"
+    assert entries[0]["value"] == 700  # her best (largest) distance, not 500
+
+
+def test_get_records_never_merges_anonymous_finishers(tmp_path):
+    # None (anonymous) athlete_name rows must never be deduped against each
+    # other -- only named athletes are merged by name.
+    store = RaceResultStore(tmp_path / "race_results.jsonl")
+    store.save_finished_snapshot(
+        _distance_snapshot_variant(
+            1000,
+            1000,
+            2000,
+            rows={
+                "node-01": _row(
+                    "node-01", None, distance_m=1000, finished_time_ms=31000
+                ),
+                "node-02": _row(
+                    "node-02", None, distance_m=1000, finished_time_ms=32000
+                ),
+            },
+        )
+    )
+    query = RaceResultsQuery(store)
+
+    entries = query.get_records()["records"][0]["entries"]
+
+    assert len(entries) == 2
+    assert all(e["athlete_name"] is None for e in entries)
+
+
 def test_get_records_orders_categories_most_recently_contested_first(tmp_path):
     store = RaceResultStore(tmp_path / "race_results.jsonl")
     store.save_finished_snapshot(
