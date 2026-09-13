@@ -8,7 +8,7 @@ import time
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Literal, Optional
 import segno
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
@@ -196,11 +196,24 @@ class RegisterAthletePayload(BaseModel):
     # "is this station registered?" -- never athlete_name truthiness.
     athlete_name: Optional[str] = Field(None, max_length=80)
     team_name: Optional[str] = Field(None, max_length=80)
+    # Optional overall-ranking split for the venue's men/women categories.
+    # Never required -- a blank string behaves like omitting the field
+    # entirely, same normalization as athlete_name below.
+    division: Optional[Literal["men", "women"]] = None
     avatar_base64: Optional[str] = None
 
     @field_validator("athlete_name", mode="before")
     @classmethod
     def _blank_name_is_none(cls, value):
+        if value is None:
+            return None
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+    @field_validator("division", mode="before")
+    @classmethod
+    def _blank_division_is_none(cls, value):
         if value is None:
             return None
         if isinstance(value, str) and not value.strip():
@@ -1262,6 +1275,7 @@ async def register_athlete(payload: RegisterAthletePayload):
             payload.athlete_name,
             team_name=payload.team_name,
             has_avatar=has_avatar,
+            division=payload.division,
         )
 
         # Broadcast registration success to the dashboard

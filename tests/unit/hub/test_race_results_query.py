@@ -12,12 +12,14 @@ def _row(
     calories=0,
     max_power_watts=0,
     finished_time_ms=None,
+    division=None,
 ):
     return {
         "node_id": node_id,
         "athlete_name": athlete_name,
         "station_number": station_number,
         "team_name": None,
+        "division": division,
         "avatar_url": None,
         "distance_m": distance_m,
         "elapsed_time_ms": 60000,
@@ -471,6 +473,69 @@ def test_get_records_never_merges_anonymous_finishers(tmp_path):
 
     assert len(entries) == 2
     assert all(e["athlete_name"] is None for e in entries)
+
+
+def test_get_records_splits_the_same_category_by_division(tmp_path):
+    # A 500 m sprint run by both men and women must produce two separate
+    # records for the same (race_type, label) -- one per division -- not a
+    # single mixed leaderboard.
+    store = RaceResultStore(tmp_path / "race_results.jsonl")
+    store.save_finished_snapshot(
+        _distance_snapshot_variant(
+            500,
+            1000,
+            2000,
+            rows={
+                "node-01": _row(
+                    "node-01",
+                    "Alice",
+                    distance_m=500,
+                    finished_time_ms=90000,
+                    division="women",
+                ),
+                "node-02": _row(
+                    "node-02",
+                    "Bob",
+                    distance_m=500,
+                    finished_time_ms=80000,
+                    division="men",
+                ),
+            },
+        )
+    )
+    query = RaceResultsQuery(store)
+
+    records = query.get_records()["records"]
+
+    assert len(records) == 2
+    women = next(r for r in records if r["division"] == "women")
+    men = next(r for r in records if r["division"] == "men")
+    assert women["label"] == "500 m" == men["label"]
+    assert [e["athlete_name"] for e in women["entries"]] == ["Alice"]
+    assert [e["athlete_name"] for e in men["entries"]] == ["Bob"]
+
+
+def test_get_records_no_division_is_its_own_category(tmp_path):
+    store = RaceResultStore(tmp_path / "race_results.jsonl")
+    store.save_finished_snapshot(
+        _distance_snapshot_variant(
+            500,
+            1000,
+            2000,
+            rows={
+                "node-01": _row(
+                    "node-01", "Cara", distance_m=500, finished_time_ms=70000
+                ),
+            },
+        )
+    )
+    query = RaceResultsQuery(store)
+
+    records = query.get_records()["records"]
+
+    assert len(records) == 1
+    assert records[0]["division"] is None
+    assert [e["athlete_name"] for e in records[0]["entries"]] == ["Cara"]
 
 
 def test_get_records_orders_categories_most_recently_contested_first(tmp_path):

@@ -3591,6 +3591,12 @@
       return key ? t(key) : String(raceType || "");
     }
 
+    function recordWallDivisionLabel(division) {
+      if (division === "men") return t("record_wall.division_men");
+      if (division === "women") return t("record_wall.division_women");
+      return "";
+    }
+
     function formatRecordEntryValue(raceType, value) {
       if (raceType === "distance" || raceType === "calories") {
         return `${(metricNumber(value) / 1000).toFixed(1)}s`;
@@ -3625,10 +3631,12 @@
       const slides = [];
 
       (records || []).forEach((record) => {
+        const divisionLabel = recordWallDivisionLabel(record.division);
+        const divisionSuffix = divisionLabel ? ` &middot; ${escapeHtml(divisionLabel)}` : "";
         slides.push(`
           <div class="record-wall-slide">
             <div class="record-wall-kicker">${escapeHtml(t("record_wall.title"))}</div>
-            <div class="record-wall-title">${escapeHtml(recordWallTypeLabel(record.race_type))} &middot; ${escapeHtml(record.label)}</div>
+            <div class="record-wall-title">${escapeHtml(recordWallTypeLabel(record.race_type))} &middot; ${escapeHtml(record.label)}${divisionSuffix}</div>
             <div class="record-wall-list">${renderRecordWallRows(record.entries || [], record.race_type)}</div>
           </div>
         `);

@@ -40,6 +40,9 @@ class RaceManager:
         self._station_teams: Dict[int, Optional[str]] = (
             {}
         )  # station_number (int) -> team_name (str)
+        self._station_divisions: Dict[int, Optional[str]] = (
+            {}
+        )  # station_number (int) -> division ("men"/"women"/None)
         self._station_has_avatar: Dict[int, bool] = (
             {}
         )  # station_number (int) -> has_avatar (bool)
@@ -216,6 +219,7 @@ class RaceManager:
             "athlete_name": athlete_name,
             "station_number": station_number,
             "team_name": None,
+            "division": None,
             "avatar_url": None,
             "distance_m": 0.0,
             "elapsed_time_ms": 0,
@@ -310,6 +314,7 @@ class RaceManager:
                 "athlete_name": athlete_name,
                 "station_number": station_number,
                 "team_name": None,
+                "division": None,
                 "avatar_url": None,
                 "distance_m": 0.0,
                 "elapsed_time_ms": 0,
@@ -327,6 +332,7 @@ class RaceManager:
             key = node_id if node_id else f"station-{station_number}"
             if key not in progress:
                 team_name = self._station_teams.get(station_number)
+                division = self._station_divisions.get(station_number)
                 has_avatar = self._station_has_avatar.get(station_number, False)
                 avatar_url = (
                     f"/static/avatars/station_{station_number}.webp?t={int(time.time())}"
@@ -338,6 +344,7 @@ class RaceManager:
                     "athlete_name": athlete_name,
                     "station_number": station_number,
                     "team_name": team_name,
+                    "division": division,
                     "avatar_url": avatar_url,
                     "distance_m": 0.0,
                     "elapsed_time_ms": 0,
@@ -586,6 +593,7 @@ class RaceManager:
             # Clean current athlete registrations but keep hardware station mapping
             self._station_registrations.clear()
             self._station_teams.clear()
+            self._station_divisions.clear()
             self._station_has_avatar.clear()
             self._active_nodes.clear()
 
@@ -611,6 +619,7 @@ class RaceManager:
             # Clean current athlete registrations but keep hardware station mapping
             self._station_registrations.clear()
             self._station_teams.clear()
+            self._station_divisions.clear()
             self._station_has_avatar.clear()
             self._active_nodes.clear()
 
@@ -700,6 +709,8 @@ class RaceManager:
                 del self._station_registrations[station_number]
             if station_number in self._station_teams:
                 del self._station_teams[station_number]
+            if station_number in self._station_divisions:
+                del self._station_divisions[station_number]
             if station_number in self._station_has_avatar:
                 del self._station_has_avatar[station_number]
             self._persist_settings()
@@ -721,11 +732,13 @@ class RaceManager:
         athlete_name: Optional[str],
         team_name: Optional[str] = None,
         has_avatar: bool = False,
+        division: Optional[str] = None,
     ):
         if self._state not in (RaceState.IDLE, RaceState.READY):
             raise ValueError(f"Cannot register athletes in state {self._state}")
         self._station_registrations[station_number] = athlete_name
         self._station_teams[station_number] = team_name
+        self._station_divisions[station_number] = division
         self._station_has_avatar[station_number] = has_avatar
 
     def get_stations_status(self) -> dict:
@@ -748,6 +761,7 @@ class RaceManager:
                 # Callers must consult this, never athlete_name truthiness.
                 "registered": sn in self._station_registrations,
                 "team_name": self._station_teams.get(sn),
+                "division": self._station_divisions.get(sn),
                 "has_avatar": self._station_has_avatar.get(sn, False),
             }
 
@@ -760,6 +774,7 @@ class RaceManager:
                     "athlete_name": self._station_registrations[sn],
                     "registered": True,
                     "team_name": self._station_teams.get(sn),
+                    "division": self._station_divisions.get(sn),
                     "has_avatar": self._station_has_avatar.get(sn, False),
                 }
 
@@ -799,6 +814,7 @@ class RaceManager:
                 "athlete_name": athlete_name,
                 "station_number": station_number,
                 "team_name": None,
+                "division": None,
                 "avatar_url": None,
                 "distance_m": 0.0,
                 "elapsed_time_ms": 0,
@@ -816,6 +832,7 @@ class RaceManager:
             key = node_id if node_id else f"station-{station_number}"
             if key not in self._progress:
                 team_name = self._station_teams.get(station_number)
+                division = self._station_divisions.get(station_number)
                 has_avatar = self._station_has_avatar.get(station_number, False)
                 import time
 
@@ -830,6 +847,7 @@ class RaceManager:
                     "athlete_name": athlete_name,
                     "station_number": station_number,
                     "team_name": team_name,
+                    "division": division,
                     "avatar_url": avatar_url,
                     "distance_m": 0.0,
                     "elapsed_time_ms": 0,
@@ -872,6 +890,7 @@ class RaceManager:
         # Clean current athlete registrations but keep hardware station mapping
         self._station_registrations.clear()
         self._station_teams.clear()
+        self._station_divisions.clear()
         self._station_has_avatar.clear()
         self._active_nodes.clear()
         # Reset must actually stick: without this, race_settings.json still
@@ -904,12 +923,14 @@ class RaceManager:
                 break
 
         team_name = None
+        division = None
         avatar_url = None
         if station_number is not None:
             athlete_name = self._station_registrations.get(
                 station_number, self._default_participant_name(node_id)
             )
             team_name = self._station_teams.get(station_number)
+            division = self._station_divisions.get(station_number)
             has_avatar = self._station_has_avatar.get(station_number, False)
             import time
 
@@ -1019,6 +1040,7 @@ class RaceManager:
             "equipment_type": self._active_nodes.get(node_id, "unknown"),
             "station_number": station_number,
             "team_name": team_name,
+            "division": division,
             "avatar_url": avatar_url,
             "distance_m": distance_m,
             "elapsed_time_ms": elapsed_time_ms,

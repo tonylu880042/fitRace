@@ -612,6 +612,7 @@ def _run_submit_form(name_value: str, avatar_base64: str = "null") -> dict:
         "const station = 3;\n"
         f"const athleteNameInput = {{ value: {json.dumps(name_value)} }};\n"
         "const teamNameInput = { value: '' };\n"
+        "const divisionSelect = { value: '' };\n"
         "const successMsg = { style: {}, innerText: '' };\n"
         "const errorMsg = { style: {}, innerText: '' };\n"
         "const submitBtn = { disabled: false };\n"
