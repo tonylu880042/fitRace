@@ -741,6 +741,20 @@ class RaceManager:
         self._station_divisions[station_number] = division
         self._station_has_avatar[station_number] = has_avatar
 
+    def clear_station_registrations(self):
+        """Drop every station's athlete registration -- e.g. so the roster's
+        one-button heat turnover can re-register a fresh heat on top of the
+        same hardware station mapping. Mirrors the registration-clearing
+        block already inside configure()/configure_class()/reset_race(),
+        exposed here as its own public op since a heat turnover happens
+        without necessarily reconfiguring or resetting the race."""
+        if self._state not in (RaceState.IDLE, RaceState.READY):
+            raise ValueError(f"Cannot clear registrations in state {self._state}")
+        self._station_registrations.clear()
+        self._station_teams.clear()
+        self._station_divisions.clear()
+        self._station_has_avatar.clear()
+
     def get_stations_status(self) -> dict:
         assigned_nodes = set(self._stations.values())
         unassigned_nodes = [

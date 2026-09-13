@@ -1109,6 +1109,80 @@
           <div class="status-text" id="race-message"></div>
         </section>
 
+        <section class="panel" aria-labelledby="roster-title">
+          <div class="panel-header">
+            <h2 class="panel-title" id="roster-title" data-i18n="panel.roster_heats">Roster &amp; Heats</h2>
+            <div class="button-group">
+              <label for="roster-file-input" data-i18n="button.import_roster">Import Roster</label>
+              <input type="file" id="roster-file-input" accept=".csv,text/csv" onchange="handleRosterFileSelected(event)">
+            </div>
+          </div>
+          <div class="status-text" id="roster-import-message"></div>
+          <div class="list" id="roster-import-errors" style="margin-top: 8px;"></div>
+
+          <div class="control-block">
+            <div class="control-block-header">
+              <h3 class="control-block-title" data-i18n="text.roster_counts_title">Roster Status</h3>
+              <span class="status-text" id="roster-counts" style="margin-top: 0;"></span>
+            </div>
+          </div>
+
+          <div class="control-block">
+            <h3 class="control-block-title" data-i18n="panel.current_heat">Current Heat</h3>
+            <div class="list" id="roster-current-heat"></div>
+          </div>
+
+          <div class="control-block">
+            <h3 class="control-block-title" data-i18n="panel.next_heat">Next Heat</h3>
+            <div class="list" id="roster-next-heat"></div>
+          </div>
+
+          <div class="action-bar">
+            <button type="button" class="primary" id="btn-load-next-heat" style="min-height: 44px; width: 100%;" onclick="loadNextHeat()" data-i18n="button.load_next_heat">Load Next Heat</button>
+          </div>
+          <div class="status-text" id="roster-heat-message"></div>
+
+          <div class="control-block">
+            <h3 class="control-block-title" data-i18n="label.pending">Pending</h3>
+            <div class="list" id="roster-pending-list"></div>
+          </div>
+
+          <div class="control-block">
+            <h3 class="control-block-title" data-i18n="label.done">Done</h3>
+            <div class="list" id="roster-done-list"></div>
+          </div>
+
+          <div class="control-block">
+            <h3 class="control-block-title" data-i18n="label.absent">Absent</h3>
+            <div class="list" id="roster-absent-list"></div>
+          </div>
+
+          <div class="control-block">
+            <h3 class="control-block-title" data-i18n="panel.walk_in">Walk-in Registration</h3>
+            <div class="grid-3">
+              <div class="field">
+                <label for="walk-in-name" data-i18n="label.walk_in_name">Name</label>
+                <input type="text" id="walk-in-name" maxlength="80">
+              </div>
+              <div class="field">
+                <label for="walk-in-division" data-i18n="label.walk_in_division">Division</label>
+                <select id="walk-in-division">
+                  <option value="" data-i18n="option.division_none">None</option>
+                  <option value="men" data-i18n="option.division_men">Men</option>
+                  <option value="women" data-i18n="option.division_women">Women</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="walk-in-team" data-i18n="label.walk_in_team">Team</label>
+                <input type="text" id="walk-in-team" maxlength="80">
+              </div>
+            </div>
+            <div class="button-row">
+              <button type="button" class="primary" onclick="addWalkIn()" data-i18n="button.add_walk_in">Add</button>
+            </div>
+          </div>
+        </section>
+
         <section class="panel" aria-labelledby="station-title">
           <div class="panel-header">
             <h2 class="panel-title" id="station-title" data-i18n="panel.station_status">Station Status</h2>
@@ -1148,6 +1222,13 @@
       stations: { stations: {}, unassigned_nodes: [] },
       nodes: [],
       readiness: null,
+      roster: {
+        entries: [],
+        heat_size: 0,
+        current_heat: [],
+        next_heat: [],
+        counts: { pending: 0, loaded: 0, done: 0, absent: 0 },
+      },
       update: null,
       refreshTimer: null,
       wsConnected: false,
@@ -1329,7 +1410,40 @@
         "button.switch_to_race_mode": "Switch Projector to Race Mode",
         "text.switch_to_race_mode_note": "Switches the dashboard to show the race leaderboard.",
         "text.switch_to_race_mode_note_disabled": "Stop the current session before switching the projector to race mode.",
-        "message.mode_switched_to_race": "Projector switched to race mode."
+        "message.mode_switched_to_race": "Projector switched to race mode.",
+        "panel.roster_heats": "Roster & Heats",
+        "panel.current_heat": "Current Heat",
+        "panel.next_heat": "Next Heat",
+        "panel.walk_in": "Walk-in Registration",
+        "button.import_roster": "Import Roster",
+        "button.load_next_heat": "Load Next Heat",
+        "button.requeue": "Requeue",
+        "button.add_walk_in": "Add",
+        "label.pending": "Pending",
+        "label.done": "Done",
+        "label.absent": "Absent",
+        "label.walk_in_name": "Name",
+        "label.walk_in_division": "Division",
+        "label.walk_in_team": "Team",
+        "option.division_none": "None",
+        "option.division_men": "Men",
+        "option.division_women": "Women",
+        "confirm.replace_roster": "Importing will replace the existing roster. Continue?",
+        "text.roster_counts_title": "Roster Status",
+        "text.roster_counts_summary": "{pending} pending · {done} done · {absent} absent",
+        "text.no_current_heat": "No heat loaded yet.",
+        "text.no_next_heat": "No more entries queued.",
+        "text.roster_empty": "No entries.",
+        "text.see_errors_below": "See errors below.",
+        "text.row_error_label": "Row {row}",
+        "message.roster_imported": "Roster imported.",
+        "message.roster_import_failed": "Import failed: {error}",
+        "message.heat_loaded": "Next heat loaded.",
+        "message.heat_load_failed": "Failed to load next heat: {error}",
+        "message.walk_in_added": "Walk-in added.",
+        "message.entry_marked_absent": "Marked absent.",
+        "message.entry_requeued": "Requeued.",
+        "confirm.skip_unraced_heat": "The current heat ({names}) has not raced yet. Skip it and load the next heat?"
       }
     };
 
@@ -1489,7 +1603,40 @@
       "button.switch_to_race_mode": "切換投影為賽事模式",
       "text.switch_to_race_mode_note": "將儀表板切換為顯示賽事排行榜。",
       "text.switch_to_race_mode_note_disabled": "請先停止目前的場次,才能將投影切換為賽事模式。",
-      "message.mode_switched_to_race": "投影已切換為賽事模式。"
+      "message.mode_switched_to_race": "投影已切換為賽事模式。",
+      "panel.roster_heats": "名單與分組",
+      "panel.current_heat": "目前這組",
+      "panel.next_heat": "下一組",
+      "panel.walk_in": "現場報名",
+      "button.import_roster": "匯入名單",
+      "button.load_next_heat": "載入下一組",
+      "button.requeue": "重新排入",
+      "button.add_walk_in": "新增",
+      "label.pending": "待比賽",
+      "label.done": "已完成",
+      "label.absent": "缺席",
+      "label.walk_in_name": "姓名",
+      "label.walk_in_division": "組別",
+      "label.walk_in_team": "隊伍",
+      "option.division_none": "無",
+      "option.division_men": "男子",
+      "option.division_women": "女子",
+      "confirm.replace_roster": "匯入將取代目前的名單,確定要繼續嗎?",
+      "text.roster_counts_title": "名單狀態",
+      "text.roster_counts_summary": "待比賽 {pending}・已完成 {done}・缺席 {absent}",
+      "text.no_current_heat": "尚未載入分組。",
+      "text.no_next_heat": "沒有待比賽的選手。",
+      "text.roster_empty": "目前沒有名單。",
+      "text.see_errors_below": "請見以下錯誤。",
+      "text.row_error_label": "第 {row} 行",
+      "message.roster_imported": "名單已匯入。",
+      "message.roster_import_failed": "匯入失敗:{error}",
+      "message.heat_loaded": "下一組已載入。",
+      "message.heat_load_failed": "載入下一組失敗:{error}",
+      "message.walk_in_added": "現場報名已新增。",
+      "message.entry_marked_absent": "已標記缺席。",
+      "message.entry_requeued": "已重新排入。",
+      "confirm.skip_unraced_heat": "目前這組（{names}）還沒比賽，確定要跳過並載入下一組嗎？"
     };
 
     function t(key, params = {}) {
@@ -1741,6 +1888,12 @@
       renderRaceActionButtons();
     }
 
+    async function refreshRoster() {
+      state.roster = await fetchJson(`/api/roster?t=${Date.now()}`, {
+        headers: adminHeaders(),
+      });
+      renderRoster();
+    }
 
     async function refreshHealth() {
       try {
@@ -1758,6 +1911,7 @@
         refreshStations(),
         refreshNodes(),
         refreshReadiness(),
+        refreshRoster(),
       ]);
       if (options.schedule !== false) scheduleRefresh();
     }
@@ -1778,6 +1932,7 @@
         refreshState(),
         refreshStations(),
         refreshReadiness(),
+        refreshRoster(),
       ]);
     }
 
@@ -1812,6 +1967,7 @@
       updateControlGuidance();
       renderReadinessPanel();
       syncSessionModeControl();
+      renderRoster();
 
     }
 
@@ -2005,7 +2161,228 @@
       list.innerHTML = `${unassigned}${assigned}`;
     }
 
+    function divisionLabel(division) {
+      if (division === "men") return t("option.division_men");
+      if (division === "women") return t("option.division_women");
+      return "";
+    }
 
+    function renderRosterHeatList(elementId, entries, emptyKey, withStation) {
+      const list = $(elementId);
+      if (!entries.length) {
+        list.innerHTML = `<div class="empty">${escapeHtml(t(emptyKey))}</div>`;
+        return;
+      }
+      list.innerHTML = entries.map((entry) => {
+        const stationLabel = withStation ? `${escapeHtml(t("text.station"))} ${escapeHtml(entry.station_number)} · ` : "";
+        const division = divisionLabel(entry.division);
+        const meta = [division, entry.team].filter(Boolean).map(escapeHtml).join(" · ");
+        return `
+          <div class="row-card">
+            <div class="row-main">
+              <div>
+                <div class="row-name">${stationLabel}${escapeHtml(entry.name)}</div>
+                <div class="row-meta">${meta}</div>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function renderRosterEntryList(elementId, entries, emptyKey, action) {
+      const list = $(elementId);
+      if (!entries.length) {
+        list.innerHTML = `<div class="empty">${escapeHtml(t(emptyKey))}</div>`;
+        return;
+      }
+      const actionLabelKey = action === "absent" ? "label.absent" : "button.requeue";
+      const actionFn = action === "absent" ? "markRosterEntryAbsent" : "requeueRosterEntry";
+      list.innerHTML = entries.map((entry) => {
+        const division = divisionLabel(entry.division);
+        const meta = [division, entry.team].filter(Boolean).map(escapeHtml).join(" · ");
+        return `
+          <div class="row-card">
+            <div class="row-main">
+              <div>
+                <div class="row-name">${escapeHtml(entry.name)}</div>
+                <div class="row-meta">${meta}</div>
+              </div>
+              <button type="button" onclick="${actionFn}('${entry.id}')">${escapeHtml(t(actionLabelKey))}</button>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function renderRoster() {
+      const roster = state.roster || {};
+      const counts = roster.counts || { pending: 0, loaded: 0, done: 0, absent: 0 };
+      $("roster-counts").textContent = t("text.roster_counts_summary", {
+        pending: counts.pending || 0,
+        done: counts.done || 0,
+        absent: counts.absent || 0,
+      });
+
+      const raceState = state.race?.state || "IDLE";
+      $("btn-load-next-heat").disabled = raceState === "RUNNING";
+
+      renderRosterHeatList("roster-current-heat", roster.current_heat || [], "text.no_current_heat", true);
+      renderRosterHeatList("roster-next-heat", roster.next_heat || [], "text.no_next_heat", false);
+
+      const entries = roster.entries || [];
+      renderRosterEntryList(
+        "roster-pending-list",
+        entries.filter((entry) => entry.status === "pending"),
+        "text.roster_empty",
+        "absent"
+      );
+      renderRosterEntryList(
+        "roster-done-list",
+        entries.filter((entry) => entry.status === "done"),
+        "text.roster_empty",
+        "requeue"
+      );
+      renderRosterEntryList(
+        "roster-absent-list",
+        entries.filter((entry) => entry.status === "absent"),
+        "text.roster_empty",
+        "requeue"
+      );
+    }
+
+    function renderRosterImportErrors(errors) {
+      $("roster-import-errors").innerHTML = (errors || []).map((error) => `
+        <div class="row-card">
+          <div class="row-main">
+            <div>
+              <div class="row-name">${escapeHtml(t("text.row_error_label", { row: error.row }))}</div>
+              <div class="row-meta">${escapeHtml(error.message)}</div>
+            </div>
+          </div>
+        </div>
+      `).join("");
+    }
+
+    function handleRosterFileSelected(event) {
+      const input = event.target;
+      const file = input.files && input.files[0];
+      input.value = "";
+      if (!file) return;
+      if ((state.roster?.entries || []).length > 0) {
+        if (!window.confirm(t("confirm.replace_roster"))) return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => importRosterCsv(String(reader.result || ""));
+      reader.onerror = () => setMessage("roster-import-message", t("message.roster_import_failed", { error: reader.error }), "error");
+      reader.readAsText(file);
+    }
+
+    async function importRosterCsv(text) {
+      $("roster-import-errors").innerHTML = "";
+      try {
+        const response = await fetch("/api/roster/import", {
+          method: "POST",
+          headers: adminHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({ csv: text }),
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          if (Array.isArray(payload.detail)) {
+            renderRosterImportErrors(payload.detail);
+            setMessage("roster-import-message", t("message.roster_import_failed", { error: t("text.see_errors_below") }), "error");
+          } else {
+            setMessage("roster-import-message", payload.detail || response.statusText, "error");
+          }
+          return;
+        }
+        state.roster = payload;
+        renderRoster();
+        setMessage("roster-import-message", t("message.roster_imported"), "ok");
+      } catch (error) {
+        setMessage("roster-import-message", t("message.roster_import_failed", { error: error.message }), "error");
+      }
+    }
+
+    async function addWalkIn() {
+      const name = $("walk-in-name").value.trim();
+      if (!name) return;
+      const division = $("walk-in-division").value || null;
+      const team = $("walk-in-team").value.trim() || null;
+      try {
+        state.roster = await fetchJson("/api/roster/entries", {
+          method: "POST",
+          headers: adminHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({ name, division, team }),
+        });
+        renderRoster();
+        $("walk-in-name").value = "";
+        $("walk-in-division").value = "";
+        $("walk-in-team").value = "";
+        setMessage("roster-heat-message", t("message.walk_in_added"), "ok");
+      } catch (error) {
+        setMessage("roster-heat-message", error.message, "error");
+      }
+    }
+
+    async function markRosterEntryAbsent(entryId) {
+      try {
+        state.roster = await fetchJson(`/api/roster/entries/${encodeURIComponent(entryId)}/absent`, {
+          method: "POST",
+          headers: adminHeaders(),
+        });
+        renderRoster();
+        setMessage("roster-heat-message", t("message.entry_marked_absent"), "ok");
+      } catch (error) {
+        setMessage("roster-heat-message", error.message, "error");
+      }
+    }
+
+    async function requeueRosterEntry(entryId) {
+      try {
+        state.roster = await fetchJson(`/api/roster/entries/${encodeURIComponent(entryId)}/requeue`, {
+          method: "POST",
+          headers: adminHeaders(),
+        });
+        renderRoster();
+        setMessage("roster-heat-message", t("message.entry_requeued"), "ok");
+      } catch (error) {
+        setMessage("roster-heat-message", error.message, "error");
+      }
+    }
+
+    async function loadNextHeat(options = {}) {
+      if (state.race?.state === "RUNNING") return;
+      try {
+        const response = await fetch("/api/roster/next-heat", {
+          method: "POST",
+          headers: adminHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({ force: Boolean(options.force) }),
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          if (response.status === 409 && payload.detail && payload.detail.reason === "current_heat_not_raced") {
+            const names = (payload.detail.current_heat || [])
+              .map((entry) => entry.name)
+              .filter(Boolean)
+              .join(", ");
+            if (window.confirm(t("confirm.skip_unraced_heat", { names }))) {
+              return loadNextHeat({ force: true });
+            }
+            return;
+          }
+          const detailMessage = (payload.detail && payload.detail.message) || payload.detail || response.statusText;
+          setMessage("roster-heat-message", t("message.heat_load_failed", { error: detailMessage }), "error");
+          return;
+        }
+        state.roster = payload;
+        await refreshOperationalState();
+        renderRoster();
+        setMessage("roster-heat-message", t("message.heat_loaded"), "ok");
+      } catch (error) {
+        setMessage("roster-heat-message", t("message.heat_load_failed", { error: error.message }), "error");
+      }
+    }
 
     async function configureRace() {
       const type = $("race-type").value;
@@ -2219,7 +2596,7 @@
         if (payload.type === "state_change") {
           state.race = payload;
           renderRace();
-          Promise.allSettled([refreshStations(), refreshReadiness()]);
+          Promise.allSettled([refreshStations(), refreshReadiness(), refreshRoster()]);
           return;
         }
         if (payload.type === "node_status") {
