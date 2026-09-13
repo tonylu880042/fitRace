@@ -257,6 +257,72 @@ def test_requeue_from_done(tmp_path):
     assert alice["status"] == "pending"
 
 
+def test_mark_current_heat_started_sets_flag_on_loaded_entries_only(tmp_path):
+    manager = _manager(tmp_path)
+    manager.import_csv("name\nAlice\nBob\nCarol\n")
+    manager.load_next_heat([1, 2])  # Alice, Bob loaded; Carol pending
+
+    manager.mark_current_heat_started()
+
+    entries = {e["name"]: e for e in manager.entries()}
+    assert entries["Alice"]["started"] is True
+    assert entries["Bob"]["started"] is True
+    assert entries["Carol"].get("started") is not True
+
+
+def test_mark_current_heat_started_persists(tmp_path):
+    path = tmp_path / "roster.json"
+    manager = RosterManager(RaceSettingsStore(path))
+    manager.import_csv("name\nAlice\n")
+    manager.load_next_heat([1])
+
+    manager.mark_current_heat_started()
+
+    reloaded = RosterManager(RaceSettingsStore(path))
+    assert reloaded.entries()[0]["started"] is True
+
+
+def test_mark_current_heat_started_is_a_no_op_when_nothing_loaded(tmp_path):
+    manager = _manager(tmp_path)
+    manager.import_csv("name\nAlice\n")
+    # Nothing loaded yet -- must not raise and must not fabricate an entry.
+    manager.mark_current_heat_started()
+    assert manager.entries()[0].get("started") is not True
+
+
+def test_load_next_heat_drops_started_flag_when_moving_loaded_to_done(tmp_path):
+    manager = _manager(tmp_path)
+    manager.import_csv("name\nAlice\nBob\nCarol\n")
+    manager.load_next_heat([1, 2])  # Alice, Bob loaded
+    manager.mark_current_heat_started()
+
+    manager.load_next_heat([1])  # Alice, Bob -> done; Carol loaded
+
+    entries = {e["name"]: e for e in manager.entries()}
+    assert entries["Alice"]["status"] == "done"
+    assert entries["Alice"].get("started") is not True
+    assert entries["Bob"]["status"] == "done"
+    assert entries["Bob"].get("started") is not True
+
+
+def test_requeue_clears_started_flag(tmp_path):
+    manager = _manager(tmp_path)
+    manager.import_csv("name\nAlice\nBob\nCarol\n")
+    alice_id = manager.entries()[0]["id"]
+    manager.load_next_heat([1, 2])  # Alice, Bob loaded
+    manager.mark_current_heat_started()
+
+    # requeue is only valid from absent/done -- move Alice to done first.
+    manager.load_next_heat([1])  # Alice, Bob -> done; Carol loaded
+    alice = next(e for e in manager.entries() if e["id"] == alice_id)
+    assert alice["status"] == "done"
+
+    manager.requeue(alice_id)
+    alice = next(e for e in manager.entries() if e["id"] == alice_id)
+    assert alice["status"] == "pending"
+    assert alice.get("started") is not True
+
+
 def test_add_walk_in_appends_pending_at_the_end(tmp_path):
     manager = _manager(tmp_path)
     manager.import_csv("name\nAlice\nBob\n")

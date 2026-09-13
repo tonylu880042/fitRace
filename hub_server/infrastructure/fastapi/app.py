@@ -1197,6 +1197,7 @@ async def start_race(request: Request):
         enforce_race_readiness()
     try:
         race_manager.start_race()
+        roster_manager.mark_current_heat_started()
         race_event_engine.reset()
         return await broadcast_race_state()
     except ValueError as e:
@@ -1228,6 +1229,7 @@ async def countdown_start_race(request: Request):
         await asyncio.sleep(RACE_START_COUNTDOWN_DURATION_MS / 1000)
         try:
             race_manager.start_race()
+            roster_manager.mark_current_heat_started()
             race_event_engine.reset()
             return await broadcast_race_state()
         except ValueError as e:
@@ -1387,17 +1389,21 @@ async def load_next_heat(request: Request):
 
     force = await next_heat_force_requested(request)
 
-    # A loaded heat that hasn't raced yet (race state is still READY/IDLE,
-    # i.e. never reached STOPPED) means an accidental double press would
-    # silently skip it -- block unless the caller explicitly forces it.
-    # Once the heat has actually raced (state STOPPED), loading the next
-    # one is the normal path and needs no force.
+    # A loaded heat that never actually raced means an accidental double
+    # press would silently skip it -- block unless the caller explicitly
+    # forces it. Whether it raced is tracked on the roster entry itself
+    # (RosterManager.mark_current_heat_started(), set right after
+    # race_manager.start_race() succeeds), NOT the race's current state:
+    # the normal operator flow races the heat to STOPPED and then presses
+    # Reset Race (state back to IDLE) before loading the next heat, and
+    # that must NOT look like an unraced heat just because the race state
+    # is IDLE again.
     current_heat = [
         entry for entry in roster_manager.entries() if entry.get("status") == "loaded"
     ]
     if (
         current_heat
-        and race_manager.get_state() in (RaceState.IDLE, RaceState.READY)
+        and not any(entry.get("started") for entry in current_heat)
         and not force
     ):
         raise HTTPException(

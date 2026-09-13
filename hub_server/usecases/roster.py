@@ -140,6 +140,7 @@ def parse_roster_csv(text: str) -> tuple[list[dict[str, Any]], list[dict[str, An
                 "status": "pending",
                 "order": len(entries),
                 "station_number": None,
+                "started": False,
             }
         )
 
@@ -163,7 +164,12 @@ class RosterManager:
         for raw in data["entries"]:
             if not isinstance(raw, dict):
                 continue
-            loaded.append(dict(raw))
+            entry = dict(raw)
+            # Backward-compatible default for a roster.json written before
+            # the "started" flag existed -- never treat an old file's
+            # entries as having raced.
+            entry.setdefault("started", False)
+            loaded.append(entry)
         return loaded
 
     def _persist(self) -> None:
@@ -213,7 +219,26 @@ class RosterManager:
         entry["status"] = "pending"
         entry["order"] = self._next_order()
         entry["station_number"] = None
+        entry["started"] = False
         self._persist()
+
+    def mark_current_heat_started(self) -> None:
+        """Mark every currently "loaded" entry as started -- called right
+        after race_manager.start_race() actually succeeds. This is how the
+        next-heat guard tells a heat that raced from one that's still
+        sitting loaded and unraced, WITHOUT relying on the race's current
+        state: the normal flow races a heat to STOPPED and then presses
+        Reset Race (state back to IDLE) before loading the next heat, and
+        that reset must not make a raced heat look unraced again. A no-op
+        (no persist) when nothing is currently loaded.
+        """
+        changed = False
+        for entry in self._entries:
+            if entry["status"] == "loaded" and not entry.get("started"):
+                entry["started"] = True
+                changed = True
+        if changed:
+            self._persist()
 
     def add_walk_in(
         self, name: str, division: Optional[str], team: Optional[str]
@@ -237,6 +262,7 @@ class RosterManager:
             "status": "pending",
             "order": self._next_order(),
             "station_number": None,
+            "started": False,
         }
         self._entries.append(entry)
         self._persist()
@@ -262,6 +288,10 @@ class RosterManager:
             if entry["status"] == "loaded":
                 entry["status"] = "done"
                 entry["station_number"] = None
+                # Dropped, not carried into history: "started" only means
+                # anything for the CURRENTLY loaded heat -- a done entry's
+                # history is its status, not this flag.
+                entry["started"] = False
 
         pending = sorted(
             (entry for entry in working if entry["status"] == "pending"),
@@ -276,6 +306,7 @@ class RosterManager:
         for entry, station_number in zip(chosen, stations_sorted):
             entry["status"] = "loaded"
             entry["station_number"] = station_number
+            entry["started"] = False
             loaded.append(dict(entry))
 
         self._entries = working

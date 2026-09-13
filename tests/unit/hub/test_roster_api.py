@@ -123,8 +123,12 @@ def test_next_heat_after_stopped_race_leaves_ready_with_same_config_and_right_na
     # there's no real edge node/telemetry in this test -- the same way
     # other hub tests drive RaceManager's state machine directly), then
     # load the next heat: config must survive unchanged and the new names
-    # must land on the stations.
+    # must land on the stations. mark_current_heat_started() is normally
+    # called by the /api/race/start and /api/race/countdown-start
+    # endpoints right after race_manager.start_race() succeeds -- since
+    # this test drives start_race() directly, it must call it too.
     app_module.race_manager.start_race()
+    app_module.roster_manager.mark_current_heat_started()
     app_module.race_manager.stop_race()
 
     res = client.post("/api/roster/next-heat")
@@ -227,8 +231,12 @@ def test_next_heat_exhausted_returns_409_and_leaves_race_and_registrations_intac
     )
     client.post("/api/roster/next-heat")  # heat 1: Alice, Bob loaded
 
-    # Heat 1 actually races through to STOPPED -- the normal path.
+    # Heat 1 actually races through to STOPPED -- the normal path. See the
+    # comment above test_next_heat_after_stopped_race_... for why
+    # mark_current_heat_started() must be driven alongside start_race()
+    # here.
     app_module.race_manager.start_race()
+    app_module.roster_manager.mark_current_heat_started()
     app_module.race_manager.stop_race()
 
     stations_before = client.get("/api/stations").json()
@@ -246,6 +254,97 @@ def test_next_heat_exhausted_returns_409_and_leaves_race_and_registrations_intac
     roster = client.get("/api/roster").json()
     statuses = {entry["name"]: entry["status"] for entry in roster["entries"]}
     assert statuses == {"Alice": "loaded", "Bob": "loaded"}
+
+
+def _set_station_online(station_number: int, node_id: str):
+    """Mirrors set_online_station in tests/integration/test_api.py: makes a
+    station genuinely "online" (an edge node registered with a matching
+    equipment stream), which enforce_race_readiness needs to let
+    /api/race/countdown-start actually reach RUNNING."""
+    import time
+
+    app_module.node_registry.update_status(
+        {
+            "edge_node_id": f"edge-{station_number:02d}",
+            "status": "online",
+            "last_seen_epoch_ms": int(time.time() * 1000),
+            "equipment_streams": [
+                {
+                    "node_id": node_id,
+                    "equipment_id": f"BIKE_{station_number:02d}",
+                    "equipment_type": "fan_bike",
+                    "status": "configured",
+                    "last_telemetry_epoch_ms": int(time.time() * 1000),
+                }
+            ],
+        }
+    )
+    app_module.race_manager.assign_station(station_number, node_id)
+
+
+def test_next_heat_after_full_reset_and_reconfigure_succeeds_without_force_when_heat_had_started():
+    """The "started" flag lives on the roster entry, not on RaceManager's
+    transient state, so it survives even an explicit Reset Race (which
+    wipes race state back to IDLE and clears the saved config) -- unlike
+    the old race-state-based guard (IDLE/READY), a reset-and-reconfigure
+    cycle must not make an already-raced heat look unraced again."""
+    _assign_two_stations()
+    client.post(
+        "/api/roster/import",
+        json={"csv": "name\nAlice\nBob\nCarol\nDave\n"},
+    )
+    client.post(
+        "/api/race/configure", json={"race_type": "distance", "target_value": 500}
+    )
+    client.post("/api/roster/next-heat")  # heat 1: Alice, Bob loaded
+
+    app_module.race_manager.start_race()
+    app_module.roster_manager.mark_current_heat_started()
+    app_module.race_manager.stop_race()
+
+    res = client.post("/api/race/reset")
+    assert res.status_code == 200
+    assert res.json()["state"] == "IDLE"
+
+    # Reset Race always clears the saved config (unrelated to the roster
+    # feature) -- the operator re-saves the same settings before loading
+    # the next heat, same as they would for any race.
+    client.post(
+        "/api/race/configure", json={"race_type": "distance", "target_value": 500}
+    )
+
+    res = client.post("/api/roster/next-heat")
+    assert res.status_code == 200
+
+    roster = client.get("/api/roster").json()
+    statuses = {entry["name"]: entry["status"] for entry in roster["entries"]}
+    assert statuses["Alice"] == "done"
+    assert statuses["Bob"] == "done"
+    assert statuses["Carol"] == "loaded"
+    assert statuses["Dave"] == "loaded"
+
+
+def test_countdown_start_marks_current_heat_started(monkeypatch):
+    monkeypatch.setattr(app_module, "RACE_START_COUNTDOWN_DURATION_MS", 10)
+    _set_station_online(1, "node-1")
+    _set_station_online(2, "node-2")
+    client.post("/api/roster/import", json={"csv": "name\nAlice\nBob\n"})
+    client.post(
+        "/api/race/configure", json={"race_type": "distance", "target_value": 500}
+    )
+    client.post("/api/roster/next-heat")  # heat 1: Alice, Bob loaded
+
+    res = client.post("/api/race/countdown-start")
+    assert res.status_code == 200
+    assert res.json()["state"] == "RUNNING"
+
+    roster = client.get("/api/roster").json()
+    entries = {e["name"]: e for e in roster["entries"]}
+    assert entries["Alice"]["started"] is True
+    assert entries["Bob"]["started"] is True
+
+    app_module.race_manager.stop_race()
+    app_module.node_registry.clear()
 
 
 def test_roster_endpoints_require_admin_token_when_configured(monkeypatch):
