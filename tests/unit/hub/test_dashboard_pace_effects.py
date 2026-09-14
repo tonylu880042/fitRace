@@ -272,6 +272,45 @@ def test_fastest_pace_node_id_tie_goes_to_lowest_station():
     assert _run_fastest(nodes) == "n2"
 
 
+def test_fastest_pace_node_id_prefers_the_faster_row_within_the_steady_band():
+    # Both rows are steady (300 <= s < 360, i.e. 5'00"-6'00") -- with two
+    # running rows the "must be blazing" single-row rule does not apply,
+    # so the faster steady row must win. A mutation that narrows the
+    # >=360s eligibility floor (e.g. to >=300s) would wrongly exclude
+    # both rows from ever becoming bestNode and return null instead --
+    # exactly the silently-hidden-flame regression this pins.
+    nodes = [
+        _fp_node("n1", 3600 / 330, station=1),  # 5'30" -> steady, faster
+        _fp_node("n2", 3600 / 345, station=2),  # 5'45" -> steady
+    ]
+    assert _run_fastest(nodes) == "n1"
+
+
+def test_fastest_pace_node_id_returns_null_when_both_rows_are_slower_than_steady():
+    nodes = [
+        _fp_node("n1", 3600 / 365, station=1),  # 6'05" -> none
+        _fp_node("n2", 3600 / 370, station=2),  # 6'10" -> none
+    ]
+    assert _run_fastest(nodes) is None
+
+
+def test_fastest_pace_node_id_six_minute_boundary_is_exclusive():
+    # 360s/km (10.0 kph) exactly is "none", not steady -- still no
+    # flame even though it is the faster of the two rows.
+    at_the_boundary = [
+        _fp_node("n1", 10.0, station=1),  # 6'00" exactly -> none
+        _fp_node("n2", 3600 / 370, station=2),  # 6'10" -> none, slower
+    ]
+    assert _run_fastest(at_the_boundary) is None
+
+    # A hair inside the boundary (359s/km) is steady, and wins.
+    just_inside = [
+        _fp_node("n1", 3600 / 359, station=1),  # 5'59" -> steady
+        _fp_node("n2", 3600 / 370, station=2),  # 6'10" -> none, slower
+    ]
+    assert _run_fastest(just_inside) == "n1"
+
+
 # ---------------------------------------------------------------------------
 # 3. Classic leaderboard -- full render and the O(1) fast path
 #    (updateLeaderboardCardValues), driven against a fake DOM extending
@@ -496,6 +535,29 @@ console.log(JSON.stringify(readCard("n1")));
     assert result["badgeClassName"] is not None
     assert "is-visible" in result["badgeClassName"]
     assert "fastest-pace-highlight" in result["className"]
+
+
+def test_classic_full_render_steady_fastest_shows_badge_on_the_faster_steady_row():
+    # Real end-to-end proof (through renderLeaderboard and
+    # fastestPaceNodeId together, node-executed) that a steady-band
+    # fastest row -- the common case for most real paces, not just the
+    # rarer blazing sprint -- still gets the flame.
+    n1 = _node(
+        "n1", 3600 / 330, station=1, equipment_type="treadmill"
+    )  # 5'30" -> steady, faster
+    n2 = _node(
+        "n2", 3600 / 345, station=2, equipment_type="treadmill"
+    )  # 5'45" -> steady
+    script = f"""
+renderLeaderboard({{ n1: {json.dumps(n1)}, n2: {json.dumps(n2)} }});
+console.log(JSON.stringify({{ n1: readCard("n1"), n2: readCard("n2") }}));
+"""
+    result = _run_classic(script)
+    assert "pace-steady" in result["n1"]["metricVals"][0]["className"]
+    assert "is-visible" in (result["n1"]["badgeClassName"] or "")
+    assert "fastest-pace-highlight" in result["n1"]["className"]
+    assert "is-visible" not in (result["n2"]["badgeClassName"] or "")
+    assert "fastest-pace-highlight" not in result["n2"]["className"]
 
 
 def test_classic_full_render_bike_row_has_neither_band_nor_badge():
