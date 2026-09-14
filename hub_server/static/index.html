@@ -2255,6 +2255,327 @@
     .class-board--ultra .class-hero-row { margin-bottom: 0.4rem !important; }
     .class-board--ultra .class-hero-segment-line { margin-bottom: 0.4rem !important; }
     .class-board--ultra .class-progress-track { height: 10px !important; }
+
+    /* Race board density. Venues often race only 1-4 stations, leaving
+       the leaderboard a thin strip at the top of a 1080p projector.
+       Purely row-count driven (raceBoardDensityTier), like the class
+       board tiers above but scaling UP instead of down: xl (1-2 rows)
+       grows every row with a viewport-height-based min-height (so it
+       reads large on a 1920x1080 projector but still fits 1280x720) and
+       sizes type off the viewport width; lg (3-4 rows) is roughly 1.5x
+       today sizes with no forced row growth. 5+ rows (or 0) render
+       exactly as before -- no tier class is applied at all.
+
+       A row's min-height is a calc() blend of a vh term and a flat
+       offset, not a plain Nvh: the fixed-height chrome above the list
+       (header, card title, stage banner, card padding) eats a roughly
+       constant number of px regardless of viewport height, so a plain
+       vh share that works at 1080px tall leaves too little of a
+       720px-tall viewport for the rows and pushes the second one below
+       the fold -- the review-caught regression this replaces. The
+       clamp() floor/ceiling still bound it at both ends. min-height
+       (not height) so a genuinely long value can still grow a row
+       without being clipped. */
+    .race-board--xl .leaderboard-item,
+    .race-board--xl .race-track-item,
+    .race-board--xl .sprint-board-card {
+      min-height: clamp(96px, calc(50vh - 245px), 300px);
+    }
+
+    /* Every font-size below is wrapped in min(<width-based clamp>, Kvh):
+       the clamp() alone only answers to viewport WIDTH, so a short-but-
+       wide 1280x720 window still got the full 1920px-wide type, and
+       that type's own content (name + equipment tag + metric rows)
+       needed more vertical room than a 720px-tall viewport has for
+       even a single row -- sprint board's one-row case overflowed the
+       fold on exactly this axis, width fit having nothing to do with
+       it. Each K is chosen so min()'s vh term only ever binds at (and
+       below) 1080px height -- Kvh equals the clamp's own ceiling at
+       vh=10.8 (1080px), so a 1080px-tall viewport is unaffected and a
+       shorter one shrinks the type further, shrinking the row with
+       it. */
+    .race-board--xl .athlete-name,
+    .race-board--xl .race-track-name,
+    .race-board--xl .sprint-board-name {
+      font-size: min(clamp(1.6rem, 2vw, 2.4rem), 3.556vh);
+      line-height: 1.1;
+    }
+
+    .race-board--xl .metric-val,
+    .race-board--xl .rank,
+    .race-board--xl .sprint-board-rank {
+      font-size: min(clamp(2.1rem, 2.667vw, 3.2rem), 4.74vh);
+    }
+
+    .race-board--xl .metric-lbl {
+      font-size: min(clamp(0.75rem, 0.833vw, 1rem), 1.481vh);
+    }
+
+    .race-board--xl .equipment-tag,
+    .race-board--xl .relay-leg-line,
+    .race-board--xl .race-track-relay-leg,
+    .race-board--xl .sprint-board-relay-leg {
+      font-size: min(clamp(1rem, 1.167vw, 1.4rem), 2.074vh);
+      line-height: 1.1;
+    }
+
+    .race-board--xl .progress-track,
+    .race-board--xl .sprint-board-progress {
+      height: 16px;
+    }
+
+    .race-board--xl .race-track-rail {
+      height: clamp(30px, calc(11.667vh - 54px), 72px);
+    }
+
+    /* Bigger type needs wider columns, or a value like "1000" and a
+       neighbouring "100.0%" collide into one unreadable run (the venue
+       defect this block originally fixed). The rank and metric tracks
+       below are "auto" rather than a hand-picked px/vw floor: auto
+       sizes a track to exactly what its own content needs at whatever
+       font-size actually applies, so it tracks the font-size clamps
+       above by construction instead of a separate vw formula that has
+       to be kept in sync with them by hand (a first attempt at that
+       second approach is what starved the name column down to nothing
+       at 1280x720 and wrapped a three-character name one character per
+       line -- review caught that too). The name column is the one
+       track that is NOT auto -- minmax(0, 1fr) so it, not the fixed
+       auto tracks, absorbs whatever width is left over, and min-width:
+       0 on it and its children (a grid/flex item's automatic minimum
+       size is otherwise its content's intrinsic width) lets a name
+       that still does not fit wrap normally instead of forcing the row
+       wider than its card. */
+    .race-board--xl .leaderboard-item {
+      grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+      column-gap: 1.25rem;
+    }
+
+    .race-board--xl .leaderboard-item > .athlete-info {
+      min-width: 0;
+    }
+
+    .race-board--xl .leaderboard-item > .athlete-info > div {
+      min-width: 0;
+    }
+
+    .race-board--xl .race-track-item {
+      grid-template-columns: auto minmax(0, 1fr) minmax(220px, 0.9fr) auto;
+      column-gap: 1.25rem;
+    }
+
+    .race-board--xl .race-track-score .metric-lbl {
+      white-space: nowrap;
+    }
+
+    /* The equipment/station tag and the relay leg line hold arbitrary,
+       unbounded text (a machine name, a runner's name) -- at the xl/lg
+       scale that text must stay one line and ellipsize rather than
+       break mid-token the way "FITRACE-EDGE-02-01" did (a browser
+       default: it will wrap after a hyphen when a word does not fit).
+       Effective only because these live inside a track/flex item whose
+       min-width is reset to 0 above -- overflow: hidden has nothing to
+       clip against otherwise. */
+    .race-board--xl .equipment-tag,
+    .race-board--xl .relay-leg-line,
+    .race-board--xl .race-track-relay-leg,
+    .race-board--xl .sprint-board-relay-leg {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* lg tier -- roughly 1.5x today sizes at 1080px viewport height, no
+       forced row growth. Wrapped in the same min(rem, Kvh) pattern as
+       xl above and for the same reason: lg has no min-height rule at
+       all (by design -- it never forces a row taller than its
+       content), so with THREE or four such rows the only way to keep
+       every row inside a 720px-tall viewport is to let the type itself
+       shrink back down when height is scarce, the same way it already
+       does for width via the class board's density tiers. Each K
+       equals the flat rem value at vh=10.8 (1080px), so it is a no-op
+       at 1080px height and only shrinks type below that. */
+    .race-board--lg .athlete-name,
+    .race-board--lg .race-track-name,
+    .race-board--lg .sprint-board-name {
+      font-size: min(1.73rem, 2.563vh);
+      line-height: 1.1;
+    }
+
+    .race-board--lg .metric-val,
+    .race-board--lg .rank,
+    .race-board--lg .sprint-board-rank {
+      font-size: min(2.25rem, 3.333vh);
+    }
+
+    .race-board--lg .metric-lbl {
+      font-size: min(0.975rem, 1.444vh);
+    }
+
+    .race-board--lg .equipment-tag,
+    .race-board--lg .relay-leg-line,
+    .race-board--lg .race-track-relay-leg,
+    .race-board--lg .sprint-board-relay-leg {
+      font-size: min(1.15rem, 1.704vh);
+      line-height: 1.1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .race-board--lg .progress-track,
+    .race-board--lg .sprint-board-progress {
+      height: 12px;
+    }
+
+    .race-board--lg .race-track-rail {
+      height: clamp(22px, calc(10.833vh - 54px), 63px);
+    }
+
+    .race-board--lg .leaderboard-item {
+      grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+      column-gap: 0.9rem;
+    }
+
+    .race-board--lg .leaderboard-item > .athlete-info {
+      min-width: 0;
+    }
+
+    .race-board--lg .leaderboard-item > .athlete-info > div {
+      min-width: 0;
+    }
+
+    .race-board--lg .race-track-item {
+      grid-template-columns: auto minmax(0, 1fr) minmax(190px, 0.9fr) auto;
+      column-gap: 1rem;
+    }
+
+    .race-board--lg .race-track-score .metric-lbl {
+      white-space: nowrap;
+    }
+
+    /* Row chrome (padding, avatar, metric type, progress-bar spacing)
+       is otherwise fixed regardless of tier, so at a short viewport it
+       is what is left standing between a row already shrunk to its
+       min(...) font-size floor and still not fitting four rows inside
+       a 720px-tall viewport -- the review-caught overflow this closes.
+
+       Every rule below is a two-point linear ramp expressed as
+       clamp(720px-target, calc(slope*vh - offset), 1080px-target):
+       plugging vh=10.8 (1080px) back in reproduces today's exact
+       xl/lg value unchanged, and vh=7.2 (720px) lands exactly on a
+       smaller value chosen to fit -- everything between interpolates,
+       and the clamp() bounds guard both ends against a viewport
+       outside that range. min(...)-only (one fixed point at 1080px,
+       no floor of its own) was enough for the fonts above, which
+       already had a natural floor from their own width-based vw
+       clamp; these values have no such floor, so they need both ends
+       pinned explicitly. !important on the avatar only: its size is
+       set as an inline style by the renderer (higher specificity than
+       any class selector). */
+    .race-board--xl .leaderboard-item,
+    .race-board--lg .leaderboard-item {
+      padding-top: clamp(2px, calc(3.222vh - 21.2px), 13.6px);
+      padding-bottom: clamp(2px, calc(3.222vh - 21.2px), 13.6px);
+    }
+
+    .race-board--xl .race-track-item,
+    .race-board--lg .race-track-item {
+      padding-top: clamp(4px, calc(2.111vh - 8.4px), 14.4px);
+      padding-bottom: clamp(4px, calc(2.111vh - 8.4px), 14.4px);
+    }
+
+    .race-board--xl .sprint-board-card,
+    .race-board--lg .sprint-board-card {
+      padding: clamp(2px, calc(3.667vh - 27.4px), 15.2px);
+    }
+
+    .race-board--xl .leaderboard-item .athlete-avatar,
+    .race-board--lg .leaderboard-item .athlete-avatar {
+      width: clamp(20px, calc(6.667vh - 4px), 44px) !important;
+      height: clamp(20px, calc(6.667vh - 4px), 44px) !important;
+    }
+
+    .race-board--xl .metric-val,
+    .race-board--lg .metric-val,
+    .race-board--xl .rank,
+    .race-board--lg .rank,
+    .race-board--xl .sprint-board-rank,
+    .race-board--lg .sprint-board-rank {
+      line-height: 1.1;
+    }
+
+    .race-board--lg .metric-val,
+    .race-board--lg .rank,
+    .race-board--lg .sprint-board-rank {
+      font-size: clamp(1rem, calc(5.556vh - 24px), 2.25rem);
+    }
+
+    .race-board--lg .metric-lbl {
+      font-size: clamp(0.5rem, calc(2.111vh - 7.2px), 0.975rem);
+    }
+
+    .race-board--xl .progress-track,
+    .race-board--lg .progress-track,
+    .race-board--xl .sprint-board-progress,
+    .race-board--lg .sprint-board-progress {
+      margin-top: clamp(3px, calc(2.667vh - 15.2px), 13.6px);
+    }
+
+    .race-board--xl .sprint-board-stats,
+    .race-board--lg .sprint-board-stats {
+      margin-top: clamp(1.5px, calc(3.083vh - 21.1px), 13.6px);
+    }
+
+    .race-board--xl .sprint-stat,
+    .race-board--lg .sprint-stat {
+      padding: clamp(1px, calc(1.417vh - 8.6px), 7.2px);
+    }
+
+    .race-board--xl .progress-track {
+      height: clamp(4px, calc(3.333vh - 20px), 16px);
+    }
+
+    .race-board--lg .progress-track {
+      height: clamp(4px, calc(2.222vh - 12px), 12px);
+    }
+
+    /* Compound selectors again (see the sprint-board-grid comment
+       below): .leaderboard-list/.race-track-list are themselves the
+       board root the tier class lands on, not an ancestor of it. */
+    .leaderboard-list.race-board--xl,
+    .leaderboard-list.race-board--lg,
+    .race-track-list.race-board--xl,
+    .race-track-list.race-board--lg {
+      gap: clamp(4px, calc(2.222vh - 12px), 13.6px);
+    }
+
+    /* Compound selectors (no space) below, not descendant ones: the
+       tier class lands directly on .sprint-board-grid itself (it is
+       the sprint board's root), not on some ancestor of it, unlike
+       .leaderboard-item/.race-track-item/.sprint-board-card which
+       really are descendants of the classed root. A descendant
+       selector here would silently match nothing. */
+    .sprint-board-grid.race-board--xl,
+    .sprint-board-grid.race-board--lg {
+      gap: clamp(4px, calc(1.944vh - 9px), 12px);
+    }
+
+    /* auto-fit's default minmax(220px, 1fr) wraps a 4th sprint-board
+       card onto a second grid row once four cards no longer fit one
+       220px-minimum column each -- that second row is what pushed a
+       4-card lg board below the fold. xl and lg only ever render 1-2
+       or 3-4 cards respectively, so an explicit fixed column count for
+       each (matching the larger count in its pair, leaving an empty
+       trailing track at the smaller count -- harmless) guarantees a
+       single row every time instead of leaving the count, and whether
+       it wraps, up to how many 220px columns happen to fit. */
+    .sprint-board-grid.race-board--xl {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .sprint-board-grid.race-board--lg {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
   </style>
 </head>
 <body>
@@ -3200,6 +3521,20 @@
         return nodes.every((node) => Boolean(node.finished_time_ms) || metricNumber(node.progress_percent) >= 100);
       }
       return currentState === "STOPPED";
+    }
+
+    // Race board density tier -- purely row-count driven, the same
+    // approach as the class board density tiers (buildClassBoardHtml
+    // below), but scaling UP instead of down: a venue racing only 1-4
+    // stations gets an enlarged board via CSS (.race-board--xl /
+    // .race-board--lg) instead of a thin strip at the top of the
+    // projector. 0 or 5+ rows render exactly as they always have, with
+    // no tier class applied at all.
+    function raceBoardDensityTier(rowCount) {
+      if (rowCount <= 0) return "";
+      if (rowCount <= 2) return "xl";
+      if (rowCount <= 4) return "lg";
+      return "";
     }
 
     function getMedalMeta(rank) {
@@ -4179,7 +4514,9 @@
           html += renderPodium(leaderboardNodes, raceType);
         }
       }
-      html += '<div class="race-track-list">';
+      const raceTrackDensityTier = raceBoardDensityTier(rows.length);
+      const raceTrackDensityClass = raceTrackDensityTier ? ` race-board--${raceTrackDensityTier}` : "";
+      html += `<div class="race-track-list${raceTrackDensityClass}">`;
       rows.forEach((row, index) => {
         const currentRank = index + 1;
         const previousRank = leaderboardRankByNode.get(row.id);
@@ -4381,7 +4718,9 @@
       if (leaderboardFinal) {
         html += isTeamMode ? renderTeamPodium(teamRows, raceType) : renderPodium(leaderboardNodes, raceType);
       }
-      html += '<div class="sprint-board-grid">';
+      const sprintBoardDensityTier = raceBoardDensityTier(rows.length);
+      const sprintBoardDensityClass = sprintBoardDensityTier ? ` race-board--${sprintBoardDensityTier}` : "";
+      html += `<div class="sprint-board-grid${sprintBoardDensityClass}">`;
       rows.forEach((row, index) => {
         const currentRank = index + 1;
         const previousRank = leaderboardRankByNode.get(row.id);
@@ -5433,8 +5772,10 @@
         previousRects.set(item.dataset.nodeId, item.getBoundingClientRect());
       });
 
+      const leaderboardDensityTier = raceBoardDensityTier(nodes.length);
+      const leaderboardDensityClass = leaderboardDensityTier ? ` race-board--${leaderboardDensityTier}` : "";
       let html = leaderboardFinal ? renderPodium(nodes, raceType) : '';
-      html += '<div class="leaderboard-list">';
+      html += `<div class="leaderboard-list${leaderboardDensityClass}">`;
       nodes.forEach((node, index) => {
         // Declared here, inside the loop body, rather than once above it
         // or as a top-level sibling: a narrower test extracts just this

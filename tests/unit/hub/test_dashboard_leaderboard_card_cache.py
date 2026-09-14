@@ -91,6 +91,10 @@ _FN_NAMES = [
     "captureLeaderboardCardRefs",
     "setSmoothedCardText",
     "updateLeaderboardCardValues",
+    # renderLeaderboard's classic branch applies a row-count density tier
+    # (see test_dashboard_race_board_density.py) via raceBoardDensityTier --
+    # extracted here too so the real renderLeaderboard resolves it.
+    "raceBoardDensityTier",
     "renderLeaderboard",
     "sortLeaderboardNodes",
     "isLeaderboardFinal",
