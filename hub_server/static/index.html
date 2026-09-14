@@ -4746,9 +4746,14 @@
               progress: metricNumber(node.progress_percent),
               members: [],
               paceBand: trailEligible ? paceBand(metricNumber(node.instantaneous_speed_kph)) : "none",
+              // Not finished yet: row.score.label already carries the
+              // localized progress word from formatResultScore default
+              // branch -- appending leaderboard.percent_progress here
+              // duplicated that word. A bare percentage keeps the word
+              // to its one appearance in row.score.label.
               finished: node.finished_time_ms
                 ? t("leaderboard.seconds_finish", { seconds: (metricNumber(node.finished_time_ms) / 1000).toFixed(1) })
-                : t("leaderboard.percent_progress", { percent: metricNumber(node.progress_percent).toFixed(1) }),
+                : `${metricNumber(node.progress_percent).toFixed(1)}%`,
             };
           });
 
