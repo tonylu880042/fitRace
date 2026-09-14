@@ -103,6 +103,7 @@
   "signup.division_women": "Damer",
   "stage.team": "Lag",
   "stage.individual": "Individuell",
+  "stage.relay": "Stafett",
   "stage.countdown": "Nedräkning",
   "stage.go": "3, 2, 1, Go",
   "stage.countdown_sub": "Tidtagningen startar vid Go. Ljudet följer inställningen i Game Admin.",

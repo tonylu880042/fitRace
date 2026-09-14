@@ -103,6 +103,7 @@
   "signup.division_women": "女子組",
   "stage.team": "團體",
   "stage.individual": "個人",
+  "stage.relay": "接力",
   "stage.countdown": "倒數計時",
   "stage.go": "3, 2, 1, Go",
   "stage.countdown_sub": "計時將於 Go 之後開始,音效依 Game Admin 設定播放。",

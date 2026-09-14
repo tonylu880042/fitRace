@@ -229,6 +229,23 @@ def _node(node_id, power, speed, distance, progress):
     }
 
 
+def _relay_node(
+    node_id,
+    power,
+    speed,
+    distance,
+    progress,
+    relay_leg,
+    relay_legs,
+    relay_current_runner,
+):
+    node = _node(node_id, power, speed, distance, progress)
+    node["relay_leg"] = relay_leg
+    node["relay_legs"] = relay_legs
+    node["relay_current_runner"] = relay_current_runner
+    return node
+
+
 def _run(script_body: str) -> dict:
     script = _stubs() + _fake_dom() + _extract_all_fns() + "\n" + script_body
     result = subprocess.run(
@@ -367,3 +384,109 @@ console.log(JSON.stringify({{ innerHTMLSetCount }}));
 """
     result = _run(script)
     assert result["innerHTMLSetCount"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Relay handoff regression: buildLeaderboardCardSignature must invalidate
+# the fast path when relay_leg/relay_current_runner change, since the
+# leg/runner line is baked into markup by relayLegLine() and is never
+# touched by updateLeaderboardCardValues. See the venue bug where the
+# handoff toast correctly announced the next runner but the classic card
+# kept showing the previous leg/runner.
+# ---------------------------------------------------------------------------
+
+
+def test_signature_differs_when_relay_leg_and_runner_change():
+    n1 = _relay_node("n1", 100, 20, 91, 60, 1, 3, "王小明")
+    n1_next = dict(n1)
+    n1_next["relay_leg"] = 2
+    n1_next["relay_current_runner"] = "陳大文"
+    script = f"""
+const sigBefore = buildLeaderboardCardSignature([{json.dumps(n1)}], "distance", false);
+const sigAfter = buildLeaderboardCardSignature([{json.dumps(n1_next)}], "distance", false);
+console.log(JSON.stringify({{ sigBefore, sigAfter }}));
+"""
+    result = _run(script)
+    assert result["sigBefore"] != result["sigAfter"], (
+        "a relay handoff (leg 1->2, runner 王小明->陳大文) must change the "
+        "card signature so the fast path can't leave stale leg/runner text"
+    )
+
+
+def test_signature_unchanged_when_only_distance_and_progress_change():
+    """Same leg/runner, only the live numbers tick -- the signature must
+    stay identical so the O(1) fast path still applies within a leg."""
+    n1 = _relay_node("n1", 100, 20, 91, 60, 2, 3, "陳大文")
+    n1_tick = dict(n1)
+    n1_tick["distance_m"] = 95
+    n1_tick["progress_percent"] = 63
+    script = f"""
+const sigBefore = buildLeaderboardCardSignature([{json.dumps(n1)}], "distance", false);
+const sigAfter = buildLeaderboardCardSignature([{json.dumps(n1_tick)}], "distance", false);
+console.log(JSON.stringify({{ sigBefore, sigAfter }}));
+"""
+    result = _run(script)
+    assert result["sigBefore"] == result["sigAfter"], (
+        "a same-leg tick (distance/progress only) must not change the " "card signature"
+    )
+
+
+def test_relay_leg_change_triggers_a_full_rebuild():
+    n1 = _relay_node("n1", 100, 20, 91, 60, 1, 3, "王小明")
+    n1_handoff = dict(n1)
+    n1_handoff["relay_leg"] = 2
+    n1_handoff["relay_current_runner"] = "陳大文"
+    script = f"""
+renderLeaderboard({{ n1: {json.dumps(n1)} }});
+const afterFirst = innerHTMLSetCount;
+renderLeaderboard({{ n1: {json.dumps(n1_handoff)} }});
+console.log(JSON.stringify({{ afterFirst, afterSecond: innerHTMLSetCount }}));
+"""
+    result = _run(script)
+    assert result["afterSecond"] == result["afterFirst"] + 1, (
+        "a relay handoff (leg/runner change) must trigger exactly one more "
+        f"full rebuild, went from {result['afterFirst']} to {result['afterSecond']}"
+    )
+
+
+def test_relay_progress_only_change_does_not_rebuild():
+    """An ordinary tick within the same leg (only distance/progress
+    change) must still take the fast path -- the fix must not regress the
+    O(1)-per-tick property for relay races."""
+    n1 = _relay_node("n1", 100, 20, 91, 60, 2, 3, "陳大文")
+    n1_tick = dict(n1)
+    n1_tick["distance_m"] = 95
+    n1_tick["progress_percent"] = 63
+    script = f"""
+renderLeaderboard({{ n1: {json.dumps(n1)} }});
+const afterFirst = innerHTMLSetCount;
+renderLeaderboard({{ n1: {json.dumps(n1_tick)} }});
+console.log(JSON.stringify({{ afterFirst, afterSecond: innerHTMLSetCount }}));
+"""
+    result = _run(script)
+    assert result["afterSecond"] == result["afterFirst"], (
+        "a same-leg tick (distance/progress only) must not trigger another "
+        f"rebuild, went from {result['afterFirst']} to {result['afterSecond']}"
+    )
+
+
+def test_relay_leg_change_updates_rendered_card_text():
+    """End-to-end: after a handoff the actual rendered card markup must
+    show the new runner -- relayLegLine() splices relay_current_runner in
+    directly (not through the stubbed t()), so this proves the visible
+    text changed, not just that a rebuild was counted."""
+    n1 = _relay_node("n1", 100, 20, 91, 60, 1, 3, "王小明")
+    n1_handoff = dict(n1)
+    n1_handoff["relay_leg"] = 2
+    n1_handoff["relay_current_runner"] = "陳大文"
+    script = f"""
+renderLeaderboard({{ n1: {json.dumps(n1)} }});
+renderLeaderboard({{ n1: {json.dumps(n1_handoff)} }});
+const container = document.getElementById("leaderboard-container");
+console.log(JSON.stringify({{ html: container.innerHTML }}));
+"""
+    result = _run(script)
+    assert "陳大文" in result["html"], "rendered card must show the new runner"
+    assert (
+        "王小明" not in result["html"]
+    ), "rendered card must not keep showing the old runner"

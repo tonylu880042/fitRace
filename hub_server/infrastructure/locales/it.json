@@ -103,6 +103,7 @@
   "signup.division_women": "Donne",
   "stage.team": "Squadra",
   "stage.individual": "Individuale",
+  "stage.relay": "Staffetta",
   "stage.countdown": "Conto alla rovescia",
   "stage.go": "3, 2, 1, Go",
   "stage.countdown_sub": "Il cronometro parte al Go. L'audio segue l'impostazione di Game Admin.",

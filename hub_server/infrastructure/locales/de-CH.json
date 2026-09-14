@@ -103,6 +103,7 @@
   "signup.division_women": "Frauen",
   "stage.team": "Team",
   "stage.individual": "Individuell",
+  "stage.relay": "Staffel",
   "stage.countdown": "Countdown",
   "stage.go": "3, 2, 1, Go",
   "stage.countdown_sub": "Die Zeitmessung startet bei Go. Der Ton folgt der Einstellung in Game Admin.",
