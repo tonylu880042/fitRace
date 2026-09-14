@@ -56,6 +56,7 @@
   "edge.empty": "Ingen Edge Node-status mottagen",
   "edge.unbound": "Ej kopplad",
   "metric.speed": "Hastighet (kph)",
+  "metric.pace": "Tempo (/km)",
   "metric.distance": "Distans (m)",
   "metric.power": "Effekt (W)",
   "metric.current_power": "Aktuell effekt (W)",

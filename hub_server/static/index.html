@@ -4052,6 +4052,26 @@
     }
 
     function formatSprintSignal(row, raceType) {
+      // Nested (not shared) for the same reason equipmentIconSvg is nested
+      // inside buildClassBoardHtml: this function is extracted alone by
+      // its function-name marker and run standalone under node -e by
+      // tests/unit/hub/test_dashboard_i18n.py, so a helper it calls has to
+      // live inside it rather than as a top-level declaration that is
+      // invisible from there. No apostrophes in this comment block on
+      // purpose -- extraction scans for quote characters without
+      // skipping comments, so one would truncate the extraction.
+      function isRunningEquipment(equipmentType) {
+        return equipmentType === "treadmill" || equipmentType === "curved_treadmill";
+      }
+      function formatPacePerKm(speedKph) {
+        const speed = Number(speedKph);
+        if (!Number.isFinite(speed) || speed <= 0.5) return `--'--"`;
+        const totalSeconds = Math.round(3600 / speed);
+        if (totalSeconds >= 3600) return `--'--"`;
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = String(totalSeconds % 60).padStart(2, "0");
+        return `${minutes}'${seconds}"`;
+      }
       if (row.kind === "team") {
         if (raceType === "max_power" || raceType === "watts") {
           return { value: `${metricNumber(row.raw.max_power_watts).toFixed(0)}W`, label: t("team.peak_power_label") };
@@ -4066,7 +4086,11 @@
       if (raceType === "max_power" || raceType === "watts" || raceType === "calories") {
         return { value: `${metricNumber(row.raw.power_watts).toFixed(0)}W`, label: t("metric.current_power") };
       }
-      return { value: `${metricNumber(row.raw.instantaneous_speed_kph).toFixed(1)}`, label: t("metric.speed") };
+      const speed = metricNumber(row.raw.instantaneous_speed_kph);
+      if (isRunningEquipment(row.raw.equipment_type)) {
+        return { value: formatPacePerKm(speed), label: t("metric.pace") };
+      }
+      return { value: `${speed.toFixed(1)}`, label: t("metric.speed") };
     }
 
     function renderMemberProgressChips(members, className = "race-track-chip") {
@@ -4667,6 +4691,25 @@
         return Math.max(0, Math.min(100, percent));
       }
 
+      // Nested for the same reason classTargetStatus above is nested:
+      // several tests extract buildClassBoardHtml alone by its
+      // function-name marker and run it standalone under node -e. See
+      // applyClassBoardIncrementalUpdate further below for the top-level
+      // twin the incremental patch path uses -- same decision, duplicated
+      // once for that same extractability constraint.
+      function isRunningEquipment(equipmentType) {
+        return equipmentType === "treadmill" || equipmentType === "curved_treadmill";
+      }
+      function formatPacePerKm(speedKph) {
+        const speed = Number(speedKph);
+        if (!Number.isFinite(speed) || speed <= 0.5) return `--'--"`;
+        const totalSeconds = Math.round(3600 / speed);
+        if (totalSeconds >= 3600) return `--'--"`;
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = String(totalSeconds % 60).padStart(2, "0");
+        return `${minutes}'${seconds}"`;
+      }
+
       const plan = sessionData.class_plan;
       const leaderboard = sessionData.leaderboard || {};
       if (!plan || !plan.segments || plan.segments.length === 0) {
@@ -4713,8 +4756,11 @@
         const power = metricNumber(node.power_watts);
         const speed = metricNumber(node.instantaneous_speed_kph);
         const distance = metricNumber(node.distance_m);
+        const runningEquipment = isRunningEquipment(node.equipment_type);
         const powerStr = numberFormat.format(power);
         const speedStr = numberFormat.format(speed);
+        const speedLabel = runningEquipment ? t("metric.pace") : t("metric.speed");
+        const speedValueDisplay = runningEquipment ? formatPacePerKm(speed) : (speedStr + " kph");
         const distanceStr = numberFormat.format(distance);
         const effortPercent = Math.min(100, power / 5);
         let badge = "";
@@ -4749,7 +4795,7 @@
         card += "<div class=\"class-station-machine\" style=\"font-size:0.85rem;color:var(--text-muted);margin-bottom:0.75rem;\">" + escapeHtml(machineName) + "</div>";
         card += "<div class=\"class-card-metrics\" style=\"display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.5rem;margin-bottom:0.75rem;font-size:0.8rem;\">";
         card += "<div><div class=\"class-metric-label\" style=\"color:var(--text-muted);\">" + escapeHtml(t("metric.power")) + "</div><div style=\"font-weight:600;\"><span class=\"class-metric-power\">" + escapeHtml(powerStr) + " W</span>" + targetIndicatorHtml + "</div></div>";
-        card += "<div><div class=\"class-metric-label\" style=\"color:var(--text-muted);\">" + escapeHtml(t("metric.speed")) + "</div><div class=\"class-metric-speed\" style=\"font-weight:600;\">" + escapeHtml(speedStr) + " kph</div></div>";
+        card += "<div><div class=\"class-metric-label\" style=\"color:var(--text-muted);\">" + escapeHtml(speedLabel) + "</div><div class=\"class-metric-speed\" style=\"font-weight:600;\">" + speedValueDisplay + "</div></div>";
         card += "<div><div class=\"class-metric-label\" style=\"color:var(--text-muted);\">" + escapeHtml(t("metric.distance")) + "</div><div class=\"class-metric-distance\" style=\"font-weight:600;\">" + escapeHtml(distanceStr) + " m</div></div>";
         card += "</div>";
         card += "<div class=\"class-effort-track\" style=\"height:6px;background:var(--steel-border);border-radius:2px;overflow:hidden;\"><div class=\"class-effort-fill\" style=\"height:100%;width:" + effortPercent + "%;background:var(--volt-yellow);transition:width 0.3s ease;\"></div></div>";
@@ -4955,6 +5001,11 @@
           node.athlete_name || "",
           nodeDisplayName(node),
           classTargetStatusForPatch(node.power_watts, clock.targetWatts),
+          // A change in the equipment_type of a station (hot-swapped
+          // machine) must invalidate the fast path -- the speed/pace
+          // metric LABEL is baked into markup and is never touched by the
+          // value-only patch in applyClassBoardIncrementalUpdate below.
+          node.equipment_type || "",
         ].join(":");
       }).sort().join(",");
     }
@@ -5004,13 +5055,37 @@
       const signature = buildClassStationSignature(sessionData.leaderboard, clock);
       if (signature !== classBoardCardRefs.signature) return false;
 
+      // Nested (not shared) for the same reason buildClassBoardHtml nests
+      // its own copy: this function is extracted alone -- or alongside
+      // buildClassBoardHtml as independent siblings, never through it --
+      // by several tests and run standalone under node -e, so a helper it
+      // calls has to live inside it rather than as a top-level
+      // declaration that is invisible from there.
+      function isRunningEquipmentForPatch(equipmentType) {
+        return equipmentType === "treadmill" || equipmentType === "curved_treadmill";
+      }
+      function formatPacePerKmForPatch(speedKph) {
+        const speed = Number(speedKph);
+        if (!Number.isFinite(speed) || speed <= 0.5) return `--'--"`;
+        const totalSeconds = Math.round(3600 / speed);
+        if (totalSeconds >= 3600) return `--'--"`;
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = String(totalSeconds % 60).padStart(2, "0");
+        return `${minutes}'${seconds}"`;
+      }
+
       const numberFormat = new Intl.NumberFormat(currentLocale);
       Object.values(sessionData.leaderboard || {}).forEach(function (node) {
         const refs = classBoardCardRefs.stations.get(node.node_id);
         if (!refs) return;
         const power = metricNumber(node.power_watts);
         if (refs.power) refs.power.textContent = numberFormat.format(power) + " W";
-        if (refs.speed) refs.speed.textContent = numberFormat.format(metricNumber(node.instantaneous_speed_kph)) + " kph";
+        if (refs.speed) {
+          const speed = metricNumber(node.instantaneous_speed_kph);
+          refs.speed.textContent = isRunningEquipmentForPatch(node.equipment_type)
+            ? formatPacePerKmForPatch(speed)
+            : numberFormat.format(speed) + " kph";
+        }
         if (refs.distance) refs.distance.textContent = numberFormat.format(metricNumber(node.distance_m)) + " m";
         if (refs.effortFill) refs.effortFill.style.width = Math.min(100, power / 5) + "%";
       });
@@ -5181,6 +5256,11 @@
         node.finished_time_ms ? "1" : "0",
         node.relay_leg || "",
         node.relay_current_runner || "",
+        // Pace vs. speed depends on this: a station whose equipment_type
+        // changes (a treadmill row hot-swapped for a bike, say) must be
+        // rebuilt with the right metric label rather than left showing a
+        // stale one by the fast path below.
+        node.equipment_type || "",
       ].join(":"));
       return raceType + "|" + (leaderboardFinal ? "F" : "R") + "|" + identity.join(",");
     }
@@ -5216,6 +5296,31 @@
     // touched, and no getBoundingClientRect is called -- this is what
     // keeps an ordinary telemetry tick cheap regardless of station count.
     function updateLeaderboardCardValues(nodes, raceType) {
+      // Nested (not shared as a sibling declaration) for the same reason
+      // equipmentIconSvg is nested inside buildClassBoardHtml: several
+      // tests extract this function alone by its function-name marker and
+      // run it standalone under node -e, so a helper it calls has to live
+      // inside it rather than as a top-level declaration that is
+      // invisible from there.
+      function isRunningEquipment(equipmentType) {
+        return equipmentType === "treadmill" || equipmentType === "curved_treadmill";
+      }
+      function formatPacePerKm(speedKph) {
+        const speed = Number(speedKph);
+        if (!Number.isFinite(speed) || speed <= 0.5) return `--'--"`;
+        const totalSeconds = Math.round(3600 / speed);
+        if (totalSeconds >= 3600) return `--'--"`;
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = String(totalSeconds % 60).padStart(2, "0");
+        return `${minutes}'${seconds}"`;
+      }
+      function setSmoothedSpeedOrPaceText(el, node) {
+        if (!el) return;
+        const smoothedSpeed = smoothMetricNumber(`${node.node_id}:speed`, node.instantaneous_speed_kph);
+        el.textContent = isRunningEquipment(node.equipment_type)
+          ? formatPacePerKm(smoothedSpeed)
+          : smoothedSpeed.toFixed(1);
+      }
       nodes.forEach((node) => {
         const refs = leaderboardCardRefs.get(node.node_id);
         if (!refs) return;
@@ -5228,11 +5333,11 @@
           setSmoothedCardText(refs.metricB, `${node.node_id}:max_power`, node.max_power_watts, 0, "");
           setSmoothedCardText(refs.metricC, `${node.node_id}:progress`, node.progress_percent, 1, "%");
         } else if (raceType === "time") {
-          setSmoothedCardText(refs.metricA, `${node.node_id}:speed`, node.instantaneous_speed_kph, 1, "");
+          setSmoothedSpeedOrPaceText(refs.metricA, node);
           setSmoothedCardText(refs.metricB, `${node.node_id}:distance`, node.distance_m, 0, "");
           setSmoothedCardText(refs.metricC, `${node.node_id}:progress`, node.progress_percent, 1, "%");
         } else {
-          setSmoothedCardText(refs.metricA, `${node.node_id}:speed`, node.instantaneous_speed_kph, 1, "");
+          setSmoothedSpeedOrPaceText(refs.metricA, node);
           setSmoothedCardText(refs.metricB, `${node.node_id}:distance`, node.distance_m, 0, "");
           if (!node.finished_time_ms) setSmoothedCardText(refs.metricC, `${node.node_id}:progress`, node.progress_percent, 1, "%");
         }
@@ -5331,6 +5436,23 @@
       let html = leaderboardFinal ? renderPodium(nodes, raceType) : '';
       html += '<div class="leaderboard-list">';
       nodes.forEach((node, index) => {
+        // Declared here, inside the loop body, rather than once above it
+        // or as a top-level sibling: a narrower test extracts just this
+        // forEach callback body by a literal text marker (not the whole
+        // renderLeaderboard function), so a helper this body calls has to
+        // live inside the extracted text itself.
+        function isRunningEquipment(equipmentType) {
+          return equipmentType === "treadmill" || equipmentType === "curved_treadmill";
+        }
+        function formatPacePerKm(speedKph) {
+          const speed = Number(speedKph);
+          if (!Number.isFinite(speed) || speed <= 0.5) return `--'--"`;
+          const totalSeconds = Math.round(3600 / speed);
+          if (totalSeconds >= 3600) return `--'--"`;
+          const minutes = Math.floor(totalSeconds / 60);
+          const seconds = String(totalSeconds % 60).padStart(2, "0");
+          return `${minutes}'${seconds}"`;
+        }
         const currentRank = index + 1;
         const previousRank = leaderboardRankByNode.get(node.node_id);
         const rankDelta = previousRank ? previousRank - currentRank : 0;
@@ -5413,14 +5535,17 @@
             </div>
           `;
         } else if (raceType === 'time') {
-          const speedDisplay = smoothMetricNumber(`${node.node_id}:speed`, node.instantaneous_speed_kph).toFixed(1);
+          const smoothedSpeed = smoothMetricNumber(`${node.node_id}:speed`, node.instantaneous_speed_kph);
+          const runningEquipment = isRunningEquipment(node.equipment_type);
+          const speedDisplay = runningEquipment ? formatPacePerKm(smoothedSpeed) : smoothedSpeed.toFixed(1);
+          const speedLabel = runningEquipment ? t("metric.pace") : t("metric.speed");
           const distDisplay = smoothMetricNumber(`${node.node_id}:distance`, node.distance_m).toFixed(0);
           const progressText = `${smoothMetricNumber(`${node.node_id}:progress`, node.progress_percent).toFixed(1)}%`;
 
           metricCols = `
             <div class="metric-group">
               <div class="metric-val">${speedDisplay}</div>
-              <div class="metric-lbl">${escapeHtml(t("metric.speed"))}</div>
+              <div class="metric-lbl">${escapeHtml(speedLabel)}</div>
             </div>
             <div class="metric-group">
               <div class="metric-val score-primary">${distDisplay}</div>
@@ -5432,9 +5557,12 @@
             </div>
           `;
         } else { // distance
-          const speedDisplay = smoothMetricNumber(`${node.node_id}:speed`, node.instantaneous_speed_kph).toFixed(1);
+          const smoothedSpeed = smoothMetricNumber(`${node.node_id}:speed`, node.instantaneous_speed_kph);
+          const runningEquipment = isRunningEquipment(node.equipment_type);
+          const speedDisplay = runningEquipment ? formatPacePerKm(smoothedSpeed) : smoothedSpeed.toFixed(1);
+          const speedLabel = runningEquipment ? t("metric.pace") : t("metric.speed");
           const distDisplay = smoothMetricNumber(`${node.node_id}:distance`, node.distance_m).toFixed(0);
-          const progressText = node.finished_time_ms 
+          const progressText = node.finished_time_ms
             ? `<span class="score-primary">${(metricNumber(node.finished_time_ms) / 1000.0).toFixed(1)}s</span>`
             : `${smoothMetricNumber(`${node.node_id}:progress`, node.progress_percent).toFixed(1)}%`;
           const progressLabel = node.finished_time_ms ? t("metric.finish_time") : t("metric.progress");
@@ -5442,7 +5570,7 @@
           metricCols = `
             <div class="metric-group">
               <div class="metric-val">${speedDisplay}</div>
-              <div class="metric-lbl">${escapeHtml(t("metric.speed"))}</div>
+              <div class="metric-lbl">${escapeHtml(speedLabel)}</div>
             </div>
             <div class="metric-group">
               <div class="metric-val score-primary">${distDisplay}</div>

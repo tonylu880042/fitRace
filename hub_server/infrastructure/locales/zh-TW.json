@@ -56,6 +56,7 @@
   "edge.empty": "尚未收到 Edge Node 狀態",
   "edge.unbound": "未綁定設備",
   "metric.speed": "速度 (kph)",
+  "metric.pace": "配速 (/km)",
   "metric.distance": "距離 (m)",
   "metric.power": "功率 (W)",
   "metric.current_power": "當前功率 (W)",
