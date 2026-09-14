@@ -100,15 +100,21 @@ def _matching_paren_end(source: str, open_idx: int) -> int:
     raise ValueError("no matching closing paren found")
 
 
-def _extract_function(source: str, name: str) -> str:
+def _extract_function(source: str, name: str, async_fn: bool = False) -> str:
     # Finds the end of the parameter list FIRST (via paren matching), then
     # the function body's opening brace after it -- a destructured
     # parameter like `function f({ a, b }) {...}` has a "{" inside its own
     # parameter list that a naive "first { after the marker" search would
     # mistake for the body's opening brace, truncating the extraction.
-    marker = f"function {name}("
+    #
+    # async_fn=True matches on "async function NAME(" starting at "async"
+    # itself -- matching on the bare "function NAME(" substring would find
+    # that same text starting AFTER "async ", silently dropping the async
+    # keyword from the extracted source and turning every `await` inside it
+    # into a syntax error under plain node.
+    marker = f"{'async ' if async_fn else ''}function {name}("
     start = source.index(marker)
-    paren_open = start + len(marker) - 1
+    paren_open = source.index("(", start)
     paren_close = _matching_paren_end(source, paren_open)
     brace_open = source.index("{", paren_close)
     brace_end = _matching_brace_end(source, brace_open)
@@ -353,6 +359,75 @@ def test_configure_race_sends_relay_legs_in_payload():
     body = source[start:end]
     assert "relay_legs:" in body
     assert 'isRelayCompetitionMode($("competition-mode").value)' in body
+
+
+def _run_configure_race(
+    competition_mode: str, race_type: str, race_target: str, relay_legs_value: str
+) -> dict:
+    """Executes the REAL configureRace() under node with a light fake DOM
+    and a fetchJson stub that records the exact JSON body posted -- proves
+    relay_legs actually reaches the wire, not just that the source text
+    mentions the key somewhere (test_configure_race_sends_relay_legs_in_
+    payload above only pins the latter, and a regression that always sends
+    relay_legs: null would still satisfy it)."""
+    source = _stripped_script()
+    is_relay_mode_fn = _extract_function(source, "isRelayCompetitionMode")
+    configure_race_fn = _extract_function(source, "configureRace", async_fn=True)
+    script = (
+        "const mockElements = {\n"
+        f"  'competition-mode': {{ value: {json.dumps(competition_mode)} }},\n"
+        f"  'race-type': {{ value: {json.dumps(race_type)} }},\n"
+        "  'team-scoring-policy': { value: 'average' },\n"
+        "  'team-completion-policy': { value: 'aggregate' },\n"
+        f"  'race-target': {{ value: {json.dumps(race_target)} }},\n"
+        f"  'relay-legs': {{ value: {json.dumps(relay_legs_value)} }},\n"
+        "};\n"
+        "function $(id) { return mockElements[id]; }\n"
+        "function t(key) { return key; }\n"
+        "function setMessage() {}\n"
+        "function adminHeaders(headers) { return headers; }\n"
+        "async function refreshReadiness() {}\n"
+        "function renderRace() {}\n"
+        "const state = { raceConfigDirty: true, race: null };\n"
+        "let fetchCalls = [];\n"
+        "function fetchJson(url, options) {\n"
+        "  fetchCalls.push({ url, body: JSON.parse(options.body) });\n"
+        "  return Promise.resolve({});\n"
+        "}\n"
+        + is_relay_mode_fn
+        + "\n"
+        + configure_race_fn
+        + "\n"
+        + "configureRace().then(() => {\n"
+        + "  console.log(JSON.stringify({ fetchCalls }));\n"
+        + "});\n"
+    )
+    result = json.loads(_run_node(script))
+    return result["fetchCalls"][0]["body"]
+
+
+def test_configure_race_posts_relay_legs_for_a_relay_race():
+    body = _run_configure_race(
+        competition_mode="relay",
+        race_type="time",
+        race_target="1000",
+        relay_legs_value="3",
+    )
+    assert body["relay_legs"] == 3
+    # A relay race is always distance, regardless of whatever race-type the
+    # selector was showing before the operator switched to relay.
+    assert body["race_type"] == "distance"
+
+
+def test_configure_race_posts_null_relay_legs_for_an_individual_race():
+    body = _run_configure_race(
+        competition_mode="individual",
+        race_type="distance",
+        race_target="500",
+        relay_legs_value="4",
+    )
+    assert body["relay_legs"] is None
+    assert body["race_type"] == "distance"
 
 
 def test_register_relay_team_posts_to_register_endpoint():

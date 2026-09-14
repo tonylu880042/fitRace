@@ -185,6 +185,31 @@ def test_no_cue_for_a_node_never_seen_before():
     assert result["seen"] == {"n1": 1}
 
 
+def test_no_cue_on_first_render_after_reload_mid_race_but_fires_on_next_advance():
+    # A dashboard reload (Game Admin's remote reload, or a plain projector
+    # refresh) wipes previousRelayLegByNode, but the race itself is
+    # unaffected -- the very first render afterwards can land with a team
+    # already several legs in (relay_leg: 2, not 1). That must NOT be
+    # mistaken for a fresh handoff (there is nothing to compare against
+    # yet), but the NEXT genuine advance after this point must still cue
+    # exactly once.
+    first = _run_handoff_cues(
+        '{"n1": {relay_legs: 4, relay_leg: 2, athlete_name: "Volt", relay_current_runner: "Bob"}}',
+        "{}",
+        "RUNNING",
+    )
+    assert first["cues"] == []
+    assert first["seen"] == {"n1": 2}
+
+    second = _run_handoff_cues(
+        '{"n1": {relay_legs: 4, relay_leg: 3, athlete_name: "Volt", relay_current_runner: "Cara"}}',
+        '{"n1": 2}',
+        "RUNNING",
+    )
+    assert second["cues"] == [{"team": "Volt", "runner": "Cara"}]
+    assert second["seen"] == {"n1": 3}
+
+
 def test_no_cue_outside_running_but_leg_is_still_recorded():
     result = _run_handoff_cues(
         '{"n1": {relay_legs: 4, relay_leg: 3, athlete_name: "Volt", relay_current_runner: "Cara"}}',
