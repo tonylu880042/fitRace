@@ -93,9 +93,17 @@ def _station(index, athlete_name):
 def _board_html(stations):
     """stations: list of (station_number, athlete_name)."""
     leaderboard = {f"n{number}": _station(number, name) for number, name in stations}
+    source = _read_index()
     script = (
         _stubs()
-        + _extract_function(_read_index(), "buildClassBoardHtml")
+        # isRunningEquipment/formatPacePerKm are top-level (feat/
+        # pace-effects) -- buildClassBoardHtml calls the shared
+        # definitions rather than a nested copy of its own.
+        + _extract_function(source, "isRunningEquipment")
+        + "\n"
+        + _extract_function(source, "formatPacePerKm")
+        + "\n"
+        + _extract_function(source, "buildClassBoardHtml")
         + "\nconst sessionData = "
         + json.dumps(
             {"class_plan": {"segments": [{"kind": "work", "duration_sec": 600}]}}

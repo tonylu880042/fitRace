@@ -100,20 +100,16 @@ def _run_node(script: str) -> str:
 
 # ---------------------------------------------------------------------------
 # 1. Pure helpers -- formatPacePerKm and isRunningEquipment, executed
-#    directly under node with no DOM and no other page state. Extracted
-#    from formatSprintSignal, the first of the five nested copies to
-#    appear in index.html -- the marker-based extraction below picks up
-#    whichever "function isRunningEquipment(" occurs first in the file, and
-#    since every nested copy is byte-for-byte identical in behaviour, this
-#    is a faithful test of all of them.
+#    directly under node with no DOM and no other page state. Each is
+#    declared exactly once, top-level, in index.html (right after
+#    stationLabel, per feat/pace-effects) and extracted directly by its
+#    own function-name marker -- not pulled out of an enclosing renderer.
 # ---------------------------------------------------------------------------
 
 
 def _extract_pure_helper(name: str) -> str:
     source = _read_index()
-    fn = _extract_function(source, "formatSprintSignal")
-    fn = _strip_js_comments(fn)
-    return _extract_function(fn, name)
+    return _strip_js_comments(_extract_function(source, name))
 
 
 def _run_format_pace_per_km(speed) -> str:
@@ -174,6 +170,13 @@ def test_is_running_equipment_other_types_false():
 # ---------------------------------------------------------------------------
 
 _CLASSIC_FN_NAMES = [
+    # Top-level (feat/pace-effects) -- renderLeaderboard and
+    # updateLeaderboardCardValues both call these shared definitions
+    # rather than a nested copy of their own.
+    "isRunningEquipment",
+    "formatPacePerKm",
+    "paceBand",
+    "fastestPaceNodeId",
     "resetLeaderboardCardCache",
     "buildLeaderboardCardSignature",
     "captureLeaderboardCardRefs",
@@ -459,6 +462,11 @@ console.log(JSON.stringify({{ afterFirst, afterSecond: innerHTMLSetCount }}));
 # ---------------------------------------------------------------------------
 
 _CLASS_FN_NAMES = [
+    # Top-level (feat/pace-effects) -- buildClassBoardHtml and
+    # applyClassBoardIncrementalUpdate both call these shared definitions
+    # rather than a nested copy of their own.
+    "isRunningEquipment",
+    "formatPacePerKm",
     "resetClassBoardCardCache",
     "classTargetStatusForPatch",
     "computeClassProgressPercentForPatch",
@@ -698,10 +706,28 @@ console.log(JSON.stringify({{ before, after, beforeRebuilds, afterRebuilds }}));
 
 def _run_format_sprint_signal(row_js: str, race_type: str) -> dict:
     source = _read_index()
+    # isRunningEquipment/formatPacePerKm/paceBand are top-level (feat/
+    # pace-effects) -- formatSprintSignal calls the shared definitions
+    # rather than a nested copy of its own, so they are extracted
+    # alongside it here.
+    is_running = _strip_js_comments(_extract_function(source, "isRunningEquipment"))
+    format_pace = _strip_js_comments(_extract_function(source, "formatPacePerKm"))
+    pace_band = _strip_js_comments(_extract_function(source, "paceBand"))
     fn = _strip_js_comments(_extract_function(source, "formatSprintSignal"))
     script = (
         "const t = (key) => `T[${key}]`;\n"
         "const metricNumber = (value, fallback = 0) => { const n = Number(value); return Number.isFinite(n) ? n : fallback; };\n"
+        # formatSprintSignal now also gates the pace-band field (feat/
+        # pace-effects) on the page-global currentState -- not exercised by
+        # this file's assertions (value/label only), so a plain non-RUNNING
+        # default is enough to satisfy the reference.
+        "let currentState = 'IDLE';\n"
+        + is_running
+        + "\n"
+        + format_pace
+        + "\n"
+        + pace_band
+        + "\n"
         + fn
         + "\n"
         + f"console.log(JSON.stringify(formatSprintSignal({row_js}, {json.dumps(race_type)})));"

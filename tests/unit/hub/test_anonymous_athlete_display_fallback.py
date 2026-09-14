@@ -174,6 +174,11 @@ def _en_us_messages() -> dict:
 
 def _run_build_class_board_html(session_data_js: str, clock_js: str) -> str:
     source = _read("index.html")
+    # isRunningEquipment/formatPacePerKm are top-level (feat/pace-effects)
+    # -- buildClassBoardHtml calls the shared definitions rather than a
+    # nested copy of its own.
+    is_running = _strip_js_comments(_extract_function(source, "isRunningEquipment"))
+    format_pace = _strip_js_comments(_extract_function(source, "formatPacePerKm"))
     fn = _strip_js_comments(_extract_function(source, "buildClassBoardHtml"))
     script = (
         _real_t_from_messages(_en_us_messages())
@@ -183,6 +188,10 @@ def _run_build_class_board_html(session_data_js: str, clock_js: str) -> str:
         + _intl_number_format_stub()
         + _format_clock_stub()
         + "const currentLocale = 'en-US';\n"
+        + is_running
+        + "\n"
+        + format_pace
+        + "\n"
         + fn
         + "\n"
         + f"const sessionData = {session_data_js};\n"
@@ -261,6 +270,15 @@ def _classic_row_body() -> str:
 
 def _run_classic_leaderboard_row(nodes_js: str, race_type: str = "distance") -> str:
     body = _classic_row_body()
+    source = _read("index.html")
+    # isRunningEquipment/formatPacePerKm/paceBand are top-level (feat/
+    # pace-effects) -- the forEach body calls the shared definitions
+    # rather than a nested copy of its own; fastestId is a variable from
+    # renderLeaderboard's enclosing scope that this narrow body-only
+    # extraction does not include, so it is stubbed too.
+    is_running = _strip_js_comments(_extract_function(source, "isRunningEquipment"))
+    format_pace = _strip_js_comments(_extract_function(source, "formatPacePerKm"))
+    pace_band = _strip_js_comments(_extract_function(source, "paceBand"))
     script = (
         _real_t_from_messages(_en_us_messages())
         + _metric_number_stub()
@@ -268,6 +286,14 @@ def _run_classic_leaderboard_row(nodes_js: str, race_type: str = "distance") -> 
         + _smooth_metric_number_stub()
         + _node_display_name_stub()
         + 'function relayLegLine() { return ""; }\n'
+        + is_running
+        + "\n"
+        + format_pace
+        + "\n"
+        + pace_band
+        + "\n"
+        + "let currentState = 'IDLE';\n"
+        + "let fastestId = null;\n"
         + f"const raceType = {json.dumps(race_type)};\n"
         + "const leaderboardFinal = false;\n"
         + "const leaderboardRankByNode = new Map();\n"
