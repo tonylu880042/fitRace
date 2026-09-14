@@ -257,6 +257,11 @@ def test_plan_preview_timeline_gets_its_own_colour_class_for_changeover():
 
 def _run_build_class_board_html(session_data_js: str, clock_js: str) -> str:
     source = _read_index()
+    # isRunningEquipment/formatPacePerKm are top-level (feat/pace-effects)
+    # -- buildClassBoardHtml calls the shared definitions rather than a
+    # nested copy of its own.
+    is_running = _strip_js_comments(_extract_function(source, "isRunningEquipment"))
+    format_pace = _strip_js_comments(_extract_function(source, "formatPacePerKm"))
     fn = _strip_js_comments(_extract_function(source, "buildClassBoardHtml"))
     script = (
         _t_stub()
@@ -266,6 +271,10 @@ def _run_build_class_board_html(session_data_js: str, clock_js: str) -> str:
         + _intl_number_format_stub()
         + _format_clock_stub()
         + "const currentLocale = 'en-US';\n"
+        + is_running
+        + "\n"
+        + format_pace
+        + "\n"
         + fn
         + "\n"
         + f"const sessionData = {session_data_js};\n"

@@ -606,6 +606,7 @@
 
     .metric-group {
       text-align: right;
+      position: relative;
     }
 
     .metric-val {
@@ -1194,6 +1195,7 @@
       font-weight: 900;
       line-height: 1;
       white-space: nowrap;
+      position: relative;
     }
 
     .sprint-board-signal span {
@@ -1390,27 +1392,11 @@
       50% { text-shadow: 0 0 18px rgba(244, 63, 94, 0.85), 0 0 28px rgba(244, 63, 94, 0.45); }
     }
 
+    /* Hidden by default; each context below makes it visible without
+       ever changing that row's height or covering the pace digits. */
     .fastest-pace-badge {
       display: none;
-      margin-left: 0.3rem;
-      font-size: 0.9em;
-      vertical-align: middle;
-    }
-
-    /* Pinned to the card's own top-right corner instead of sitting
-       inline after the pace text: the Sprint Board's signal column is
-       nowrap and right-aligned in a tight flex row, so any inline
-       width the badge adds can push the pace text past the card's
-       right edge on a dense grid. Absolute positioning against the
-       card (already position: relative) removes it from that flow
-       entirely while staying visually right beside the pace value,
-       which sits in the same top-right corner. */
-    .sprint-board-card .fastest-pace-badge {
-      position: absolute;
-      top: 0.7rem;
-      right: 0.7rem;
-      margin-left: 0;
-      font-size: 1rem;
+      font-size: 0.9rem;
     }
 
     .fastest-pace-badge.is-visible {
@@ -1421,6 +1407,50 @@
     @keyframes fastestBadgePulse {
       0%, 100% { transform: scale(1); }
       50% { transform: scale(1.18); }
+    }
+
+    /* Classic: the value and badge sit side by side on one line inside
+       a small flex row (metric-val itself stays a plain single
+       text-child div -- the O(1) fast path and other tests parse its
+       exact "<div class=metric-val>TEXT</div>" shape), so the badge
+       can never wrap onto its own line below the value the way a plain
+       block sibling does (block elements always start a new line
+       regardless of what follows them), and can never grow the row's
+       height -- it is simply narrower than the value's own line-box at
+       every density tier, xl/lg included, where the pace text's
+       font-size is a clamp() formula rather than a fixed rem a
+       stationary offset could be calibrated against. */
+    .metric-val-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: flex-end;
+      gap: 0.2rem;
+    }
+
+    /* Sprint Board: a third flex item in .sprint-board-topline (see
+       below), between the name block and the pace signal -- not
+       nested inside either, and not absolutely positioned. Flex
+       children never overlap one another by construction, so this can
+       never cover the pace digits (which are their own, separate flex
+       item) regardless of density tier or how tight the row gets, and
+       it never adds height since it is top-aligned on the same line as
+       the rank and signal text. An earlier absolutely-positioned
+       version pinned above the digits could still overlap them (the
+       clearance a fixed offset needs varies by viewport and row
+       content) or get clipped by the card's own overflow: hidden when
+       there was not enough padding above to fit it -- this avoids both
+       failure modes structurally instead of by tuning an offset. */
+    .sprint-board-card .fastest-pace-badge {
+      align-self: flex-start;
+      font-size: 1rem;
+      /* .sprint-board-topline's own `gap` inserts space on both sides
+         of every flex child, including this one -- cancel that out
+         with a matching negative margin so the badge only ever costs
+         its own small width, not two extra gap-widths on top. Without
+         this, a card at the tightest density (many long-value rows)
+         can run out of room and force the pace signal itself to
+         overflow the card. */
+      margin: 0 calc(-1 * 0.75rem + 0.02rem);
     }
 
     .leaderboard-item.fastest-pace-highlight,
@@ -1435,6 +1465,13 @@
       50% { box-shadow: 0 0 30px rgba(244, 63, 94, 0.55), inset 0 0 16px rgba(244, 63, 94, 0.18); }
     }
 
+    /* Sized to read clearly from projector distance, not just up close:
+       roughly 40/80/140px at the default (5+ row) tier, growing further
+       in the xl/lg tiers below as the rail itself grows taller. Always
+       behind the marker (z-index below it in paint order since it is
+       the marker's own ::before, painted first) and always clipped by
+       .race-track-rail's own overflow: hidden, so it never escapes the
+       rail even for a marker sitting near the left edge. */
     .race-track-marker.pace-steady::before,
     .race-track-marker.pace-fast::before,
     .race-track-marker.pace-blazing::before {
@@ -1443,30 +1480,60 @@
       right: 100%;
       top: 50%;
       transform: translateY(-50%);
-      height: 4px;
-      border-radius: 2px;
+      height: 10px;
+      border-radius: 5px;
       pointer-events: none;
     }
 
     .race-track-marker.pace-steady::before {
-      width: 14px;
-      background: linear-gradient(to left, rgba(253, 224, 71, 0.55), transparent);
+      width: 40px;
+      background: linear-gradient(to left, rgba(253, 224, 71, 0.9), rgba(253, 224, 71, 0.25) 70%, transparent);
     }
 
     .race-track-marker.pace-fast::before {
-      width: 26px;
-      background: linear-gradient(to left, rgba(245, 158, 11, 0.7), transparent);
+      width: 80px;
+      background: linear-gradient(to left, rgba(245, 158, 11, 0.95), rgba(245, 158, 11, 0.3) 70%, transparent);
+      box-shadow: 0 0 12px rgba(245, 158, 11, 0.55);
     }
 
     .race-track-marker.pace-blazing::before {
-      width: 42px;
-      background: linear-gradient(to left, rgba(244, 63, 94, 0.9), transparent);
+      width: 140px;
+      background: linear-gradient(to left, rgba(244, 63, 94, 1), rgba(244, 63, 94, 0.35) 70%, transparent);
+      box-shadow: 0 0 18px rgba(244, 63, 94, 0.85), 0 0 34px rgba(244, 63, 94, 0.5);
       animation: paceTrailShimmer 1s ease-in-out infinite;
     }
 
     @keyframes paceTrailShimmer {
-      0%, 100% { opacity: 0.7; }
-      50% { opacity: 1; }
+      0%, 100% { opacity: 0.8; box-shadow: 0 0 14px rgba(244, 63, 94, 0.7), 0 0 26px rgba(244, 63, 94, 0.4); }
+      50% { opacity: 1; box-shadow: 0 0 24px rgba(244, 63, 94, 1), 0 0 42px rgba(244, 63, 94, 0.65); }
+    }
+
+    /* xl/lg density tiers (1-2 / 3-4 rows) grow the rail taller -- scale
+       the trail up to match instead of leaving it looking the same size
+       against a visibly bigger board. */
+    .race-board--xl .race-track-marker.pace-steady::before {
+      width: 56px;
+      height: 14px;
+    }
+    .race-board--xl .race-track-marker.pace-fast::before {
+      width: 112px;
+      height: 14px;
+    }
+    .race-board--xl .race-track-marker.pace-blazing::before {
+      width: 196px;
+      height: 14px;
+    }
+    .race-board--lg .race-track-marker.pace-steady::before {
+      width: 48px;
+      height: 12px;
+    }
+    .race-board--lg .race-track-marker.pace-fast::before {
+      width: 96px;
+      height: 12px;
+    }
+    .race-board--lg .race-track-marker.pace-blazing::before {
+      width: 168px;
+      height: 12px;
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -3440,6 +3507,75 @@
       return parts.join(" · ");
     }
 
+    // True for equipment whose speed reads better as a running pace than
+    // a raw kph number. Shared, top-level -- every renderer below (and
+    // the class board) calls this one function rather than a nested copy
+    // of its own, so a mutation here is caught regardless of which
+    // renderer a test happens to exercise.
+    function isRunningEquipment(equipmentType) {
+      return equipmentType === "treadmill" || equipmentType === "curved_treadmill";
+    }
+
+    // "M'SS\"" pace text for a running-equipment speed, or a placeholder
+    // for a speed that has no meaningful pace (not finite, at or below
+    // 0.5 kph, or so slow the pace would be an hour or more per km).
+    function formatPacePerKm(speedKph) {
+      const speed = Number(speedKph);
+      if (!Number.isFinite(speed) || speed <= 0.5) return `--'--"`;
+      const totalSeconds = Math.round(3600 / speed);
+      if (totalSeconds >= 3600) return `--'--"`;
+      const minutes = Math.floor(totalSeconds / 60);
+      const seconds = String(totalSeconds % 60).padStart(2, "0");
+      return `${minutes}'${seconds}"`;
+    }
+
+    // Fixed seconds-per-km thresholds for the fast-running visual effects
+    // (pace band colour, the fastest-pace flame, the Race Track trail):
+    // none is no pace at all or 6 minutes per km or slower, steady is 5
+    // to 6 minutes, fast is 4 to 5 minutes, and blazing is anything
+    // quicker than 4 minutes per km. Speed-only -- callers gate this on
+    // isRunningEquipment and on the race actually being RUNNING.
+    function paceBand(speedKph) {
+      const speed = Number(speedKph);
+      if (!Number.isFinite(speed) || speed <= 0.5) return "none";
+      const totalSeconds = 3600 / speed;
+      if (totalSeconds >= 360) return "none";
+      if (totalSeconds >= 300) return "steady";
+      if (totalSeconds >= 240) return "fast";
+      return "blazing";
+    }
+
+    // The node_id of the single fastest running row among nodes that are
+    // not finished, or null when no row qualifies. Ties go to the lowest
+    // station number. A pace slower than steady (>=360s/km) never
+    // qualifies; with exactly one running row, it must be blazing to
+    // qualify -- a single treadmill jogging along should not get a
+    // permanent flame.
+    function fastestPaceNodeId(nodes) {
+      const candidates = (nodes || []).filter(
+        (candidate) => isRunningEquipment(candidate.equipment_type) && !candidate.finished_time_ms
+      );
+      let bestNode = null;
+      let bestSeconds = Infinity;
+      candidates.forEach((candidate) => {
+        const speed = Number(candidate.instantaneous_speed_kph);
+        if (!Number.isFinite(speed) || speed <= 0.5) return;
+        const totalSeconds = 3600 / speed;
+        if (totalSeconds >= 360) return;
+        if (totalSeconds < bestSeconds) {
+          bestSeconds = totalSeconds;
+          bestNode = candidate;
+        } else if (totalSeconds === bestSeconds) {
+          const bestStation = Number(bestNode.station_number) || Infinity;
+          const thisStation = Number(candidate.station_number) || Infinity;
+          if (thisStation < bestStation) bestNode = candidate;
+        }
+      });
+      if (!bestNode) return null;
+      if (candidates.length === 1 && bestSeconds >= 240) return null;
+      return bestNode.node_id;
+    }
+
     // Relay-only secondary line ("Leg 2/4 · Bob") shared by all three
     // leaderboard render modes that show individual rows (classic,
     // race_track, sprint_board). Plain text, not HTML -- callers escape it
@@ -4501,41 +4637,10 @@
     }
 
     function formatSprintSignal(row, raceType) {
-      // Nested (not shared) for the same reason equipmentIconSvg is nested
-      // inside buildClassBoardHtml: this function is extracted alone by
-      // its function-name marker and run standalone under node -e by
-      // tests/unit/hub/test_dashboard_i18n.py, so a helper it calls has to
-      // live inside it rather than as a top-level declaration that is
-      // invisible from there. No apostrophes in this comment block on
-      // purpose -- extraction scans for quote characters without
-      // skipping comments, so one would truncate the extraction.
-      function isRunningEquipment(equipmentType) {
-        return equipmentType === "treadmill" || equipmentType === "curved_treadmill";
-      }
-      function formatPacePerKm(speedKph) {
-        const speed = Number(speedKph);
-        if (!Number.isFinite(speed) || speed <= 0.5) return `--'--"`;
-        const totalSeconds = Math.round(3600 / speed);
-        if (totalSeconds >= 3600) return `--'--"`;
-        const minutes = Math.floor(totalSeconds / 60);
-        const seconds = String(totalSeconds % 60).padStart(2, "0");
-        return `${minutes}'${seconds}"`;
-      }
-      // Fixed seconds-per-km thresholds for the fast-running visual effects
-      // (see paceBand nested copies in renderLeaderboard nodes.forEach
-      // callback, updateLeaderboardCardValues and
-      // renderRaceTrackLeaderboard): none is no pace at all or 6 minutes
-      // per km or slower, steady is 5 to 6 minutes, fast is 4 to 5
-      // minutes, and blazing is anything quicker than 4 minutes per km.
-      function paceBand(speedKph) {
-        const speed = Number(speedKph);
-        if (!Number.isFinite(speed) || speed <= 0.5) return "none";
-        const totalSeconds = 3600 / speed;
-        if (totalSeconds >= 360) return "none";
-        if (totalSeconds >= 300) return "steady";
-        if (totalSeconds >= 240) return "fast";
-        return "blazing";
-      }
+      // isRunningEquipment/formatPacePerKm/paceBand are top-level (see
+      // above, right after stationLabel) -- not nested here. Tests that
+      // extract this function standalone add those to their own
+      // extraction list rather than relying on a local copy.
       if (row.kind === "team") {
         if (raceType === "max_power" || raceType === "watts") {
           return { value: `${metricNumber(row.raw.max_power_watts).toFixed(0)}W`, label: t("team.peak_power_label"), band: "none" };
@@ -4610,29 +4715,13 @@
             };
           })
         : individualRows.map((node) => {
-            // Nested (not shared) for the same reason isRunningEquipment/
-            // formatPacePerKm are nested inside formatSprintSignal: this
-            // exact callback is extracted standalone by a text-anchor
-            // marker and run under node -e (see
-            // test_dashboard_anonymous_everywhere.py), so a helper it
-            // calls has to live inside it rather than at the enclosing
-            // function scope.
-            function isRunningEquipmentForTrail(equipmentType) {
-              return equipmentType === "treadmill" || equipmentType === "curved_treadmill";
-            }
-            function paceBand(speedKph) {
-              const speed = Number(speedKph);
-              if (!Number.isFinite(speed) || speed <= 0.5) return "none";
-              const totalSeconds = 3600 / speed;
-              if (totalSeconds >= 360) return "none";
-              if (totalSeconds >= 300) return "steady";
-              if (totalSeconds >= 240) return "fast";
-              return "blazing";
-            }
+            // isRunningEquipment/paceBand are top-level (see above, right
+            // after stationLabel) -- not nested here. Tests that extract
+            // this callback standalone add those to their own extraction.
             const score = formatResultScore(node, raceType);
             const station = stationLabel(node);
             const teamSuffix = node.team_name ? ` · ${node.team_name}` : "";
-            const trailEligible = currentState === "RUNNING" && !node.finished_time_ms && isRunningEquipmentForTrail(node.equipment_type);
+            const trailEligible = currentState === "RUNNING" && !node.finished_time_ms && isRunningEquipment(node.equipment_type);
             return {
               id: node.node_id,
               name: node.athlete_name || (node.station_number ? `${t("stations.station")} ${node.station_number}` : t("stations.athlete")),
@@ -4867,38 +4956,8 @@
         ? isTeamLeaderboardFinal(raceType, teamRows)
         : isLeaderboardFinal(raceType, leaderboardNodes);
 
-      // Nested (not shared) for the same reason isRunningEquipment/
-      // formatPacePerKm are nested inside formatSprintSignal above: the
-      // pace-effects test suite extracts individual render functions
-      // standalone by their function-name marker and runs them under
-      // node -e, so a helper this function calls has to live inside it.
-      function fastestPaceNodeId(candidateNodes) {
-        function isRunningEquipmentForFastest(equipmentType) {
-          return equipmentType === "treadmill" || equipmentType === "curved_treadmill";
-        }
-        const candidates = (candidateNodes || []).filter(
-          (candidate) => isRunningEquipmentForFastest(candidate.equipment_type) && !candidate.finished_time_ms
-        );
-        let bestNode = null;
-        let bestSeconds = Infinity;
-        candidates.forEach((candidate) => {
-          const speed = Number(candidate.instantaneous_speed_kph);
-          if (!Number.isFinite(speed) || speed <= 0.5) return;
-          const totalSeconds = 3600 / speed;
-          if (totalSeconds >= 360) return;
-          if (totalSeconds < bestSeconds) {
-            bestSeconds = totalSeconds;
-            bestNode = candidate;
-          } else if (totalSeconds === bestSeconds) {
-            const bestStation = Number(bestNode.station_number) || Infinity;
-            const thisStation = Number(candidate.station_number) || Infinity;
-            if (thisStation < bestStation) bestNode = candidate;
-          }
-        });
-        if (!bestNode) return null;
-        if (candidates.length === 1 && bestSeconds >= 240) return null;
-        return bestNode.node_id;
-      }
+      // fastestPaceNodeId is top-level (see above, right after
+      // stationLabel) -- not nested here.
       const fastestId = (currentState === "RUNNING" && !isTeamMode) ? fastestPaceNodeId(individualRows) : null;
 
       let html = "";
@@ -4931,8 +4990,9 @@
                 <div class="sprint-board-meta">${escapeHtml(row.meta)}</div>
                 ${row.kind === "individual" && relayLegLine(row.raw) ? `<div class="sprint-board-relay-leg">${escapeHtml(relayLegLine(row.raw))}</div>` : ""}
               </div>
+              ${fastestBadgeHtml}
               <div class="sprint-board-signal${signalBandClass}">
-                ${escapeHtml(sprintSignal.value)}${fastestBadgeHtml}
+                ${escapeHtml(sprintSignal.value)}
                 <span>${escapeHtml(sprintSignal.label)}</span>
               </div>
             </div>
@@ -5220,24 +5280,8 @@
         return Math.max(0, Math.min(100, percent));
       }
 
-      // Nested for the same reason classTargetStatus above is nested:
-      // several tests extract buildClassBoardHtml alone by its
-      // function-name marker and run it standalone under node -e. See
-      // applyClassBoardIncrementalUpdate further below for the top-level
-      // twin the incremental patch path uses -- same decision, duplicated
-      // once for that same extractability constraint.
-      function isRunningEquipment(equipmentType) {
-        return equipmentType === "treadmill" || equipmentType === "curved_treadmill";
-      }
-      function formatPacePerKm(speedKph) {
-        const speed = Number(speedKph);
-        if (!Number.isFinite(speed) || speed <= 0.5) return `--'--"`;
-        const totalSeconds = Math.round(3600 / speed);
-        if (totalSeconds >= 3600) return `--'--"`;
-        const minutes = Math.floor(totalSeconds / 60);
-        const seconds = String(totalSeconds % 60).padStart(2, "0");
-        return `${minutes}'${seconds}"`;
-      }
+      // isRunningEquipment/formatPacePerKm are top-level (see above,
+      // right after stationLabel) -- not nested here.
 
       const plan = sessionData.class_plan;
       const leaderboard = sessionData.leaderboard || {};
@@ -5584,24 +5628,8 @@
       const signature = buildClassStationSignature(sessionData.leaderboard, clock);
       if (signature !== classBoardCardRefs.signature) return false;
 
-      // Nested (not shared) for the same reason buildClassBoardHtml nests
-      // its own copy: this function is extracted alone -- or alongside
-      // buildClassBoardHtml as independent siblings, never through it --
-      // by several tests and run standalone under node -e, so a helper it
-      // calls has to live inside it rather than as a top-level
-      // declaration that is invisible from there.
-      function isRunningEquipmentForPatch(equipmentType) {
-        return equipmentType === "treadmill" || equipmentType === "curved_treadmill";
-      }
-      function formatPacePerKmForPatch(speedKph) {
-        const speed = Number(speedKph);
-        if (!Number.isFinite(speed) || speed <= 0.5) return `--'--"`;
-        const totalSeconds = Math.round(3600 / speed);
-        if (totalSeconds >= 3600) return `--'--"`;
-        const minutes = Math.floor(totalSeconds / 60);
-        const seconds = String(totalSeconds % 60).padStart(2, "0");
-        return `${minutes}'${seconds}"`;
-      }
+      // isRunningEquipment/formatPacePerKm are top-level (see above,
+      // right after stationLabel) -- not nested here.
 
       const numberFormat = new Intl.NumberFormat(currentLocale);
       Object.values(sessionData.leaderboard || {}).forEach(function (node) {
@@ -5611,8 +5639,8 @@
         if (refs.power) refs.power.textContent = numberFormat.format(power) + " W";
         if (refs.speed) {
           const speed = metricNumber(node.instantaneous_speed_kph);
-          refs.speed.textContent = isRunningEquipmentForPatch(node.equipment_type)
-            ? formatPacePerKmForPatch(speed)
+          refs.speed.textContent = isRunningEquipment(node.equipment_type)
+            ? formatPacePerKm(speed)
             : numberFormat.format(speed) + " kph";
         }
         if (refs.distance) refs.distance.textContent = numberFormat.format(metricNumber(node.distance_m)) + " m";
@@ -5827,24 +5855,11 @@
     // touched, and no getBoundingClientRect is called -- this is what
     // keeps an ordinary telemetry tick cheap regardless of station count.
     function updateLeaderboardCardValues(nodes, raceType) {
-      // Nested (not shared as a sibling declaration) for the same reason
-      // equipmentIconSvg is nested inside buildClassBoardHtml: several
-      // tests extract this function alone by its function-name marker and
-      // run it standalone under node -e, so a helper it calls has to live
-      // inside it rather than as a top-level declaration that is
-      // invisible from there.
-      function isRunningEquipment(equipmentType) {
-        return equipmentType === "treadmill" || equipmentType === "curved_treadmill";
-      }
-      function formatPacePerKm(speedKph) {
-        const speed = Number(speedKph);
-        if (!Number.isFinite(speed) || speed <= 0.5) return `--'--"`;
-        const totalSeconds = Math.round(3600 / speed);
-        if (totalSeconds >= 3600) return `--'--"`;
-        const minutes = Math.floor(totalSeconds / 60);
-        const seconds = String(totalSeconds % 60).padStart(2, "0");
-        return `${minutes}'${seconds}"`;
-      }
+      // isRunningEquipment/formatPacePerKm/paceBand/fastestPaceNodeId are
+      // top-level (see above, right after stationLabel) -- not nested
+      // here. toggleClassToken/applyPaceEffects/setSmoothedSpeedOrPaceText
+      // stay nested since this function is still extracted standalone by
+      // its function-name marker and run under node -e.
       function setSmoothedSpeedOrPaceText(el, node) {
         if (!el) return NaN;
         const smoothedSpeed = smoothMetricNumber(`${node.node_id}:speed`, node.instantaneous_speed_kph);
@@ -5852,45 +5867,6 @@
           ? formatPacePerKm(smoothedSpeed)
           : smoothedSpeed.toFixed(1);
         return smoothedSpeed;
-      }
-      // See paceBand nested copies (formatSprintSignal, renderLeaderboard
-      // nodes.forEach callback, renderRaceTrackLeaderboard) for the fixed
-      // seconds-per-km thresholds this expresses.
-      function paceBand(speedKph) {
-        const speed = Number(speedKph);
-        if (!Number.isFinite(speed) || speed <= 0.5) return "none";
-        const totalSeconds = 3600 / speed;
-        if (totalSeconds >= 360) return "none";
-        if (totalSeconds >= 300) return "steady";
-        if (totalSeconds >= 240) return "fast";
-        return "blazing";
-      }
-      function fastestPaceNodeId(candidateNodes) {
-        function isRunningEquipmentForFastest(equipmentType) {
-          return equipmentType === "treadmill" || equipmentType === "curved_treadmill";
-        }
-        const candidates = (candidateNodes || []).filter(
-          (candidate) => isRunningEquipmentForFastest(candidate.equipment_type) && !candidate.finished_time_ms
-        );
-        let bestNode = null;
-        let bestSeconds = Infinity;
-        candidates.forEach((candidate) => {
-          const speed = Number(candidate.instantaneous_speed_kph);
-          if (!Number.isFinite(speed) || speed <= 0.5) return;
-          const totalSeconds = 3600 / speed;
-          if (totalSeconds >= 360) return;
-          if (totalSeconds < bestSeconds) {
-            bestSeconds = totalSeconds;
-            bestNode = candidate;
-          } else if (totalSeconds === bestSeconds) {
-            const bestStation = Number(bestNode.station_number) || Infinity;
-            const thisStation = Number(candidate.station_number) || Infinity;
-            if (thisStation < bestStation) bestNode = candidate;
-          }
-        });
-        if (!bestNode) return null;
-        if (candidates.length === 1 && bestSeconds >= 240) return null;
-        return bestNode.node_id;
       }
       // Token-string toggling (not classList) so this never throws against
       // a cached ref that has no classList at all -- only a plain
@@ -6026,38 +6002,8 @@
         return;
       }
 
-      // Nested (not shared) for the same reason isRunningEquipment/
-      // formatPacePerKm are nested inside the nodes.forEach callback
-      // below: the pace-effects test suite extracts renderLeaderboard
-      // standalone by its function-name marker and runs it under node -e,
-      // so a helper this function calls has to live inside it.
-      function fastestPaceNodeId(candidateNodes) {
-        function isRunningEquipmentForFastest(equipmentType) {
-          return equipmentType === "treadmill" || equipmentType === "curved_treadmill";
-        }
-        const candidates = (candidateNodes || []).filter(
-          (candidate) => isRunningEquipmentForFastest(candidate.equipment_type) && !candidate.finished_time_ms
-        );
-        let bestNode = null;
-        let bestSeconds = Infinity;
-        candidates.forEach((candidate) => {
-          const speed = Number(candidate.instantaneous_speed_kph);
-          if (!Number.isFinite(speed) || speed <= 0.5) return;
-          const totalSeconds = 3600 / speed;
-          if (totalSeconds >= 360) return;
-          if (totalSeconds < bestSeconds) {
-            bestSeconds = totalSeconds;
-            bestNode = candidate;
-          } else if (totalSeconds === bestSeconds) {
-            const bestStation = Number(bestNode.station_number) || Infinity;
-            const thisStation = Number(candidate.station_number) || Infinity;
-            if (thisStation < bestStation) bestNode = candidate;
-          }
-        });
-        if (!bestNode) return null;
-        if (candidates.length === 1 && bestSeconds >= 240) return null;
-        return bestNode.node_id;
-      }
+      // fastestPaceNodeId is top-level (see above, right after
+      // stationLabel) -- not nested here.
       const fastestId = currentState === "RUNNING" ? fastestPaceNodeId(nodes) : null;
 
       const previousRects = new Map();
@@ -6070,35 +6016,8 @@
       let html = leaderboardFinal ? renderPodium(nodes, raceType) : '';
       html += `<div class="leaderboard-list${leaderboardDensityClass}">`;
       nodes.forEach((node, index) => {
-        // Declared here, inside the loop body, rather than once above it
-        // or as a top-level sibling: a narrower test extracts just this
-        // forEach callback body by a literal text marker (not the whole
-        // renderLeaderboard function), so a helper this body calls has to
-        // live inside the extracted text itself.
-        function isRunningEquipment(equipmentType) {
-          return equipmentType === "treadmill" || equipmentType === "curved_treadmill";
-        }
-        function formatPacePerKm(speedKph) {
-          const speed = Number(speedKph);
-          if (!Number.isFinite(speed) || speed <= 0.5) return `--'--"`;
-          const totalSeconds = Math.round(3600 / speed);
-          if (totalSeconds >= 3600) return `--'--"`;
-          const minutes = Math.floor(totalSeconds / 60);
-          const seconds = String(totalSeconds % 60).padStart(2, "0");
-          return `${minutes}'${seconds}"`;
-        }
-        // See paceBand nested copies (formatSprintSignal,
-        // updateLeaderboardCardValues, renderRaceTrackLeaderboard) for the
-        // fixed seconds-per-km thresholds this expresses.
-        function paceBand(speedKph) {
-          const speed = Number(speedKph);
-          if (!Number.isFinite(speed) || speed <= 0.5) return "none";
-          const totalSeconds = 3600 / speed;
-          if (totalSeconds >= 360) return "none";
-          if (totalSeconds >= 300) return "steady";
-          if (totalSeconds >= 240) return "fast";
-          return "blazing";
-        }
+        // isRunningEquipment/formatPacePerKm/paceBand are top-level (see
+        // above, right after stationLabel) -- not nested here.
         const currentRank = index + 1;
         const previousRank = leaderboardRankByNode.get(node.node_id);
         const rankDelta = previousRank ? previousRank - currentRank : 0;
@@ -6196,7 +6115,7 @@
 
           metricCols = `
             <div class="metric-group">
-              <div class="metric-val${paceBandClass}">${speedDisplay}</div>${fastestBadgeHtml}
+              <div class="metric-val-row"><div class="metric-val${paceBandClass}">${speedDisplay}</div>${fastestBadgeHtml}</div>
               <div class="metric-lbl">${escapeHtml(speedLabel)}</div>
             </div>
             <div class="metric-group">
@@ -6226,7 +6145,7 @@
 
           metricCols = `
             <div class="metric-group">
-              <div class="metric-val${paceBandClass}">${speedDisplay}</div>${fastestBadgeHtml}
+              <div class="metric-val-row"><div class="metric-val${paceBandClass}">${speedDisplay}</div>${fastestBadgeHtml}</div>
               <div class="metric-lbl">${escapeHtml(speedLabel)}</div>
             </div>
             <div class="metric-group">

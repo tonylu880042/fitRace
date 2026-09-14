@@ -84,6 +84,11 @@ def _extract_function(source: str, name: str) -> str:
 
 
 _FN_NAMES = [
+    # Top-level (feat/pace-effects) -- buildClassBoardHtml and
+    # applyClassBoardIncrementalUpdate both call these shared definitions
+    # rather than a nested copy of their own.
+    "isRunningEquipment",
+    "formatPacePerKm",
     "resetClassBoardCardCache",
     "classTargetStatusForPatch",
     "computeClassProgressPercentForPatch",

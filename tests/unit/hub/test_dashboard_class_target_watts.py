@@ -199,6 +199,11 @@ def test_class_target_status_zero_power_below_positive_target_is_under():
 
 def _run_build_class_board_html(session_data_js: str, clock_js: str) -> str:
     source = _read_index()
+    # isRunningEquipment/formatPacePerKm are top-level (feat/pace-effects)
+    # -- buildClassBoardHtml calls the shared definitions rather than a
+    # nested copy of its own.
+    is_running = _strip_js_comments(_extract_function(source, "isRunningEquipment"))
+    format_pace = _strip_js_comments(_extract_function(source, "formatPacePerKm"))
     fn = _strip_js_comments(_extract_function(source, "buildClassBoardHtml"))
     script = (
         _t_stub()
@@ -208,6 +213,10 @@ def _run_build_class_board_html(session_data_js: str, clock_js: str) -> str:
         + _intl_number_format_stub()
         + _format_clock_stub()
         + "const currentLocale = 'en-US';\n"
+        + is_running
+        + "\n"
+        + format_pace
+        + "\n"
         + fn
         + "\n"
         + f"const sessionData = {session_data_js};\n"
@@ -505,6 +514,11 @@ def _run_render_class_board(data_js: str) -> dict:
     render_fn = _strip_js_comments(_extract_function(source, "renderClassBoard"))
     to_clock_shape_fn = _strip_js_comments(_extract_function(source, "toClockShape"))
     class_clock_at_fn = _strip_js_comments(_extract_function(source, "classClockAt"))
+    # isRunningEquipment/formatPacePerKm are top-level (feat/pace-effects)
+    # -- buildClassBoardHtml calls the shared definitions rather than a
+    # nested copy of its own.
+    is_running_fn = _strip_js_comments(_extract_function(source, "isRunningEquipment"))
+    format_pace_fn = _strip_js_comments(_extract_function(source, "formatPacePerKm"))
     build_class_board_html_fn = _strip_js_comments(
         _extract_function(source, "buildClassBoardHtml")
     )
@@ -517,6 +531,10 @@ def _run_render_class_board(data_js: str) -> dict:
         + _intl_number_format_stub()
         + _format_clock_stub()
         + "const currentLocale = 'en-US';\n"
+        + is_running_fn
+        + "\n"
+        + format_pace_fn
+        + "\n"
         + to_clock_shape_fn
         + "\n"
         + class_clock_at_fn

@@ -86,6 +86,13 @@ def _extract_function(source: str, name: str) -> str:
 
 
 _FN_NAMES = [
+    # Top-level (feat/pace-effects) -- renderLeaderboard and
+    # updateLeaderboardCardValues both call these shared definitions
+    # rather than a nested copy of their own.
+    "isRunningEquipment",
+    "formatPacePerKm",
+    "paceBand",
+    "fastestPaceNodeId",
     "resetLeaderboardCardCache",
     "buildLeaderboardCardSignature",
     "captureLeaderboardCardRefs",

@@ -290,10 +290,23 @@ def test_team_battle_status_progress_routes_through_t():
 
 def _run_format_sprint_signal(row_js: str, race_type: str) -> dict:
     source = _read_index()
+    # isRunningEquipment/formatPacePerKm/paceBand are top-level (feat/
+    # pace-effects) -- formatSprintSignal calls the shared definitions
+    # rather than a nested copy of its own.
+    is_running = _strip_js_comments(_extract_function(source, "isRunningEquipment"))
+    format_pace = _strip_js_comments(_extract_function(source, "formatPacePerKm"))
+    pace_band = _strip_js_comments(_extract_function(source, "paceBand"))
     fn = _strip_js_comments(_extract_function(source, "formatSprintSignal"))
     script = (
         _t_stub()
         + _metric_number_stub()
+        + "let currentState = 'IDLE';\n"
+        + is_running
+        + "\n"
+        + format_pace
+        + "\n"
+        + pace_band
+        + "\n"
         + fn
         + "\n"
         + f"console.log(JSON.stringify(formatSprintSignal({row_js}, {json.dumps(race_type)})));"

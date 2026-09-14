@@ -136,6 +136,13 @@ def test_twenty_four_rows_has_no_tier():
 # ---------------------------------------------------------------------------
 
 _CLASSIC_FN_NAMES = [
+    # Top-level (feat/pace-effects) -- renderLeaderboard and
+    # updateLeaderboardCardValues both call these shared definitions
+    # rather than a nested copy of their own.
+    "isRunningEquipment",
+    "formatPacePerKm",
+    "paceBand",
+    "fastestPaceNodeId",
     "resetLeaderboardCardCache",
     "buildLeaderboardCardSignature",
     "captureLeaderboardCardRefs",
@@ -376,6 +383,13 @@ console.log(JSON.stringify({{ afterFirst, afterSecond: innerHTMLSetCount, html: 
 # ---------------------------------------------------------------------------
 
 _BOARD_FN_NAMES = [
+    # Top-level (feat/pace-effects) -- renderRaceTrackLeaderboard and
+    # renderSprintBoardLeaderboard both call these shared definitions
+    # rather than a nested copy of their own.
+    "isRunningEquipment",
+    "formatPacePerKm",
+    "paceBand",
+    "fastestPaceNodeId",
     "raceBoardDensityTier",
     "metricNumber",
     "nodeDisplayName",

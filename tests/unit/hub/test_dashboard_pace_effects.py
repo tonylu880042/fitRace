@@ -15,17 +15,22 @@ Three effects, driven by two pure helpers:
     station number), or null when the best pace is slower than steady, or
     when exactly one running row qualifies but it is not blazing.
 
-Both are duplicated as nested declarations inside every render/patch
-function that needs them (formatSprintSignal, renderSprintBoardLeaderboard,
-renderRaceTrackLeaderboard's individualRows.map callback, renderLeaderboard's
-nodes.forEach callback and its own top scope, updateLeaderboardCardValues)
-rather than declared once as a top-level sibling -- mirroring the existing
-isRunningEquipment/formatPacePerKm convention documented in
-test_dashboard_treadmill_pace.py. This file extracts the real functions
-from index.html the same way that file (and test_dashboard_race_board_
-density.py, test_dashboard_anonymous_everywhere.py) do, and runs them
-under node. No assertion here is satisfied by a comment: every check reads
-a raw rendered HTML string or a value patched onto a fake DOM element.
+paceBand/fastestPaceNodeId (and the earlier treadmill-pace commit's
+isRunningEquipment/formatPacePerKm, deduped alongside them here) are each
+declared exactly once, top-level, right after stationLabel in index.html
+-- NOT duplicated as nested copies per renderer. An earlier revision of
+this feature nested a copy inside every renderer that needed one
+(mirroring an existing convention for other helpers), but that let a
+mutation inside any copy but the first slip past every test that did not
+happen to extract that specific renderer. Every renderer below
+(formatSprintSignal, renderSprintBoardLeaderboard,
+renderRaceTrackLeaderboard, renderLeaderboard, updateLeaderboardCardValues)
+now calls the one shared top-level definition, so this file (and every
+other file that extracts one of those renderers standalone) adds the
+top-level helper names to its own extraction list instead of relying on
+a local copy. No assertion here is satisfied by a comment: every check
+reads a raw rendered HTML string or a value patched onto a fake DOM
+element.
 """
 
 import json
@@ -90,19 +95,15 @@ def _run_node(script: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# 1. paceBand -- pure, no DOM. Extracted from formatSprintSignal, the first
-#    of paceBand's nested copies to appear in index.html. Every copy is
-#    byte-for-byte identical, so this is a faithful test of all of them
-#    (the render-level tests below independently exercise the other
-#    copies through their enclosing renderers).
+# 1. paceBand -- pure, no DOM. Declared exactly once, top-level, in
+#    index.html (right after stationLabel) -- extracted directly by its
+#    own function-name marker, not pulled out of an enclosing renderer.
 # ---------------------------------------------------------------------------
 
 
 def _extract_pace_band() -> str:
     source = _read_index()
-    fn = _extract_function(source, "formatSprintSignal")
-    fn = _strip_js_comments(fn)
-    return _extract_function(fn, "paceBand")
+    return _strip_js_comments(_extract_function(source, "paceBand"))
 
 
 def _run_pace_band(speed_kph):
@@ -166,13 +167,10 @@ def test_pace_band_very_fast_is_blazing():
 def test_bike_rows_never_get_a_pace_band_regardless_of_speed():
     # paceBand itself is speed-only (it does not know about equipment) --
     # every call site gates it behind isRunningEquipment first, so a bike
-    # row's band is always "none" no matter how fast it is spinning. This
-    # exercises that exact gate, extracted alongside paceBand from the
-    # same formatSprintSignal copy.
+    # row's band is always "none" no matter how fast it is spinning.
     source = _read_index()
-    fn = _strip_js_comments(_extract_function(source, "formatSprintSignal"))
-    is_running = _extract_function(fn, "isRunningEquipment")
-    band = _extract_function(fn, "paceBand")
+    is_running = _strip_js_comments(_extract_function(source, "isRunningEquipment"))
+    band = _extract_pace_band()
     script = (
         is_running
         + "\n"
@@ -187,17 +185,17 @@ def test_bike_rows_never_get_a_pace_band_regardless_of_speed():
 
 
 # ---------------------------------------------------------------------------
-# 2. fastestPaceNodeId -- pure, no DOM. Extracted from
-#    renderSprintBoardLeaderboard, the first of its nested copies to
-#    appear in index.html.
+# 2. fastestPaceNodeId -- pure, no DOM. Declared exactly once, top-level,
+#    in index.html (right after stationLabel). Its own body calls
+#    isRunningEquipment, so that is extracted alongside it.
 # ---------------------------------------------------------------------------
 
 
 def _extract_fastest_pace_node_id() -> str:
     source = _read_index()
-    fn = _extract_function(source, "renderSprintBoardLeaderboard")
-    fn = _strip_js_comments(fn)
-    return _extract_function(fn, "fastestPaceNodeId")
+    is_running = _strip_js_comments(_extract_function(source, "isRunningEquipment"))
+    fastest = _strip_js_comments(_extract_function(source, "fastestPaceNodeId"))
+    return is_running + "\n" + fastest
 
 
 def _run_fastest(nodes):
@@ -285,6 +283,10 @@ def test_fastest_pace_node_id_tie_goes_to_lowest_station():
 # ---------------------------------------------------------------------------
 
 _CLASSIC_FN_NAMES = [
+    "isRunningEquipment",
+    "formatPacePerKm",
+    "paceBand",
+    "fastestPaceNodeId",
     "resetLeaderboardCardCache",
     "buildLeaderboardCardSignature",
     "captureLeaderboardCardRefs",
@@ -622,6 +624,10 @@ console.log(JSON.stringify({{ sigSlow, sigFast }}));
 # ---------------------------------------------------------------------------
 
 _BOARD_FN_NAMES = [
+    "isRunningEquipment",
+    "formatPacePerKm",
+    "paceBand",
+    "fastestPaceNodeId",
     "raceBoardDensityTier",
     "metricNumber",
     "nodeDisplayName",

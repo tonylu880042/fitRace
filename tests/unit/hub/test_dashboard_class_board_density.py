@@ -98,6 +98,13 @@ def _build_class_board_html(station_count: int) -> str:
     source = _read_index()
     script = (
         _stubs()
+        # isRunningEquipment/formatPacePerKm are top-level (feat/
+        # pace-effects) -- buildClassBoardHtml calls the shared
+        # definitions rather than a nested copy of its own.
+        + _extract_function(source, "isRunningEquipment")
+        + "\n"
+        + _extract_function(source, "formatPacePerKm")
+        + "\n"
         + _extract_function(source, "buildClassBoardHtml")
         + "\nconst sessionData = "
         + json.dumps(
