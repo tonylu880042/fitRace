@@ -1185,6 +1185,19 @@
       font-size: 0.7rem;
       text-transform: uppercase;
       letter-spacing: 0.08em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* Flex item inside .sprint-board-topline holding the rank/name/meta/
+       relay-leg block -- an unstyled <div> keeps its automatic
+       min-width: auto (a flex item's default minimum size is its
+       content's intrinsic width), which keeps it at full width no
+       matter what overflow rule its children declare. Reset to 0 so the
+       meta line's ellipsis above can actually engage. */
+    .sprint-board-info {
+      min-width: 0;
     }
 
     .sprint-board-signal {
@@ -1229,6 +1242,8 @@
       font-size: 1rem;
       line-height: 1;
       white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .sprint-stat span {
@@ -4984,7 +4999,7 @@
         html += `
           <div class="sprint-board-card ${rankClass}${isFastestRow ? " fastest-pace-highlight" : ""}" data-node-id="${escapeHtml(row.id)}">
             <div class="sprint-board-topline">
-              <div>
+              <div class="sprint-board-info">
                 <div class="sprint-board-rank">#${currentRank}</div>
                 <div class="sprint-board-name">${escapeHtml(row.name)}</div>
                 <div class="sprint-board-meta">${escapeHtml(row.meta)}</div>
