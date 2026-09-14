@@ -364,6 +364,11 @@ def _run_race_track_row_name(node_js: str) -> str:
         + 'function formatResultScore() { return { value: "", label: "" }; }\n'
         + 'function relayLegLine() { return ""; }\n'
         + 'const raceType = "distance";\n'
+        # This row builder now also gates a pace-effects trail (feat/
+        # pace-effects) on the page-global currentState -- not exercised
+        # by this file's name-only assertions, so a plain non-RUNNING
+        # default is enough to satisfy the reference.
+        + "let currentState = 'IDLE';\n"
         + f"const rowFn = {callback};\n"
         + f"console.log(JSON.stringify(rowFn({node_js}).name));"
     )

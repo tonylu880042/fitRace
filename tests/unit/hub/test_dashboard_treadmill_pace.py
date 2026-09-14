@@ -702,6 +702,11 @@ def _run_format_sprint_signal(row_js: str, race_type: str) -> dict:
     script = (
         "const t = (key) => `T[${key}]`;\n"
         "const metricNumber = (value, fallback = 0) => { const n = Number(value); return Number.isFinite(n) ? n : fallback; };\n"
+        # formatSprintSignal now also gates the pace-band field (feat/
+        # pace-effects) on the page-global currentState -- not exercised by
+        # this file's assertions (value/label only), so a plain non-RUNNING
+        # default is enough to satisfy the reference.
+        "let currentState = 'IDLE';\n"
         + fn
         + "\n"
         + f"console.log(JSON.stringify(formatSprintSignal({row_js}, {json.dumps(race_type)})));"

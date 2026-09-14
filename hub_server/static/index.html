@@ -20,6 +20,9 @@
       --dim-grey: #52525b;
       --changeover-violet: #a78bfa;
       --signal-green: #34d399;
+      --pace-steady: #fde047;
+      --pace-fast: #f59e0b;
+      --pace-blazing: #f43f5e;
     }
 
     * {
@@ -1359,6 +1362,113 @@
       100% { transform: translate3d(var(--drift), 110vh, 0) rotate(calc(var(--spin) + 720deg)); opacity: 0; }
     }
 
+    /* Pace effects: fixed-threshold coloring for running-equipment pace, a
+       single fastest-pace flame badge, and a Race Track speed trail. The
+       band (none/steady/fast/blazing) and the fastest node id are computed
+       in JS (paceBand / fastestPaceNodeId) -- this stays purely
+       declarative, keyed off the classes those helpers produce. */
+    .metric-val.pace-steady,
+    .sprint-board-signal.pace-steady {
+      color: var(--pace-steady);
+    }
+
+    .metric-val.pace-fast,
+    .sprint-board-signal.pace-fast {
+      color: var(--pace-fast);
+      text-shadow: 0 0 8px rgba(245, 158, 11, 0.35);
+    }
+
+    .metric-val.pace-blazing,
+    .sprint-board-signal.pace-blazing {
+      color: var(--pace-blazing);
+      text-shadow: 0 0 10px rgba(244, 63, 94, 0.55), 0 0 18px rgba(244, 63, 94, 0.3);
+      animation: paceBlazingGlow 1.1s ease-in-out infinite;
+    }
+
+    @keyframes paceBlazingGlow {
+      0%, 100% { text-shadow: 0 0 8px rgba(244, 63, 94, 0.45); }
+      50% { text-shadow: 0 0 18px rgba(244, 63, 94, 0.85), 0 0 28px rgba(244, 63, 94, 0.45); }
+    }
+
+    .fastest-pace-badge {
+      display: none;
+      margin-left: 0.3rem;
+      font-size: 0.9em;
+      vertical-align: middle;
+    }
+
+    /* Pinned to the card's own top-right corner instead of sitting
+       inline after the pace text: the Sprint Board's signal column is
+       nowrap and right-aligned in a tight flex row, so any inline
+       width the badge adds can push the pace text past the card's
+       right edge on a dense grid. Absolute positioning against the
+       card (already position: relative) removes it from that flow
+       entirely while staying visually right beside the pace value,
+       which sits in the same top-right corner. */
+    .sprint-board-card .fastest-pace-badge {
+      position: absolute;
+      top: 0.7rem;
+      right: 0.7rem;
+      margin-left: 0;
+      font-size: 1rem;
+    }
+
+    .fastest-pace-badge.is-visible {
+      display: inline-block;
+      animation: fastestBadgePulse 1s ease-in-out infinite;
+    }
+
+    @keyframes fastestBadgePulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.18); }
+    }
+
+    .leaderboard-item.fastest-pace-highlight,
+    .sprint-board-card.fastest-pace-highlight {
+      border-color: var(--pace-blazing);
+      box-shadow: 0 0 22px rgba(244, 63, 94, 0.35), inset 0 0 12px rgba(244, 63, 94, 0.12);
+      animation: fastestPaceCardPulse 1.5s ease-in-out infinite;
+    }
+
+    @keyframes fastestPaceCardPulse {
+      0%, 100% { box-shadow: 0 0 16px rgba(244, 63, 94, 0.25), inset 0 0 8px rgba(244, 63, 94, 0.08); }
+      50% { box-shadow: 0 0 30px rgba(244, 63, 94, 0.55), inset 0 0 16px rgba(244, 63, 94, 0.18); }
+    }
+
+    .race-track-marker.pace-steady::before,
+    .race-track-marker.pace-fast::before,
+    .race-track-marker.pace-blazing::before {
+      content: "";
+      position: absolute;
+      right: 100%;
+      top: 50%;
+      transform: translateY(-50%);
+      height: 4px;
+      border-radius: 2px;
+      pointer-events: none;
+    }
+
+    .race-track-marker.pace-steady::before {
+      width: 14px;
+      background: linear-gradient(to left, rgba(253, 224, 71, 0.55), transparent);
+    }
+
+    .race-track-marker.pace-fast::before {
+      width: 26px;
+      background: linear-gradient(to left, rgba(245, 158, 11, 0.7), transparent);
+    }
+
+    .race-track-marker.pace-blazing::before {
+      width: 42px;
+      background: linear-gradient(to left, rgba(244, 63, 94, 0.9), transparent);
+      animation: paceTrailShimmer 1s ease-in-out infinite;
+    }
+
+    @keyframes paceTrailShimmer {
+      0%, 100% { opacity: 0.7; }
+      50% { opacity: 1; }
+    }
+
     @media (prefers-reduced-motion: reduce) {
       .leaderboard-item,
       .team-leaderboard-item,
@@ -1368,7 +1478,11 @@
       .progress-fill,
       .podium-card.place-1,
       .celebration-flash,
-      .confetti-piece {
+      .confetti-piece,
+      .metric-val,
+      .sprint-board-signal,
+      .race-track-marker::before,
+      .fastest-pace-badge {
         animation: none !important;
         transition: none !important;
       }
@@ -4407,25 +4521,42 @@
         const seconds = String(totalSeconds % 60).padStart(2, "0");
         return `${minutes}'${seconds}"`;
       }
+      // Fixed seconds-per-km thresholds for the fast-running visual effects
+      // (see paceBand nested copies in renderLeaderboard nodes.forEach
+      // callback, updateLeaderboardCardValues and
+      // renderRaceTrackLeaderboard): none is no pace at all or 6 minutes
+      // per km or slower, steady is 5 to 6 minutes, fast is 4 to 5
+      // minutes, and blazing is anything quicker than 4 minutes per km.
+      function paceBand(speedKph) {
+        const speed = Number(speedKph);
+        if (!Number.isFinite(speed) || speed <= 0.5) return "none";
+        const totalSeconds = 3600 / speed;
+        if (totalSeconds >= 360) return "none";
+        if (totalSeconds >= 300) return "steady";
+        if (totalSeconds >= 240) return "fast";
+        return "blazing";
+      }
       if (row.kind === "team") {
         if (raceType === "max_power" || raceType === "watts") {
-          return { value: `${metricNumber(row.raw.max_power_watts).toFixed(0)}W`, label: t("team.peak_power_label") };
+          return { value: `${metricNumber(row.raw.max_power_watts).toFixed(0)}W`, label: t("team.peak_power_label"), band: "none" };
         }
         const avgSpeed = (row.raw.members || []).reduce((total, member) => {
           const elapsedSec = Math.max(1, metricNumber(member.elapsed_time_ms) / 1000);
           return total + (metricNumber(member.distance_m) / elapsedSec) * 3.6;
         }, 0) / Math.max(1, metricNumber(row.raw.member_count, 1));
-        return { value: `${avgSpeed.toFixed(1)}`, label: t("team.avg_speed_label") };
+        return { value: `${avgSpeed.toFixed(1)}`, label: t("team.avg_speed_label"), band: "none" };
       }
 
       if (raceType === "max_power" || raceType === "watts" || raceType === "calories") {
-        return { value: `${metricNumber(row.raw.power_watts).toFixed(0)}W`, label: t("metric.current_power") };
+        return { value: `${metricNumber(row.raw.power_watts).toFixed(0)}W`, label: t("metric.current_power"), band: "none" };
       }
       const speed = metricNumber(row.raw.instantaneous_speed_kph);
       if (isRunningEquipment(row.raw.equipment_type)) {
-        return { value: formatPacePerKm(speed), label: t("metric.pace") };
+        const paceEligible = currentState === "RUNNING" && !row.raw.finished_time_ms;
+        const band = paceEligible ? paceBand(speed) : "none";
+        return { value: formatPacePerKm(speed), label: t("metric.pace"), band };
       }
-      return { value: `${speed.toFixed(1)}`, label: t("metric.speed") };
+      return { value: `${speed.toFixed(1)}`, label: t("metric.speed"), band: "none" };
     }
 
     function renderMemberProgressChips(members, className = "race-track-chip") {
@@ -4471,6 +4602,7 @@
               score,
               progress: metricNumber(team.progress_percent),
               members: team.members || [],
+              paceBand: "none",
               finished: t("team.finished_count", {
                 finished: metricNumber(team.finished_count).toFixed(0),
                 total: metricNumber(team.member_count).toFixed(0),
@@ -4478,9 +4610,29 @@
             };
           })
         : individualRows.map((node) => {
+            // Nested (not shared) for the same reason isRunningEquipment/
+            // formatPacePerKm are nested inside formatSprintSignal: this
+            // exact callback is extracted standalone by a text-anchor
+            // marker and run under node -e (see
+            // test_dashboard_anonymous_everywhere.py), so a helper it
+            // calls has to live inside it rather than at the enclosing
+            // function scope.
+            function isRunningEquipmentForTrail(equipmentType) {
+              return equipmentType === "treadmill" || equipmentType === "curved_treadmill";
+            }
+            function paceBand(speedKph) {
+              const speed = Number(speedKph);
+              if (!Number.isFinite(speed) || speed <= 0.5) return "none";
+              const totalSeconds = 3600 / speed;
+              if (totalSeconds >= 360) return "none";
+              if (totalSeconds >= 300) return "steady";
+              if (totalSeconds >= 240) return "fast";
+              return "blazing";
+            }
             const score = formatResultScore(node, raceType);
             const station = stationLabel(node);
             const teamSuffix = node.team_name ? ` · ${node.team_name}` : "";
+            const trailEligible = currentState === "RUNNING" && !node.finished_time_ms && isRunningEquipmentForTrail(node.equipment_type);
             return {
               id: node.node_id,
               name: node.athlete_name || (node.station_number ? `${t("stations.station")} ${node.station_number}` : t("stations.athlete")),
@@ -4489,6 +4641,7 @@
               score,
               progress: metricNumber(node.progress_percent),
               members: [],
+              paceBand: trailEligible ? paceBand(metricNumber(node.instantaneous_speed_kph)) : "none",
               finished: node.finished_time_ms
                 ? t("leaderboard.seconds_finish", { seconds: (metricNumber(node.finished_time_ms) / 1000).toFixed(1) })
                 : t("leaderboard.percent_progress", { percent: metricNumber(node.progress_percent).toFixed(1) }),
@@ -4540,7 +4693,7 @@
                 <div class="race-track-checkpoint" style="left: 25%"><span>25</span></div>
                 <div class="race-track-checkpoint" style="left: 50%"><span>50</span></div>
                 <div class="race-track-checkpoint" style="left: 75%"><span>75</span></div>
-                <div class="race-track-marker" style="left: ${progress}%"></div>
+                <div class="race-track-marker${row.paceBand && row.paceBand !== "none" ? ` pace-${row.paceBand}` : ""}" style="left: ${progress}%"></div>
                 <div class="race-track-finish" title="${escapeHtml(t("leaderboard.finish_flag"))}"></div>
               </div>
             </div>
@@ -4714,6 +4867,40 @@
         ? isTeamLeaderboardFinal(raceType, teamRows)
         : isLeaderboardFinal(raceType, leaderboardNodes);
 
+      // Nested (not shared) for the same reason isRunningEquipment/
+      // formatPacePerKm are nested inside formatSprintSignal above: the
+      // pace-effects test suite extracts individual render functions
+      // standalone by their function-name marker and runs them under
+      // node -e, so a helper this function calls has to live inside it.
+      function fastestPaceNodeId(candidateNodes) {
+        function isRunningEquipmentForFastest(equipmentType) {
+          return equipmentType === "treadmill" || equipmentType === "curved_treadmill";
+        }
+        const candidates = (candidateNodes || []).filter(
+          (candidate) => isRunningEquipmentForFastest(candidate.equipment_type) && !candidate.finished_time_ms
+        );
+        let bestNode = null;
+        let bestSeconds = Infinity;
+        candidates.forEach((candidate) => {
+          const speed = Number(candidate.instantaneous_speed_kph);
+          if (!Number.isFinite(speed) || speed <= 0.5) return;
+          const totalSeconds = 3600 / speed;
+          if (totalSeconds >= 360) return;
+          if (totalSeconds < bestSeconds) {
+            bestSeconds = totalSeconds;
+            bestNode = candidate;
+          } else if (totalSeconds === bestSeconds) {
+            const bestStation = Number(bestNode.station_number) || Infinity;
+            const thisStation = Number(candidate.station_number) || Infinity;
+            if (thisStation < bestStation) bestNode = candidate;
+          }
+        });
+        if (!bestNode) return null;
+        if (candidates.length === 1 && bestSeconds >= 240) return null;
+        return bestNode.node_id;
+      }
+      const fastestId = (currentState === "RUNNING" && !isTeamMode) ? fastestPaceNodeId(individualRows) : null;
+
       let html = "";
       if (leaderboardFinal) {
         html += isTeamMode ? renderTeamPodium(teamRows, raceType) : renderPodium(leaderboardNodes, raceType);
@@ -4727,13 +4914,16 @@
         const rankDelta = previousRank ? previousRank - currentRank : 0;
         const rankClass = rankDelta > 0 ? "rank-up" : rankDelta < 0 ? "rank-down" : "";
         const sprintSignal = formatSprintSignal(row, raceType);
+        const isFastestRow = row.id === fastestId;
+        const signalBandClass = sprintSignal.band !== "none" ? ` pace-${sprintSignal.band}` : "";
+        const fastestBadgeHtml = isFastestRow ? `<span class="fastest-pace-badge is-visible" aria-hidden="true">🔥</span>` : "";
         const progress = Math.max(0, Math.min(100, smoothMetricNumber(`${row.id}:progress`, row.progress)));
         const policyOrNode = row.kind === "team"
           ? teamPolicyLabel(row.raw.completion_policy)
           : nodeDisplayName(row.raw);
 
         html += `
-          <div class="sprint-board-card ${rankClass}" data-node-id="${escapeHtml(row.id)}">
+          <div class="sprint-board-card ${rankClass}${isFastestRow ? " fastest-pace-highlight" : ""}" data-node-id="${escapeHtml(row.id)}">
             <div class="sprint-board-topline">
               <div>
                 <div class="sprint-board-rank">#${currentRank}</div>
@@ -4741,8 +4931,8 @@
                 <div class="sprint-board-meta">${escapeHtml(row.meta)}</div>
                 ${row.kind === "individual" && relayLegLine(row.raw) ? `<div class="sprint-board-relay-leg">${escapeHtml(relayLegLine(row.raw))}</div>` : ""}
               </div>
-              <div class="sprint-board-signal">
-                ${escapeHtml(sprintSignal.value)}
+              <div class="sprint-board-signal${signalBandClass}">
+                ${escapeHtml(sprintSignal.value)}${fastestBadgeHtml}
                 <span>${escapeHtml(sprintSignal.label)}</span>
               </div>
             </div>
@@ -5619,6 +5809,8 @@
           metricB: metricEls[1] || null,
           metricC: metricEls[2] || null,
           progressFill: row.querySelector(".progress-fill"),
+          cardEl: row,
+          fastestBadge: row.querySelector(".fastest-pace-badge"),
         });
       });
       return refs;
@@ -5654,12 +5846,77 @@
         return `${minutes}'${seconds}"`;
       }
       function setSmoothedSpeedOrPaceText(el, node) {
-        if (!el) return;
+        if (!el) return NaN;
         const smoothedSpeed = smoothMetricNumber(`${node.node_id}:speed`, node.instantaneous_speed_kph);
         el.textContent = isRunningEquipment(node.equipment_type)
           ? formatPacePerKm(smoothedSpeed)
           : smoothedSpeed.toFixed(1);
+        return smoothedSpeed;
       }
+      // See paceBand nested copies (formatSprintSignal, renderLeaderboard
+      // nodes.forEach callback, renderRaceTrackLeaderboard) for the fixed
+      // seconds-per-km thresholds this expresses.
+      function paceBand(speedKph) {
+        const speed = Number(speedKph);
+        if (!Number.isFinite(speed) || speed <= 0.5) return "none";
+        const totalSeconds = 3600 / speed;
+        if (totalSeconds >= 360) return "none";
+        if (totalSeconds >= 300) return "steady";
+        if (totalSeconds >= 240) return "fast";
+        return "blazing";
+      }
+      function fastestPaceNodeId(candidateNodes) {
+        function isRunningEquipmentForFastest(equipmentType) {
+          return equipmentType === "treadmill" || equipmentType === "curved_treadmill";
+        }
+        const candidates = (candidateNodes || []).filter(
+          (candidate) => isRunningEquipmentForFastest(candidate.equipment_type) && !candidate.finished_time_ms
+        );
+        let bestNode = null;
+        let bestSeconds = Infinity;
+        candidates.forEach((candidate) => {
+          const speed = Number(candidate.instantaneous_speed_kph);
+          if (!Number.isFinite(speed) || speed <= 0.5) return;
+          const totalSeconds = 3600 / speed;
+          if (totalSeconds >= 360) return;
+          if (totalSeconds < bestSeconds) {
+            bestSeconds = totalSeconds;
+            bestNode = candidate;
+          } else if (totalSeconds === bestSeconds) {
+            const bestStation = Number(bestNode.station_number) || Infinity;
+            const thisStation = Number(candidate.station_number) || Infinity;
+            if (thisStation < bestStation) bestNode = candidate;
+          }
+        });
+        if (!bestNode) return null;
+        if (candidates.length === 1 && bestSeconds >= 240) return null;
+        return bestNode.node_id;
+      }
+      // Token-string toggling (not classList) so this never throws against
+      // a cached ref that has no classList at all -- only a plain
+      // className string -- which keeps this safe against any collaborator
+      // stub used by other tests around this function.
+      function toggleClassToken(el, token, present) {
+        if (!el) return;
+        const current = String(el.className || "").split(/\s+/).filter(Boolean);
+        const idx = current.indexOf(token);
+        if (present && idx === -1) current.push(token);
+        if (!present && idx !== -1) current.splice(idx, 1);
+        el.className = current.join(" ");
+      }
+      function applyPaceEffects(refs, node, smoothedSpeed, fastestId) {
+        const eligible = currentState === "RUNNING" && !node.finished_time_ms && isRunningEquipment(node.equipment_type);
+        const band = eligible ? paceBand(smoothedSpeed) : "none";
+        if (refs.metricA) {
+          const classes = ["metric-val"];
+          if (band !== "none") classes.push("pace-" + band);
+          refs.metricA.className = classes.join(" ");
+        }
+        const isFastestNode = eligible && node.node_id === fastestId;
+        toggleClassToken(refs.fastestBadge, "is-visible", isFastestNode);
+        toggleClassToken(refs.cardEl, "fastest-pace-highlight", isFastestNode);
+      }
+      const fastestId = currentState === "RUNNING" ? fastestPaceNodeId(nodes) : null;
       nodes.forEach((node) => {
         const refs = leaderboardCardRefs.get(node.node_id);
         if (!refs) return;
@@ -5672,11 +5929,13 @@
           setSmoothedCardText(refs.metricB, `${node.node_id}:max_power`, node.max_power_watts, 0, "");
           setSmoothedCardText(refs.metricC, `${node.node_id}:progress`, node.progress_percent, 1, "%");
         } else if (raceType === "time") {
-          setSmoothedSpeedOrPaceText(refs.metricA, node);
+          const smoothedSpeed = setSmoothedSpeedOrPaceText(refs.metricA, node);
+          applyPaceEffects(refs, node, smoothedSpeed, fastestId);
           setSmoothedCardText(refs.metricB, `${node.node_id}:distance`, node.distance_m, 0, "");
           setSmoothedCardText(refs.metricC, `${node.node_id}:progress`, node.progress_percent, 1, "%");
         } else {
-          setSmoothedSpeedOrPaceText(refs.metricA, node);
+          const smoothedSpeed = setSmoothedSpeedOrPaceText(refs.metricA, node);
+          applyPaceEffects(refs, node, smoothedSpeed, fastestId);
           setSmoothedCardText(refs.metricB, `${node.node_id}:distance`, node.distance_m, 0, "");
           if (!node.finished_time_ms) setSmoothedCardText(refs.metricC, `${node.node_id}:progress`, node.progress_percent, 1, "%");
         }
@@ -5767,6 +6026,40 @@
         return;
       }
 
+      // Nested (not shared) for the same reason isRunningEquipment/
+      // formatPacePerKm are nested inside the nodes.forEach callback
+      // below: the pace-effects test suite extracts renderLeaderboard
+      // standalone by its function-name marker and runs it under node -e,
+      // so a helper this function calls has to live inside it.
+      function fastestPaceNodeId(candidateNodes) {
+        function isRunningEquipmentForFastest(equipmentType) {
+          return equipmentType === "treadmill" || equipmentType === "curved_treadmill";
+        }
+        const candidates = (candidateNodes || []).filter(
+          (candidate) => isRunningEquipmentForFastest(candidate.equipment_type) && !candidate.finished_time_ms
+        );
+        let bestNode = null;
+        let bestSeconds = Infinity;
+        candidates.forEach((candidate) => {
+          const speed = Number(candidate.instantaneous_speed_kph);
+          if (!Number.isFinite(speed) || speed <= 0.5) return;
+          const totalSeconds = 3600 / speed;
+          if (totalSeconds >= 360) return;
+          if (totalSeconds < bestSeconds) {
+            bestSeconds = totalSeconds;
+            bestNode = candidate;
+          } else if (totalSeconds === bestSeconds) {
+            const bestStation = Number(bestNode.station_number) || Infinity;
+            const thisStation = Number(candidate.station_number) || Infinity;
+            if (thisStation < bestStation) bestNode = candidate;
+          }
+        });
+        if (!bestNode) return null;
+        if (candidates.length === 1 && bestSeconds >= 240) return null;
+        return bestNode.node_id;
+      }
+      const fastestId = currentState === "RUNNING" ? fastestPaceNodeId(nodes) : null;
+
       const previousRects = new Map();
       container.querySelectorAll(".leaderboard-item").forEach((item) => {
         previousRects.set(item.dataset.nodeId, item.getBoundingClientRect());
@@ -5794,10 +6087,23 @@
           const seconds = String(totalSeconds % 60).padStart(2, "0");
           return `${minutes}'${seconds}"`;
         }
+        // See paceBand nested copies (formatSprintSignal,
+        // updateLeaderboardCardValues, renderRaceTrackLeaderboard) for the
+        // fixed seconds-per-km thresholds this expresses.
+        function paceBand(speedKph) {
+          const speed = Number(speedKph);
+          if (!Number.isFinite(speed) || speed <= 0.5) return "none";
+          const totalSeconds = 3600 / speed;
+          if (totalSeconds >= 360) return "none";
+          if (totalSeconds >= 300) return "steady";
+          if (totalSeconds >= 240) return "fast";
+          return "blazing";
+        }
         const currentRank = index + 1;
         const previousRank = leaderboardRankByNode.get(node.node_id);
         const rankDelta = previousRank ? previousRank - currentRank : 0;
         const rankClass = rankDelta > 0 ? "rank-up" : rankDelta < 0 ? "rank-down" : "";
+        let isFastestNode = false;
         let rankDisplayHtml = '';
         if (currentRank === 1) {
           rankDisplayHtml = `<span class="rank-champion" title="${t("rank.champion")}">👑</span>`;
@@ -5882,10 +6188,15 @@
           const speedLabel = runningEquipment ? t("metric.pace") : t("metric.speed");
           const distDisplay = smoothMetricNumber(`${node.node_id}:distance`, node.distance_m).toFixed(0);
           const progressText = `${smoothMetricNumber(`${node.node_id}:progress`, node.progress_percent).toFixed(1)}%`;
+          const paceEligible = runningEquipment && currentState === "RUNNING" && !node.finished_time_ms;
+          const band = paceEligible ? paceBand(smoothedSpeed) : "none";
+          const paceBandClass = band !== "none" ? ` pace-${band}` : "";
+          isFastestNode = paceEligible && node.node_id === fastestId;
+          const fastestBadgeHtml = `<span class="fastest-pace-badge${isFastestNode ? " is-visible" : ""}" aria-hidden="true">🔥</span>`;
 
           metricCols = `
             <div class="metric-group">
-              <div class="metric-val">${speedDisplay}</div>
+              <div class="metric-val${paceBandClass}">${speedDisplay}</div>${fastestBadgeHtml}
               <div class="metric-lbl">${escapeHtml(speedLabel)}</div>
             </div>
             <div class="metric-group">
@@ -5907,10 +6218,15 @@
             ? `<span class="score-primary">${(metricNumber(node.finished_time_ms) / 1000.0).toFixed(1)}s</span>`
             : `${smoothMetricNumber(`${node.node_id}:progress`, node.progress_percent).toFixed(1)}%`;
           const progressLabel = node.finished_time_ms ? t("metric.finish_time") : t("metric.progress");
+          const paceEligible = runningEquipment && currentState === "RUNNING" && !node.finished_time_ms;
+          const band = paceEligible ? paceBand(smoothedSpeed) : "none";
+          const paceBandClass = band !== "none" ? ` pace-${band}` : "";
+          isFastestNode = paceEligible && node.node_id === fastestId;
+          const fastestBadgeHtml = `<span class="fastest-pace-badge${isFastestNode ? " is-visible" : ""}" aria-hidden="true">🔥</span>`;
 
           metricCols = `
             <div class="metric-group">
-              <div class="metric-val">${speedDisplay}</div>
+              <div class="metric-val${paceBandClass}">${speedDisplay}</div>${fastestBadgeHtml}
               <div class="metric-lbl">${escapeHtml(speedLabel)}</div>
             </div>
             <div class="metric-group">
@@ -5925,7 +6241,7 @@
         }
 
         html += `
-          <div class="leaderboard-item ${rankClass} ${cardExtraClass}" id="node-${escapeHtml(node.node_id)}" data-node-id="${escapeHtml(node.node_id)}">
+          <div class="leaderboard-item ${rankClass} ${cardExtraClass}${isFastestNode ? " fastest-pace-highlight" : ""}" id="node-${escapeHtml(node.node_id)}" data-node-id="${escapeHtml(node.node_id)}">
             <div class="rank">${rankDisplayHtml}</div>
             <div class="athlete-info">
               ${avatarHtml}

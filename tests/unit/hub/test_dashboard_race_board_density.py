@@ -413,11 +413,16 @@ def _board_stubs() -> str:
         "function getRankedTeamRows() { return []; }\n"
         "function formatTeamScore() { return { value: '', label: '' }; }\n"
         "function teamCompletionLabel() { return ''; }\n"
-        "function formatSprintSignal(row, raceType) { return { value: `${metricNumber(row.raw.power_watts).toFixed(0)}W`, label: t('metric.current_power') }; }\n"
+        "function formatSprintSignal(row, raceType) { return { value: `${metricNumber(row.raw.power_watts).toFixed(0)}W`, label: t('metric.current_power'), band: 'none' }; }\n"
         "function teamPolicyLabel() { return ''; }\n"
         "let leaderboardNodes = [];\n"
         "let teamLeaderboardRows = [];\n"
         "let leaderboardRankByNode = new Map();\n"
+        # renderRaceTrackLeaderboard / renderSprintBoardLeaderboard now also
+        # gate the pace-effects trail/badge (feat/pace-effects) on the
+        # page-global currentState -- not exercised by this file's tier
+        # assertions, so a plain non-RUNNING default is enough.
+        "let currentState = 'IDLE';\n"
         "let currentConfig = { race_type: 'distance', competition_mode: 'individual' };\n"
     )
 
