@@ -428,6 +428,241 @@ global.fetch = async (url, options) => {{
     assert result["callCount"] == 1
 
 
+def test_render_roster_relay_mode_groups_current_and_next_heat_by_team():
+    source = _strip_js_comments(_read())
+    render_roster = _extract_function(source, "renderRoster")
+    render_team_heat_list = _extract_function(source, "renderRosterTeamHeatList")
+    render_entry_list = _extract_function(source, "renderRosterEntryList")
+    division_label = _extract_function(source, "divisionLabel")
+    assert "renderRosterTeamHeatList" in render_roster  # sanity: real wiring
+
+    harness = f"""
+{_DOM_STUB}
+
+{division_label}
+{render_team_heat_list}
+{render_entry_list}
+
+let state;
+
+{render_roster}
+
+state = {{
+  race: {{ state: "READY" }},
+  roster: {{
+    mode: "relay",
+    entries: [],
+    heat_size: 1,
+    current_heat: [],
+    next_heat: [],
+    current_heat_teams: [
+      {{ team: "Volt", station_number: 1, members: ["Alice", "Bob"] }},
+    ],
+    next_heat_teams: [
+      {{ team: "Surge", station_number: 1, members: ["Cara", "Dan"] }},
+    ],
+    counts: {{ pending: 2, loaded: 2, done: 0, absent: 0 }},
+  }},
+}};
+renderRoster();
+
+console.log(JSON.stringify({{
+  current: el("roster-current-heat").innerHTML,
+  next: el("roster-next-heat").innerHTML,
+}}));
+"""
+    output = _run_node(harness)
+    result = json.loads(output)
+    assert "Volt" in result["current"]
+    assert "1" in result["current"]
+    assert "Alice" in result["current"] and "Bob" in result["current"]
+    assert (
+        "Alice \\u2192 Bob" in result["current"] or "Alice → Bob" in result["current"]
+    )
+    assert "Surge" in result["next"]
+    assert "Cara" in result["next"] and "Dan" in result["next"]
+
+
+def test_render_roster_individual_mode_unaffected_by_team_list_helper():
+    source = _strip_js_comments(_read())
+    render_roster = _extract_function(source, "renderRoster")
+    render_heat_list = _extract_function(source, "renderRosterHeatList")
+    render_team_heat_list = _extract_function(source, "renderRosterTeamHeatList")
+    render_entry_list = _extract_function(source, "renderRosterEntryList")
+    division_label = _extract_function(source, "divisionLabel")
+
+    harness = f"""
+{_DOM_STUB}
+
+{division_label}
+{render_heat_list}
+{render_team_heat_list}
+{render_entry_list}
+
+let state;
+
+{render_roster}
+
+state = {{
+  race: {{ state: "READY" }},
+  roster: {{
+    mode: "individual",
+    entries: [],
+    heat_size: 1,
+    current_heat: [{{ id: "a", name: "Alice", division: "men", team: null, station_number: 1 }}],
+    next_heat: [{{ id: "b", name: "Bob", division: "women", team: null, station_number: null }}],
+    counts: {{ pending: 1, loaded: 1, done: 0, absent: 0 }},
+  }},
+}};
+renderRoster();
+
+console.log(JSON.stringify({{
+  current: el("roster-current-heat").innerHTML,
+  next: el("roster-next-heat").innerHTML,
+}}));
+"""
+    output = _run_node(harness)
+    result = json.loads(output)
+    assert "Alice" in result["current"]
+    assert "Bob" in result["next"]
+
+
+def test_load_next_heat_saves_config_and_retries_once_on_save_settings_first():
+    source = _strip_js_comments(_read())
+    load_next_heat_fn = _extract_function(source, "loadNextHeat")
+    assert "save race settings first" in load_next_heat_fn  # sanity: real source
+
+    harness = f"""
+{_DOM_STUB}
+function adminHeaders(extra = {{}}) {{ return {{ ...extra }}; }}
+function renderRoster() {{}}
+async function refreshOperationalState() {{}}
+function setMessage(id, text, kind) {{ el(id).textContent = text; }}
+
+let state = {{ race: {{ state: "READY" }} }};
+
+global.window = {{ confirm: () => true }};
+
+let configureRaceCalls = 0;
+async function configureRace() {{
+  configureRaceCalls += 1;
+  return true;
+}}
+
+let callCount = 0;
+global.fetch = async (url, options) => {{
+  callCount += 1;
+  if (callCount === 1) {{
+    return {{
+      ok: false,
+      status: 409,
+      json: async () => ({{ detail: "save race settings first" }}),
+    }};
+  }}
+  return {{ ok: true, status: 200, json: async () => ({{ entries: [] }}) }};
+}};
+
+{load_next_heat_fn}
+
+(async () => {{
+  await loadNextHeat();
+  console.log(JSON.stringify({{ configureRaceCalls, callCount }}));
+}})();
+"""
+    output = _run_node(harness)
+    result = json.loads(output)
+    assert result["configureRaceCalls"] == 1
+    assert result["callCount"] == 2
+
+
+def test_load_next_heat_shows_error_when_save_settings_first_retry_still_fails():
+    source = _strip_js_comments(_read())
+    load_next_heat_fn = _extract_function(source, "loadNextHeat")
+
+    harness = f"""
+{_DOM_STUB}
+function adminHeaders(extra = {{}}) {{ return {{ ...extra }}; }}
+function renderRoster() {{}}
+async function refreshOperationalState() {{}}
+let lastMessage = null;
+function setMessage(id, text, kind) {{ lastMessage = {{ id, text, kind }}; }}
+
+let state = {{ race: {{ state: "READY" }} }};
+
+let configureRaceCalls = 0;
+async function configureRace() {{
+  configureRaceCalls += 1;
+  return true;
+}}
+
+let callCount = 0;
+global.fetch = async (url, options) => {{
+  callCount += 1;
+  return {{
+    ok: false,
+    status: 409,
+    json: async () => ({{ detail: "save race settings first" }}),
+  }};
+}};
+
+{load_next_heat_fn}
+
+(async () => {{
+  await loadNextHeat();
+  console.log(JSON.stringify({{ configureRaceCalls, callCount, messageKind: lastMessage.kind }}));
+}})();
+"""
+    output = _run_node(harness)
+    result = json.loads(output)
+    assert result["configureRaceCalls"] == 1
+    assert result["callCount"] == 2
+    assert result["messageKind"] == "error"
+
+
+def test_load_next_heat_does_not_retry_for_other_409s():
+    source = _strip_js_comments(_read())
+    load_next_heat_fn = _extract_function(source, "loadNextHeat")
+
+    harness = f"""
+{_DOM_STUB}
+function adminHeaders(extra = {{}}) {{ return {{ ...extra }}; }}
+function renderRoster() {{}}
+async function refreshOperationalState() {{}}
+function setMessage(id, text, kind) {{ el(id).textContent = text; }}
+
+let state = {{ race: {{ state: "READY" }} }};
+
+global.window = {{ confirm: () => false }};
+
+let configureRaceCalls = 0;
+async function configureRace() {{
+  configureRaceCalls += 1;
+  return true;
+}}
+
+let callCount = 0;
+global.fetch = async (url, options) => {{
+  callCount += 1;
+  return {{
+    ok: false,
+    status: 409,
+    json: async () => ({{ detail: "roster exhausted" }}),
+  }};
+}};
+
+{load_next_heat_fn}
+
+(async () => {{
+  await loadNextHeat();
+  console.log(JSON.stringify({{ configureRaceCalls, callCount }}));
+}})();
+"""
+    output = _run_node(harness)
+    result = json.loads(output)
+    assert result["configureRaceCalls"] == 0
+    assert result["callCount"] == 1
+
+
 def test_handle_roster_file_selected_skips_import_when_confirm_declined():
     source = _strip_js_comments(_read())
     handle_fn = _extract_function(source, "handleRosterFileSelected")

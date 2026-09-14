@@ -1131,6 +1131,7 @@
               <h3 class="control-block-title" data-i18n="text.roster_counts_title">Roster Status</h3>
               <span class="status-text" id="roster-counts" style="margin-top: 0;"></span>
             </div>
+            <div class="status-text" id="roster-mode-note"></div>
           </div>
 
           <div class="control-block">
@@ -1457,7 +1458,9 @@
         "text.relay_field_note": "Applies to relay races only.",
         "text.relay_race": "Relay race: teammates take turns running one leg each on the same machine. The team finishes when the last leg is done.",
         "button.register_relay_team": "Register Team",
-        "message.relay_team_registered": "Relay team registered."
+        "message.relay_team_registered": "Relay team registered.",
+        "text.relay_heat_station_team": "Station {station} · {team}",
+        "text.relay_heat_mode_note": "Relay mode: heats load by team."
       }
     };
 
@@ -1658,7 +1661,9 @@
       "text.relay_field_note": "僅適用於接力賽。",
       "text.relay_race": "接力賽:隊員輪流在同一台機器上各跑一棒,最後一棒完成即為隊伍完賽。",
       "button.register_relay_team": "登記隊伍",
-      "message.relay_team_registered": "接力隊伍已登記。"
+      "message.relay_team_registered": "接力隊伍已登記。",
+      "text.relay_heat_station_team": "站位 {station} · {team}",
+      "text.relay_heat_mode_note": "接力模式：依隊伍載入"
     };
 
     function t(key, params = {}) {
@@ -2292,6 +2297,31 @@
       }).join("");
     }
 
+    function renderRosterTeamHeatList(elementId, teams, emptyKey) {
+      const list = $(elementId);
+      if (!teams.length) {
+        list.innerHTML = `<div class="empty">${escapeHtml(t(emptyKey))}</div>`;
+        return;
+      }
+      list.innerHTML = teams.map((team) => {
+        const label = t("text.relay_heat_station_team", {
+          station: team.station_number,
+          team: team.team,
+        });
+        const membersText = (team.members || []).join(" → ");
+        return `
+          <div class="row-card">
+            <div class="row-main">
+              <div>
+                <div class="row-name">${escapeHtml(label)}</div>
+                <div class="row-meta">${escapeHtml(membersText)}</div>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
     function renderRosterEntryList(elementId, entries, emptyKey, action) {
       const list = $(elementId);
       if (!entries.length) {
@@ -2325,12 +2355,18 @@
         done: counts.done || 0,
         absent: counts.absent || 0,
       });
+      $("roster-mode-note").textContent = roster.mode === "relay" ? t("text.relay_heat_mode_note") : "";
 
       const raceState = state.race?.state || "IDLE";
       $("btn-load-next-heat").disabled = raceState === "RUNNING";
 
-      renderRosterHeatList("roster-current-heat", roster.current_heat || [], "text.no_current_heat", true);
-      renderRosterHeatList("roster-next-heat", roster.next_heat || [], "text.no_next_heat", false);
+      if (roster.mode === "relay") {
+        renderRosterTeamHeatList("roster-current-heat", roster.current_heat_teams || [], "text.no_current_heat");
+        renderRosterTeamHeatList("roster-next-heat", roster.next_heat_teams || [], "text.no_next_heat");
+      } else {
+        renderRosterHeatList("roster-current-heat", roster.current_heat || [], "text.no_current_heat", true);
+        renderRosterHeatList("roster-next-heat", roster.next_heat || [], "text.no_next_heat", false);
+      }
 
       const entries = roster.entries || [];
       renderRosterEntryList(
@@ -2472,6 +2508,16 @@
               return loadNextHeat({ force: true });
             }
             return;
+          }
+          if (response.status === 409 && payload.detail === "save race settings first" && !options.retriedAfterSave) {
+            // Reset Race clears the saved config, so this 409 can happen
+            // after an operator presses Reset between heats. Save the
+            // current form's settings and retry ONCE -- if that still
+            // fails, fall through to the normal error message below.
+            const saved = await configureRace();
+            if (saved) {
+              return loadNextHeat({ ...options, retriedAfterSave: true });
+            }
           }
           const detailMessage = (payload.detail && payload.detail.message) || payload.detail || response.statusText;
           setMessage("roster-heat-message", t("message.heat_load_failed", { error: detailMessage }), "error");
