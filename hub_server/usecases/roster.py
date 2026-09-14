@@ -313,7 +313,137 @@ class RosterManager:
         self._persist()
         return loaded
 
-    def summary(self, station_numbers: list[int]) -> dict[str, Any]:
+    def _group_pending_by_team(
+        self, entries: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Group `entries`' pending rows by stripped team name. Team order
+        is the order of each team's FIRST pending entry (roster `order`);
+        members within a team keep that same roster order. A team key of
+        "" collects every teamless pending entry, so the caller can reject
+        that group as a single "missing team" validation failure."""
+        pending = sorted(
+            (entry for entry in entries if entry["status"] == "pending"),
+            key=lambda entry: entry["order"],
+        )
+        team_order: list[str] = []
+        teams: dict[str, list[dict[str, Any]]] = {}
+        for entry in pending:
+            team = (entry.get("team") or "").strip()
+            if team not in teams:
+                teams[team] = []
+                team_order.append(team)
+            teams[team].append(entry)
+        return [{"team": team, "members": teams[team]} for team in team_order]
+
+    def load_next_heat_teams(
+        self, station_numbers: list[int], relay_legs: int
+    ) -> list[dict[str, Any]]:
+        """Relay counterpart to load_next_heat(): the next heat is the next
+        K pending TEAMS (K = len(station_numbers), stations ascending),
+        every member of a chosen team loaded onto that team's station.
+
+        Same atomic working-copy approach as load_next_heat(): every
+        validation (teamless pending entries, wrong-sized chosen teams, an
+        exhausted roster) runs BEFORE `self._entries`/the persisted file
+        are touched, so a raise leaves both exactly as they were.
+        """
+        if not station_numbers:
+            raise ValueError("assign stations first")
+
+        working = [dict(entry) for entry in self._entries]
+
+        for entry in working:
+            if entry["status"] == "loaded":
+                entry["status"] = "done"
+                entry["station_number"] = None
+                entry["started"] = False
+
+        groups = self._group_pending_by_team(working)
+
+        teamless = next((group for group in groups if group["team"] == ""), None)
+        if teamless is not None:
+            names = ", ".join(entry["name"] for entry in teamless["members"])
+            raise ValueError(f"pending entries with no team in relay mode: {names}")
+
+        if not groups:
+            raise ValueError("roster exhausted")
+
+        stations_sorted = sorted(station_numbers)
+        chosen = groups[: len(stations_sorted)]
+
+        mismatched = [
+            f"{group['team']} ({len(group['members'])}, need {relay_legs})"
+            for group in chosen
+            if len(group["members"]) != relay_legs
+        ]
+        if mismatched:
+            raise ValueError(
+                "team roster size does not match relay legs: " + ", ".join(mismatched)
+            )
+
+        loaded_teams: list[dict[str, Any]] = []
+        for group, station_number in zip(chosen, stations_sorted):
+            for member in group["members"]:
+                member["status"] = "loaded"
+                member["station_number"] = station_number
+                member["started"] = False
+            loaded_teams.append(
+                {
+                    "team": group["team"],
+                    "station_number": station_number,
+                    "members": [dict(member) for member in group["members"]],
+                }
+            )
+
+        self._entries = working
+        self._persist()
+        return loaded_teams
+
+    def _current_heat_teams(self) -> list[dict[str, Any]]:
+        """Group the currently "loaded" entries by their (already assigned)
+        station_number -- each station holds one team's members."""
+        by_station: dict[int, list[dict[str, Any]]] = {}
+        for entry in self._entries:
+            if entry["status"] != "loaded":
+                continue
+            station_number = entry.get("station_number")
+            if station_number is None:
+                continue
+            by_station.setdefault(station_number, []).append(entry)
+
+        teams = []
+        for station_number in sorted(by_station):
+            members = by_station[station_number]
+            teams.append(
+                {
+                    "team": members[0].get("team") or "",
+                    "station_number": station_number,
+                    "members": [member["name"] for member in members],
+                }
+            )
+        return teams
+
+    def _next_heat_teams(self, station_numbers: list[int]) -> list[dict[str, Any]]:
+        """Preview of the next relay heat: the next K pending teams, paired
+        with the station they would land on if loaded now (K = len(
+        station_numbers)) -- same pairing load_next_heat_teams() performs,
+        but read-only."""
+        groups = self._group_pending_by_team(self._entries)
+        groups = [group for group in groups if group["team"] != ""]
+        stations_sorted = sorted(station_numbers)
+        chosen = groups[: len(stations_sorted)]
+        return [
+            {
+                "team": group["team"],
+                "station_number": station_number,
+                "members": [member["name"] for member in group["members"]],
+            }
+            for group, station_number in zip(chosen, stations_sorted)
+        ]
+
+    def summary(
+        self, station_numbers: list[int], relay_legs: Optional[int] = None
+    ) -> dict[str, Any]:
         heat_size = len(station_numbers)
         counts = {status: 0 for status in _STATUSES}
         for entry in self._entries:
@@ -329,10 +459,14 @@ class RosterManager:
         )
         next_heat = [dict(entry) for entry in pending_sorted[:heat_size]]
 
-        return {
+        result = {
             "entries": self.entries(),
             "heat_size": heat_size,
             "current_heat": current_heat,
             "next_heat": next_heat,
             "counts": counts,
         }
+        if relay_legs is not None:
+            result["current_heat_teams"] = self._current_heat_teams()
+            result["next_heat_teams"] = self._next_heat_teams(station_numbers)
+        return result

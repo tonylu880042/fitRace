@@ -382,6 +382,115 @@ def test_plain_start_marks_current_heat_started():
     app_module.node_registry.clear()
 
 
+def test_get_roster_reports_individual_mode_by_default():
+    res = client.get("/api/roster")
+    assert res.status_code == 200
+    assert res.json()["mode"] == "individual"
+
+
+def test_next_heat_relay_mode_loads_teams_and_registers_relay_members():
+    _assign_two_stations()
+    client.post(
+        "/api/roster/import",
+        json={"csv": "name,team\nAlice,Volt\nBob,Volt\nCara,Surge\nDan,Surge\n"},
+    )
+    configure_res = client.post(
+        "/api/race/configure",
+        json={
+            "race_type": "distance",
+            "competition_mode": "relay",
+            "relay_legs": 2,
+            "target_value": 500,
+        },
+    )
+    assert configure_res.status_code == 200
+
+    res = client.post("/api/roster/next-heat")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["mode"] == "relay"
+    assert body["current_heat_teams"] == [
+        {"team": "Volt", "station_number": 1, "members": ["Alice", "Bob"]},
+        {"team": "Surge", "station_number": 2, "members": ["Cara", "Dan"]},
+    ]
+
+    stations = client.get("/api/stations").json()["stations"]
+    assert stations["1"]["team_name"] == "Volt"
+    assert stations["1"]["relay_members"] == ["Alice", "Bob"]
+    assert stations["2"]["team_name"] == "Surge"
+    assert stations["2"]["relay_members"] == ["Cara", "Dan"]
+
+    # Readiness is blocked until stations are actually online -- once they
+    # are, the relay team registrations above make it ready.
+    readiness = client.get("/api/race/readiness").json()
+    assert readiness["ready"] is False
+
+    _set_station_online(1, "node-1")
+    _set_station_online(2, "node-2")
+    readiness = client.get("/api/race/readiness").json()
+    assert readiness["ready"] is True
+
+    app_module.node_registry.clear()
+
+
+def test_next_heat_relay_mode_rejects_teamless_pending_entry_and_changes_nothing():
+    _assign_two_stations()
+    client.post(
+        "/api/roster/import",
+        json={"csv": "name,team\nAlice,Volt\nBob,Volt\nEve,\n"},
+    )
+    client.post(
+        "/api/race/configure",
+        json={
+            "race_type": "distance",
+            "competition_mode": "relay",
+            "relay_legs": 2,
+            "target_value": 500,
+        },
+    )
+    roster_before = client.get("/api/roster").json()
+    stations_before = client.get("/api/stations").json()
+    state_before = client.get("/api/race/state").json()
+
+    res = client.post("/api/roster/next-heat")
+    assert res.status_code == 409
+    assert "Eve" in res.json()["detail"]
+
+    assert client.get("/api/roster").json() == roster_before
+    assert client.get("/api/stations").json() == stations_before
+    assert client.get("/api/race/state").json() == state_before
+
+
+def test_next_heat_relay_mode_rejects_wrong_sized_team_and_changes_nothing():
+    _assign_two_stations()
+    client.post(
+        "/api/roster/import",
+        json={"csv": "name,team\nAlice,Volt\n"},
+    )
+    client.post(
+        "/api/race/configure",
+        json={
+            "race_type": "distance",
+            "competition_mode": "relay",
+            "relay_legs": 2,
+            "target_value": 500,
+        },
+    )
+    roster_before = client.get("/api/roster").json()
+    stations_before = client.get("/api/stations").json()
+    state_before = client.get("/api/race/state").json()
+
+    res = client.post("/api/roster/next-heat")
+    assert res.status_code == 409
+    detail = res.json()["detail"]
+    assert "Volt" in detail
+    assert "2" in detail
+
+    assert client.get("/api/roster").json() == roster_before
+    assert client.get("/api/stations").json() == stations_before
+    assert client.get("/api/race/state").json() == state_before
+
+
 def test_roster_endpoints_require_admin_token_when_configured(monkeypatch):
     monkeypatch.setenv("FITRACE_ADMIN_TOKEN", "admin-secret")
 

@@ -1360,7 +1360,14 @@ def has_any_station_registration() -> bool:
 
 
 def roster_summary_response() -> dict:
-    return roster_manager.summary(assigned_station_numbers())
+    config = race_manager.get_config()
+    is_relay = bool(config and config.competition_mode == "relay")
+    summary = roster_manager.summary(
+        assigned_station_numbers(),
+        relay_legs=config.relay_legs if is_relay else None,
+    )
+    summary["mode"] = "relay" if is_relay else "individual"
+    return summary
 
 
 @app.get("/api/roster")
@@ -1477,6 +1484,31 @@ async def load_next_heat(request: Request):
         raise HTTPException(status_code=409, detail="roster exhausted")
 
     station_numbers = assigned_station_numbers()
+    is_relay = config.competition_mode == "relay"
+
+    loaded_teams = None
+    if is_relay:
+        # Relay-specific validation (a pending entry with no team, or one
+        # of the next K teams whose member count != relay_legs) must run
+        # BEFORE any race reset/registration/roster state change below.
+        # load_next_heat_teams() is itself atomic -- on a raise it has not
+        # touched roster state at all -- and running it here, before
+        # race_manager is touched, is what makes a 409 leave everything
+        # (race state, registrations, roster) completely untouched.
+        try:
+            loaded_teams = roster_manager.load_next_heat_teams(
+                station_numbers, config.relay_legs
+            )
+        except ValueError as e:
+            # Every relay validation failure (teamless pending entries, a
+            # wrong-sized next team, an exhausted roster) is a 409 -- the
+            # caller can act on it (fix the roster) without treating it as
+            # a client request error. Only the generic "assign stations
+            # first" guard (no stations assigned at all) is a genuine bad
+            # request, mirroring the individual-mode mapping below.
+            status = 400 if str(e) == "assign stations first" else 409
+            raise HTTPException(status_code=status, detail=str(e))
+
     try:
         if (
             race_manager.get_state() == RaceState.STOPPED
@@ -1486,14 +1518,25 @@ async def load_next_heat(request: Request):
             apply_race_config(config)
 
         race_manager.clear_station_registrations()
-        loaded = roster_manager.load_next_heat(station_numbers)
-        for entry in loaded:
-            race_manager.register_athlete(
-                entry["station_number"],
-                entry["name"],
-                team_name=entry["team"],
-                division=entry["division"],
-            )
+
+        if is_relay:
+            for team in loaded_teams:
+                race_manager.register_athlete(
+                    team["station_number"],
+                    None,
+                    team_name=team["team"],
+                    division=None,
+                    relay_members=[member["name"] for member in team["members"]],
+                )
+        else:
+            loaded = roster_manager.load_next_heat(station_numbers)
+            for entry in loaded:
+                race_manager.register_athlete(
+                    entry["station_number"],
+                    entry["name"],
+                    team_name=entry["team"],
+                    division=entry["division"],
+                )
     except ValueError as e:
         status = 409 if str(e) == "roster exhausted" else 400
         raise HTTPException(status_code=status, detail=str(e))

@@ -357,4 +357,151 @@ def test_summary_current_and_next_heat(tmp_path):
     assert summary["heat_size"] == 2
     assert {e["name"] for e in summary["current_heat"]} == {"Alice", "Bob"}
     assert [e["name"] for e in summary["next_heat"]] == ["Carol", "Dave"]
+
+
+# ---------------------------------------------------------------------------
+# RosterManager: relay team heats (load_next_heat_teams)
+# ---------------------------------------------------------------------------
+
+
+def test_load_next_heat_teams_groups_by_team_in_first_pending_order(tmp_path):
+    manager = _manager(tmp_path)
+    manager.import_csv(
+        "name,team\n" "Alice,Volt\n" "Bob,Surge\n" "Cara,Volt\n" "Dan,Surge\n"
+    )
+    loaded = manager.load_next_heat_teams([1, 2], relay_legs=2)
+    # Volt's first pending entry (Alice) appears before Surge's (Bob), so
+    # Volt is team order 0 -> station 1; Surge is team order 1 -> station 2,
+    # even though the entries interleave in the roster.
+    assert [team["team"] for team in loaded] == ["Volt", "Surge"]
+    assert loaded[0]["station_number"] == 1
+    assert loaded[1]["station_number"] == 2
+    assert [m["name"] for m in loaded[0]["members"]] == ["Alice", "Cara"]
+    assert [m["name"] for m in loaded[1]["members"]] == ["Bob", "Dan"]
+
+
+def test_load_next_heat_teams_members_keep_roster_order(tmp_path):
+    manager = _manager(tmp_path)
+    manager.import_csv("name,team\nCara,Volt\nAlice,Volt\n")
+    loaded = manager.load_next_heat_teams([1], relay_legs=2)
+    assert [m["name"] for m in loaded[0]["members"]] == ["Cara", "Alice"]
+
+
+def test_load_next_heat_teams_marks_members_loaded_with_team_station(tmp_path):
+    manager = _manager(tmp_path)
+    manager.import_csv("name,team\nAlice,Volt\nBob,Volt\n")
+    manager.load_next_heat_teams([1], relay_legs=2)
+    statuses = {
+        e["name"]: (e["status"], e["station_number"]) for e in manager.entries()
+    }
+    assert statuses["Alice"] == ("loaded", 1)
+    assert statuses["Bob"] == ("loaded", 1)
+
+
+def test_load_next_heat_teams_moves_previous_loaded_to_done(tmp_path):
+    manager = _manager(tmp_path)
+    manager.import_csv("name,team\nAlice,Volt\nBob,Volt\nCara,Surge\nDan,Surge\n")
+    manager.load_next_heat_teams([1], relay_legs=2)  # Volt loaded
+    manager.load_next_heat_teams([1], relay_legs=2)  # Volt -> done; Surge loaded
+
+    statuses = {e["name"]: e["status"] for e in manager.entries()}
+    assert statuses["Alice"] == "done"
+    assert statuses["Bob"] == "done"
+    assert statuses["Cara"] == "loaded"
+    assert statuses["Dan"] == "loaded"
+
+
+def test_load_next_heat_teams_rejects_teamless_pending_entries_and_changes_nothing(
+    tmp_path,
+):
+    path = tmp_path / "roster.json"
+    manager = RosterManager(RaceSettingsStore(path))
+    manager.import_csv("name,team\nAlice,Volt\nBob,Volt\nEve,\n")
+    before = manager.entries()
+
+    with pytest.raises(ValueError) as exc_info:
+        manager.load_next_heat_teams([1], relay_legs=2)
+    assert "Eve" in str(exc_info.value)
+
+    assert manager.entries() == before
+    reloaded = RosterManager(RaceSettingsStore(path))
+    assert reloaded.entries() == before
+
+
+def test_load_next_heat_teams_rejects_short_team_and_changes_nothing(tmp_path):
+    path = tmp_path / "roster.json"
+    manager = RosterManager(RaceSettingsStore(path))
+    manager.import_csv("name,team\nAlice,Volt\n")
+    before = manager.entries()
+
+    with pytest.raises(ValueError) as exc_info:
+        manager.load_next_heat_teams([1], relay_legs=2)
+    message = str(exc_info.value)
+    assert "Volt" in message
+    assert "1" in message
+    assert "2" in message
+
+    assert manager.entries() == before
+    reloaded = RosterManager(RaceSettingsStore(path))
+    assert reloaded.entries() == before
+
+
+def test_load_next_heat_teams_rejects_long_team_and_changes_nothing(tmp_path):
+    manager = _manager(tmp_path)
+    manager.import_csv("name,team\nAlice,Volt\nBob,Volt\nCara,Volt\n")
+    with pytest.raises(ValueError) as exc_info:
+        manager.load_next_heat_teams([1], relay_legs=2)
+    message = str(exc_info.value)
+    assert "Volt" in message
+    assert "3" in message
+    assert "2" in message
+
+
+def test_load_next_heat_teams_only_validates_the_next_k_teams(tmp_path):
+    """A too-small/too-large team further down the queue than the K teams
+    actually being loaded must not block loading -- only the chosen teams'
+    sizes are validated."""
+    manager = _manager(tmp_path)
+    manager.import_csv(
+        "name,team\nAlice,Volt\nBob,Volt\nCara,Surge\n"  # Surge only has 1 member
+    )
+    loaded = manager.load_next_heat_teams([1], relay_legs=2)  # only Volt is chosen
+    assert [team["team"] for team in loaded] == ["Volt"]
+
+
+def test_load_next_heat_teams_exhausted_when_no_pending_teams(tmp_path):
+    manager = _manager(tmp_path)
+    manager.import_csv("name,team\nAlice,Volt\nBob,Volt\n")
+    manager.load_next_heat_teams([1], relay_legs=2)
+    with pytest.raises(ValueError, match="roster exhausted"):
+        manager.load_next_heat_teams([1], relay_legs=2)
+
+
+def test_load_next_heat_teams_no_stations_raises(tmp_path):
+    manager = _manager(tmp_path)
+    manager.import_csv("name,team\nAlice,Volt\nBob,Volt\n")
+    with pytest.raises(ValueError, match="assign stations first"):
+        manager.load_next_heat_teams([], relay_legs=2)
+
+
+def test_summary_without_relay_legs_omits_team_keys(tmp_path):
+    manager = _manager(tmp_path)
+    manager.import_csv("name,team\nAlice,Volt\nBob,Volt\n")
+    summary = manager.summary([1])
+    assert "current_heat_teams" not in summary
+    assert "next_heat_teams" not in summary
+
+
+def test_summary_with_relay_legs_includes_current_and_next_heat_teams(tmp_path):
+    manager = _manager(tmp_path)
+    manager.import_csv("name,team\nAlice,Volt\nBob,Volt\nCara,Surge\nDan,Surge\n")
+    manager.load_next_heat_teams([1], relay_legs=2)  # Volt loaded on station 1
+
+    summary = manager.summary([1], relay_legs=2)
+    assert summary["current_heat_teams"] == [
+        {"team": "Volt", "station_number": 1, "members": ["Alice", "Bob"]}
+    ]
+    assert summary["next_heat_teams"] == [
+        {"team": "Surge", "station_number": 1, "members": ["Cara", "Dan"]}
+    ]
     assert summary["counts"] == {"pending": 2, "loaded": 2, "done": 0, "absent": 0}
