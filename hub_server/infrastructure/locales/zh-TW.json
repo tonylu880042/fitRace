@@ -285,5 +285,21 @@
   "readiness.reason_target": "尚未設定賽事目標",
   "readiness.reason_registrations": "尚無選手報名",
   "readiness.reason_teams": "隊伍設定未完成",
-  "readiness.reason_stations": "站位 {stations} 未連線"
+  "readiness.reason_stations": "站位 {stations} 未連線",
+  "export.header_race_start": "比賽開始",
+  "export.header_race_type": "賽制類型",
+  "export.header_target": "目標／時長",
+  "export.header_mode": "賽制模式",
+  "export.header_rank": "名次",
+  "export.header_name": "姓名",
+  "export.header_division": "組別",
+  "export.header_team": "隊伍",
+  "export.header_station": "站位",
+  "export.header_time_sec": "完成時間（秒）",
+  "export.header_status": "狀態",
+  "export.header_distance_m": "距離（公尺）",
+  "export.header_calories": "卡路里",
+  "export.header_max_power_w": "最大功率（瓦）",
+  "export.header_relay_members": "接力隊員",
+  "export.header_relay_splits": "接力分段時間（秒）"
 }

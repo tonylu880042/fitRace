@@ -1121,9 +1121,11 @@
             <div class="button-group">
               <label for="roster-file-input" data-i18n="button.import_roster">Import Roster</label>
               <input type="file" id="roster-file-input" accept=".csv,text/csv" onchange="handleRosterFileSelected(event)">
+              <button type="button" id="btn-download-results-csv" onclick="downloadResultsCsv()" data-i18n="button.download_results_csv">Download Results (CSV)</button>
             </div>
           </div>
           <div class="status-text" id="roster-import-message"></div>
+          <div class="status-text" id="results-export-message"></div>
           <div class="list" id="roster-import-errors" style="margin-top: 8px;"></div>
 
           <div class="control-block">
@@ -1460,7 +1462,10 @@
         "button.register_relay_team": "Register Team",
         "message.relay_team_registered": "Relay team registered.",
         "text.relay_heat_station_team": "Station {station} · {team}",
-        "text.relay_heat_mode_note": "Relay mode: heats load by team."
+        "text.relay_heat_mode_note": "Relay mode: heats load by team.",
+        "button.download_results_csv": "Download Results (CSV)",
+        "message.results_downloaded": "Results downloaded.",
+        "message.results_download_failed": "Download failed: {error}"
       }
     };
 
@@ -1663,7 +1668,10 @@
       "button.register_relay_team": "登記隊伍",
       "message.relay_team_registered": "接力隊伍已登記。",
       "text.relay_heat_station_team": "站位 {station} · {team}",
-      "text.relay_heat_mode_note": "接力模式：依隊伍載入"
+      "text.relay_heat_mode_note": "接力模式：依隊伍載入",
+      "button.download_results_csv": "下載成績 (CSV)",
+      "message.results_downloaded": "成績已下載",
+      "message.results_download_failed": "下載失敗：{error}"
     };
 
     function t(key, params = {}) {
@@ -2439,6 +2447,66 @@
         setMessage("roster-import-message", t("message.roster_imported"), "ok");
       } catch (error) {
         setMessage("roster-import-message", t("message.roster_import_failed", { error: error.message }), "error");
+      }
+    }
+
+    // Pulls the filename out of a Content-Disposition header value like
+    // `attachment; filename="fitrace-results-20240101-1200.csv"`, tolerating
+    // a missing or unquoted value. Deliberately no regex here: a quote-heavy
+    // pattern literal throws off the brace-depth extractor the node tests use
+    // to pull real functions out of this file (it toggles a naive "am I
+    // inside a string" flag on every bare quote character it meets).
+    function parseAttachmentFilename(disposition) {
+      const marker = "filename=";
+      const index = disposition.indexOf(marker);
+      if (index === -1) return null;
+      let value = disposition.slice(index + marker.length).trim();
+      const semicolon = value.indexOf(";");
+      if (semicolon !== -1) value = value.slice(0, semicolon).trim();
+      if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) {
+        value = value.slice(1, -1);
+      }
+      return value || null;
+    }
+
+    // Downloads every stored race result as a CSV (GET /api/results/export.csv).
+    // The server names the file via Content-Disposition (hub-local
+    // timestamp); this only has to hand that name to the temporary <a
+    // download> so Save As matches what the server generated.
+    async function downloadResultsCsv() {
+      try {
+        const response = await fetch(`/api/results/export.csv?lang=${encodeURIComponent(currentLocale)}`, {
+          headers: adminHeaders(),
+        });
+        if (response.status === 401) {
+          setMessage("results-export-message", t("message.results_download_failed", { error: response.statusText || "401" }), "error");
+          openLogin();
+          return;
+        }
+        if (!response.ok) {
+          let detail = response.statusText;
+          try {
+            const payload = await response.json();
+            detail = payload.detail || detail;
+          } catch (_) {
+            // Body wasn't JSON -- fall back to the status text already set above.
+          }
+          throw new Error(detail);
+        }
+        const blob = await response.blob();
+        const disposition = response.headers.get("Content-Disposition") || "";
+        const filename = parseAttachmentFilename(disposition) || "results.csv";
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = filename;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        URL.revokeObjectURL(url);
+        setMessage("results-export-message", t("message.results_downloaded"), "ok");
+      } catch (error) {
+        setMessage("results-export-message", t("message.results_download_failed", { error: error.message }), "error");
       }
     }
 

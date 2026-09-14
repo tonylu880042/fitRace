@@ -75,6 +75,38 @@ def test_stage_relay_translations_zh_tw_and_en_us():
     assert load_locale("en-US")["messages"]["stage.relay"] == "Relay"
 
 
+def test_export_header_keys_present_in_every_locale():
+    header_keys = {
+        "export.header_race_start",
+        "export.header_race_type",
+        "export.header_target",
+        "export.header_mode",
+        "export.header_rank",
+        "export.header_name",
+        "export.header_division",
+        "export.header_team",
+        "export.header_station",
+        "export.header_time_sec",
+        "export.header_status",
+        "export.header_distance_m",
+        "export.header_calories",
+        "export.header_max_power_w",
+        "export.header_relay_members",
+        "export.header_relay_splits",
+    }
+    for locale in SUPPORTED_LOCALES:
+        messages = load_locale(locale)["messages"]
+        missing = header_keys - set(messages.keys())
+        assert not missing, f"{locale} is missing {missing}"
+
+
+def test_zh_tw_export_header_translations():
+    messages = load_locale("zh-TW")["messages"]
+    assert messages["export.header_race_start"] == "比賽開始"
+    assert messages["export.header_rank"] == "名次"
+    assert messages["export.header_relay_splits"] == "接力分段時間（秒）"
+
+
 def test_locale_json_files_are_valid():
     locale_dir = (
         Path(__file__).resolve().parents[3]

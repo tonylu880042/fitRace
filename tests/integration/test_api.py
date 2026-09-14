@@ -1412,6 +1412,60 @@ def test_results_records_endpoint_returns_empty_records_with_no_stored_results(
     assert response.json() == {"records": []}
 
 
+def test_results_export_csv_endpoint_returns_csv_with_bom_and_attachment(
+    monkeypatch, tmp_path
+):
+    monkeypatch.delenv("FITRACE_ADMIN_TOKEN", raising=False)
+    _seed_results_store(monkeypatch, tmp_path)
+
+    response = client.get("/api/results/export.csv")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/csv")
+    disposition = response.headers["content-disposition"]
+    assert disposition.startswith("attachment;")
+    assert "fitrace-results-" in disposition
+    assert disposition.endswith('.csv"')
+    assert response.text.startswith("﻿")
+    assert "Alice" in response.text
+
+
+def test_results_export_csv_endpoint_requires_admin_token_when_configured(
+    monkeypatch, tmp_path
+):
+    _seed_results_store(monkeypatch, tmp_path)
+    monkeypatch.setenv("FITRACE_ADMIN_TOKEN", "admin-secret")
+
+    unauthorized = client.get("/api/results/export.csv")
+    assert unauthorized.status_code == 401
+
+    authorized = client.get(
+        "/api/results/export.csv",
+        headers={"X-FitRace-Admin-Token": "admin-secret"},
+    )
+    assert authorized.status_code == 200
+    assert authorized.text.startswith("﻿")
+
+
+def test_results_export_csv_endpoint_empty_store_returns_header_row_only(
+    monkeypatch, tmp_path
+):
+    import hub_server.infrastructure.fastapi.app as hub_app
+    from hub_server.usecases.race_result_store import RaceResultStore
+    from hub_server.usecases.race_results_query import RaceResultsQuery
+
+    monkeypatch.delenv("FITRACE_ADMIN_TOKEN", raising=False)
+    store = RaceResultStore(tmp_path / "empty_race_results.jsonl")
+    monkeypatch.setattr(hub_app, "race_result_store", store)
+    monkeypatch.setattr(hub_app, "race_results_query", RaceResultsQuery(store))
+
+    response = client.get("/api/results/export.csv")
+
+    assert response.status_code == 200
+    lines = response.text.replace("﻿", "").strip("\r\n").split("\r\n")
+    assert len(lines) == 1
+
+
 def test_result_page_returns_200_with_result_card():
     response = client.get("/static/result.html")
     assert response.status_code == 200
