@@ -5150,13 +5150,15 @@
     // need a full markup rebuild: the race type (different columns), the
     // podium/final state, and per node the identity fields that are baked
     // into markup rather than patched in place (name, team, station,
-    // machine name, avatar, and whether this node has finished -- which
-    // swaps a percent for a finish time). Deliberately excludes the live
-    // numeric fields (power/speed/distance/progress/calories) -- those are
-    // exactly what the fast path in updateLeaderboardCardValues patches
-    // without a rebuild. Order matters here: nodes is already sorted by
-    // rank, so a reorder changes this string too, without a separate
-    // check.
+    // machine name, avatar, whether this node has finished -- which swaps
+    // a percent for a finish time -- and, for relay races, the current leg
+    // and runner, since relayLegLine() bakes those into markup too and a
+    // handoff must not be left stale by the fast path). Deliberately
+    // excludes the live numeric fields (power/speed/distance/progress/
+    // calories) -- those are exactly what the fast path in
+    // updateLeaderboardCardValues patches without a rebuild. Order matters
+    // here: nodes is already sorted by rank, so a reorder changes this
+    // string too, without a separate check.
     function buildLeaderboardCardSignature(nodes, raceType, leaderboardFinal) {
       const identity = nodes.map((node) => [
         node.node_id,
@@ -5166,6 +5168,8 @@
         nodeDisplayName(node),
         node.avatar_url || "",
         node.finished_time_ms ? "1" : "0",
+        node.relay_leg || "",
+        node.relay_current_runner || "",
       ].join(":"));
       return raceType + "|" + (leaderboardFinal ? "F" : "R") + "|" + identity.join(",");
     }
