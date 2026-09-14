@@ -1,5 +1,6 @@
 import os
 import time
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -2200,3 +2201,373 @@ def test_stopping_a_race_with_an_unwritable_results_path_still_returns_200(
         client.post("/api/race/reset")
     finally:
         restore()
+
+
+def test_clear_results_without_admin_token_configured(monkeypatch, tmp_path):
+    """POST /api/results/clear without FITRACE_ADMIN_TOKEN returns 403."""
+    import hub_server.infrastructure.fastapi.app as hub_app
+    from hub_server.usecases.race_result_store import RaceResultStore
+
+    store = RaceResultStore(tmp_path / "race_results.jsonl")
+    monkeypatch.setattr(hub_app, "race_result_store", store)
+    monkeypatch.delenv("FITRACE_ADMIN_TOKEN", raising=False)
+
+    # Create a result to verify it's not touched
+    snapshot = {
+        "state": "STOPPED",
+        "config": {"race_type": "distance"},
+        "start_time_epoch_ms": 1000,
+        "end_time_epoch_ms": 2000,
+        "leaderboard": {"node-01": {"distance_m": 100}},
+    }
+    store.save_finished_snapshot(snapshot)
+
+    response = client.post("/api/results/clear", json={"password": "any-password"})
+
+    assert response.status_code == 403
+    # File should still exist with original content
+    assert store._path.exists()
+    assert len(store.list_results()) == 1
+
+
+def test_clear_results_with_wrong_password(monkeypatch, tmp_path):
+    """POST /api/results/clear with wrong password returns 401."""
+    import hub_server.infrastructure.fastapi.app as hub_app
+    from hub_server.usecases.race_result_store import RaceResultStore
+
+    store = RaceResultStore(tmp_path / "race_results.jsonl")
+    monkeypatch.setattr(hub_app, "race_result_store", store)
+    monkeypatch.setenv("FITRACE_ADMIN_TOKEN", "admin-secret")
+
+    # Create a result
+    snapshot = {
+        "state": "STOPPED",
+        "config": {"race_type": "distance"},
+        "start_time_epoch_ms": 1000,
+        "end_time_epoch_ms": 2000,
+        "leaderboard": {"node-01": {"distance_m": 100}},
+    }
+    store.save_finished_snapshot(snapshot)
+
+    response = client.post("/api/results/clear", json={"password": "wrong-password"})
+
+    assert response.status_code == 401
+    assert store._path.exists()
+    assert len(store.list_results()) == 1
+
+
+def test_clear_results_with_missing_password_in_body(monkeypatch, tmp_path):
+    """POST /api/results/clear with missing password field returns 401."""
+    import hub_server.infrastructure.fastapi.app as hub_app
+    from hub_server.usecases.race_result_store import RaceResultStore
+
+    store = RaceResultStore(tmp_path / "race_results.jsonl")
+    monkeypatch.setattr(hub_app, "race_result_store", store)
+    monkeypatch.setenv("FITRACE_ADMIN_TOKEN", "admin-secret")
+
+    # Create a result
+    snapshot = {
+        "state": "STOPPED",
+        "config": {"race_type": "distance"},
+        "start_time_epoch_ms": 1000,
+        "end_time_epoch_ms": 2000,
+        "leaderboard": {"node-01": {"distance_m": 100}},
+    }
+    store.save_finished_snapshot(snapshot)
+
+    response = client.post("/api/results/clear", json={})
+
+    assert response.status_code == 401
+    assert store._path.exists()
+    assert len(store.list_results()) == 1
+
+
+def test_clear_results_with_empty_password_in_body(monkeypatch, tmp_path):
+    """POST /api/results/clear with empty password field returns 401."""
+    import hub_server.infrastructure.fastapi.app as hub_app
+    from hub_server.usecases.race_result_store import RaceResultStore
+
+    store = RaceResultStore(tmp_path / "race_results.jsonl")
+    monkeypatch.setattr(hub_app, "race_result_store", store)
+    monkeypatch.setenv("FITRACE_ADMIN_TOKEN", "admin-secret")
+
+    # Create a result
+    snapshot = {
+        "state": "STOPPED",
+        "config": {"race_type": "distance"},
+        "start_time_epoch_ms": 1000,
+        "end_time_epoch_ms": 2000,
+        "leaderboard": {"node-01": {"distance_m": 100}},
+    }
+    store.save_finished_snapshot(snapshot)
+
+    response = client.post("/api/results/clear", json={"password": ""})
+
+    assert response.status_code == 401
+    assert store._path.exists()
+    assert len(store.list_results()) == 1
+
+
+def test_clear_results_valid_header_without_body_password_still_401(
+    monkeypatch, tmp_path
+):
+    """POST /api/results/clear with valid header but no body password returns 401.
+
+    The header alone is NOT sufficient; the password must be in the request body.
+    This prevents accidental header-only authentication bypasses.
+    """
+    import hub_server.infrastructure.fastapi.app as hub_app
+    from hub_server.usecases.race_result_store import RaceResultStore
+
+    store = RaceResultStore(tmp_path / "race_results.jsonl")
+    monkeypatch.setattr(hub_app, "race_result_store", store)
+    monkeypatch.setenv("FITRACE_ADMIN_TOKEN", "admin-secret")
+
+    # Create a result
+    snapshot = {
+        "state": "STOPPED",
+        "config": {"race_type": "distance"},
+        "start_time_epoch_ms": 1000,
+        "end_time_epoch_ms": 2000,
+        "leaderboard": {"node-01": {"distance_m": 100}},
+    }
+    store.save_finished_snapshot(snapshot)
+
+    # Send valid header but empty body password
+    response = client.post(
+        "/api/results/clear",
+        json={},
+        headers={"X-FitRace-Admin-Token": "admin-secret"},
+    )
+
+    assert response.status_code == 401
+    assert store._path.exists()
+    assert len(store.list_results()) == 1
+
+
+def test_clear_results_blocked_while_race_running(monkeypatch, tmp_path):
+    """POST /api/results/clear returns 409 when race is RUNNING."""
+    import hub_server.infrastructure.fastapi.app as hub_app
+    from hub_server.usecases.race_result_store import RaceResultStore
+
+    store = RaceResultStore(tmp_path / "race_results.jsonl")
+    monkeypatch.setattr(hub_app, "race_result_store", store)
+    monkeypatch.setenv("FITRACE_ADMIN_TOKEN", "admin-secret")
+
+    # Set up and start a race
+    admin_header = {"X-FitRace-Admin-Token": "admin-secret"}
+    client.post("/api/race/reset", headers=admin_header)
+
+    # Set up node and station
+    from hub_server.infrastructure.fastapi.app import node_registry
+
+    node_registry.update_status(
+        {
+            "edge_node_id": "edge-01",
+            "status": "online",
+            "last_seen_epoch_ms": int(time.time() * 1000),
+            "equipment_streams": [
+                {
+                    "node_id": "node-01",
+                    "equipment_id": "BIKE_01",
+                    "equipment_type": "fan_bike",
+                    "status": "configured",
+                    "last_telemetry_epoch_ms": int(time.time() * 1000),
+                }
+            ],
+        }
+    )
+    client.post(
+        "/api/stations/assign",
+        json={"station_number": 1, "node_id": "node-01"},
+        headers=admin_header,
+    )
+
+    client.post(
+        "/api/race/register",
+        json={"station_number": 1, "athlete_name": "Runner A"},
+    )
+    client.post(
+        "/api/race/configure",
+        json={"race_type": "time", "target_value": 0, "duration_sec": 120},
+        headers=admin_header,
+    )
+    start_resp = client.post("/api/race/start", headers=admin_header)
+    assert start_resp.status_code == 200
+    assert start_resp.json()["state"] == "RUNNING"
+
+    response = client.post("/api/results/clear", json={"password": "admin-secret"})
+
+    assert response.status_code == 409
+
+    # Stop race for cleanup
+    client.post("/api/race/stop", headers=admin_header)
+    client.post("/api/race/reset", headers=admin_header)
+
+
+def test_clear_results_success_with_records(monkeypatch, tmp_path):
+    """POST /api/results/clear with correct password and IDLE race clears results."""
+    import hub_server.infrastructure.fastapi.app as hub_app
+    from hub_server.usecases.race_result_store import RaceResultStore
+
+    store = RaceResultStore(tmp_path / "race_results.jsonl")
+    monkeypatch.setattr(hub_app, "race_result_store", store)
+    monkeypatch.setenv("FITRACE_ADMIN_TOKEN", "admin-secret")
+
+    # Create multiple records
+    snapshot1 = {
+        "state": "STOPPED",
+        "config": {"race_type": "distance"},
+        "start_time_epoch_ms": 1000,
+        "end_time_epoch_ms": 2000,
+        "leaderboard": {"node-01": {"distance_m": 100}},
+    }
+    snapshot2 = {
+        "state": "STOPPED",
+        "config": {"race_type": "time"},
+        "start_time_epoch_ms": 3000,
+        "end_time_epoch_ms": 4000,
+        "leaderboard": {"node-01": {"time_sec": 120}},
+    }
+    store.save_finished_snapshot(snapshot1)
+    store.save_finished_snapshot(snapshot2)
+
+    assert len(store.list_results()) == 2
+
+    response = client.post("/api/results/clear", json={"password": "admin-secret"})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["cleared_count"] == 2
+    assert data["backup_path"] is not None
+    assert Path(data["backup_path"]).exists()
+
+    # Verify results are now empty
+    assert len(store.list_results()) == 0
+
+    # Verify /api/race/results also returns empty
+    results_resp = client.get("/api/race/results")
+    assert results_resp.status_code == 200
+    assert results_resp.json()["results"] == []
+
+
+def test_clear_results_broadcasts_websocket_message(monkeypatch, tmp_path):
+    """POST /api/results/clear broadcasts results_cleared WebSocket message."""
+    import hub_server.infrastructure.fastapi.app as hub_app
+    from hub_server.usecases.race_result_store import RaceResultStore
+
+    store = RaceResultStore(tmp_path / "race_results.jsonl")
+    monkeypatch.setattr(hub_app, "race_result_store", store)
+    monkeypatch.setenv("FITRACE_ADMIN_TOKEN", "admin-secret")
+
+    # Set up broadcast capture
+    broadcasts = []
+
+    async def capture_broadcast(payload):
+        broadcasts.append(payload)
+
+    monkeypatch.setattr(hub_app.ws_manager, "broadcast", capture_broadcast)
+
+    # Create a record
+    snapshot = {
+        "state": "STOPPED",
+        "config": {"race_type": "distance"},
+        "start_time_epoch_ms": 1000,
+        "end_time_epoch_ms": 2000,
+        "leaderboard": {"node-01": {"distance_m": 100}},
+    }
+    store.save_finished_snapshot(snapshot)
+
+    response = client.post("/api/results/clear", json={"password": "admin-secret"})
+
+    assert response.status_code == 200
+    assert len(broadcasts) == 1
+    assert broadcasts[0]["type"] == "results_cleared"
+
+
+def test_clear_results_does_not_touch_class_results(monkeypatch, tmp_path):
+    """POST /api/results/clear does not touch class_result_store."""
+    import hub_server.infrastructure.fastapi.app as hub_app
+    from hub_server.usecases.race_result_store import RaceResultStore
+
+    race_store = RaceResultStore(tmp_path / "race_results.jsonl")
+    class_store = RaceResultStore(
+        tmp_path / "class_results.jsonl", session_mode="class"
+    )
+    monkeypatch.setattr(hub_app, "race_result_store", race_store)
+    monkeypatch.setattr(hub_app, "class_result_store", class_store)
+    monkeypatch.setenv("FITRACE_ADMIN_TOKEN", "admin-secret")
+
+    # Add records to both stores
+    race_snapshot = {
+        "state": "STOPPED",
+        "config": {"race_type": "distance"},
+        "start_time_epoch_ms": 1000,
+        "end_time_epoch_ms": 2000,
+        "leaderboard": {"node-01": {"distance_m": 100}},
+    }
+    class_snapshot = {
+        "state": "STOPPED",
+        "session_mode": "class",
+        "config": {"race_type": "distance"},
+        "start_time_epoch_ms": 5000,
+        "end_time_epoch_ms": 6000,
+        "leaderboard": {"node-01": {"distance_m": 50}},
+    }
+    race_store.save_finished_snapshot(race_snapshot)
+    class_store.save_finished_snapshot(class_snapshot)
+
+    assert len(race_store.list_results()) == 1
+    assert len(class_store.list_results()) == 1
+
+    response = client.post("/api/results/clear", json={"password": "admin-secret"})
+
+    assert response.status_code == 200
+    assert len(race_store.list_results()) == 0
+    assert len(class_store.list_results()) == 1  # Untouched
+
+
+def test_clear_results_does_not_touch_roster(monkeypatch, tmp_path):
+    """POST /api/results/clear does not touch roster."""
+    import hub_server.infrastructure.fastapi.app as hub_app
+    from hub_server.usecases.race_result_store import RaceResultStore
+
+    store = RaceResultStore(tmp_path / "race_results.jsonl")
+    monkeypatch.setattr(hub_app, "race_result_store", store)
+    monkeypatch.setenv("FITRACE_ADMIN_TOKEN", "admin-secret")
+
+    admin_header = {"X-FitRace-Admin-Token": "admin-secret"}
+
+    # Clear the roster first to get a known state
+    client.delete("/api/roster", headers=admin_header)
+
+    # Create a result and a roster entry
+    snapshot = {
+        "state": "STOPPED",
+        "config": {"race_type": "distance"},
+        "start_time_epoch_ms": 1000,
+        "end_time_epoch_ms": 2000,
+        "leaderboard": {"node-01": {"distance_m": 100}},
+    }
+    store.save_finished_snapshot(snapshot)
+
+    # Import a roster entry
+    roster_resp = client.post(
+        "/api/roster/entries",
+        json={"name": "Test Athlete", "division": "men"},
+        headers=admin_header,
+    )
+    assert roster_resp.status_code == 200
+
+    # Verify roster has entries
+    roster_before = client.get("/api/roster", headers=admin_header)
+    assert len(roster_before.json()["entries"]) == 1
+
+    # Clear results
+    response = client.post("/api/results/clear", json={"password": "admin-secret"})
+
+    assert response.status_code == 200
+
+    # Verify roster is untouched
+    roster_after = client.get("/api/roster", headers=admin_header)
+    assert len(roster_after.json()["entries"]) == 1

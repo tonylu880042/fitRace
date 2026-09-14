@@ -1,6 +1,8 @@
 import json
 import logging
+import os
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -99,3 +101,41 @@ class RaceResultStore:
         config = snapshot.get("config") or {}
         race_type = config.get("race_type") or "unknown"
         return f"{start}-{end}-{race_type}"
+
+    def archive(self, now: datetime) -> dict[str, Any]:
+        """Archive the results file by renaming it with a timestamp.
+
+        Returns a dict with:
+        - cleared_count: number of valid JSON records found
+        - backup_path: path to the backup file (str) or None if no records or file missing
+
+        After archiving, self._saved_keys is cleared so the store behaves as freshly empty.
+        """
+        # Count valid records if file exists
+        cleared_count = 0
+        if self._path.exists():
+            with self._path.open(encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        json.loads(line)
+                        cleared_count += 1
+                    except json.JSONDecodeError:
+                        continue
+
+        # If no valid records, return early without renaming
+        if cleared_count == 0:
+            return {"cleared_count": 0, "backup_path": None}
+
+        # Rename file with timestamp suffix: <name>.bak-YYYYmmddHHMMSS
+        backup_path = self._path.with_name(
+            self._path.name + now.strftime(".bak-%Y%m%d%H%M%S")
+        )
+        os.replace(self._path, backup_path)
+
+        # Clear the dedup cache so subsequent saves don't deduplicate against deleted records
+        self._saved_keys = set()
+
+        return {"cleared_count": cleared_count, "backup_path": str(backup_path)}
