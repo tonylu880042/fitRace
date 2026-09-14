@@ -12,6 +12,7 @@ duplicating it.
 
 from fastapi.testclient import TestClient
 
+from hub_server.domain.models import RaceConfig, RaceState
 from hub_server.infrastructure.fastapi import app as app_module
 
 client = TestClient(app_module.app)
@@ -144,6 +145,53 @@ def test_next_heat_after_stopped_race_leaves_ready_with_same_config_and_right_na
     assert stations["1"]["division"] == "women"
     assert stations["2"]["athlete_name"] == "Dave"
     assert stations["2"]["division"] == "men"
+
+
+def test_next_heat_from_idle_with_saved_config_applies_config_and_registers():
+    """Reproduces a hub restart: RaceManager._load_settings() (see
+    hub_server/usecases/race_manager.py) populates self._config straight
+    from the persisted settings file without ever going through
+    configure(), so the race comes back IDLE with a saved config and no
+    registrations. The old guard on next-heat's reset/apply branch only
+    fired for RaceState.STOPPED or an existing registration, so this
+    restart state fell through both and next-heat registered the heat
+    without ever moving the race to READY -- Start Race was then refused.
+    Setting _config directly (bypassing the HTTP configure endpoint, which
+    would itself move state to READY) is what faithfully reproduces the
+    restart state instead of a state next-heat already handled.
+    """
+    _assign_two_stations()
+    client.post(
+        "/api/roster/import",
+        json={"csv": "name,division\nAlice,men\nBob,women\n"},
+    )
+    app_module.race_manager._config = RaceConfig(race_type="distance", target_value=500)
+    assert app_module.race_manager.get_state() == RaceState.IDLE
+    assert (
+        not app_module.race_manager.get_stations_status()["stations"]
+        .get(1, {})
+        .get("registered")
+    )
+
+    res = client.post("/api/roster/next-heat")
+    assert res.status_code == 200
+
+    state = client.get("/api/race/state").json()
+    assert state["state"] == "READY"
+    assert state["config"]["race_type"] == "distance"
+    assert state["config"]["target_value"] == 500
+
+    stations = client.get("/api/stations").json()["stations"]
+    assert stations["1"]["athlete_name"] == "Alice"
+    assert stations["1"]["division"] == "men"
+    assert stations["1"]["registered"] is True
+    assert stations["2"]["athlete_name"] == "Bob"
+    assert stations["2"]["division"] == "women"
+
+    readiness = client.get("/api/race/readiness").json()
+    assert not any(
+        "Race state must be READY" in issue for issue in readiness["blocking_issues"]
+    )
 
 
 def test_next_heat_returns_409_while_running():
@@ -431,6 +479,51 @@ def test_next_heat_relay_mode_loads_teams_and_registers_relay_members():
     assert readiness["ready"] is True
 
     app_module.node_registry.clear()
+
+
+def test_next_heat_relay_mode_from_idle_with_saved_config_applies_config_and_registers():
+    """Relay-mode counterpart of
+    test_next_heat_from_idle_with_saved_config_applies_config_and_registers:
+    same post-restart state (config set directly, race IDLE, nothing
+    registered), but with a relay config and a team roster."""
+    _assign_two_stations()
+    client.post(
+        "/api/roster/import",
+        json={"csv": "name,team\nAlice,Volt\nBob,Volt\nCara,Surge\nDan,Surge\n"},
+    )
+    app_module.race_manager._config = RaceConfig(
+        race_type="distance",
+        competition_mode="relay",
+        relay_legs=2,
+        target_value=500,
+    )
+    assert app_module.race_manager.get_state() == RaceState.IDLE
+
+    res = client.post("/api/roster/next-heat")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["mode"] == "relay"
+    assert body["current_heat_teams"] == [
+        {"team": "Volt", "station_number": 1, "members": ["Alice", "Bob"]},
+        {"team": "Surge", "station_number": 2, "members": ["Cara", "Dan"]},
+    ]
+
+    state = client.get("/api/race/state").json()
+    assert state["state"] == "READY"
+    assert state["config"]["competition_mode"] == "relay"
+    assert state["config"]["relay_legs"] == 2
+
+    stations = client.get("/api/stations").json()["stations"]
+    assert stations["1"]["team_name"] == "Volt"
+    assert stations["1"]["relay_members"] == ["Alice", "Bob"]
+    assert stations["1"]["registered"] is True
+    assert stations["2"]["team_name"] == "Surge"
+    assert stations["2"]["relay_members"] == ["Cara", "Dan"]
+
+    readiness = client.get("/api/race/readiness").json()
+    assert not any(
+        "Race state must be READY" in issue for issue in readiness["blocking_issues"]
+    )
 
 
 def test_next_heat_relay_mode_rejects_teamless_pending_entry_and_changes_nothing():

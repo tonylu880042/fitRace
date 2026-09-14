@@ -1538,6 +1538,18 @@ async def load_next_heat(request: Request):
         ):
             reset_race_state()
             apply_race_config(config)
+        elif race_manager.get_state() == RaceState.IDLE:
+            # A hub restart loads the saved config straight into
+            # RaceManager (RaceManager._load_settings) without ever going
+            # through configure(), so the race can come back IDLE with a
+            # saved config and no registrations -- neither STOPPED nor
+            # "has a registration" above. Re-apply the config so the race
+            # ends up READY like every other next-heat path. configure()
+            # only clears registrations when leaving RaceState.STOPPED, so
+            # calling it first here is safe -- there is nothing registered
+            # yet in this branch, and it must run before register_athlete()
+            # below, which itself requires IDLE or READY.
+            apply_race_config(config)
 
         race_manager.clear_station_registrations()
 
