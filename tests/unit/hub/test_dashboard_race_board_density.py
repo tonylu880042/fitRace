@@ -565,16 +565,82 @@ def test_css_xl_tier_grows_rows_with_a_viewport_based_min_height():
     assert "vh" in block, "xl tier row min-height is not viewport-based"
     # The old flex-grow mechanism this replaces must actually be gone, not
     # just supplemented alongside it -- an ineffective rule left in place
-    # is still a defect even if a working one now sits next to it. Scoped
-    # to the specific selectors the old rule used (not a blanket "flex"
-    # ban), since .athlete-info and friends legitimately use flex
-    # elsewhere in this stylesheet for unrelated reasons.
+    # is still a defect even if a working one now sits next to it. Checked
+    # on the PROPERTY, not the selector text: .leaderboard-list.race-
+    # board--xl is a legitimate compound selector reused later in this
+    # file for an unrelated, working rule (row-gap compaction at short
+    # viewports), so a bare substring-not-in-css check on the selector
+    # would false-fail on that reuse.
+    for selector in (
+        ".leaderboard-list.race-board--xl",
+        ".race-track-list.race-board--xl",
+    ):
+        block_match = re.search(re.escape(selector) + r"[^{]*\{([^}]*)\}", css)
+        if block_match:
+            rule_body = block_match.group(1)
+            assert (
+                "flex" not in rule_body
+            ), f"the old flex-grow rule on {selector} is still present: {rule_body}"
+
+
+def test_css_row_padding_and_avatar_shrink_at_short_viewports():
+    """The min-height fix above only bounds classic/race-track/sprint-board
+    from BELOW -- at a short-but-wide viewport (1280x720) the type is
+    already at its width-based floor and the row's own chrome (padding,
+    the 44px avatar) is what is left standing between that and fitting
+    3-4 rows inside 720px tall, the review-caught regression (rows
+    pushed below the fold at lg). Both must shrink via a viewport-height
+    term, not stay flat."""
+    css = _read_index()
+    padding_rule = re.search(
+        r"\.race-board--xl \.leaderboard-item,\s*"
+        r"\.race-board--lg \.leaderboard-item\s*\{([^}]*)\}",
+        css,
+    )
+    assert padding_rule, "xl/lg classic rows have no shared padding override"
+    assert "vh" in padding_rule.group(1), (
+        "xl/lg classic row padding is not viewport-height responsive: "
+        + padding_rule.group(1)
+    )
+
+    avatar_rule = re.search(
+        r"\.race-board--xl \.leaderboard-item \.athlete-avatar,\s*"
+        r"\.race-board--lg \.leaderboard-item \.athlete-avatar\s*\{([^}]*)\}",
+        css,
+    )
+    assert avatar_rule, "xl/lg classic rows do not override the avatar size"
+    body = avatar_rule.group(1)
+    assert "vh" in body, "xl/lg avatar size is not viewport-height responsive: " + body
+    # The renderer sets the avatar's size as an inline style (higher
+    # specificity than any class selector) -- without !important this
+    # override does nothing at all.
     assert (
-        ".leaderboard-list.race-board--xl" not in css
-    ), "the old flex-grow .leaderboard-list.race-board--xl rule is still present"
-    assert (
-        ".race-track-list.race-board--xl" not in css
-    ), "the old flex-grow .race-track-list.race-board--xl rule is still present"
+        "!important" in body
+    ), "xl/lg avatar override has no !important and cannot win over the inline style"
+
+
+def test_css_sprint_board_grid_locks_column_count_to_avoid_wrapping():
+    """auto-fit's default minmax(220px, 1fr) wraps a 4th sprint-board card
+    onto a second grid row once four cards no longer fit one 220px-
+    minimum column each -- review caught that second row pushed below
+    the fold at 1280x720. xl (1-2 cards) and lg (3-4 cards) must each
+    force a fixed column count instead, so every card the tier ever
+    renders shares a single row."""
+    css = _read_index()
+    xl_columns = _grid_columns_value(css, ".sprint-board-grid.race-board--xl")
+    lg_columns = _grid_columns_value(css, ".sprint-board-grid.race-board--lg")
+    assert "auto-fit" not in xl_columns, (
+        "xl sprint board grid still uses auto-fit, which can wrap: " + xl_columns
+    )
+    assert "auto-fit" not in lg_columns, (
+        "lg sprint board grid still uses auto-fit, which can wrap: " + lg_columns
+    )
+    assert re.search(r"repeat\(\s*2\s*,", xl_columns), (
+        "xl sprint board grid does not force exactly 2 columns: " + xl_columns
+    )
+    assert re.search(r"repeat\(\s*4\s*,", lg_columns), (
+        "lg sprint board grid does not force exactly 4 columns: " + lg_columns
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -604,60 +670,131 @@ def test_css_xl_tier_grows_rows_with_a_viewport_based_min_height():
 
 
 def _grid_columns_value(css: str, selector: str) -> str:
+    # A selector can appear in more than one rule block (e.g. one block
+    # sets gap, a later one sets grid-template-columns) -- scan every
+    # block that selector text opens and return the first that actually
+    # declares grid-template-columns, rather than assuming the first
+    # occurrence is the relevant one.
     pattern = re.escape(selector) + r"\s*\{([^}]*)\}"
-    match = re.search(pattern, css)
-    assert match, f"no CSS rule for {selector}"
-    block = match.group(1)
-    gtc = re.search(r"grid-template-columns:\s*([^;]+);", block)
-    assert gtc, f"{selector} does not set grid-template-columns"
-    return gtc.group(1)
-
-
-def _repeat3_track(columns: str) -> str:
-    # minmax()'s own minimum is itself a clamp(...) call here, so the
-    # inner pattern must tolerate one level of nested parens (a plain
-    # [^)]* stops at clamp's closing paren, truncating the match).
-    match = re.search(
-        r"repeat\(3,\s*(minmax\((?:[^()]|\([^()]*\))*\))\)", columns
+    blocks = re.findall(pattern, css)
+    assert blocks, f"no CSS rule for {selector}"
+    for block in blocks:
+        gtc = re.search(r"grid-template-columns:\s*([^;]+);", block)
+        if gtc:
+            return gtc.group(1)
+    raise AssertionError(
+        f"{selector} does not set grid-template-columns in any of its rule blocks"
     )
-    assert match, "no repeat(3, minmax(...)) metric track found: " + columns
-    return match.group(1)
 
 
-def test_xl_classic_metric_columns_are_vw_scaled_not_flat_px():
+def test_xl_and_lg_classic_grid_uses_auto_sized_metric_columns():
+    """review's second-round fix (a vw-scaled minmax() floor on every
+    metric column) turned out to fight its own font-size clamp: a floor
+    picked generously enough for a 1920px projector does not shrink at
+    1280px the way the font does, so the metric columns kept demanding
+    their full-size minimum width and the name column -- the only track
+    with no floor of its own -- was squeezed toward zero, wrapping a
+    three-character name one character per line. auto sidesteps the
+    mismatch entirely: a track sized "auto" always matches its own
+    content's actual rendered width at whatever font-size currently
+    applies, so it can never drift out of sync with the font clamp the
+    way a separately-maintained vw formula did. The name column is the
+    one non-auto (flexible) track, so it -- not the fixed auto tracks --
+    absorbs whatever width auto's tracks did not claim."""
     css = _read_index()
-    columns = _grid_columns_value(css, ".race-board--xl .leaderboard-item")
-    # One minmax() for the name track, plus a repeat(3, minmax(...)) that
-    # expands to the three metric tracks (pace, distance, progress/finish)
-    # at render time -- five real column tracks from two minmax() call
-    # sites in the source.
-    assert columns.count("minmax(") >= 2, (
-        "xl classic row does not widen the name/metric columns: " + columns
-    )
-    metric_track = _repeat3_track(columns)
-    # Checked on the metric track specifically, not the whole
-    # grid-template-columns string -- the rank/name tracks have their own
-    # vw-scaled clamp()s, so a flat-px regression scoped to only the
-    # metric columns (the exact shape of the 1280x720 name-starvation
-    # defect review caught) would otherwise hide behind them.
-    assert "vw" in metric_track, (
-        "xl classic metric column minimums are flat px, not viewport-scaled -- "
-        "they will not shrink with the font clamp at 1280x720, starving the "
-        "name column the way review caught: " + metric_track
-    )
+    for selector in (
+        ".race-board--xl .leaderboard-item",
+        ".race-board--lg .leaderboard-item",
+    ):
+        columns = _grid_columns_value(css, selector)
+        assert (
+            columns == "auto minmax(0, 1fr) auto auto auto"
+        ), f"{selector} grid-template-columns is not the auto-track design: {columns}"
 
 
-def test_lg_classic_metric_columns_are_vw_scaled_not_flat_px():
+def test_xl_and_lg_metric_value_font_size_is_viewport_height_responsive():
+    """Column width alone cannot fix a value colliding with its neighbour
+    if the type itself is not also capped by the viewport's HEIGHT: a
+    short-but-wide 1280x720 window still received the full-size (width-
+    clamped) type, and that type needed more vertical room than 720px
+    tall has for even a single row -- sprint board's one-row case
+    overflowed the fold on exactly this axis, independent of column
+    width. Every metric-val/rank font-size must include a vh term so it
+    also shrinks when height, not width, is the scarce dimension."""
     css = _read_index()
-    columns = _grid_columns_value(css, ".race-board--lg .leaderboard-item")
-    assert columns.count("minmax(") >= 2, (
-        "lg classic row does not widen the name/metric columns: " + columns
-    )
-    metric_track = _repeat3_track(columns)
-    assert "vw" in metric_track, (
-        "lg classic metric column minimums are flat px, not viewport-scaled: "
-        + metric_track
-    )
+    for tier in ("xl", "lg"):
+        rule = re.search(
+            rf"\.race-board--{tier} \.metric-val,\s*"
+            rf"\.race-board--{tier} \.rank,\s*"
+            rf"\.race-board--{tier} \.sprint-board-rank\s*\{{([^}}]*font-size[^}}]*)\}}",
+            css,
+        )
+        assert (
+            rule
+        ), f"{tier} metric-val/rank/sprint-board-rank has no shared font-size rule"
+        assert "vh" in rule.group(
+            1
+        ), f"{tier} metric-val font-size has no viewport-height term: " + rule.group(1)
+
+
+def test_xl_and_lg_name_is_not_forced_to_wrap_via_overflow_wrap_anywhere():
+    """overflow-wrap: anywhere on the athlete name was review-flagged: it
+    let a three-character name that only needed a slightly wider column
+    break mid-character instead, on top of the actual column-width fix
+    doing its job. Normal wrapping (CJK already breaks between
+    characters when it must; Latin text breaks at spaces/hyphens) is
+    enough once the column and font-size fixes above give a short name
+    the room it needs -- this rule must not reintroduce the aggressive
+    mid-token behaviour for .athlete-name/.sprint-board-name.
+    .race-track-name is excluded: its own overflow-wrap: anywhere is
+    pre-existing on main, unrelated to this feature, and out of scope
+    here."""
+    css = _read_index()
+    for tier in ("xl", "lg"):
+        rule = re.search(
+            rf"\.race-board--{tier} \.athlete-name,\s*"
+            rf"\.race-board--{tier} \.race-track-name,\s*"
+            rf"\.race-board--{tier} \.sprint-board-name\s*\{{([^}}]*)\}}",
+            css,
+        )
+        assert (
+            rule
+        ), f"{tier} athlete-name/race-track-name/sprint-board-name rule not found"
+        assert "overflow-wrap" not in rule.group(
+            1
+        ), f"{tier} name rule still forces overflow-wrap: anywhere: " + rule.group(1)
+
+
+def test_xl_and_lg_equipment_tag_and_relay_leg_are_single_line_with_ellipsis():
+    """The equipment/station tag and every relay-leg-line variant hold
+    arbitrary, unbounded text (a machine name, a runner's name) -- at
+    the xl/lg scale that text must stay one line and ellipsize rather
+    than break mid-token the way "FITRACE-EDGE-02-01" did (a browser
+    default: it wraps after a hyphen when a word does not fit)."""
+    css = _read_index()
+    for tier in ("xl", "lg"):
+        # The selector group can legitimately appear in more than one
+        # rule block (e.g. font-size in one, the ellipsis properties in
+        # another) -- concatenate every block it opens rather than
+        # assuming the first one holds everything.
+        blocks = re.findall(
+            rf"\.race-board--{tier} \.equipment-tag,\s*"
+            rf"\.race-board--{tier} \.relay-leg-line,\s*"
+            rf"\.race-board--{tier} \.race-track-relay-leg,\s*"
+            rf"\.race-board--{tier} \.sprint-board-relay-leg\s*\{{([^}}]*)\}}",
+            css,
+        )
+        assert blocks, f"{tier} equipment-tag/relay-leg-line rule not found"
+        body = "\n".join(blocks)
+        assert (
+            "white-space: nowrap" in body
+        ), f"{tier} tag/relay-leg is not forced to one line: {body}"
+        assert (
+            "overflow: hidden" in body
+        ), f"{tier} tag/relay-leg does not clip overflow: {body}"
+        assert (
+            "text-overflow: ellipsis" in body
+        ), f"{tier} tag/relay-leg does not ellipsize: {body}"
 
 
 def test_xl_classic_name_cell_resets_min_width_for_wrapping():
