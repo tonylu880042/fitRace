@@ -103,6 +103,7 @@
   "signup.division_women": "Women",
   "stage.team": "Team",
   "stage.individual": "Individual",
+  "stage.relay": "Relay",
   "stage.countdown": "Countdown",
   "stage.go": "3, 2, 1, Go",
   "stage.countdown_sub": "Race timer starts on Go. Sound follows the Game Admin setting.",

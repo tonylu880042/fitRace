@@ -64,6 +64,17 @@ def test_zh_tw_dashboard_relay_translations():
     assert messages["dashboard.relay_handoff"] == "換棒！下一棒：{runner}"
 
 
+def test_stage_relay_key_present_in_every_locale():
+    for locale in SUPPORTED_LOCALES:
+        messages = load_locale(locale)["messages"]
+        assert "stage.relay" in messages, f"{locale} is missing stage.relay"
+
+
+def test_stage_relay_translations_zh_tw_and_en_us():
+    assert load_locale("zh-TW")["messages"]["stage.relay"] == "接力"
+    assert load_locale("en-US")["messages"]["stage.relay"] == "Relay"
+
+
 def test_locale_json_files_are_valid():
     locale_dir = (
         Path(__file__).resolve().parents[3]

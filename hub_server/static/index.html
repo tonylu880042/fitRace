@@ -2684,11 +2684,22 @@
       return { className: "idle", kicker, main: t("class.stage_not_running"), sub, timer: "" };
     }
 
+    // Resolves the team/individual/relay competition label shared by the
+    // race-stage banner (getRaceStageDetails) and the header/type-indicator
+    // text (renderDashboardChrome) -- a single place so a relay race can't
+    // be silently mislabelled "individual" at one site while another gets
+    // fixed. competition_mode is "team", "relay", or anything else
+    // (including absent) for individual.
+    function competitionStageLabel(config) {
+      if (config && config.competition_mode === "relay") return t("stage.relay");
+      return config && config.competition_mode === "team" ? t("stage.team") : t("stage.individual");
+    }
+
     function getRaceStageDetails(stage = currentState) {
       if (currentSessionMode === "class") {
         return getClassStageDetails(stage);
       }
-      const competition = currentConfig?.competition_mode === "team" ? t("stage.team") : t("stage.individual");
+      const competition = competitionStageLabel(currentConfig);
       const raceType = currentConfig?.race_type || "";
       const target = currentConfig
         ? raceType === "distance"
@@ -5541,7 +5552,7 @@
       } else {
         if (panelTitle) panelTitle.innerText = t("leaderboard.title");
         if (currentConfig) {
-          const competitionLabel = currentConfig.competition_mode === "team" ? t("stage.team") : t("stage.individual");
+          const competitionLabel = competitionStageLabel(currentConfig);
           if (currentConfig.race_type === "distance") {
             configDesc.innerText = `${competitionLabel} · ${t("race.distance")}: ${currentConfig.target_value}m`;
             typeIndicator.innerText = `${competitionLabel} · ${t("race.distance")} (${currentConfig.target_value}m)`;

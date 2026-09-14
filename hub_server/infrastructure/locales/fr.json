@@ -103,6 +103,7 @@
   "signup.division_women": "Femmes",
   "stage.team": "Équipe",
   "stage.individual": "Individuel",
+  "stage.relay": "Relais",
   "stage.countdown": "Compte à rebours",
   "stage.go": "3, 2, 1, Go",
   "stage.countdown_sub": "Le chronomètre démarre à Go. Le son suit le réglage de Game Admin.",
