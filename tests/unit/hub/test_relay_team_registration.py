@@ -76,6 +76,15 @@ def test_relay_members_cleared_on_reset_race():
     assert status["stations"][1]["relay_members"] is None
 
 
+def test_relay_members_cleared_by_clear_station_registrations():
+    rm = RaceManager()
+    rm.assign_station(1, "node-01")
+    rm.register_athlete(1, None, team_name="Volt", relay_members=["Alice", "Bob"])
+    rm.clear_station_registrations()
+    status = rm.get_stations_status()
+    assert status["stations"][1]["relay_members"] is None
+
+
 def test_relay_members_present_in_leaderboard_progress_row():
     rm = RaceManager()
     rm.assign_station(1, "node-01")

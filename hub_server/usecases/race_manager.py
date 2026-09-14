@@ -766,6 +766,7 @@ class RaceManager:
         self._station_registrations.clear()
         self._station_teams.clear()
         self._station_divisions.clear()
+        self._station_relay_members.clear()
         self._station_has_avatar.clear()
 
     def get_stations_status(self) -> dict:
