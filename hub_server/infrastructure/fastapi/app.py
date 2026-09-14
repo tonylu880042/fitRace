@@ -1,4 +1,5 @@
 import asyncio
+import hmac
 import os
 import base64
 import io
@@ -7,6 +8,7 @@ import subprocess
 import time
 from contextlib import asynccontextmanager
 from dataclasses import asdict
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, Literal, Optional
 import segno
@@ -306,6 +308,10 @@ class DiagnosticTelemetryPayload(BaseModel):
     instantaneous_speed_kph: float = 18.0
     cadence_rpm: int = 75
     power_watts: int = 180
+
+
+class ClearResultsPayload(BaseModel):
+    password: str = ""
 
 
 def get_real_ip() -> Optional[str]:
@@ -892,6 +898,22 @@ def get_athlete_result_by_token(token: str):
     result = race_results_query.get_athlete_result(token)
     if result is None:
         raise HTTPException(status_code=404, detail="result not found")
+    return result
+
+
+@app.post("/api/results/clear")
+async def clear_race_results(payload: ClearResultsPayload, request: Request):
+    expected_token = os.getenv("FITRACE_ADMIN_TOKEN")
+    if not expected_token:
+        raise HTTPException(status_code=403, detail="admin password is not configured")
+    if not hmac.compare_digest(
+        payload.password.encode("utf-8"), expected_token.encode("utf-8")
+    ):
+        raise HTTPException(status_code=401, detail="Invalid password")
+    if race_manager.get_state() == RaceState.RUNNING:
+        raise HTTPException(status_code=409, detail="Race is running")
+    result = race_result_store.archive(datetime.now())
+    await ws_manager.broadcast({"type": "results_cleared"})
     return result
 
 

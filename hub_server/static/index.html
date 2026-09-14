@@ -2877,6 +2877,10 @@
           window.location.reload();
           return;
         }
+        if (data.type === "results_cleared") {
+          if (recordWallActive) refreshRecordWallData();
+          return;
+        }
         if (data && Object.keys(data).length > 0) {
           // Populated, untyped payloads are per-athlete telemetry progress.
           // They never carry station registration changes, so no refetch.
