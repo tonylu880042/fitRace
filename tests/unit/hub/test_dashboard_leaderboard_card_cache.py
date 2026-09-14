@@ -94,6 +94,7 @@ _FN_NAMES = [
     "renderLeaderboard",
     "sortLeaderboardNodes",
     "isLeaderboardFinal",
+    "relayLegLine",
 ]
 
 
@@ -115,6 +116,7 @@ def _stubs() -> str:
         "let animateLeaderboardReorderCalls = 0;\n"
         "function animateLeaderboardReorder() { animateLeaderboardReorderCalls += 1; }\n"
         "function detectAthleteFinishes() {}\n"
+        "function detectRelayHandoffs() {}\n"
         "function renderRegistrationEmptyState() { return ''; }\n"
         "function renderPodium() { return ''; }\n"
         "function triggerFinishCelebration() {}\n"

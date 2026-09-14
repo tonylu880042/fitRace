@@ -27,6 +27,11 @@ from hub_server.usecases.race_event_engine import RaceEventEngine
 from hub_server.usecases.race_result_store import RaceResultStore
 from hub_server.usecases.race_results_query import RaceResultsQuery
 from hub_server.usecases.race_settings_store import RaceSettingsStore
+from hub_server.usecases.roster import (
+    MAX_NAME_LENGTH,
+    MAX_TEAM_LENGTH,
+    RosterManager,
+)
 from hub_server.adapters.websocket_manager import WebSocketManager
 from hub_server.infrastructure.build_fingerprint import compute_build_fingerprint
 from hub_server.infrastructure.locales import DEFAULT_LOCALE, list_locales, load_locale
@@ -105,6 +110,9 @@ race_manager = RaceManager(
         os.getenv("FITRACE_RACE_SETTINGS_PATH", "data/race_settings.json")
     )
 )
+roster_manager = RosterManager(
+    RaceSettingsStore(os.getenv("FITRACE_ROSTER_PATH", "data/roster.json"))
+)
 ws_manager = WebSocketManager()
 node_registry = NodeRegistry()
 race_event_engine = RaceEventEngine()
@@ -162,6 +170,7 @@ class ConfigurePayload(BaseModel):
     team_completion_policy: str = "aggregate"
     target_value: float = 0.0
     duration_sec: int = 0
+    relay_legs: Optional[int] = None
 
 
 class LeaderboardDisplayPayload(BaseModel):
@@ -201,14 +210,72 @@ class RegisterAthletePayload(BaseModel):
     # entirely, same normalization as athlete_name below.
     division: Optional[Literal["men", "women"]] = None
     avatar_base64: Optional[str] = None
+    # Relay team roster: each member runs one leg on this station's machine,
+    # one after another. An empty list behaves like omitting the field
+    # entirely (normalized to None below), matching the athlete_name/
+    # division blank-is-none convention above.
+    relay_members: Optional[list[str]] = Field(None, min_length=1, max_length=10)
 
-    @field_validator("athlete_name", mode="before")
+    @field_validator("athlete_name", "team_name", mode="before")
     @classmethod
     def _blank_name_is_none(cls, value):
         if value is None:
             return None
+        if isinstance(value, str):
+            value = value.strip()
+            if not value:
+                return None
+        return value
+
+    @field_validator("division", mode="before")
+    @classmethod
+    def _blank_division_is_none(cls, value):
+        if value is None:
+            return None
         if isinstance(value, str) and not value.strip():
             return None
+        return value
+
+    @field_validator("relay_members", mode="before")
+    @classmethod
+    def _clean_relay_members(cls, value):
+        if value is None:
+            return None
+        cleaned = [member.strip() for member in value if isinstance(member, str)]
+        cleaned = [member for member in cleaned if member]
+        if not cleaned:
+            return None
+        return cleaned
+
+    @field_validator("relay_members")
+    @classmethod
+    def _relay_members_length(cls, value):
+        if value is None:
+            return None
+        for member in value:
+            if len(member) > 80:
+                raise ValueError("Relay member names must be 80 characters or fewer")
+        return value
+
+
+class RosterImportPayload(BaseModel):
+    csv: str
+
+
+class RosterWalkInPayload(BaseModel):
+    name: str = Field(..., max_length=MAX_NAME_LENGTH)
+    division: Optional[Literal["men", "women"]] = None
+    team: Optional[str] = Field(None, max_length=MAX_TEAM_LENGTH)
+
+    @field_validator("name", "team", mode="before")
+    @classmethod
+    def _blank_is_none_or_strip(cls, value):
+        if value is None:
+            return None
+        if isinstance(value, str):
+            value = value.strip()
+            if not value:
+                return None
         return value
 
     @field_validator("division", mode="before")
@@ -632,7 +699,8 @@ def get_race_readiness_status() -> dict:
     registered_stations.sort(key=lambda item: item[0])
 
     is_team_race = bool(config and config.competition_mode == "team")
-    if is_team_race:
+    is_relay_race = bool(config and config.competition_mode == "relay")
+    if is_team_race or is_relay_race:
         participant_stations = registered_stations
         if not registered_stations:
             blocking_issues.append("Register at least one athlete before starting.")
@@ -668,19 +736,19 @@ def get_race_readiness_status() -> dict:
         station_health.append(health_item)
         if health["health"] in ("missing", "stale"):
             issue = station_block_message(station_number, health.get("reason"))
-            if is_team_race:
+            if is_team_race or is_relay_race:
                 blocking_issues.append(issue)
             else:
                 individual_station_issues.append(issue)
 
     unhealthy = [s for s in station_health if s.get("health") != "online"]
-    if is_team_race and unhealthy:
+    if (is_team_race or is_relay_race) and unhealthy:
         station_list = ", ".join(str(s["station_number"]) for s in unhealthy)
         checks["stations"] = build_check(
             "block",
             f"{len(unhealthy)} station(s) need attention (Station {station_list}).",
         )
-    elif not is_team_race and assigned_stations:
+    elif not (is_team_race or is_relay_race) and assigned_stations:
         online_count = sum(
             1 for station in station_health if station.get("health") == "online"
         )
@@ -714,6 +782,31 @@ def get_race_readiness_status() -> dict:
             checks["teams"] = build_check("block", "Team setup needs review.")
         else:
             checks["teams"] = build_check("ok", f"{len(team_names)} teams ready.")
+    elif is_relay_race:
+        relay_issue_count = 0
+        for station_number, station in registered_stations:
+            team_name = (station.get("team_name") or "").strip()
+            relay_members = station.get("relay_members") or []
+            if not team_name:
+                blocking_issues.append(
+                    f"Station {station_number}: relay team needs a team name."
+                )
+                relay_issue_count += 1
+            elif (
+                config.relay_legs is not None
+                and len(relay_members) != config.relay_legs
+            ):
+                blocking_issues.append(
+                    f"Station {station_number}: relay team needs exactly "
+                    f"{config.relay_legs} member(s); has {len(relay_members)}."
+                )
+                relay_issue_count += 1
+        if relay_issue_count:
+            checks["teams"] = build_check("block", "Relay team setup needs review.")
+        else:
+            checks["teams"] = build_check(
+                "ok", f"{len(registered_stations)} relay team(s) ready."
+            )
     elif config:
         checks["teams"] = build_check(
             "info", "Individual race; team rules are not applied."
@@ -1051,6 +1144,24 @@ def get_locale(locale: str):
     return load_locale(locale)
 
 
+def apply_race_config(config: RaceConfig) -> None:
+    """Shared by POST /api/race/configure and the roster next-heat turnover:
+    apply a (possibly re-applied) RaceConfig and reset the event engine iff
+    the race was STOPPED -- exactly what the configure endpoint has always
+    done, just factored out so next-heat can reuse it instead of
+    duplicating it."""
+    prev_state = race_manager.get_state()
+    race_manager.configure(config)
+    if prev_state == RaceState.STOPPED:
+        race_event_engine.reset()
+
+
+def reset_race_state() -> None:
+    """Shared by POST /api/race/reset and the roster next-heat turnover."""
+    race_manager.reset_race()
+    race_event_engine.reset()
+
+
 @app.post("/api/race/configure")
 async def configure_race(payload: ConfigurePayload, request: Request):
     require_admin(request)
@@ -1062,11 +1173,9 @@ async def configure_race(payload: ConfigurePayload, request: Request):
             team_completion_policy=payload.team_completion_policy,
             target_value=payload.target_value,
             duration_sec=payload.duration_sec,
+            relay_legs=payload.relay_legs,
         )
-        prev_state = race_manager.get_state()
-        race_manager.configure(config)
-        if prev_state == RaceState.STOPPED:
-            race_event_engine.reset()
+        apply_race_config(config)
         return await broadcast_race_state()
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -1142,6 +1251,7 @@ async def start_race(request: Request):
         enforce_race_readiness()
     try:
         race_manager.start_race()
+        roster_manager.mark_current_heat_started()
         race_event_engine.reset()
         return await broadcast_race_state()
     except ValueError as e:
@@ -1173,6 +1283,7 @@ async def countdown_start_race(request: Request):
         await asyncio.sleep(RACE_START_COUNTDOWN_DURATION_MS / 1000)
         try:
             race_manager.start_race()
+            roster_manager.mark_current_heat_started()
             race_event_engine.reset()
             return await broadcast_race_state()
         except ValueError as e:
@@ -1208,8 +1319,7 @@ async def close_race(request: Request):
 @app.post("/api/race/reset")
 async def reset_race(request: Request):
     require_admin(request)
-    race_manager.reset_race()
-    race_event_engine.reset()
+    reset_race_state()
     return await broadcast_race_state()
 
 
@@ -1230,6 +1340,209 @@ async def assign_station(payload: AssignStationPayload, request: Request):
         raise HTTPException(status_code=409, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+def assigned_station_numbers() -> list[int]:
+    """Stations that currently have a node assigned, ascending -- the heat
+    size and the destinations the roster's next-heat turnover registers
+    athletes onto."""
+    stations = race_manager.get_stations_status()["stations"]
+    return sorted(
+        int(station_number)
+        for station_number, station in stations.items()
+        if station.get("node_id")
+    )
+
+
+def has_any_station_registration() -> bool:
+    stations = race_manager.get_stations_status()["stations"]
+    return any(station.get("registered") for station in stations.values())
+
+
+def roster_summary_response() -> dict:
+    config = race_manager.get_config()
+    is_relay = bool(config and config.competition_mode == "relay")
+    summary = roster_manager.summary(
+        assigned_station_numbers(),
+        relay_legs=config.relay_legs if is_relay else None,
+    )
+    summary["mode"] = "relay" if is_relay else "individual"
+    return summary
+
+
+@app.get("/api/roster")
+async def get_roster(request: Request):
+    require_admin(request)
+    return roster_summary_response()
+
+
+@app.post("/api/roster/import")
+async def import_roster(payload: RosterImportPayload, request: Request):
+    require_admin(request)
+    if race_manager.get_state() == RaceState.RUNNING:
+        raise HTTPException(status_code=409, detail="Race is running")
+    errors = roster_manager.import_csv(payload.csv)
+    if errors:
+        raise HTTPException(status_code=422, detail=errors)
+    return roster_summary_response()
+
+
+@app.delete("/api/roster")
+async def clear_roster(request: Request):
+    require_admin(request)
+    roster_manager.clear()
+    return roster_summary_response()
+
+
+@app.post("/api/roster/entries")
+async def add_roster_walk_in(payload: RosterWalkInPayload, request: Request):
+    require_admin(request)
+    try:
+        roster_manager.add_walk_in(payload.name, payload.division, payload.team)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return roster_summary_response()
+
+
+@app.post("/api/roster/entries/{entry_id}/absent")
+async def mark_roster_entry_absent(entry_id: str, request: Request):
+    require_admin(request)
+    try:
+        roster_manager.mark_absent(entry_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return roster_summary_response()
+
+
+@app.post("/api/roster/entries/{entry_id}/requeue")
+async def requeue_roster_entry(entry_id: str, request: Request):
+    require_admin(request)
+    try:
+        roster_manager.requeue(entry_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return roster_summary_response()
+
+
+async def next_heat_force_requested(request: Request) -> bool:
+    """True if the caller explicitly opted into skipping an unraced heat,
+    via either `?force=true` or a JSON body {"force": true}. Body parsing
+    is defensive: most callers send no body at all (the common, unforced
+    case), and this must not turn that into a 4xx of its own."""
+    if request.query_params.get("force", "").strip().lower() in ("1", "true"):
+        return True
+    try:
+        body = await request.json()
+    except Exception:
+        return False
+    return bool(isinstance(body, dict) and body.get("force"))
+
+
+@app.post("/api/roster/next-heat")
+async def load_next_heat(request: Request):
+    require_admin(request)
+    if race_manager.get_state() == RaceState.RUNNING:
+        raise HTTPException(status_code=409, detail="Race is running")
+
+    config = race_manager.get_config()
+    if config is None:
+        raise HTTPException(status_code=409, detail="save race settings first")
+
+    force = await next_heat_force_requested(request)
+
+    # A loaded heat that never actually raced means an accidental double
+    # press would silently skip it -- block unless the caller explicitly
+    # forces it. Whether it raced is tracked on the roster entry itself
+    # (RosterManager.mark_current_heat_started(), set right after
+    # race_manager.start_race() succeeds), NOT the race's current state:
+    # the normal operator flow races the heat to STOPPED and then presses
+    # Reset Race (state back to IDLE) before loading the next heat, and
+    # that must NOT look like an unraced heat just because the race state
+    # is IDLE again.
+    current_heat = [
+        entry for entry in roster_manager.entries() if entry.get("status") == "loaded"
+    ]
+    if (
+        current_heat
+        and not any(entry.get("started") for entry in current_heat)
+        and not force
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "reason": "current_heat_not_raced",
+                "message": "current heat has not raced",
+                "current_heat": current_heat,
+            },
+        )
+
+    # Checked BEFORE any reset/registration change below: an exhausted
+    # roster must leave the race (and the finished heat's registrations --
+    # the dashboard's podium data) completely untouched, not reset first
+    # and only then discover there is nothing left to load.
+    if not any(entry.get("status") == "pending" for entry in roster_manager.entries()):
+        raise HTTPException(status_code=409, detail="roster exhausted")
+
+    station_numbers = assigned_station_numbers()
+    is_relay = config.competition_mode == "relay"
+
+    loaded_teams = None
+    if is_relay:
+        # Relay-specific validation (a pending entry with no team, or one
+        # of the next K teams whose member count != relay_legs) must run
+        # BEFORE any race reset/registration/roster state change below.
+        # load_next_heat_teams() is itself atomic -- on a raise it has not
+        # touched roster state at all -- and running it here, before
+        # race_manager is touched, is what makes a 409 leave everything
+        # (race state, registrations, roster) completely untouched.
+        try:
+            loaded_teams = roster_manager.load_next_heat_teams(
+                station_numbers, config.relay_legs
+            )
+        except ValueError as e:
+            # Every relay validation failure (teamless pending entries, a
+            # wrong-sized next team, an exhausted roster) is a 409 -- the
+            # caller can act on it (fix the roster) without treating it as
+            # a client request error. Only the generic "assign stations
+            # first" guard (no stations assigned at all) is a genuine bad
+            # request, mirroring the individual-mode mapping below.
+            status = 400 if str(e) == "assign stations first" else 409
+            raise HTTPException(status_code=status, detail=str(e))
+
+    try:
+        if (
+            race_manager.get_state() == RaceState.STOPPED
+            or has_any_station_registration()
+        ):
+            reset_race_state()
+            apply_race_config(config)
+
+        race_manager.clear_station_registrations()
+
+        if is_relay:
+            for team in loaded_teams:
+                race_manager.register_athlete(
+                    team["station_number"],
+                    None,
+                    team_name=team["team"],
+                    division=None,
+                    relay_members=[member["name"] for member in team["members"]],
+                )
+        else:
+            loaded = roster_manager.load_next_heat(station_numbers)
+            for entry in loaded:
+                race_manager.register_athlete(
+                    entry["station_number"],
+                    entry["name"],
+                    team_name=entry["team"],
+                    division=entry["division"],
+                )
+    except ValueError as e:
+        status = 409 if str(e) == "roster exhausted" else 400
+        raise HTTPException(status_code=status, detail=str(e))
+
+    await broadcast_race_state()
+    return roster_summary_response()
 
 
 @app.post("/api/race/register")
@@ -1276,6 +1589,7 @@ async def register_athlete(payload: RegisterAthletePayload):
             team_name=payload.team_name,
             has_avatar=has_avatar,
             division=payload.division,
+            relay_members=payload.relay_members,
         )
 
         # Broadcast registration success to the dashboard
