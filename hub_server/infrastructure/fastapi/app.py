@@ -906,7 +906,9 @@ async def clear_race_results(payload: ClearResultsPayload, request: Request):
     expected_token = os.getenv("FITRACE_ADMIN_TOKEN")
     if not expected_token:
         raise HTTPException(status_code=403, detail="admin password is not configured")
-    if not hmac.compare_digest(payload.password, expected_token):
+    if not hmac.compare_digest(
+        payload.password.encode("utf-8"), expected_token.encode("utf-8")
+    ):
         raise HTTPException(status_code=401, detail="Invalid password")
     if race_manager.get_state() == RaceState.RUNNING:
         raise HTTPException(status_code=409, detail="Race is running")

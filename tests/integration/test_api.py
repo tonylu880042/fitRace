@@ -2571,3 +2571,91 @@ def test_clear_results_does_not_touch_roster(monkeypatch, tmp_path):
     # Verify roster is untouched
     roster_after = client.get("/api/roster", headers=admin_header)
     assert len(roster_after.json()["entries"]) == 1
+
+
+def test_clear_results_ascii_token_rejects_non_ascii_typed_password(
+    monkeypatch, tmp_path
+):
+    """A non-ASCII typed password against an ASCII admin token must be a
+    plain 401 (wrong password), never a 500 crash. hmac.compare_digest raises
+    TypeError on str arguments containing non-ASCII characters, so the
+    endpoint must compare UTF-8 encoded bytes instead of raw str."""
+    import hub_server.infrastructure.fastapi.app as hub_app
+    from hub_server.usecases.race_result_store import RaceResultStore
+
+    store = RaceResultStore(tmp_path / "race_results.jsonl")
+    monkeypatch.setattr(hub_app, "race_result_store", store)
+    monkeypatch.setenv("FITRACE_ADMIN_TOKEN", "admin-secret")
+
+    snapshot = {
+        "state": "STOPPED",
+        "config": {"race_type": "distance"},
+        "start_time_epoch_ms": 1000,
+        "end_time_epoch_ms": 2000,
+        "leaderboard": {"node-01": {"distance_m": 100}},
+    }
+    store.save_finished_snapshot(snapshot)
+
+    response = client.post("/api/results/clear", json={"password": "密碼123"})
+
+    assert response.status_code == 401
+    assert store._path.exists()
+    assert len(store.list_results()) == 1
+
+
+def test_clear_results_non_ascii_token_accepts_matching_non_ascii_password(
+    monkeypatch, tmp_path
+):
+    """A hub whose FITRACE_ADMIN_TOKEN itself contains non-ASCII characters
+    must still accept the exact matching typed password and archive."""
+    import hub_server.infrastructure.fastapi.app as hub_app
+    from hub_server.usecases.race_result_store import RaceResultStore
+
+    store = RaceResultStore(tmp_path / "race_results.jsonl")
+    monkeypatch.setattr(hub_app, "race_result_store", store)
+    monkeypatch.setenv("FITRACE_ADMIN_TOKEN", "密碼123")
+
+    snapshot = {
+        "state": "STOPPED",
+        "config": {"race_type": "distance"},
+        "start_time_epoch_ms": 1000,
+        "end_time_epoch_ms": 2000,
+        "leaderboard": {"node-01": {"distance_m": 100}},
+    }
+    store.save_finished_snapshot(snapshot)
+
+    response = client.post("/api/results/clear", json={"password": "密碼123"})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["cleared_count"] == 1
+    assert len(store.list_results()) == 0
+
+
+def test_clear_results_non_ascii_token_rejects_different_non_ascii_password(
+    monkeypatch, tmp_path
+):
+    """A hub with a non-ASCII FITRACE_ADMIN_TOKEN must reject a DIFFERENT
+    non-ASCII typed password with a plain 401, not a crash, and must not
+    treat them as equal after any lossy normalization."""
+    import hub_server.infrastructure.fastapi.app as hub_app
+    from hub_server.usecases.race_result_store import RaceResultStore
+
+    store = RaceResultStore(tmp_path / "race_results.jsonl")
+    monkeypatch.setattr(hub_app, "race_result_store", store)
+    monkeypatch.setenv("FITRACE_ADMIN_TOKEN", "密碼123")
+
+    snapshot = {
+        "state": "STOPPED",
+        "config": {"race_type": "distance"},
+        "start_time_epoch_ms": 1000,
+        "end_time_epoch_ms": 2000,
+        "leaderboard": {"node-01": {"distance_m": 100}},
+    }
+    store.save_finished_snapshot(snapshot)
+
+    response = client.post("/api/results/clear", json={"password": "錯誤123"})
+
+    assert response.status_code == 401
+    assert store._path.exists()
+    assert len(store.list_results()) == 1
