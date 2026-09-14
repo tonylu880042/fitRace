@@ -1263,6 +1263,21 @@
           <div class="status-text" id="power-message"></div>
         </section>
 
+        <section class="panel panel-danger" id="panel-clear-results" aria-labelledby="clear-results-title">
+          <div class="panel-header">
+            <h2 class="panel-title" id="clear-results-title" data-i18n="panel.clear_results">Clear Race Results</h2>
+          </div>
+          <p class="danger-note" data-i18n="text.clear_results_intro">Archives every finished race result (practice runs included) so the record wall, latest-race slide, and results pages start fresh. Class results, roster, and station assignments are kept. A backup of the cleared file stays on this device.</p>
+          <div class="field">
+            <label for="clear-results-password" data-i18n="label.system_admin_password">Enter system admin password</label>
+            <input type="password" id="clear-results-password" autocomplete="off">
+          </div>
+          <div class="button-row">
+            <button type="button" class="danger" id="btn-clear-results" onclick="clearRaceResults()" data-i18n="button.clear_results">Clear Race Results</button>
+          </div>
+          <div class="status-text" id="clear-results-message"></div>
+        </section>
+
         <section class="panel" id="panel-support" aria-labelledby="support-title">
           <div class="panel-header">
             <h2 class="panel-title" id="support-title" data-i18n="panel.support">Support</h2>
@@ -1470,7 +1485,16 @@
         "button.assign_all_unassigned": "Assign all to next open stations",
         "message.assign_all_partial_failure": "Could not assign: {streams}. They are still unassigned.",
         "message.station_loaded": "Station {stationNumber} loaded into the form above — adjust and press Assign.",
-        "text.edit_in_form": "Edit in form above"
+        "text.edit_in_form": "Edit in form above",
+        "panel.clear_results": "Clear Race Results",
+        "text.clear_results_intro": "Archives every finished race result (practice runs included) so the record wall, latest-race slide, and results pages start fresh. Class results, roster, and station assignments are kept. A backup of the cleared file stays on this device.",
+        "label.system_admin_password": "Enter system admin password",
+        "button.clear_results": "Clear Race Results",
+        "confirm.clear_results": "Clear all race results? A backup will be kept first.",
+        "message.clear_results_wrong_password": "Wrong password.",
+        "message.clear_results_not_configured": "Admin password is not configured on this hub.",
+        "message.clear_results_race_running": "A race is running.",
+        "message.clear_results_success": "Cleared {count} results. Backup: {file}"
       }
     };
 
@@ -1605,7 +1629,16 @@
       "button.assign_all_unassigned": "全部指派至下一個空站位",
       "message.assign_all_partial_failure": "無法指派:{streams}。這些資料流仍為未指派狀態。",
       "message.station_loaded": "站位 {stationNumber} 已載入上方表單,請調整後按「指派」。",
-      "text.edit_in_form": "在上方表單中編輯"
+      "text.edit_in_form": "在上方表單中編輯",
+      "panel.clear_results": "清除比賽紀錄",
+      "text.clear_results_intro": "封存所有已完成的比賽成績(含練習賽),讓紀錄牆、最新賽事投影片與成績頁面重新開始。課堂成績、名冊與站位指派不受影響。系統會在本機保留一份被清除檔案的備份。",
+      "label.system_admin_password": "請輸入系統管理員密碼",
+      "button.clear_results": "清除比賽紀錄",
+      "confirm.clear_results": "確定要清除所有比賽成績嗎？系統會先保留備份檔",
+      "message.clear_results_wrong_password": "密碼錯誤",
+      "message.clear_results_not_configured": "這台 hub 尚未設定管理員密碼",
+      "message.clear_results_race_running": "比賽進行中，無法清除",
+      "message.clear_results_success": "已清除 {count} 筆成績，備份：{file}"
     };
 
     function t(key, params = {}) {
@@ -2345,6 +2378,51 @@
         setMessage("power-message", `${result.action || action} accepted${suffix}.`, "ok");
       } catch (error) {
         setMessage("power-message", error.message, "error");
+      }
+    }
+
+    async function clearRaceResults() {
+      if (!window.confirm(t("confirm.clear_results"))) return;
+      const passwordField = $("clear-results-password");
+      const password = passwordField.value;
+      const button = $("btn-clear-results");
+      button.disabled = true;
+      try {
+        const response = await fetch("/api/results/clear", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password }),
+        });
+        if (response.status === 200) {
+          const data = await response.json();
+          const fileName = (data.backup_path || "").split("/").pop();
+          setMessage(
+            "clear-results-message",
+            t("message.clear_results_success", { count: data.cleared_count, file: fileName }),
+            "ok"
+          );
+        } else if (response.status === 401) {
+          setMessage("clear-results-message", t("message.clear_results_wrong_password"), "error");
+        } else if (response.status === 403) {
+          setMessage("clear-results-message", t("message.clear_results_not_configured"), "error");
+        } else if (response.status === 409) {
+          setMessage("clear-results-message", t("message.clear_results_race_running"), "error");
+        } else {
+          let detail = response.statusText || "Request failed";
+          try {
+            const text = await response.text();
+            const parsed = text ? JSON.parse(text) : {};
+            detail = parsed.detail || detail;
+          } catch (parseError) {
+            // keep the statusText fallback
+          }
+          setMessage("clear-results-message", detail, "error");
+        }
+      } catch (error) {
+        setMessage("clear-results-message", error.message, "error");
+      } finally {
+        passwordField.value = "";
+        button.disabled = false;
       }
     }
 
