@@ -56,6 +56,7 @@
   "edge.empty": "Aucun état Edge Node reçu",
   "edge.unbound": "Non lié",
   "metric.speed": "Vitesse (kph)",
+  "metric.pace": "Allure (/km)",
   "metric.distance": "Distance (m)",
   "metric.power": "Puissance (W)",
   "metric.current_power": "Puissance actuelle (W)",

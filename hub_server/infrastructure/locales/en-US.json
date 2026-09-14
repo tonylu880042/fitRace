@@ -56,6 +56,7 @@
   "edge.empty": "No Edge Node status received",
   "edge.unbound": "Unbound",
   "metric.speed": "Speed (kph)",
+  "metric.pace": "Pace (/km)",
   "metric.distance": "Distance (m)",
   "metric.power": "Power (W)",
   "metric.current_power": "Current Power (W)",
