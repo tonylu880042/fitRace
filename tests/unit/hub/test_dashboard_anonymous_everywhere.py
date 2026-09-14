@@ -261,11 +261,21 @@ def _run_record_wall_rows(entries_js: str) -> str:
     format_value_fn = _strip_js_comments(
         _extract_function(source, "formatRecordEntryValue")
     )
+    format_progress_fn = _strip_js_comments(
+        _extract_function(source, "formatRecordProgressValue")
+    )
+    format_wall_value_fn = _strip_js_comments(
+        _extract_function(source, "formatRecordWallEntryValue")
+    )
     script = (
         _t_stub()
         + _metric_number_stub()
         + _escape_html_stub()
         + format_value_fn
+        + "\n"
+        + format_progress_fn
+        + "\n"
+        + format_wall_value_fn
         + "\n"
         + fn
         + "\n"

@@ -3736,6 +3736,21 @@
       return `${metricNumber(value)}`;
     }
 
+    function formatRecordProgressValue(raceType, value) {
+      if (raceType === "calories") {
+        return `${metricNumber(value).toFixed(0)} kcal`;
+      }
+      return `${metricNumber(value).toFixed(0)} m`;
+    }
+
+    function formatRecordWallEntryValue(raceType, entry) {
+      const isTargetRace = raceType === "distance" || raceType === "calories";
+      if (isTargetRace && entry.finished === false) {
+        return `${escapeHtml(t("record_wall.dnf"))} &middot; ${formatRecordProgressValue(raceType, entry.value)}`;
+      }
+      return formatRecordEntryValue(raceType, entry.value);
+    }
+
     function renderRecordWallRows(entries, raceType) {
       return entries.map((entry, index) => {
         const rank = index + 1;
@@ -3747,10 +3762,27 @@
               <div class="record-wall-name">${escapeHtml(entry.athlete_name || (entry.station_number ? `${t("stations.station")} ${entry.station_number}` : t("stations.athlete")))}</div>
               ${teamHtml}
             </div>
-            <div class="record-wall-value">${formatRecordEntryValue(raceType, entry.value)}</div>
+            <div class="record-wall-value">${formatRecordWallEntryValue(raceType, entry)}</div>
           </div>
         `;
       }).join("");
+    }
+
+    function buildLatestRaceEntry(row, raceType) {
+      const isTargetRace = raceType === "distance" || raceType === "calories";
+      const finished = !isTargetRace || row.finished_time_ms != null;
+      const progressValue = raceType === "calories" ? row.calories : row.distance_m;
+      return {
+        athlete_name: row.athlete_name,
+        station_number: row.station_number,
+        team_name: row.team_name,
+        finished,
+        value: finished
+          ? (row.finished_time_ms != null
+            ? row.finished_time_ms
+            : (row.distance_m != null ? row.distance_m : row.max_power_watts))
+          : progressValue,
+      };
     }
 
     function buildRecordWallSlides(records, latestRace) {
@@ -3772,14 +3804,7 @@
       });
 
       if (latestRace && Array.isArray(latestRace.results) && latestRace.results.length) {
-        const topThree = latestRace.results.slice(0, 3).map((row) => ({
-          athlete_name: row.athlete_name,
-          station_number: row.station_number,
-          team_name: row.team_name,
-          value: row.finished_time_ms != null
-            ? row.finished_time_ms
-            : (row.distance_m != null ? row.distance_m : row.max_power_watts),
-        }));
+        const topThree = latestRace.results.slice(0, 3).map((row) => buildLatestRaceEntry(row, latestRace.race_type));
         slides.push(`
           <div class="record-wall-slide">
             <div class="record-wall-kicker">${escapeHtml(t("record_wall.latest_race"))}</div>
