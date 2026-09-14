@@ -285,5 +285,21 @@
   "readiness.reason_target": "Kein Rennziel festgelegt",
   "readiness.reason_registrations": "Keine Athleten angemeldet",
   "readiness.reason_teams": "Team-Einrichtung unvollständig",
-  "readiness.reason_stations": "Station {stations} offline"
+  "readiness.reason_stations": "Station {stations} offline",
+  "export.header_race_start": "Rennstart",
+  "export.header_race_type": "Renntyp",
+  "export.header_target": "Ziel / Dauer",
+  "export.header_mode": "Modus",
+  "export.header_rank": "Rang",
+  "export.header_name": "Name",
+  "export.header_division": "Kategorie",
+  "export.header_team": "Team",
+  "export.header_station": "Station",
+  "export.header_time_sec": "Zielzeit (s)",
+  "export.header_status": "Status",
+  "export.header_distance_m": "Distanz (m)",
+  "export.header_calories": "Kalorien",
+  "export.header_max_power_w": "Maximale Leistung (W)",
+  "export.header_relay_members": "Staffelmitglieder",
+  "export.header_relay_splits": "Zwischenzeiten (s)"
 }

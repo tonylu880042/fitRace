@@ -285,5 +285,21 @@
   "readiness.reason_target": "Obiettivo gara non impostato",
   "readiness.reason_registrations": "Nessun atleta registrato",
   "readiness.reason_teams": "Configurazione squadre incompleta",
-  "readiness.reason_stations": "Stazione {stations} offline"
+  "readiness.reason_stations": "Stazione {stations} offline",
+  "export.header_race_start": "Inizio gara",
+  "export.header_race_type": "Tipo di gara",
+  "export.header_target": "Obiettivo / Durata",
+  "export.header_mode": "Modalità",
+  "export.header_rank": "Classifica",
+  "export.header_name": "Nome",
+  "export.header_division": "Categoria",
+  "export.header_team": "Squadra",
+  "export.header_station": "Postazione",
+  "export.header_time_sec": "Tempo finale (s)",
+  "export.header_status": "Stato",
+  "export.header_distance_m": "Distanza (m)",
+  "export.header_calories": "Calorie",
+  "export.header_max_power_w": "Potenza max (W)",
+  "export.header_relay_members": "Membri della staffetta",
+  "export.header_relay_splits": "Tempi intermedi (s)"
 }

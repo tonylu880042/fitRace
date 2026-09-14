@@ -285,5 +285,21 @@
   "readiness.reason_target": "Race target not set",
   "readiness.reason_registrations": "No athletes registered",
   "readiness.reason_teams": "Team setup incomplete",
-  "readiness.reason_stations": "Station {stations} offline"
+  "readiness.reason_stations": "Station {stations} offline",
+  "export.header_race_start": "Race Start",
+  "export.header_race_type": "Race Type",
+  "export.header_target": "Target / Duration",
+  "export.header_mode": "Mode",
+  "export.header_rank": "Rank",
+  "export.header_name": "Name",
+  "export.header_division": "Division",
+  "export.header_team": "Team",
+  "export.header_station": "Station",
+  "export.header_time_sec": "Finish Time (s)",
+  "export.header_status": "Status",
+  "export.header_distance_m": "Distance (m)",
+  "export.header_calories": "Calories",
+  "export.header_max_power_w": "Max Power (W)",
+  "export.header_relay_members": "Relay Members",
+  "export.header_relay_splits": "Relay Splits (s)"
 }

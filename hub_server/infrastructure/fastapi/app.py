@@ -29,6 +29,7 @@ from hub_server.usecases.race_event_engine import RaceEventEngine
 from hub_server.usecases.race_result_store import RaceResultStore
 from hub_server.usecases.race_results_query import RaceResultsQuery
 from hub_server.usecases.race_settings_store import RaceSettingsStore
+from hub_server.usecases.results_export import build_results_csv
 from hub_server.usecases.roster import (
     MAX_NAME_LENGTH,
     MAX_TEAM_LENGTH,
@@ -864,6 +865,39 @@ def get_race_results(limit: int = 50):
 @app.get("/api/results/races")
 def list_race_results(limit: int = 20):
     return {"races": race_results_query.list_races(limit=limit)}
+
+
+def _resolve_export_lang(lang: Optional[str]) -> str:
+    # The export only ships translations an operator is likely to actually
+    # need at check-out time; anything else falls back to English rather
+    # than silently picking one of the other locale files.
+    if lang == "zh-TW":
+        return "zh-TW"
+    if lang == "en-US":
+        return "en-US"
+    return "zh-TW" if not lang else "en-US"
+
+
+@app.get("/api/results/export.csv")
+def export_race_results_csv(request: Request, lang: Optional[str] = None):
+    require_admin(request)
+    resolved_lang = _resolve_export_lang(lang)
+    messages = load_locale(resolved_lang)["messages"]
+    csv_text = build_results_csv(
+        race_result_store,
+        race_results_query,
+        translate=lambda key: messages.get(key, key),
+        format_local_datetime=lambda epoch_ms: datetime.fromtimestamp(
+            epoch_ms / 1000
+        ).strftime("%Y-%m-%d %H:%M:%S"),
+        lang=resolved_lang,
+    )
+    filename = f"fitrace-results-{datetime.now().strftime('%Y%m%d-%H%M')}.csv"
+    return Response(
+        content=csv_text,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @app.get("/api/class/history")

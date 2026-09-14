@@ -285,5 +285,21 @@
   "readiness.reason_target": "Inget tävlingsmål inställt",
   "readiness.reason_registrations": "Inga idrottare registrerade",
   "readiness.reason_teams": "Lagindelning ofullständig",
-  "readiness.reason_stations": "Station {stations} offline"
+  "readiness.reason_stations": "Station {stations} offline",
+  "export.header_race_start": "Loppstart",
+  "export.header_race_type": "Looptyp",
+  "export.header_target": "Mål/Varaktighet",
+  "export.header_mode": "Läge",
+  "export.header_rank": "Placering",
+  "export.header_name": "Namn",
+  "export.header_division": "Kategori",
+  "export.header_team": "Lag",
+  "export.header_station": "Station",
+  "export.header_time_sec": "Sluttid (s)",
+  "export.header_status": "Status",
+  "export.header_distance_m": "Distans (m)",
+  "export.header_calories": "Kalorier",
+  "export.header_max_power_w": "Maxeffekt (W)",
+  "export.header_relay_members": "Stafettmedlemmar",
+  "export.header_relay_splits": "Delsträckor (s)"
 }
