@@ -1,23 +1,23 @@
 {
   "schema_version": 1,
   "product": "fitracestudio",
-  "release_version": "0.1.2",
+  "release_version": "0.3.0",
   "channel": "stable",
-  "published_at": "2026-06-19T06:44:18Z",
+  "published_at": "2026-09-14T23:01:00Z",
   "minimum_hub_version": "0.1.0",
   "minimum_edge_version": "0.1.0",
   "components": {
     "hub": {
-      "version": "0.1.2",
-      "artifact_url": "https://dd9tnec1hh2ts.cloudfront.net/releases/0.1.2/fitrace-hub-0.1.2.tar.zst",
-      "sha256": "628e1e42722a1b48407755995baecb6b4b0a46d2df3daf0dffeb1712b7eead17",
+      "version": "0.3.0",
+      "artifact_url": "https://dd9tnec1hh2ts.cloudfront.net/releases/0.3.0/fitrace-hub-0.3.0.tar.zst",
+      "sha256": "ea6d5b211c9223fea33fb71a12e5cd01e879390fdb8dd1b73def5626f16dc7b1",
       "requires_reboot": false,
       "systemd_units": ["fitracestudio-hub.service"]
     },
     "edge": {
-      "version": "0.1.2",
-      "artifact_url": "https://dd9tnec1hh2ts.cloudfront.net/releases/0.1.2/fitrace-edge-0.1.2.tar.zst",
-      "sha256": "bb927860265f9c03971bef6457755b52abba91f08427bf15af4ca32c9cc76a72",
+      "version": "0.3.0",
+      "artifact_url": "https://dd9tnec1hh2ts.cloudfront.net/releases/0.3.0/fitrace-edge-0.3.0.tar.zst",
+      "sha256": "175c8b3145ab859f228dc5522e52808963e5365c841e311a81320b3cbeac3960",
       "requires_reboot": false,
       "systemd_units": ["fitracestudio-edge.service", "fitracestudio-edge-web.service"]
     }
@@ -31,5 +31,5 @@
     "install_mode": "manual",
     "allow_during_race": false
   },
-  "notes": "Team competition leaderboard modes, race countdown audio, admin UX improvements, and client-side signup avatar compression."
+  "notes": "Event-day roster heats, same-machine relay races, divisions, interpolated finish times, results CSV export and clear, treadmill pace with effects, adaptive race board sizing, class mode, and OTA health-check rollback. Requires segno and websockets in the hub environment."
 }
