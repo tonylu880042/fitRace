@@ -347,6 +347,41 @@ def test_countdown_start_marks_current_heat_started(monkeypatch):
     app_module.node_registry.clear()
 
 
+def test_plain_start_marks_current_heat_started():
+    """POST /api/race/start (the non-countdown path) must also drive
+    roster_manager.mark_current_heat_started() -- only the countdown path
+    (test_countdown_start_marks_current_heat_started above) was covered
+    before, so deleting the call from the plain /api/race/start handler
+    left the suite green."""
+    _set_station_online(1, "node-1")
+    _set_station_online(2, "node-2")
+    client.post("/api/roster/import", json={"csv": "name\nAlice\nBob\nCarol\nDave\n"})
+    client.post(
+        "/api/race/configure", json={"race_type": "distance", "target_value": 500}
+    )
+    client.post("/api/roster/next-heat")  # heat 1: Alice, Bob loaded
+
+    res = client.post("/api/race/start")
+    assert res.status_code == 200
+    assert res.json()["state"] == "RUNNING"
+
+    app_module.race_manager.stop_race()
+
+    # If the loaded heat was never marked started, this next-heat call is
+    # blocked with 409 "current_heat_not_raced" instead of succeeding.
+    res = client.post("/api/roster/next-heat")
+    assert res.status_code == 200
+
+    roster = client.get("/api/roster").json()
+    statuses = {entry["name"]: entry["status"] for entry in roster["entries"]}
+    assert statuses["Alice"] == "done"
+    assert statuses["Bob"] == "done"
+    assert statuses["Carol"] == "loaded"
+    assert statuses["Dave"] == "loaded"
+
+    app_module.node_registry.clear()
+
+
 def test_roster_endpoints_require_admin_token_when_configured(monkeypatch):
     monkeypatch.setenv("FITRACE_ADMIN_TOKEN", "admin-secret")
 
