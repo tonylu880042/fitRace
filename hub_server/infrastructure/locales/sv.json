@@ -96,6 +96,7 @@
   "record_wall.division_men": "Herrar",
   "record_wall.division_women": "Damer",
   "record_wall.relay_legs": "Stafett med {legs} sträckor",
+  "record_wall.dnf": "DNF",
   "signup.division": "Kategori",
   "signup.division_none": "Ingen kategori",
   "signup.division_men": "Herrar",

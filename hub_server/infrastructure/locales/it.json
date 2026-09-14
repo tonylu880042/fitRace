@@ -96,6 +96,7 @@
   "record_wall.division_men": "Uomini",
   "record_wall.division_women": "Donne",
   "record_wall.relay_legs": "Staffetta a {legs} frazioni",
+  "record_wall.dnf": "DNF",
   "signup.division": "Categoria",
   "signup.division_none": "Nessuna categoria",
   "signup.division_men": "Uomini",
