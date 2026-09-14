@@ -541,12 +541,162 @@ def test_css_lg_tier_targets_all_three_board_types():
     ), "lg tier does not size the sprint board name"
 
 
-def test_css_xl_tier_stretches_rows_to_fill_the_panel():
+def test_css_xl_tier_grows_rows_with_a_viewport_based_min_height():
+    """xl rows must grow using a size that does not depend on a parent's
+    own height. The leaderboard panel is content-sized, not stretched to
+    the viewport by an ancestor, so a flex-grow row inside a flex-grow
+    list has nothing to grow into and stays at its natural content
+    height -- a real defect a screenshot caught that no DOM-less test
+    here could. A min-height expressed in vh resolves against the
+    viewport regardless of any ancestor's height, so it grows the rows
+    even though nothing upstream constrains the panel."""
+    css = _read_index()
+    match = re.search(
+        r"\.race-board--xl \.leaderboard-item,\s*"
+        r"\.race-board--xl \.race-track-item,\s*"
+        r"\.race-board--xl \.sprint-board-card\s*\{([^}]*)\}",
+        css,
+    )
+    assert (
+        match
+    ), "xl tier does not size the classic/race-track/sprint-board rows together"
+    block = match.group(1)
+    assert "min-height" in block, "xl tier rows have no min-height rule"
+    assert "vh" in block, "xl tier row min-height is not viewport-based"
+    # The old flex-grow mechanism this replaces must actually be gone, not
+    # just supplemented alongside it -- an ineffective rule left in place
+    # is still a defect even if a working one now sits next to it. Scoped
+    # to the specific selectors the old rule used (not a blanket "flex"
+    # ban), since .athlete-info and friends legitimately use flex
+    # elsewhere in this stylesheet for unrelated reasons.
+    assert (
+        ".leaderboard-list.race-board--xl" not in css
+    ), "the old flex-grow .leaderboard-list.race-board--xl rule is still present"
+    assert (
+        ".race-track-list.race-board--xl" not in css
+    ), "the old flex-grow .race-track-list.race-board--xl rule is still present"
+
+
+# ---------------------------------------------------------------------------
+# Column-width regression coverage. Review of the first cut of this feature
+# (real 1920x1080 / 1280x720 screenshots via Playwright, not visible to the
+# node-only tests above) caught two defects no earlier test in this file
+# exercised:
+#   1. The classic card's metric columns kept today's widths while xl/lg
+#      grew the type inside them 1.5x-2x, so a distance value and the
+#      progress percent next to it collided into one unreadable run
+#      ("32064.0%"), clipped past the card's right edge. Same story for
+#      the race track score column, narrower still (0.18fr).
+#   2. Fixing (1) with flat px column minimums sized for a 1920px
+#      projector created a SECOND defect at 1280x720: those minimums do
+#      not shrink the way the font's vw-based clamp does, so the metric
+#      columns kept demanding their full 1920px minimum width and the
+#      name column -- the only track with no floor of its own -- was
+#      squeezed down to nothing, wrapping a three-character name one
+#      character per line.
+# These are structural CSS checks (grep, not a real layout engine --
+# actual pixel collision is out of reach for the node-only harness this
+# suite runs under), verifying the fix's shape: real column-width tracks
+# now exist, sized with vw so they shrink together with the font clamps
+# above, plus the min-width: 0 a long name needs to wrap instead of
+# forcing the row wider than its card.
+# ---------------------------------------------------------------------------
+
+
+def _grid_columns_value(css: str, selector: str) -> str:
+    pattern = re.escape(selector) + r"\s*\{([^}]*)\}"
+    match = re.search(pattern, css)
+    assert match, f"no CSS rule for {selector}"
+    block = match.group(1)
+    gtc = re.search(r"grid-template-columns:\s*([^;]+);", block)
+    assert gtc, f"{selector} does not set grid-template-columns"
+    return gtc.group(1)
+
+
+def _repeat3_track(columns: str) -> str:
+    # minmax()'s own minimum is itself a clamp(...) call here, so the
+    # inner pattern must tolerate one level of nested parens (a plain
+    # [^)]* stops at clamp's closing paren, truncating the match).
+    match = re.search(
+        r"repeat\(3,\s*(minmax\((?:[^()]|\([^()]*\))*\))\)", columns
+    )
+    assert match, "no repeat(3, minmax(...)) metric track found: " + columns
+    return match.group(1)
+
+
+def test_xl_classic_metric_columns_are_vw_scaled_not_flat_px():
+    css = _read_index()
+    columns = _grid_columns_value(css, ".race-board--xl .leaderboard-item")
+    # One minmax() for the name track, plus a repeat(3, minmax(...)) that
+    # expands to the three metric tracks (pace, distance, progress/finish)
+    # at render time -- five real column tracks from two minmax() call
+    # sites in the source.
+    assert columns.count("minmax(") >= 2, (
+        "xl classic row does not widen the name/metric columns: " + columns
+    )
+    metric_track = _repeat3_track(columns)
+    # Checked on the metric track specifically, not the whole
+    # grid-template-columns string -- the rank/name tracks have their own
+    # vw-scaled clamp()s, so a flat-px regression scoped to only the
+    # metric columns (the exact shape of the 1280x720 name-starvation
+    # defect review caught) would otherwise hide behind them.
+    assert "vw" in metric_track, (
+        "xl classic metric column minimums are flat px, not viewport-scaled -- "
+        "they will not shrink with the font clamp at 1280x720, starving the "
+        "name column the way review caught: " + metric_track
+    )
+
+
+def test_lg_classic_metric_columns_are_vw_scaled_not_flat_px():
+    css = _read_index()
+    columns = _grid_columns_value(css, ".race-board--lg .leaderboard-item")
+    assert columns.count("minmax(") >= 2, (
+        "lg classic row does not widen the name/metric columns: " + columns
+    )
+    metric_track = _repeat3_track(columns)
+    assert "vw" in metric_track, (
+        "lg classic metric column minimums are flat px, not viewport-scaled: "
+        + metric_track
+    )
+
+
+def test_xl_classic_name_cell_resets_min_width_for_wrapping():
     css = _read_index()
     assert re.search(
-        r"\.leaderboard-list\.race-board--xl[^{]*\{[^}]*flex", css
-    ), "xl tier does not make the classic leaderboard list a flex container"
-    assert re.search(
-        r"\.leaderboard-list\.race-board--xl \.leaderboard-item[^{]*\{[^}]*flex",
+        r"\.race-board--xl \.leaderboard-item > \.athlete-info\s*\{[^}]*min-width:\s*0",
         css,
-    ), "xl tier does not grow the classic leaderboard rows"
+    ), "xl tier does not reset athlete-info's min-width, so a long name forces the row wider than its card"
+    assert re.search(
+        r"\.race-board--xl \.leaderboard-item > \.athlete-info > div\s*\{[^}]*min-width:\s*0",
+        css,
+    ), "xl tier does not reset the name/tag column's min-width"
+
+
+def test_xl_race_track_score_column_is_wider_than_the_original_defect_width():
+    css = _read_index()
+    columns = _grid_columns_value(css, ".race-board--xl .race-track-item")
+    # The original (pre-review) score track was minmax(90px, 0.18fr) --
+    # far too narrow once its type grew to the xl scale. Every minmax()
+    # minimum in the overridden track list must now be at least 150px
+    # (or a vw equivalent that resolves >= 150px at 1920), never the old
+    # 90px floor.
+    assert "90px" not in columns, (
+        "xl race track columns still carry the original too-narrow 90px "
+        "score column floor: " + columns
+    )
+    tracks = re.findall(r"minmax\(([^,]+),", columns)
+    assert tracks, "xl race track row has no minmax() tracks: " + columns
+
+
+def test_five_rows_classic_and_race_track_columns_are_untouched():
+    """No tier class means no override at all -- the base grid definitions
+    (used by every 5+ row render) must be exactly what they were before
+    this feature existed."""
+    css = _read_index()
+    assert (
+        "grid-template-columns: 50px 1.5fr 1fr 1fr 120px;" in css
+    ), "the base (no-tier) classic leaderboard-item column widths changed"
+    assert (
+        "grid-template-columns: 54px minmax(170px, 0.55fr) minmax(260px, 1fr) minmax(90px, 0.18fr);"
+        in css
+    ), "the base (no-tier) race-track-item column widths changed"

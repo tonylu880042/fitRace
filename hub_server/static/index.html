@@ -2260,29 +2260,31 @@
        the leaderboard a thin strip at the top of a 1080p projector.
        Purely row-count driven (raceBoardDensityTier), like the class
        board tiers above but scaling UP instead of down: xl (1-2 rows)
-       stretches every row to fill the panel height and sizes type off
-       the viewport width so it reads large on a 1920x1080 projector but
-       still fits 1280x720; lg (3-4 rows) is roughly 1.5x today sizes
-       with no forced stretch. 5+ rows (or 0) render exactly as before --
-       no tier class is applied at all. */
-    .leaderboard-list.race-board--xl,
-    .race-track-list.race-board--xl {
-      display: flex;
-      flex-direction: column;
-      flex: 1;
-      min-height: 0;
-    }
+       grows every row with a viewport-height-based min-height (so it
+       reads large on a 1920x1080 projector but still fits 1280x720) and
+       sizes type off the viewport width; lg (3-4 rows) is roughly 1.5x
+       today sizes with no forced row growth. 5+ rows (or 0) render
+       exactly as before -- no tier class is applied at all.
 
-    .leaderboard-list.race-board--xl .leaderboard-item,
-    .race-track-list.race-board--xl .race-track-item {
-      flex: 1 1 0;
-      min-height: 140px;
+       A row's min-height is set directly in viewport units rather than
+       via a flex-grow parent: the leaderboard panel's own height is
+       content-driven (it is not stretched to the viewport by an
+       ancestor), so "flex: 1" on the list and "flex: 1 1 0" on its rows
+       has nothing to grow into and the rows stay their natural content
+       height. vh resolves against the viewport regardless of any
+       ancestor's height, so it grows the rows even though nothing
+       upstream constrains the panel. */
+    .race-board--xl .leaderboard-item,
+    .race-board--xl .race-track-item,
+    .race-board--xl .sprint-board-card {
+      min-height: clamp(150px, 24vh, 340px);
     }
 
     .race-board--xl .athlete-name,
     .race-board--xl .race-track-name,
     .race-board--xl .sprint-board-name {
       font-size: clamp(1.6rem, 2vw, 2.4rem);
+      overflow-wrap: anywhere;
     }
 
     .race-board--xl .metric-val,
@@ -2311,11 +2313,59 @@
       height: 72px;
     }
 
-    /* lg tier -- roughly 1.5x today sizes, no forced full-height stretch. */
+    /* Bigger type needs wider columns, or a value like "1000" and a
+       neighbouring "100.0%" collide into one unreadable run (the venue
+       defect this block fixes). The rank/name/metric tracks below are
+       sized generously enough for the longest values this page ever
+       shows (a 4-digit distance, "100.0%", a finish time like
+       "123.4s") at each tier's largest possible font, with a real
+       column-gap so neighbouring values never touch. min-width: 0 on
+       the name cell lets a long bilingual name wrap (via
+       overflow-wrap: anywhere above) instead of forcing the row wider
+       than its card -- a grid/flex item's automatic minimum size is its
+       content's intrinsic width unless min-width is reset.
+
+       Every track minimum below is a clamp() tied to vw, the same unit
+       the font-size clamps above use, not a flat px floor: a flat
+       180px floor sized for a 1920px projector does not shrink at
+       1280px the way the font does, so the three metric columns keep
+       demanding their full 1920px minimum while the name column (the
+       only track with no floor of its own) gets squeezed toward zero
+       and a three-character name wraps one character per line. Scaling
+       every floor with the viewport keeps their ratio -- and the name
+       column's share -- roughly constant across both supported
+       viewports. */
+    .race-board--xl .leaderboard-item {
+      grid-template-columns:
+        clamp(56px, 4vw, 76px)
+        minmax(clamp(150px, 12vw, 300px), 1.3fr)
+        repeat(3, minmax(clamp(110px, 9.3vw, 185px), 1fr));
+      column-gap: 1.25rem;
+    }
+
+    .race-board--xl .leaderboard-item > .athlete-info {
+      min-width: 0;
+    }
+
+    .race-board--xl .leaderboard-item > .athlete-info > div {
+      min-width: 0;
+    }
+
+    .race-board--xl .race-track-item {
+      grid-template-columns: 76px minmax(200px, 0.5fr) minmax(240px, 1fr) minmax(220px, 0.4fr);
+      column-gap: 1.25rem;
+    }
+
+    .race-board--xl .race-track-score .metric-lbl {
+      white-space: nowrap;
+    }
+
+    /* lg tier -- roughly 1.5x today sizes, no forced row growth. */
     .race-board--lg .athlete-name,
     .race-board--lg .race-track-name,
     .race-board--lg .sprint-board-name {
       font-size: 1.73rem;
+      overflow-wrap: anywhere;
     }
 
     .race-board--lg .metric-val,
@@ -2342,6 +2392,31 @@
 
     .race-board--lg .race-track-rail {
       height: 63px;
+    }
+
+    .race-board--lg .leaderboard-item {
+      grid-template-columns:
+        clamp(48px, 3vw, 60px)
+        minmax(clamp(120px, 9vw, 220px), 1.3fr)
+        repeat(3, minmax(clamp(90px, 7vw, 140px), 1fr));
+      column-gap: 0.9rem;
+    }
+
+    .race-board--lg .leaderboard-item > .athlete-info {
+      min-width: 0;
+    }
+
+    .race-board--lg .leaderboard-item > .athlete-info > div {
+      min-width: 0;
+    }
+
+    .race-board--lg .race-track-item {
+      grid-template-columns: 64px minmax(170px, 0.5fr) minmax(220px, 1fr) minmax(180px, 0.4fr);
+      column-gap: 1rem;
+    }
+
+    .race-board--lg .race-track-score .metric-lbl {
+      white-space: nowrap;
     }
   </style>
 </head>
