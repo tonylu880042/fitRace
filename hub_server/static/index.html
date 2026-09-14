@@ -2255,6 +2255,94 @@
     .class-board--ultra .class-hero-row { margin-bottom: 0.4rem !important; }
     .class-board--ultra .class-hero-segment-line { margin-bottom: 0.4rem !important; }
     .class-board--ultra .class-progress-track { height: 10px !important; }
+
+    /* Race board density. Venues often race only 1-4 stations, leaving
+       the leaderboard a thin strip at the top of a 1080p projector.
+       Purely row-count driven (raceBoardDensityTier), like the class
+       board tiers above but scaling UP instead of down: xl (1-2 rows)
+       stretches every row to fill the panel height and sizes type off
+       the viewport width so it reads large on a 1920x1080 projector but
+       still fits 1280x720; lg (3-4 rows) is roughly 1.5x today sizes
+       with no forced stretch. 5+ rows (or 0) render exactly as before --
+       no tier class is applied at all. */
+    .leaderboard-list.race-board--xl,
+    .race-track-list.race-board--xl {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .leaderboard-list.race-board--xl .leaderboard-item,
+    .race-track-list.race-board--xl .race-track-item {
+      flex: 1 1 0;
+      min-height: 140px;
+    }
+
+    .race-board--xl .athlete-name,
+    .race-board--xl .race-track-name,
+    .race-board--xl .sprint-board-name {
+      font-size: clamp(1.6rem, 2vw, 2.4rem);
+    }
+
+    .race-board--xl .metric-val,
+    .race-board--xl .rank,
+    .race-board--xl .sprint-board-rank {
+      font-size: clamp(2.1rem, 2.667vw, 3.2rem);
+    }
+
+    .race-board--xl .metric-lbl {
+      font-size: clamp(0.75rem, 0.833vw, 1rem);
+    }
+
+    .race-board--xl .equipment-tag,
+    .race-board--xl .relay-leg-line,
+    .race-board--xl .race-track-relay-leg,
+    .race-board--xl .sprint-board-relay-leg {
+      font-size: clamp(1rem, 1.167vw, 1.4rem);
+    }
+
+    .race-board--xl .progress-track,
+    .race-board--xl .sprint-board-progress {
+      height: 16px;
+    }
+
+    .race-board--xl .race-track-rail {
+      height: 72px;
+    }
+
+    /* lg tier -- roughly 1.5x today sizes, no forced full-height stretch. */
+    .race-board--lg .athlete-name,
+    .race-board--lg .race-track-name,
+    .race-board--lg .sprint-board-name {
+      font-size: 1.73rem;
+    }
+
+    .race-board--lg .metric-val,
+    .race-board--lg .rank,
+    .race-board--lg .sprint-board-rank {
+      font-size: 2.25rem;
+    }
+
+    .race-board--lg .metric-lbl {
+      font-size: 0.975rem;
+    }
+
+    .race-board--lg .equipment-tag,
+    .race-board--lg .relay-leg-line,
+    .race-board--lg .race-track-relay-leg,
+    .race-board--lg .sprint-board-relay-leg {
+      font-size: 1.15rem;
+    }
+
+    .race-board--lg .progress-track,
+    .race-board--lg .sprint-board-progress {
+      height: 12px;
+    }
+
+    .race-board--lg .race-track-rail {
+      height: 63px;
+    }
   </style>
 </head>
 <body>
@@ -3200,6 +3288,20 @@
         return nodes.every((node) => Boolean(node.finished_time_ms) || metricNumber(node.progress_percent) >= 100);
       }
       return currentState === "STOPPED";
+    }
+
+    // Race board density tier -- purely row-count driven, the same
+    // approach as the class board density tiers (buildClassBoardHtml
+    // below), but scaling UP instead of down: a venue racing only 1-4
+    // stations gets an enlarged board via CSS (.race-board--xl /
+    // .race-board--lg) instead of a thin strip at the top of the
+    // projector. 0 or 5+ rows render exactly as they always have, with
+    // no tier class applied at all.
+    function raceBoardDensityTier(rowCount) {
+      if (rowCount <= 0) return "";
+      if (rowCount <= 2) return "xl";
+      if (rowCount <= 4) return "lg";
+      return "";
     }
 
     function getMedalMeta(rank) {
@@ -4179,7 +4281,9 @@
           html += renderPodium(leaderboardNodes, raceType);
         }
       }
-      html += '<div class="race-track-list">';
+      const raceTrackDensityTier = raceBoardDensityTier(rows.length);
+      const raceTrackDensityClass = raceTrackDensityTier ? ` race-board--${raceTrackDensityTier}` : "";
+      html += `<div class="race-track-list${raceTrackDensityClass}">`;
       rows.forEach((row, index) => {
         const currentRank = index + 1;
         const previousRank = leaderboardRankByNode.get(row.id);
@@ -4381,7 +4485,9 @@
       if (leaderboardFinal) {
         html += isTeamMode ? renderTeamPodium(teamRows, raceType) : renderPodium(leaderboardNodes, raceType);
       }
-      html += '<div class="sprint-board-grid">';
+      const sprintBoardDensityTier = raceBoardDensityTier(rows.length);
+      const sprintBoardDensityClass = sprintBoardDensityTier ? ` race-board--${sprintBoardDensityTier}` : "";
+      html += `<div class="sprint-board-grid${sprintBoardDensityClass}">`;
       rows.forEach((row, index) => {
         const currentRank = index + 1;
         const previousRank = leaderboardRankByNode.get(row.id);
@@ -5433,8 +5539,10 @@
         previousRects.set(item.dataset.nodeId, item.getBoundingClientRect());
       });
 
+      const leaderboardDensityTier = raceBoardDensityTier(nodes.length);
+      const leaderboardDensityClass = leaderboardDensityTier ? ` race-board--${leaderboardDensityTier}` : "";
       let html = leaderboardFinal ? renderPodium(nodes, raceType) : '';
-      html += '<div class="leaderboard-list">';
+      html += `<div class="leaderboard-list${leaderboardDensityClass}">`;
       nodes.forEach((node, index) => {
         // Declared here, inside the loop body, rather than once above it
         // or as a top-level sibling: a narrower test extracts just this
