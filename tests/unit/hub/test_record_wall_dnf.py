@@ -110,9 +110,8 @@ def _run_node(script: str) -> str:
     return result.stdout.strip()
 
 
-def _build_slides(latest_race_js: str) -> list:
-    source = _strip_js_comments(_read_index())
-    fns = "\n".join(
+def _record_wall_fns(source: str) -> str:
+    return "\n".join(
         _extract_function(source, name)
         for name in (
             "recordWallTypeLabel",
@@ -125,6 +124,11 @@ def _build_slides(latest_race_js: str) -> list:
             "buildRecordWallSlides",
         )
     )
+
+
+def _build_slides(latest_race_js: str) -> list:
+    source = _strip_js_comments(_read_index())
+    fns = _record_wall_fns(source)
     script = (
         _t_stub()
         + _metric_number_stub()
@@ -132,6 +136,26 @@ def _build_slides(latest_race_js: str) -> list:
         + fns
         + "\n"
         + f"console.log(JSON.stringify(buildRecordWallSlides([], {latest_race_js})));"
+    )
+    output = _run_node(script)
+    return json.loads(output)
+
+
+def _build_slides_from_records(records_js: str) -> list:
+    """Feed buildRecordWallSlides the shape GET /api/results/records
+    actually returns: record.entries built by race_results_query.py's
+    _top_three(), which are always finishers and carry no `finished` key
+    at all (unlike the latest-race topThree entries, which get a real
+    `finished` boolean from buildLatestRaceEntry)."""
+    source = _strip_js_comments(_read_index())
+    fns = _record_wall_fns(source)
+    script = (
+        _t_stub()
+        + _metric_number_stub()
+        + _escape_html_stub()
+        + fns
+        + "\n"
+        + f"console.log(JSON.stringify(buildRecordWallSlides({records_js}, null)));"
     )
     output = _run_node(script)
     return json.loads(output)
@@ -206,4 +230,36 @@ def test_time_boxed_race_type_is_unaffected_by_dnf_logic():
     )
     slides = _build_slides(latest_race)
     assert "812m" in slides[0]
+    assert "DNF" not in slides[0]
+
+
+def test_alltime_distance_record_entry_with_no_finished_field_renders_as_time():
+    """GET /api/results/records entries (race_results_query.py's
+    _top_three()) are always finishers -- the value is their finish
+    time -- and the dict it returns never has a `finished` key at all
+    (unlike a latest-race topThree entry, which buildLatestRaceEntry
+    always gives a real boolean `finished`). formatRecordWallEntryValue
+    must only take the DNF branch when `finished` is the *boolean*
+    false, not merely falsy/undefined -- otherwise every all-time
+    record on the venue screen (e.g. "#1 王小明 30.2s" on a
+    distance/calories slide) would flip to showing DNF plus a bogus
+    "raw value in meters" reading instead of the real finish time."""
+    records = (
+        "[{race_type: 'distance', label: '500 m', division: 'men', entries: ["
+        "{athlete_name: '王小明', team_name: null, value: 30247}"
+        "]}]"
+    )
+    slides = _build_slides_from_records(records)
+    assert "30.2s" in slides[0]
+    assert "DNF" not in slides[0]
+
+
+def test_alltime_calories_record_entry_with_no_finished_field_renders_as_time():
+    records = (
+        "[{race_type: 'calories', label: '50 kcal', division: null, entries: ["
+        "{athlete_name: 'Jamie', team_name: null, value: 42500}"
+        "]}]"
+    )
+    slides = _build_slides_from_records(records)
+    assert "42.5s" in slides[0]
     assert "DNF" not in slides[0]
