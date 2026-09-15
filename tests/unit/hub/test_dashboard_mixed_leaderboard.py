@@ -293,6 +293,63 @@ def test_ungrouped_rows_form_a_trailing_section_when_present():
     assert [row["node_id"] for row in sections[2]["rows"]] == ["n4"]
 
 
+# -- Per-group score formatting (renderMixedLeaderboardSections) -----------
+
+
+def _render_sections_html(progress_js: str, groups_js: str) -> str:
+    source = _strip_js_comments(_read_index())
+    fns = "\n".join(
+        _strip_js_comments(_extract_function(source, name))
+        for name in (
+            "metricNumber",
+            "sortLeaderboardNodes",
+            "formatResultScore",
+            "formatMixedGroupTargetLabel",
+            "buildMixedGroupHeading",
+            "buildMixedLeaderboardSections",
+            "renderMixedLeaderboardSectionRows",
+            "renderMixedLeaderboardSections",
+        )
+    )
+    script = (
+        _t_stub()
+        + "const escapeHtml = (value) => String(value == null ? '' : value);\n"
+        + "const nodeDisplayName = (node) => (node && (node.node_display_name || node.display_name || node.node_id)) || '--';\n"
+        + fns
+        + "\n"
+        + f"const sections = buildMixedLeaderboardSections({progress_js}, {{groups: {groups_js}}});\n"
+        + "console.log(renderMixedLeaderboardSections(sections));"
+    )
+    return _run_node(script)
+
+
+_TIME_AND_MAX_POWER_GROUPS_JS = """[
+  {equipment_types: ["treadmill"], race_type: "time", target_value: 0, duration_sec: 60},
+  {equipment_types: ["fan_bike"], race_type: "max_power", target_value: 0, duration_sec: 30}
+]"""
+
+_TIME_AND_MAX_POWER_PROGRESS_JS = """{
+  n7: {node_id: "n7", group_index: 0, distance_m: 1234, station_number: 1},
+  n8: {node_id: "n8", group_index: 1, max_power_watts: 250, station_number: 2}
+}"""
+
+
+def test_each_section_is_scored_by_its_own_group_race_type_not_a_shared_one():
+    """A time group scores by distance_m ("1234m"), a max_power group by
+    max_power_watts ("250W") -- neither ever shows a percent value. The
+    leaderboard sort test cannot see a raceType mixup here since sorting a
+    single-row group never reorders anything, and distance vs calories
+    format identically in formatResultScore, so only a time or max_power
+    row actually exposes the wrong raceType reaching
+    renderMixedLeaderboardSectionRows."""
+    html = _render_sections_html(
+        _TIME_AND_MAX_POWER_PROGRESS_JS, _TIME_AND_MAX_POWER_GROUPS_JS
+    )
+    assert "1234m" in html
+    assert "250W" in html
+    assert "%" not in html
+
+
 # -- renderLeaderboard wiring -----------------------------------------------
 
 
