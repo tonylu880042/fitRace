@@ -1244,8 +1244,29 @@
       countdownActive: false,
       raceActionPending: null,
       raceConfigDirty: false,
+      raceGroups: [],
       adminToken: localStorage.getItem("fitrace.adminPassword") || localStorage.getItem("fitrace.adminToken") || "",
     };
+
+    // Mirrors edge_node/domain/models.py EQUIPMENT_TYPES minus "unknown" (a
+    // mixed race's groups can never claim "unknown"). This string is
+    // Python-source-embedded elsewhere in the codebase (EDGE_SETUP_HTML) so
+    // it cannot safely be templated in from the backend -- keep this list
+    // in sync by hand if EQUIPMENT_TYPES ever changes. A pytest drift guard
+    // (test_game_admin_race_groups_payload.py) pins this list against the
+    // domain constant.
+    const EQUIPMENT_TYPES = [
+      "treadmill",
+      "curved_treadmill",
+      "spin_bike",
+      "fan_bike",
+      "upright_bike",
+      "recumbent_bike",
+      "elliptical",
+      "stair_climber",
+      "rowing_machine",
+      "ski_erg",
+    ];
 
     function $(id) {
       return document.getElementById(id);
@@ -1775,6 +1796,78 @@
 
     function isRelayCompetitionMode(mode) {
       return mode === "relay";
+    }
+
+    function isMixedRaceType(raceType) {
+      return raceType === "mixed";
+    }
+
+    // Pure conversion: the editor's internal group shape
+    // ({equipmentTypes, raceType, targetValue}) -> the wire shape the
+    // backend RaceGroup model expects
+    // ({equipment_types, race_type, target_value, duration_sec}). A group's
+    // race_type decides whether its single editor target number means a
+    // target_value (distance/calories) or a duration_sec (time/max_power)
+    // on the wire -- kept inline (not a shared helper) so this function and
+    // its inverse, raceGroupsFromConfig, can each be extracted and executed
+    // standalone under node without pulling in a third function.
+    function buildRaceGroupsPayload(groups) {
+      return (groups || []).map((group) => {
+        const raceType = group.raceType;
+        const numericTarget = Number(group.targetValue) || 0;
+        const durationBased = raceType === "time" || raceType === "max_power";
+        return {
+          equipment_types: Array.isArray(group.equipmentTypes) ? group.equipmentTypes.slice() : [],
+          race_type: raceType,
+          target_value: durationBased ? 0 : numericTarget,
+          duration_sec: durationBased ? Math.round(numericTarget) : 0,
+        };
+      });
+    }
+
+    // Inverse of buildRaceGroupsPayload -- restores the editor's internal
+    // group shape from a saved config.groups (the wire shape), so loading a
+    // saved mixed race round-trips back through buildRaceGroupsPayload to
+    // the exact same groups.
+    function raceGroupsFromConfig(configGroups) {
+      return (configGroups || []).map((group) => {
+        const raceType = group.race_type;
+        const durationBased = raceType === "time" || raceType === "max_power";
+        return {
+          equipmentTypes: Array.isArray(group.equipment_types) ? group.equipment_types.slice() : [],
+          raceType: raceType,
+          targetValue: durationBased ? Number(group.duration_sec) || 0 : Number(group.target_value) || 0,
+        };
+      });
+    }
+
+    // Pure validation over the editor's internal group shape. Returns an
+    // i18n error key, or null when the groups are well-formed. Checked
+    // before configureRace() ever builds a mixed payload, mirroring (but
+    // not replacing) the backend's own RaceConfig validation.
+    function validateRaceGroups(groups) {
+      const list = groups || [];
+      if (list.length < 2) {
+        return "message.groups_min";
+      }
+      const seenEquipmentTypes = new Set();
+      for (const group of list) {
+        const equipmentTypes = group.equipmentTypes || [];
+        if (equipmentTypes.length === 0) {
+          return "message.group_no_equipment";
+        }
+        for (const equipmentType of equipmentTypes) {
+          if (seenEquipmentTypes.has(equipmentType)) {
+            return "message.group_equipment_duplicate";
+          }
+          seenEquipmentTypes.add(equipmentType);
+        }
+        const numericTarget = Number(group.targetValue) || 0;
+        if (numericTarget <= 0) {
+          return "message.group_target_required";
+        }
+      }
+      return null;
     }
 
     // Splits a relay members textarea (one name per line) into a clean
