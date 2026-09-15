@@ -183,7 +183,7 @@ Signature: manifest.json.sig is verified with fitrace_common/release-ed25519-pub
 Formal Hub runtime: fitracestudio-hub.service runs from /opt/fitracestudio/current
 Formal update cache: /opt/fitracestudio/update-cache/{release_version}/
 Hub install path: /opt/fitracestudio/update-cache/installed/hub-{release_version}/
-Updater service: fitracestudio-hub-updater.service
+Updater service: fitracestudio-hub-updater.service (started non-blocking with --no-block)
 Disable startup check: FITRACE_UPDATE_AUTO_CHECK=0
 ```
 

@@ -589,7 +589,14 @@ def test_update_apply_hub_endpoint_starts_updater_service_when_idle(monkeypatch)
     assert response.status_code == 200
     assert response.json()["state"] == "updater_started"
     assert calls == [
-        ["sudo", "systemctl", "start", "fitracestudio-hub-updater.service"]
+        [
+            "sudo",
+            "-n",
+            "systemctl",
+            "start",
+            "--no-block",
+            "fitracestudio-hub-updater.service",
+        ]
     ]
 
 
@@ -620,7 +627,14 @@ def test_update_hub_one_click_happy_path(monkeypatch):
     assert response.json()["version"] == "0.1.1"
     assert calls == [
         "install_hub",
-        ["sudo", "systemctl", "start", "fitracestudio-hub-updater.service"],
+        [
+            "sudo",
+            "-n",
+            "systemctl",
+            "start",
+            "--no-block",
+            "fitracestudio-hub-updater.service",
+        ],
     ]
 
 
@@ -676,7 +690,14 @@ def test_update_hub_one_click_already_installed(monkeypatch):
 
     assert response.status_code == 200
     assert calls == [
-        ["sudo", "systemctl", "start", "fitracestudio-hub-updater.service"]
+        [
+            "sudo",
+            "-n",
+            "systemctl",
+            "start",
+            "--no-block",
+            "fitracestudio-hub-updater.service",
+        ]
     ]
     assert response.json()["version"] == "0.1.1"
 

@@ -1038,7 +1038,8 @@ async def apply_hub_update(request: Request):
         )
     try:
         await asyncio.to_thread(
-            run_systemctl, ["sudo", "systemctl", "start", HUB_UPDATER_SERVICE]
+            run_systemctl,
+            ["sudo", "-n", "systemctl", "start", "--no-block", HUB_UPDATER_SERVICE],
         )
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=409, detail=str(e))
@@ -1063,7 +1064,8 @@ async def one_click_hub_update(request: Request):
     )
     try:
         await asyncio.to_thread(
-            run_systemctl, ["sudo", "systemctl", "start", HUB_UPDATER_SERVICE]
+            run_systemctl,
+            ["sudo", "-n", "systemctl", "start", "--no-block", HUB_UPDATER_SERVICE],
         )
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=409, detail=str(e))
