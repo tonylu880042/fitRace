@@ -85,6 +85,8 @@ class RaceResultsQuery:
             race_type = config.get("race_type")
             label = self._category_label(race_type, config)
             if label is None:
+                # ponytail: mixed races excluded until record categories
+                # include equipment type
                 continue
             relay_legs = config.get("relay_legs")
 
@@ -139,14 +141,37 @@ class RaceResultsQuery:
         for summary, ranked_rows, _ in self._iter_races():
             for row in ranked_rows:
                 if row["token"] == token:
-                    return {
+                    result = {
                         "race": summary,
                         "athlete": row,
                         "total_athletes": len(ranked_rows),
                     }
+                    if summary.get("race_type") == "mixed":
+                        result["total_athletes"], result["group"] = (
+                            self._athlete_group_scope(row, ranked_rows, summary)
+                        )
+                    return result
         return None
 
     # -- internals -----------------------------------------------------
+
+    @staticmethod
+    def _athlete_group_scope(
+        row: dict[str, Any],
+        ranked_rows: list[dict[str, Any]],
+        summary: dict[str, Any],
+    ) -> tuple[Optional[int], Optional[dict[str, Any]]]:
+        """(total_athletes, group summary) for one row of a mixed race --
+        scoped to the row's own group, not the whole (multi-group) race.
+        None/None when the row's equipment matched no group."""
+        group_index = row.get("group_index")
+        groups = summary.get("groups") or []
+        if not isinstance(group_index, int) or not (0 <= group_index < len(groups)):
+            return None, None
+        total_athletes = sum(
+            1 for r in ranked_rows if r.get("group_index") == group_index
+        )
+        return total_athletes, groups[group_index]
 
     def _iter_races(self):
         """Yield (summary, ranked_rows, team_leaderboard) newest-first,
@@ -160,9 +185,14 @@ class RaceResultsQuery:
             rows = self._participant_rows(
                 leaderboard if isinstance(leaderboard, dict) else {}
             )
-            ranked_rows = self._rank_and_tag(
-                rows, summary["race_type"], summary["result_id"]
-            )
+            if summary["race_type"] == "mixed":
+                ranked_rows = self._rank_and_tag_mixed(
+                    rows, summary.get("groups") or [], summary["result_id"]
+                )
+            else:
+                ranked_rows = self._rank_and_tag(
+                    rows, summary["race_type"], summary["result_id"]
+                )
             yield summary, ranked_rows, snapshot.get("team_leaderboard")
 
     def _load_records(self) -> list[Any]:
@@ -185,7 +215,7 @@ class RaceResultsQuery:
         athlete_count = sum(
             1 for row in leaderboard.values() if RaceResultsQuery._is_participant(row)
         )
-        return {
+        summary = {
             "result_id": result_id,
             "race_type": config.get("race_type"),
             "competition_mode": config.get("competition_mode"),
@@ -193,6 +223,29 @@ class RaceResultsQuery:
             "end_time_epoch_ms": snapshot.get("end_time_epoch_ms"),
             "athlete_count": athlete_count,
         }
+        if config.get("race_type") == "mixed":
+            summary["groups"] = RaceResultsQuery._summarize_groups(config)
+        return summary
+
+    @staticmethod
+    def _summarize_groups(config: dict[str, Any]) -> list[dict[str, Any]]:
+        groups = config.get("groups")
+        groups = groups if isinstance(groups, list) else []
+        summaries = []
+        for index, group in enumerate(groups):
+            group = group if isinstance(group, dict) else {}
+            race_type = group.get("race_type")
+            summaries.append(
+                {
+                    "group_index": index,
+                    "race_type": race_type,
+                    "target_value": group.get("target_value"),
+                    "duration_sec": group.get("duration_sec"),
+                    "equipment_types": group.get("equipment_types"),
+                    "label": RaceResultsQuery._category_label(race_type, group),
+                }
+            )
+        return summaries
 
     @staticmethod
     def _is_participant(row: Any) -> bool:
@@ -244,6 +297,45 @@ class RaceResultsQuery:
         for index, row in enumerate(ordered, start=1):
             tagged = dict(row)
             tagged["rank"] = index
+            tagged["token"] = _make_token(result_id, row.get("node_id"))
+            ranked.append(tagged)
+        return ranked
+
+    @classmethod
+    def _rank_and_tag_mixed(
+        cls,
+        rows: list[dict[str, Any]],
+        groups: list[dict[str, Any]],
+        result_id: str,
+    ) -> list[dict[str, Any]]:
+        """Rank a mixed race's rows one equipment group at a time -- each
+        group is ordered (and ranked from 1) with its OWN race_type, never
+        the whole race's. Output is group 0's ranked rows, then group 1's,
+        and so on; rows whose group_index is None or out of range (no group
+        claimed that equipment) are appended last with rank None. Every row
+        keeps a token regardless of group."""
+        buckets: dict[int, list[dict[str, Any]]] = {
+            index: [] for index in range(len(groups))
+        }
+        ungrouped: list[dict[str, Any]] = []
+        for row in rows:
+            group_index = row.get("group_index")
+            if isinstance(group_index, int) and group_index in buckets:
+                buckets[group_index].append(row)
+            else:
+                ungrouped.append(row)
+
+        ranked: list[dict[str, Any]] = []
+        for index, group in enumerate(groups):
+            ordered = cls._order_by_race_type(buckets[index], group.get("race_type"))
+            for rank, row in enumerate(ordered, start=1):
+                tagged = dict(row)
+                tagged["rank"] = rank
+                tagged["token"] = _make_token(result_id, row.get("node_id"))
+                ranked.append(tagged)
+        for row in ungrouped:
+            tagged = dict(row)
+            tagged["rank"] = None
             tagged["token"] = _make_token(result_id, row.get("node_id"))
             ranked.append(tagged)
         return ranked

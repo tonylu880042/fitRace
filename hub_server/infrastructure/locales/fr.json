@@ -268,6 +268,7 @@
   "race_type.calories": "Calories",
   "race_type.max_power": "Puissance max",
   "race_type.watts": "Puissance",
+  "race_type.mixed": "Multi-équipement",
   "result.error_title": "Résultat introuvable",
   "result.error_hint": "Le code a peut-être expiré ou n'est pas valide.",
   "result.back_button": "Retour au tableau de bord",
@@ -302,5 +303,15 @@
   "export.header_calories": "Calories",
   "export.header_max_power_w": "Puissance max (W)",
   "export.header_relay_members": "Membres du relais",
-  "export.header_relay_splits": "Temps intermédiaires (s)"
+  "export.header_relay_splits": "Temps intermédiaires (s)",
+  "equipment_type.treadmill": "Tapis de course",
+  "equipment_type.curved_treadmill": "Tapis courbé",
+  "equipment_type.spin_bike": "Vélo de spinning",
+  "equipment_type.fan_bike": "Vélo à air",
+  "equipment_type.upright_bike": "Vélo droit",
+  "equipment_type.recumbent_bike": "Vélo semi-allongé",
+  "equipment_type.elliptical": "Elliptique",
+  "equipment_type.stair_climber": "Simulateur d'escalier",
+  "equipment_type.rowing_machine": "Rameur",
+  "equipment_type.ski_erg": "SkiErg"
 }

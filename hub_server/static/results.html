@@ -162,6 +162,20 @@
       gap: 16px;
     }
 
+    .group-section + .group-section {
+      margin-top: 28px;
+    }
+
+    .group-heading {
+      margin: 0 0 12px;
+      font-family: "Oswald", sans-serif;
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+
     .athlete-card {
       border: 1px solid var(--border);
       background: var(--surface);
@@ -484,8 +498,63 @@
 
     function getRaceTypeLabel(raceType) {
       const type = String(raceType || "").toLowerCase();
-      const key = { distance: "race_type.distance", time: "race_type.time", calories: "race_type.calories", max_power: "race_type.max_power", watts: "race_type.watts" }[type];
+      const key = { distance: "race_type.distance", time: "race_type.time", calories: "race_type.calories", max_power: "race_type.max_power", watts: "race_type.watts", mixed: "race_type.mixed" }[type];
       return key ? t(key) : (raceType || "--");
+    }
+
+    // Equipment-type label for a mixed-race group heading, e.g.
+    // "Rowing Machine". Falls back to the raw type if the locale has
+    // nothing for it (a t() miss returns the key itself, not a translation).
+    function getEquipmentTypeLabel(type) {
+      const key = `equipment_type.${type}`;
+      const translated = t(key);
+      return translated === key ? type : translated;
+    }
+
+    // Pure text builder for one mixed-race group section heading, e.g.
+    // "Rowing Machine · Time · 2 min". Kept separate from any DOM code so
+    // it can be executed directly under node (see
+    // tests/unit/hub/test_result_pages_mixed_i18n.py).
+    function groupHeadingText(group) {
+      const equipmentNames = (group.equipment_types || []).map(getEquipmentTypeLabel).join("/");
+      const parts = [equipmentNames, getRaceTypeLabel(group.race_type), group.label].filter(Boolean);
+      return parts.join(" · ");
+    }
+
+    // Rank cell text: "#3", or "—" for an ungrouped row of a mixed race
+    // (backend rank is null when a station equipment matched no group).
+    function rankDisplay(rank, lang) {
+      if (rank === null || rank === undefined) return "—";
+      return `#${new Intl.NumberFormat(lang).format(rank)}`;
+    }
+
+    // Partitions an already-ranked mixed-race `results` list into one
+    // section per equipment group (in group_index order), with any
+    // ungrouped rows (group_index null/unmatched) collected into a final
+    // section with group: null. Athletes arrive pre-ordered by the backend
+    // (group 0 ranked rows, then group 1, and so on, then ungrouped) so
+    // this only needs a single stable partitioning pass, never a re-sort.
+    // Pure (no DOM) so it is exercised directly under node.
+    function buildGroupSections(race, athletes) {
+      const groups = race.groups || [];
+      const sections = new Map();
+      groups.forEach((group) => {
+        sections.set(group.group_index, { group, athletes: [] });
+      });
+      const ungrouped = [];
+      athletes.forEach((athlete) => {
+        const section = sections.get(athlete.group_index);
+        if (section) {
+          section.athletes.push(athlete);
+        } else {
+          ungrouped.push(athlete);
+        }
+      });
+      const ordered = groups.map((group) => sections.get(group.group_index));
+      if (ungrouped.length > 0) {
+        ordered.push({ group: null, athletes: ungrouped });
+      }
+      return ordered;
     }
 
     // Anonymous-finisher name fallback. Self-contained (no t()/messages
@@ -590,6 +659,82 @@
         + '</div>';
     }
 
+    function renderAthleteCard(athlete, raceType, lang) {
+      const card = document.createElement("div");
+      card.className = "athlete-card";
+      card.id = `athlete-${athlete.token || athlete.station_number}`;
+
+      const { value: metricValue, unit: metricUnit } = formatMetricValue(athlete, raceType, lang);
+      const metricLabel = getMetricLabel(raceType);
+      const teamHtml = athlete.team_name ? `<div class="card-team">${escapeHtml(athlete.team_name)}</div>` : "";
+
+      const resultUrl = `${window.location.origin}/static/result.html?token=${encodeURIComponent(athlete.token || "")}`;
+
+      card.innerHTML = `
+        <div class="card-header">
+          <div class="card-rank">${escapeHtml(rankDisplay(athlete.rank, lang))}</div>
+          <div class="card-name">${escapeHtml(athleteDisplayName(athlete, lang))}</div>
+        </div>
+        ${teamHtml}
+        <div class="card-metric">
+          <div class="card-metric-label">${escapeHtml(metricLabel)}</div>
+          <div class="card-metric-value">${escapeHtml(metricValue)}${metricUnit ? ' ' + escapeHtml(metricUnit) : ''}</div>
+        </div>
+        <div class="card-qr" id="qr-${athlete.token || athlete.station_number}"></div>
+      `;
+
+      if (athlete.token) {
+        const qrContainerId = `qr-${athlete.token}`;
+        setTimeout(() => {
+          const container = document.getElementById(qrContainerId);
+          if (container && container.children.length === 0) {
+            try {
+              new QRCode(container, {
+                text: resultUrl,
+                width: 128,
+                height: 128,
+                colorDark: "#000000",
+                colorLight: "#ffffff"
+              });
+            } catch (error) {
+              console.error("Failed to generate QR code:", error);
+            }
+          }
+        }, 0);
+      }
+
+      return card;
+    }
+
+    // Grouped section rendering for a mixed race. Kept as its own function
+    // (rather than inlined into renderResults) so the non-mixed path of
+    // renderResults -- exercised by tests/unit/hub/test_result_pages_anonymous_display.py
+    // and test_result_pages_number_format.py against a stub DOM that does
+    // NOT define this function -- stays exactly the self-contained body it
+    // always was; this is only reached (and only needs to be defined) when
+    // race.race_type is actually "mixed".
+    function renderMixedResults(container, race, athletes, lang) {
+      buildGroupSections(race, athletes).forEach((section) => {
+        const wrap = document.createElement("div");
+        wrap.className = "group-section";
+
+        const heading = document.createElement("h2");
+        heading.className = "group-heading";
+        heading.textContent = section.group ? groupHeadingText(section.group) : t("race_type.mixed");
+        wrap.appendChild(heading);
+
+        const grid = document.createElement("div");
+        grid.className = "results-grid";
+        const raceTypeForGroup = section.group ? section.group.race_type : null;
+        section.athletes.forEach((athlete) => {
+          grid.appendChild(renderAthleteCard(athlete, raceTypeForGroup, lang));
+        });
+        wrap.appendChild(grid);
+
+        container.appendChild(wrap);
+      });
+    }
+
     function renderResults(data) {
       const container = document.getElementById("results-container");
 
@@ -606,6 +751,12 @@
       document.getElementById("race-type-display").textContent = getRaceTypeLabel(race.race_type);
       document.getElementById("athlete-count-display").textContent = new Intl.NumberFormat(lang).format(race.athlete_count || athletes.length);
       document.getElementById("race-meta").style.display = "flex";
+
+      if (race.race_type === "mixed") {
+        container.innerHTML = "";
+        renderMixedResults(container, race, athletes, lang);
+        return;
+      }
 
       const grid = document.createElement("div");
       grid.className = "results-grid";

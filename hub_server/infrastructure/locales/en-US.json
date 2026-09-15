@@ -268,6 +268,7 @@
   "race_type.calories": "Calories",
   "race_type.max_power": "Max Power",
   "race_type.watts": "Power",
+  "race_type.mixed": "Multi-equipment",
   "result.error_title": "Result not found",
   "result.error_hint": "The token may have expired or is invalid.",
   "result.back_button": "Back to Dashboard",
@@ -302,5 +303,15 @@
   "export.header_calories": "Calories",
   "export.header_max_power_w": "Max Power (W)",
   "export.header_relay_members": "Relay Members",
-  "export.header_relay_splits": "Relay Splits (s)"
+  "export.header_relay_splits": "Relay Splits (s)",
+  "equipment_type.treadmill": "Treadmill",
+  "equipment_type.curved_treadmill": "Curved Treadmill",
+  "equipment_type.spin_bike": "Spin Bike",
+  "equipment_type.fan_bike": "Fan Bike",
+  "equipment_type.upright_bike": "Upright Bike",
+  "equipment_type.recumbent_bike": "Recumbent Bike",
+  "equipment_type.elliptical": "Elliptical",
+  "equipment_type.stair_climber": "Stair Climber",
+  "equipment_type.rowing_machine": "Rowing Machine",
+  "equipment_type.ski_erg": "Ski Erg"
 }

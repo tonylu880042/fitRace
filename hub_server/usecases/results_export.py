@@ -138,6 +138,22 @@ def _iter_export_races(
         yield race, label
 
 
+def _row_group(
+    race: dict[str, Any], participant: dict[str, Any]
+) -> Optional[dict[str, Any]]:
+    """The mixed-race group summary that scores `participant`, or None for
+    a non-mixed race, or for a mixed row whose equipment matched no group.
+    `race["groups"]` is the group summary list RaceResultsQuery._summarize
+    attaches to a mixed race (see race_results_query.py)."""
+    if race.get("race_type") != "mixed":
+        return None
+    groups = race.get("groups") or []
+    group_index = participant.get("group_index")
+    if isinstance(group_index, int) and 0 <= group_index < len(groups):
+        return groups[group_index]
+    return None
+
+
 def _build_row(
     race: dict[str, Any],
     label: str,
@@ -147,6 +163,17 @@ def _build_row(
     lang: str,
 ) -> list[str]:
     race_type = race.get("race_type")
+    # A mixed race's row is labelled/judged by its OWN equipment group's
+    # race_type/target -- not the race's own (always "mixed") race_type.
+    # An ungrouped row (equipment matched no group) keeps race_type
+    # "mixed" and the default "" label computed by _iter_export_races, so
+    # it renders as race_type.mixed with a blank category and blank
+    # status (mixed is never a DNF-checked race type).
+    group = _row_group(race, participant)
+    if group is not None:
+        race_type = group["race_type"]
+        label = group["label"] or ""
+
     competition_mode = race.get("competition_mode")
     mode_key = _MODE_LOCALE_KEYS.get(competition_mode)
     mode_label = translate(mode_key) if mode_key else (competition_mode or "")
@@ -177,13 +204,15 @@ def _build_row(
         else ""
     )
     race_type_label = translate(f"race_type.{race_type}") if race_type else ""
+    rank = participant.get("rank")
+    rank_label = "" if rank is None else str(rank)
 
     return [
         race_start,
         race_type_label,
         label,
         mode_label,
-        str(participant.get("rank", "")),
+        rank_label,
         _sanitize(_display_name(participant, lang)),
         division_label,
         _sanitize(participant.get("team_name") or ""),

@@ -268,6 +268,7 @@
   "race_type.calories": "Kalorier",
   "race_type.max_power": "Maxeffekt",
   "race_type.watts": "Effekt",
+  "race_type.mixed": "Blandad utrustning",
   "result.error_title": "Resultatet hittades inte",
   "result.error_hint": "Koden kan ha gått ut eller vara ogiltig.",
   "result.back_button": "Tillbaka till instrumentpanelen",
@@ -302,5 +303,15 @@
   "export.header_calories": "Kalorier",
   "export.header_max_power_w": "Maxeffekt (W)",
   "export.header_relay_members": "Stafettmedlemmar",
-  "export.header_relay_splits": "Delsträckor (s)"
+  "export.header_relay_splits": "Delsträckor (s)",
+  "equipment_type.treadmill": "Löpband",
+  "equipment_type.curved_treadmill": "Curved löpband",
+  "equipment_type.spin_bike": "Spinningcykel",
+  "equipment_type.fan_bike": "Airbike",
+  "equipment_type.upright_bike": "Upprätt cykel",
+  "equipment_type.recumbent_bike": "Ligcykel",
+  "equipment_type.elliptical": "Crosstrainer",
+  "equipment_type.stair_climber": "Trappmaskin",
+  "equipment_type.rowing_machine": "Roddmaskin",
+  "equipment_type.ski_erg": "SkiErg"
 }

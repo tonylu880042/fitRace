@@ -268,6 +268,7 @@
   "race_type.calories": "Calorie",
   "race_type.max_power": "Potenza max",
   "race_type.watts": "Potenza",
+  "race_type.mixed": "Multi-attrezzo",
   "result.error_title": "Risultato non trovato",
   "result.error_hint": "Il codice potrebbe essere scaduto o non valido.",
   "result.back_button": "Torna al cruscotto",
@@ -302,5 +303,15 @@
   "export.header_calories": "Calorie",
   "export.header_max_power_w": "Potenza max (W)",
   "export.header_relay_members": "Membri della staffetta",
-  "export.header_relay_splits": "Tempi intermedi (s)"
+  "export.header_relay_splits": "Tempi intermedi (s)",
+  "equipment_type.treadmill": "Tapis roulant",
+  "equipment_type.curved_treadmill": "Tapis roulant curvo",
+  "equipment_type.spin_bike": "Spin bike",
+  "equipment_type.fan_bike": "Airbike",
+  "equipment_type.upright_bike": "Cyclette verticale",
+  "equipment_type.recumbent_bike": "Cyclette reclinata",
+  "equipment_type.elliptical": "Ellittica",
+  "equipment_type.stair_climber": "Stepper",
+  "equipment_type.rowing_machine": "Vogatore",
+  "equipment_type.ski_erg": "SkiErg"
 }
