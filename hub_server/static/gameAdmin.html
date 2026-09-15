@@ -1959,10 +1959,6 @@
       markRaceConfigDirty();
     }
 
-    function isMixedRaceType(raceType) {
-      return raceType === "mixed";
-    }
-
     // Pure conversion: the editor's internal group shape
     // ({equipmentTypes, raceType, targetValue}) -> the wire shape the
     // backend RaceGroup model expects
@@ -2333,6 +2329,13 @@
         $("relay-legs").value = config.relay_legs || 4;
         if (config.race_type === "mixed") {
           state.raceGroups = raceGroupsFromConfig(config.groups);
+        } else {
+          // A non-mixed saved config means there is no current saved group
+          // setup -- drop any groups left over from a previous mixed
+          // config so switching race-type back to "mixed" later seeds
+          // fresh blank groups (see syncMixedRaceFields()) instead of
+          // silently resurrecting stale, no-longer-saved ones.
+          state.raceGroups = [];
         }
         syncMixedRaceFields();
         syncRaceFields();

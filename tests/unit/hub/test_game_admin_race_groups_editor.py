@@ -403,6 +403,16 @@ def test_set_race_group_target_coerces_to_number_and_marks_dirty():
 # ---------------------------------------------------------------------------
 # renderRace() wiring: restore state.raceGroups from a saved mixed config
 # ---------------------------------------------------------------------------
+#
+# The source-text check below is a cheap smoke test only -- it is NOT proof
+# the wiring actually runs. A `if (false && config.race_type === "mixed")`
+# mutation still contains both substrings it checks for, so that mutation
+# survives it undetected. The real proof is
+# _run_render_race_with_config()/the tests after it: they extract and
+# EXECUTE the real renderRace() under node against a stubbed DOM/
+# collaborator set and assert on the resulting state.raceGroups value, so a
+# `false &&`-style mutation (or any other way of skipping the assignment)
+# is caught.
 
 
 def test_render_race_restores_groups_from_config_only_for_mixed():
@@ -412,3 +422,140 @@ def test_render_race_restores_groups_from_config_only_for_mixed():
     body = source[start:end]
     assert 'config.race_type === "mixed"' in body
     assert "raceGroupsFromConfig(config.groups)" in body
+
+
+def _run_render_race_with_config(configs: list, initial_race_groups=None):
+    """Executes the REAL renderRace() under node, once per entry in
+    `configs`, threading state.raceGroups through successive calls the way
+    a real page does across repeated refreshState()/renderRace() calls.
+    Every renderRace() collaborator other than the DOM ($) and
+    raceGroupsFromConfig (kept real -- see below) is stubbed as a no-op, so
+    only the group-restoration branch under test can affect the result.
+
+    raceGroupsFromConfig is replaced with a marker-tagging stub rather than
+    the real pure function: this isolates "does renderRace() call
+    raceGroupsFromConfig(config.groups) and assign the result to
+    state.raceGroups" from "is raceGroupsFromConfig itself correct" (the
+    latter is already covered for real in
+    test_game_admin_race_groups_payload.py's round-trip test)."""
+    source = _stripped_script()
+    fn = _extract_function(source, "renderRace")
+    configs_js = json.dumps(configs)
+    initial_groups_js = json.dumps(
+        initial_race_groups if initial_race_groups is not None else []
+    )
+    script = f"""
+const mockElements = {{}};
+function makeEl() {{
+  return {{
+    textContent: '',
+    value: '',
+    className: '',
+    disabled: false,
+    dataset: {{}},
+    classList: {{ toggle: function () {{}} }},
+  }};
+}}
+function $(id) {{
+  if (!mockElements[id]) mockElements[id] = makeEl();
+  return mockElements[id];
+}}
+function t(key) {{ return key; }}
+function normalizeLeaderboardDisplayMode(mode) {{ return mode || "classic"; }}
+function metricNumber(value, fallback) {{ return Number(value) || fallback || 0; }}
+function raceGroupsFromConfig(groups) {{
+  return (groups || []).map((g) => ({{ __restoredFrom: g }}));
+}}
+function syncMixedRaceFields() {{}}
+function syncRaceFields() {{}}
+function syncCompetitionFields() {{}}
+function renderRaceActionButtons() {{}}
+function updateControlGuidance() {{}}
+function renderReadinessPanel() {{}}
+function syncSessionModeControl() {{}}
+function renderRoster() {{}}
+
+const state = {{
+  race: null,
+  raceConfigDirty: false,
+  raceGroups: {initial_groups_js},
+  readiness: null,
+  countdownActive: false,
+}};
+
+{fn}
+
+const configs = {configs_js};
+const snapshots = [];
+for (const config of configs) {{
+  state.race = {{ state: "READY", config }};
+  renderRace();
+  snapshots.push(JSON.parse(JSON.stringify(state.raceGroups)));
+}}
+console.log(JSON.stringify(snapshots));
+"""
+    return json.loads(_run_node(script))
+
+
+def test_render_race_actually_restores_groups_from_a_saved_mixed_config():
+    saved_groups = [
+        {
+            "equipment_types": ["treadmill"],
+            "race_type": "distance",
+            "target_value": 800,
+            "duration_sec": 0,
+        },
+        {
+            "equipment_types": ["rowing_machine"],
+            "race_type": "time",
+            "target_value": 0,
+            "duration_sec": 300,
+        },
+    ]
+    snapshots = _run_render_race_with_config(
+        [
+            {
+                "race_type": "mixed",
+                "competition_mode": "individual",
+                "groups": saved_groups,
+            }
+        ]
+    )
+    restored = snapshots[0]
+    assert restored == [{"__restoredFrom": g} for g in saved_groups]
+
+
+def test_render_race_does_not_resurrect_stale_groups_after_a_non_mixed_config_loads():
+    """After a mixed config's groups are loaded, loading a NON-mixed config
+    (the operator switched race types and saved) must not leave the old
+    group editor state sitting in state.raceGroups as if it were still the
+    saved setup -- otherwise switching race-type back to "mixed" later would
+    silently resurrect stale, no-longer-saved groups (see
+    syncMixedRaceFields(), which only seeds two blank groups when
+    state.raceGroups is empty)."""
+    saved_groups = [
+        {
+            "equipment_types": ["treadmill"],
+            "race_type": "distance",
+            "target_value": 800,
+            "duration_sec": 0,
+        },
+        {
+            "equipment_types": ["rowing_machine"],
+            "race_type": "time",
+            "target_value": 0,
+            "duration_sec": 300,
+        },
+    ]
+    snapshots = _run_render_race_with_config(
+        [
+            {
+                "race_type": "mixed",
+                "competition_mode": "individual",
+                "groups": saved_groups,
+            },
+            {"race_type": "distance", "competition_mode": "individual", "groups": []},
+        ]
+    )
+    assert snapshots[0] != []
+    assert snapshots[1] == []
