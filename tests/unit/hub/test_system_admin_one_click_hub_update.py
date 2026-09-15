@@ -317,8 +317,13 @@ def test_hub_restart_polling_helper_exists():
     # Must fetch /health
     assert 'fetchJson("/health"' in body or 'fetchJson("/health"' in body
 
-    # Must check version
-    assert "version" in body
+    # Must check version by comparing health.version to targetVersion
+    # (not just checking if "version" appears somewhere in the function body)
+    body_stripped = _strip_js_comments(body)
+    version_check = re.search(r"health\.version\s*===\s*\w+", body_stripped)
+    assert (
+        version_check
+    ), "Must compare health.version === targetVersion (or similar) to wait for correct version"
 
     # Must call window.location.reload()
     assert "window.location.reload()" in body or "location.reload()" in body

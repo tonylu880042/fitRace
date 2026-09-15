@@ -1,4 +1,5 @@
 import os
+import subprocess
 import time
 from pathlib import Path
 
@@ -709,6 +710,27 @@ def test_update_hub_one_click_blocks_while_race_running(monkeypatch):
     assert "IDLE" in response.json()["detail"]
     assert calls == []
     client.post("/api/race/reset")
+
+
+def test_update_hub_one_click_updater_start_failure(monkeypatch):
+    from hub_server.infrastructure.fastapi.app import update_checker
+    from hub_server.infrastructure.fastapi import app as hub_app
+
+    client.post("/api/race/reset")
+
+    def mock_status():
+        return {"state": "hub_installed", "hub_install": {"version": "0.1.1"}}
+
+    def mock_run_systemctl(command):
+        raise subprocess.CalledProcessError(1, command)
+
+    monkeypatch.setattr(update_checker, "status", mock_status)
+    monkeypatch.setattr(hub_app, "run_systemctl", mock_run_systemctl)
+
+    response = client.post("/api/updates/hub")
+
+    assert response.status_code == 409
+    assert response.json()["detail"]  # Must have a non-empty error detail
 
 
 def test_hub_checks_updates_once_on_startup(monkeypatch):
