@@ -177,6 +177,7 @@ Manual check: POST /api/updates/check
 Download artifacts: POST /api/updates/download
 Install Hub artifact: POST /api/updates/install/hub
 Apply Hub update: POST /api/updates/apply/hub
+One-click Hub update: POST /api/updates/hub
 Status: GET /api/updates/status
 Signature: manifest.json.sig is verified with fitrace_common/release-ed25519-public.pem
 Formal Hub runtime: fitracestudio-hub.service runs from /opt/fitracestudio/current
