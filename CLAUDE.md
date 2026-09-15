@@ -67,4 +67,12 @@ TELEMETRY_SPEC.md, OTA_UPDATE.md.
 - `scripts/deploy.sh` can clobber the device's `config.json` — verify before
   deploying.
 
+## Release signing
+- The OTA release private key never lives in this repo and must never be
+  read, printed, committed, or uploaded — only its path is passed to openssl.
+- Sign the stable manifest with OpenSSL 3 (macOS LibreSSL lacks -rawin for ed25519):
+  `openssl pkeyutl -sign -rawin -inkey <private key> -in deploy_update/upload_config/channels/stable/manifest.json -out deploy_update/upload_config/channels/stable/manifest.json.sig`
+- Verify with `fitrace_common/release-ed25519-public.pem` before uploading;
+  any edit to manifest.json after signing invalidates the signature.
+
 Full rationale and TDD walkthrough: AGENT.md.
