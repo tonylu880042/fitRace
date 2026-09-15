@@ -303,5 +303,15 @@
   "export.header_calories": "Kalorien",
   "export.header_max_power_w": "Maximale Leistung (W)",
   "export.header_relay_members": "Staffelmitglieder",
-  "export.header_relay_splits": "Zwischenzeiten (s)"
+  "export.header_relay_splits": "Zwischenzeiten (s)",
+  "equipment_type.treadmill": "Laufband",
+  "equipment_type.curved_treadmill": "Curved-Laufband",
+  "equipment_type.spin_bike": "Spinning-Bike",
+  "equipment_type.fan_bike": "Airbike",
+  "equipment_type.upright_bike": "Ergometer (aufrecht)",
+  "equipment_type.recumbent_bike": "Liegeergometer",
+  "equipment_type.elliptical": "Crosstrainer",
+  "equipment_type.stair_climber": "Stepper",
+  "equipment_type.rowing_machine": "Rudergerät",
+  "equipment_type.ski_erg": "Skiergometer"
 }

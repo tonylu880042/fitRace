@@ -266,6 +266,7 @@
       <div class="athlete-info">
         <div id="athlete-team" class="info-row"></div>
         <div id="athlete-station" class="info-row"></div>
+        <div id="group-equipment" class="info-row"></div>
       </div>
 
       <div class="race-info">
@@ -447,9 +448,27 @@
     // under node with a stubbed t() -- see test_result_pages_i18n.py.
     function getRaceTypeLabel(raceType) {
       const type = String(raceType || "").toLowerCase();
-      const key = { distance: "race_type.distance", time: "race_type.time", calories: "race_type.calories", max_power: "race_type.max_power", watts: "race_type.watts" }[type];
+      const key = { distance: "race_type.distance", time: "race_type.time", calories: "race_type.calories", max_power: "race_type.max_power", watts: "race_type.watts", mixed: "race_type.mixed" }[type];
       return key ? t(key) : (raceType || "--");
     }
+
+    // Equipment-type label for one mixed-race group, e.g. "Rowing Machine".
+    // Falls back to the raw type if the locale has nothing for it (a t()
+    // miss returns the key itself, not a translation).
+    function getEquipmentTypeLabel(type) {
+      const key = `equipment_type.${type}`;
+      const translated = t(key);
+      return translated === key ? type : translated;
+    }
+
+    // Header-area text naming the equipment covered by this mixed-race
+    // group, e.g. "Rowing Machine" or "Treadmill/Rowing Machine".
+    // "" (nothing to show) for a non-mixed race or an ungrouped row.
+    function groupEquipmentText(group) {
+      if (!group || !Array.isArray(group.equipment_types)) return "";
+      return group.equipment_types.map(getEquipmentTypeLabel).join("/");
+    }
+
 
     // Anonymous-finisher name fallback. This is intentionally
     // self-contained (no t()/messages dependency) because it is executed
@@ -578,10 +597,18 @@
         document.getElementById("athlete-avatar").style.display = "none";
       }
 
-      const rank = athlete.rank || 0;
-      const totalAthletes = data.total_athletes || 0;
-      const rankSuffix = totalAthletes ? " / " + formatNumber(totalAthletes, lang) : "";
-      document.getElementById("rank").textContent = `${formatNumber(rank, lang)}${rankSuffix}`;
+      // An ungrouped row of a mixed race carries rank: null (no group
+      // claimed its equipment) -- show "—" instead of formatting null.
+      const rank = athlete.rank;
+      const totalAthletes = data.total_athletes;
+      let rankText;
+      if (rank === null || rank === undefined) {
+        rankText = "—";
+      } else {
+        const rankSuffix = totalAthletes ? " / " + formatNumber(totalAthletes, lang) : "";
+        rankText = `${formatNumber(rank, lang)}${rankSuffix}`;
+      }
+      document.getElementById("rank").textContent = rankText;
 
       document.getElementById("athlete-name").textContent = escapeHtml(athleteDisplayName(athlete, lang));
 
@@ -609,8 +636,26 @@
         stationEl.classList.remove("visible");
       }
 
-      document.getElementById("race-type").textContent = getRaceTypeLabel(race.race_type);
+      // For a mixed race, the group of the athlete (data.group, added by
+      // the token lookup endpoint -- see race_results_query.py) carries the
+      // race_type that actually applies to this athlete; race.race_type is
+      // just "mixed" and would be meaningless here. Non-mixed races and an
+      // ungrouped row of a mixed race have no group, so this falls back to
+      // race.race_type exactly like before.
+      const group = data.group || null;
+      const raceTypeForDisplay = group ? group.race_type : race.race_type;
+      document.getElementById("race-type").textContent = getRaceTypeLabel(raceTypeForDisplay);
       document.getElementById("race-date").textContent = formatDate(race.end_time_epoch_ms);
+
+      const equipmentEl = document.getElementById("group-equipment");
+      const equipmentText = group ? groupEquipmentText(group) : "";
+      if (equipmentText) {
+        equipmentEl.textContent = equipmentText;
+        equipmentEl.classList.add("visible");
+      } else {
+        equipmentEl.textContent = "";
+        equipmentEl.classList.remove("visible");
+      }
 
       const metricsGrid = document.getElementById("metrics-grid");
       metricsGrid.innerHTML = "";

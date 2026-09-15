@@ -303,5 +303,15 @@
   "export.header_calories": "卡路里",
   "export.header_max_power_w": "最大功率（瓦）",
   "export.header_relay_members": "接力隊員",
-  "export.header_relay_splits": "接力分段時間（秒）"
+  "export.header_relay_splits": "接力分段時間（秒）",
+  "equipment_type.treadmill": "跑步機",
+  "equipment_type.curved_treadmill": "曲面跑步機",
+  "equipment_type.spin_bike": "飛輪",
+  "equipment_type.fan_bike": "風扇車",
+  "equipment_type.upright_bike": "直立式健身車",
+  "equipment_type.recumbent_bike": "臥式健身車",
+  "equipment_type.elliptical": "橢圓機",
+  "equipment_type.stair_climber": "踏步機",
+  "equipment_type.rowing_machine": "划船機",
+  "equipment_type.ski_erg": "滑雪機"
 }
