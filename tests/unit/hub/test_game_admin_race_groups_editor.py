@@ -429,15 +429,24 @@ def _run_render_race_with_config(configs: list, initial_race_groups=None):
     `configs`, threading state.raceGroups through successive calls the way
     a real page does across repeated refreshState()/renderRace() calls.
     Every renderRace() collaborator other than the DOM ($) and
-    raceGroupsFromConfig (kept real -- see below) is stubbed as a no-op, so
-    only the group-restoration branch under test can affect the result.
+    raceGroupsFromConfig (kept real -- see below) is stubbed, so only the
+    group-restoration branch under test can affect the result. Returns
+    {"snapshots": [...], "syncMixedRaceFieldsCalls": [...]}.
 
     raceGroupsFromConfig is replaced with a marker-tagging stub rather than
     the real pure function: this isolates "does renderRace() call
     raceGroupsFromConfig(config.groups) and assign the result to
     state.raceGroups" from "is raceGroupsFromConfig itself correct" (the
     latter is already covered for real in
-    test_game_admin_race_groups_payload.py's round-trip test)."""
+    test_game_admin_race_groups_payload.py's round-trip test).
+
+    The syncMixedRaceFields stub RECORDS every call, capturing both
+    $("race-type").value and a snapshot of state.raceGroups at call time --
+    not just whether it was called -- so a test can pin that it runs AFTER
+    both are set to their new (mixed) values, not before (a "moved earlier
+    in renderRace()" mutation would otherwise pass a bare
+    call-count/call-happened check while still handing
+    syncMixedRaceFields() the stale pre-restoration state)."""
     source = _stripped_script()
     fn = _extract_function(source, "renderRace")
     configs_js = json.dumps(configs)
@@ -466,7 +475,13 @@ function metricNumber(value, fallback) {{ return Number(value) || fallback || 0;
 function raceGroupsFromConfig(groups) {{
   return (groups || []).map((g) => ({{ __restoredFrom: g }}));
 }}
-function syncMixedRaceFields() {{}}
+const syncMixedRaceFieldsCalls = [];
+function syncMixedRaceFields() {{
+  syncMixedRaceFieldsCalls.push({{
+    raceType: $("race-type").value,
+    raceGroups: JSON.parse(JSON.stringify(state.raceGroups)),
+  }});
+}}
 function syncRaceFields() {{}}
 function syncCompetitionFields() {{}}
 function renderRaceActionButtons() {{}}
@@ -492,7 +507,7 @@ for (const config of configs) {{
   renderRace();
   snapshots.push(JSON.parse(JSON.stringify(state.raceGroups)));
 }}
-console.log(JSON.stringify(snapshots));
+console.log(JSON.stringify({{ snapshots, syncMixedRaceFieldsCalls }}));
 """
     return json.loads(_run_node(script))
 
@@ -512,7 +527,7 @@ def test_render_race_actually_restores_groups_from_a_saved_mixed_config():
             "duration_sec": 300,
         },
     ]
-    snapshots = _run_render_race_with_config(
+    result = _run_render_race_with_config(
         [
             {
                 "race_type": "mixed",
@@ -521,7 +536,7 @@ def test_render_race_actually_restores_groups_from_a_saved_mixed_config():
             }
         ]
     )
-    restored = snapshots[0]
+    restored = result["snapshots"][0]
     assert restored == [{"__restoredFrom": g} for g in saved_groups]
 
 
@@ -547,7 +562,7 @@ def test_render_race_does_not_resurrect_stale_groups_after_a_non_mixed_config_lo
             "duration_sec": 300,
         },
     ]
-    snapshots = _run_render_race_with_config(
+    result = _run_render_race_with_config(
         [
             {
                 "race_type": "mixed",
@@ -557,5 +572,47 @@ def test_render_race_does_not_resurrect_stale_groups_after_a_non_mixed_config_lo
             {"race_type": "distance", "competition_mode": "individual", "groups": []},
         ]
     )
+    snapshots = result["snapshots"]
     assert snapshots[0] != []
     assert snapshots[1] == []
+
+
+def test_render_race_calls_sync_mixed_race_fields_after_race_type_and_groups_are_restored():
+    """Pins the ORDER inside renderRace(): syncMixedRaceFields() must run
+    AFTER both #race-type is set to "mixed" and state.raceGroups holds the
+    freshly restored groups -- not before. If it ran first (or not at all),
+    syncMixedRaceFields() would see a stale/empty state.raceGroups and (per
+    its own logic) seed two blank groups instead of showing the operator
+    their actual saved setup."""
+    saved_groups = [
+        {
+            "equipment_types": ["treadmill"],
+            "race_type": "distance",
+            "target_value": 800,
+            "duration_sec": 0,
+        },
+        {
+            "equipment_types": ["rowing_machine"],
+            "race_type": "time",
+            "target_value": 0,
+            "duration_sec": 300,
+        },
+    ]
+    stale_sentinel_groups = [
+        {"equipmentTypes": ["OLD_SENTINEL"], "raceType": "distance", "targetValue": 1}
+    ]
+    result = _run_render_race_with_config(
+        [
+            {
+                "race_type": "mixed",
+                "competition_mode": "individual",
+                "groups": saved_groups,
+            }
+        ],
+        initial_race_groups=stale_sentinel_groups,
+    )
+    calls = result["syncMixedRaceFieldsCalls"]
+    assert len(calls) == 1
+    assert calls[0]["raceType"] == "mixed"
+    assert calls[0]["raceGroups"] == result["snapshots"][0]
+    assert calls[0]["raceGroups"] != stale_sentinel_groups
