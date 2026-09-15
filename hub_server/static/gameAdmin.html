@@ -1440,6 +1440,7 @@
         "check.teams": "Teams",
         "check.stations": "Station Health",
         "check.sound": "Sound",
+        "check.groups": "Equipment Groups",
         "panel.race_rules": "Race Rules",
         "panel.live_presentation": "Live Presentation",
         "panel.local_preference": "Local Preference",
@@ -1661,6 +1662,7 @@
       "check.teams": "隊伍編組",
       "check.stations": "場站狀態",
       "check.sound": "音效",
+      "check.groups": "器材分組",
       "panel.race_rules": "比賽規則",
       "panel.live_presentation": "即時呈現",
       "panel.local_preference": "本機偏好",
@@ -2435,6 +2437,13 @@
         ["stations", t("check.stations")],
         ["sound", t("check.sound")],
       ];
+      // checks.groups only exists in the backend's readiness payload for a
+      // mixed race (see get_race_readiness_status() in hub_server/
+      // infrastructure/fastapi/app.py) -- add its row only when present, so
+      // a non-mixed race's readiness panel never grows a phantom check.
+      if (checks.groups) {
+        checkOrder.push(["groups", t("check.groups")]);
+      }
       const blockingCheckCount = checkOrder.filter(([key]) => (checks[key] || {}).status === "block").length;
       const checksHtml = checkOrder.map(([key, label]) => {
         const check = checks[key] || { status: "info", message: "--" };
@@ -2890,6 +2899,39 @@
     }
 
     async function configureRace() {
+      if ($("race-type").value === "mixed") {
+        const validationKey = validateRaceGroups(state.raceGroups);
+        if (validationKey) {
+          setMessage("race-message", t(validationKey), "error");
+          return false;
+        }
+        const mixedPayload = {
+          race_type: "mixed",
+          competition_mode: "individual",
+          team_scoring_policy: $("team-scoring-policy").value,
+          team_completion_policy: $("team-completion-policy").value,
+          target_value: 0,
+          duration_sec: 0,
+          relay_legs: null,
+          groups: buildRaceGroupsPayload(state.raceGroups),
+        };
+        try {
+          state.race = await fetchJson("/api/race/configure", {
+            method: "POST",
+            headers: adminHeaders({ "Content-Type": "application/json" }),
+            body: JSON.stringify(mixedPayload),
+          });
+          state.raceConfigDirty = false;
+          await refreshReadiness();
+          renderRace();
+          setMessage("race-message", t("message.race_settings_saved"), "ok");
+          return true;
+        } catch (error) {
+          setMessage("race-message", error.message, "error");
+          return false;
+        }
+      }
+
       const isRelayRace = isRelayCompetitionMode($("competition-mode").value);
       const type = isRelayRace ? "distance" : $("race-type").value;
       const competitionMode = $("competition-mode").value;
