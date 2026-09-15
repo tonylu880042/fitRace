@@ -174,6 +174,12 @@ class ConfigurePayload(BaseModel):
     target_value: float = 0.0
     duration_sec: int = 0
     relay_legs: Optional[int] = None
+    # Kept as plain dicts (not list[RaceGroup]) so a malformed group is
+    # rejected where every other RaceConfig validation error already is --
+    # inside RaceConfig() construction below, as a caught ValueError -> 400
+    # -- rather than FastAPI's own request-body 422, matching how race_type/
+    # competition_mode etc. are deliberately left as plain str above.
+    groups: list[dict] = Field(default_factory=list)
 
 
 class LeaderboardDisplayPayload(BaseModel):
@@ -729,6 +735,61 @@ def get_race_readiness_status() -> dict:
                 "block", "No participant station is assigned."
             )
 
+    # Mixed races only: every assigned participant station must belong to
+    # exactly one group (BLOCKING if not -- "unknown"/None/unmatched all
+    # count as not belonging), and every group should have at least one
+    # station assigned (WARNING only, never blocking -- a group can be
+    # filled in later). checks["groups"] is added only here, so a non-mixed
+    # race's readiness output never gains the key.
+    if config and config.race_type == "mixed":
+        unmatched_messages: list[str] = []
+        for station_number, station in participant_stations:
+            equipment_type = station.get("equipment_type")
+            if config.group_index_for(equipment_type) is not None:
+                continue
+            if not equipment_type or equipment_type == "unknown":
+                unmatched_messages.append(
+                    f"Station {station_number}: equipment type is unknown; "
+                    "it is not in any race group."
+                )
+            else:
+                unmatched_messages.append(
+                    f"Station {station_number}: equipment type {equipment_type} "
+                    "is not in any race group."
+                )
+        blocking_issues.extend(unmatched_messages)
+
+        matched_group_indices = {
+            config.group_index_for(station.get("equipment_type"))
+            for _, station in participant_stations
+        }
+        matched_group_indices.discard(None)
+        empty_group_indices = [
+            index
+            for index in range(len(config.groups))
+            if index not in matched_group_indices
+        ]
+        for index in empty_group_indices:
+            group_label = ", ".join(config.groups[index].equipment_types)
+            warnings.append(
+                f"Group {index + 1} ({group_label}) has no assigned station."
+            )
+
+        if unmatched_messages:
+            checks["groups"] = build_check(
+                "block",
+                f"{len(unmatched_messages)} station(s) are not in any race group.",
+            )
+        elif empty_group_indices:
+            checks["groups"] = build_check(
+                "warn",
+                f"{len(empty_group_indices)} group(s) have no assigned station.",
+            )
+        else:
+            checks["groups"] = build_check(
+                "ok", "Every group has at least one assigned station."
+            )
+
     station_health = []
     individual_station_issues: list[str] = []
     for station_number, station in participant_stations:
@@ -1261,6 +1322,7 @@ async def configure_race(payload: ConfigurePayload, request: Request):
             target_value=payload.target_value,
             duration_sec=payload.duration_sec,
             relay_legs=payload.relay_legs,
+            groups=payload.groups,
         )
         apply_race_config(config)
         return await broadcast_race_state()

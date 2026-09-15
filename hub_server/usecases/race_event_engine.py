@@ -1,5 +1,5 @@
 from collections import defaultdict
-from typing import Dict, List, Set, Any
+from typing import Dict, List, Optional, Set, Any
 from hub_server.domain.models import RaceState
 
 
@@ -7,12 +7,22 @@ class RaceEventEngine:
     def __init__(self):
         self._checkpoints_passed: Dict[str, Set[int]] = defaultdict(set)
         self._segment_start: Dict[str, Dict[str, float]] = {}
-        self._segment_best: Dict[int, Dict[str, Any]] = {}
+        self._segment_best: Dict[Any, Dict[str, Any]] = {}
         self._catch_up_history: Dict[str, float] = {}
         self._last_catch_up_emit: Dict[str, float] = {}
         self._countdown_triggered_at: Set[int] = set()
         self._final_sprint_triggered: bool = False
         self._prev_remaining_sec: int = 9999
+        # Per-group dedupe state for a mixed race -- kept separate from the
+        # (untouched) race-wide attributes above so a non-mixed race's
+        # behaviour is byte-for-byte unchanged: it never reads or writes
+        # these. Without this, group 2's countdown/final_sprint would be
+        # silently suppressed by group 1's already having fired (or vice
+        # versa), since the race-wide flags above are shared by the whole
+        # evaluate() call regardless of which group produced progress.
+        self._group_countdown_triggered_at: Dict[int, Set[int]] = defaultdict(set)
+        self._group_final_sprint_triggered: Dict[int, bool] = {}
+        self._group_prev_remaining_sec: Dict[int, int] = {}
 
     def reset(self):
         self._checkpoints_passed.clear()
@@ -23,6 +33,9 @@ class RaceEventEngine:
         self._countdown_triggered_at.clear()
         self._final_sprint_triggered = False
         self._prev_remaining_sec = -1
+        self._group_countdown_triggered_at.clear()
+        self._group_final_sprint_triggered.clear()
+        self._group_prev_remaining_sec.clear()
 
     def evaluate(self, race_manager, progress: Dict[str, Any]) -> List[Dict]:
         events: List[Dict] = []
@@ -34,13 +47,45 @@ class RaceEventEngine:
         if not config:
             return events
 
+        if config.race_type == "mixed":
+            # Run every _check_* helper once PER GROUP, against only that
+            # group's own progress rows and its own scoped_config -- a row
+            # with no group (group_index None, e.g. unmatched equipment) is
+            # never passed to any group and so never generates an event.
+            for group_index in range(len(config.groups)):
+                group_progress = {
+                    node_id: row
+                    for node_id, row in progress.items()
+                    if row.get("group_index") == group_index
+                }
+                if not group_progress:
+                    continue
+                scoped_config = config.scoped_config(group_index)
+                self._check_checkpoints(
+                    group_progress, scoped_config, events, group_index=group_index
+                )
+                self._check_catch_up(group_progress, scoped_config, events)
+                self._check_countdown_or_sprint(
+                    group_progress, scoped_config, events, group_index=group_index
+                )
+            return events
+
         self._check_checkpoints(progress, config, events)
         self._check_catch_up(progress, config, events)
         self._check_countdown_or_sprint(progress, config, events)
 
         return events
 
-    def _check_checkpoints(self, progress: Dict, config, events: List[Dict]):
+    def _segment_best_key(self, group_index: Optional[int], threshold: int):
+        return threshold if group_index is None else (group_index, threshold)
+
+    def _check_checkpoints(
+        self,
+        progress: Dict,
+        config,
+        events: List[Dict],
+        group_index: Optional[int] = None,
+    ):
         thresholds = [25, 50, 75]
 
         for node_id, node_progress in progress.items():
@@ -99,8 +144,9 @@ class RaceEventEngine:
                 }
 
                 is_fastest = False
-                if threshold not in self._segment_best:
-                    self._segment_best[threshold] = {
+                best_key = self._segment_best_key(group_index, threshold)
+                if best_key not in self._segment_best:
+                    self._segment_best[best_key] = {
                         "node_id": node_id,
                         "athlete_name": node_progress.get("athlete_name", ""),
                         "station_number": node_progress.get("station_number"),
@@ -109,9 +155,9 @@ class RaceEventEngine:
                     }
                     is_fastest = True
                 else:
-                    best = self._segment_best[threshold]
+                    best = self._segment_best[best_key]
                     if segment_duration < best["segment_duration_ms"]:
-                        self._segment_best[threshold] = {
+                        self._segment_best[best_key] = {
                             "node_id": node_id,
                             "athlete_name": node_progress.get("athlete_name", ""),
                             "station_number": node_progress.get("station_number"),
@@ -220,7 +266,13 @@ class RaceEventEngine:
 
             self._catch_up_history[gap_key] = gap
 
-    def _check_countdown_or_sprint(self, progress: Dict, config, events: List[Dict]):
+    def _check_countdown_or_sprint(
+        self,
+        progress: Dict,
+        config,
+        events: List[Dict],
+        group_index: Optional[int] = None,
+    ):
         race_type = config.race_type
 
         if race_type in ("time", "calories", "max_power", "watts"):
@@ -233,22 +285,21 @@ class RaceEventEngine:
             remaining_sec = max(0, int(remaining_ms / 1000))
 
             countdown_thresholds = [10, 5, 3, 2, 1]
+            triggered_at = self._countdown_state(group_index)
+            prev_remaining_sec = self._get_prev_remaining_sec(group_index)
             for ct in countdown_thresholds:
-                if (
-                    ct not in self._countdown_triggered_at
-                    and self._prev_remaining_sec > ct >= remaining_sec
-                ):
-                    self._countdown_triggered_at.add(ct)
+                if ct not in triggered_at and prev_remaining_sec > ct >= remaining_sec:
+                    triggered_at.add(ct)
                     events.append(
                         {
                             "event_type": "countdown",
                             "data": {"seconds_left": ct},
                         }
                     )
-            self._prev_remaining_sec = remaining_sec
+            self._set_prev_remaining_sec(group_index, remaining_sec)
 
         elif race_type == "distance":
-            if self._final_sprint_triggered:
+            if self._get_final_sprint_triggered(group_index):
                 return
 
             leader_progress = max(
@@ -256,13 +307,43 @@ class RaceEventEngine:
                 default=0,
             )
             if leader_progress >= 85.0:
-                self._final_sprint_triggered = True
+                self._set_final_sprint_triggered(group_index, True)
                 events.append(
                     {
                         "event_type": "final_sprint",
                         "data": {"leader_progress_pct": round(leader_progress, 1)},
                     }
                 )
+
+    def _countdown_state(self, group_index: Optional[int]) -> Set[int]:
+        """The race-wide set for a non-mixed race (unchanged, so a
+        non-mixed race's dedupe behaviour stays byte-for-byte identical),
+        or this group's own set in a mixed race."""
+        if group_index is None:
+            return self._countdown_triggered_at
+        return self._group_countdown_triggered_at[group_index]
+
+    def _get_final_sprint_triggered(self, group_index: Optional[int]) -> bool:
+        if group_index is None:
+            return self._final_sprint_triggered
+        return self._group_final_sprint_triggered.get(group_index, False)
+
+    def _set_final_sprint_triggered(self, group_index: Optional[int], value: bool):
+        if group_index is None:
+            self._final_sprint_triggered = value
+        else:
+            self._group_final_sprint_triggered[group_index] = value
+
+    def _get_prev_remaining_sec(self, group_index: Optional[int]) -> int:
+        if group_index is None:
+            return self._prev_remaining_sec
+        return self._group_prev_remaining_sec.get(group_index, 9999)
+
+    def _set_prev_remaining_sec(self, group_index: Optional[int], value: int):
+        if group_index is None:
+            self._prev_remaining_sec = value
+        else:
+            self._group_prev_remaining_sec[group_index] = value
 
     def _sort_nodes(self, nodes: List[Dict], race_type: str) -> List[Dict]:
         import copy
