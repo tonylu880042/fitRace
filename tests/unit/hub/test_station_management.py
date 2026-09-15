@@ -179,6 +179,26 @@ def test_ingest_telemetry_captures_ble_equipment_id_from_payload():
     assert status["remembered_equipment_ids"]["node-01"] == "Vmax53932"
 
 
+def test_ingest_telemetry_at_idle_lists_node_as_unassigned():
+    manager = RaceManager()
+
+    manager.ingest_telemetry(
+        {
+            "node_id": "node-01",
+            "equipment_type": "rowing_machine",
+            "equipment_id": "Vmax53932",
+        }
+    )
+
+    status = manager.get_stations_status()
+    assert "node-01" in status["unassigned_nodes"]
+
+    manager.assign_station(1, "node-01")
+
+    status = manager.get_stations_status()
+    assert "node-01" not in status["unassigned_nodes"]
+
+
 def test_update_telemetry_captures_ble_equipment_id_during_running_race():
     manager = RaceManager()
     manager.update_active_node("node-01", "fan_bike")
