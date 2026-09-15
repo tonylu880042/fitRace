@@ -313,5 +313,6 @@
   "equipment_type.elliptical": "Crosstrainer",
   "equipment_type.stair_climber": "Stepper",
   "equipment_type.rowing_machine": "Rudergerät",
-  "equipment_type.ski_erg": "Skiergometer"
+  "equipment_type.ski_erg": "Skiergometer",
+  "leaderboard.ungrouped": "Keiner Gruppe zugewiesen"
 }

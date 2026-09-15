@@ -313,5 +313,6 @@
   "equipment_type.elliptical": "Elliptical",
   "equipment_type.stair_climber": "Stair Climber",
   "equipment_type.rowing_machine": "Rowing Machine",
-  "equipment_type.ski_erg": "Ski Erg"
+  "equipment_type.ski_erg": "Ski Erg",
+  "leaderboard.ungrouped": "Not in any group"
 }

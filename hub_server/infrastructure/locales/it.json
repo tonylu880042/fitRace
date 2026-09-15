@@ -313,5 +313,6 @@
   "equipment_type.elliptical": "Ellittica",
   "equipment_type.stair_climber": "Stepper",
   "equipment_type.rowing_machine": "Vogatore",
-  "equipment_type.ski_erg": "SkiErg"
+  "equipment_type.ski_erg": "SkiErg",
+  "leaderboard.ungrouped": "Non assegnato a un gruppo"
 }

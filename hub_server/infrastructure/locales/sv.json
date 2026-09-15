@@ -313,5 +313,6 @@
   "equipment_type.elliptical": "Crosstrainer",
   "equipment_type.stair_climber": "Trappmaskin",
   "equipment_type.rowing_machine": "Roddmaskin",
-  "equipment_type.ski_erg": "SkiErg"
+  "equipment_type.ski_erg": "SkiErg",
+  "leaderboard.ungrouped": "Ej tilldelad en grupp"
 }

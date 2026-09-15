@@ -313,5 +313,6 @@
   "equipment_type.elliptical": "橢圓機",
   "equipment_type.stair_climber": "踏步機",
   "equipment_type.rowing_machine": "划船機",
-  "equipment_type.ski_erg": "滑雪機"
+  "equipment_type.ski_erg": "滑雪機",
+  "leaderboard.ungrouped": "未分組"
 }
