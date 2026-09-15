@@ -1045,6 +1045,35 @@ async def apply_hub_update(request: Request):
     return {"state": "updater_started", "service": HUB_UPDATER_SERVICE}
 
 
+@app.post("/api/updates/hub")
+async def one_click_hub_update(request: Request):
+    require_admin(request)
+    if race_manager.get_state() != RaceState.IDLE:
+        raise HTTPException(
+            status_code=409,
+            detail="Hub update is allowed only when race state is IDLE",
+        )
+    status = update_checker.status()
+    if status.get("state") != "hub_installed":
+        status = await asyncio.to_thread(update_checker.install_hub)
+        if status.get("state") == "error":
+            raise HTTPException(status_code=409, detail=status.get("error"))
+    version = (status.get("hub_install") or {}).get("version") or status.get(
+        "latest_hub_version"
+    )
+    try:
+        await asyncio.to_thread(
+            run_systemctl, ["sudo", "systemctl", "start", HUB_UPDATER_SERVICE]
+        )
+    except subprocess.CalledProcessError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    return {
+        "state": "updater_started",
+        "service": HUB_UPDATER_SERVICE,
+        "version": version,
+    }
+
+
 async def run_hub_power_action(action):
     try:
         result = action()

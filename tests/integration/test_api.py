@@ -592,6 +592,125 @@ def test_update_apply_hub_endpoint_starts_updater_service_when_idle(monkeypatch)
     ]
 
 
+def test_update_hub_one_click_happy_path(monkeypatch):
+    from hub_server.infrastructure.fastapi.app import update_checker
+    from hub_server.infrastructure.fastapi import app as hub_app
+
+    client.post("/api/race/reset")
+    calls = []
+
+    def mock_status():
+        return {"state": "available"}
+
+    def mock_install_hub():
+        calls.append("install_hub")
+        return {"state": "hub_installed", "hub_install": {"version": "0.1.1"}}
+
+    def mock_run_systemctl(command):
+        calls.append(command)
+
+    monkeypatch.setattr(update_checker, "status", mock_status)
+    monkeypatch.setattr(update_checker, "install_hub", mock_install_hub)
+    monkeypatch.setattr(hub_app, "run_systemctl", mock_run_systemctl)
+
+    response = client.post("/api/updates/hub")
+
+    assert response.status_code == 200
+    assert response.json()["version"] == "0.1.1"
+    assert calls == [
+        "install_hub",
+        ["sudo", "systemctl", "start", "fitracestudio-hub-updater.service"],
+    ]
+
+
+def test_update_hub_one_click_install_error(monkeypatch):
+    from hub_server.infrastructure.fastapi.app import update_checker
+    from hub_server.infrastructure.fastapi import app as hub_app
+
+    client.post("/api/race/reset")
+    calls = []
+
+    def mock_status():
+        return {"state": "available"}
+
+    def mock_install_hub():
+        return {"state": "error", "error": "boom"}
+
+    def mock_run_systemctl(command):
+        calls.append(command)
+
+    monkeypatch.setattr(update_checker, "status", mock_status)
+    monkeypatch.setattr(update_checker, "install_hub", mock_install_hub)
+    monkeypatch.setattr(hub_app, "run_systemctl", mock_run_systemctl)
+
+    response = client.post("/api/updates/hub")
+
+    assert response.status_code == 409
+    assert "boom" in response.json()["detail"]
+    assert calls == []
+
+
+def test_update_hub_one_click_already_installed(monkeypatch):
+    from hub_server.infrastructure.fastapi.app import update_checker
+    from hub_server.infrastructure.fastapi import app as hub_app
+
+    client.post("/api/race/reset")
+    calls = []
+
+    def mock_status():
+        return {"state": "hub_installed", "hub_install": {"version": "0.1.1"}}
+
+    def mock_install_hub():
+        calls.append("install_hub")
+        return {"state": "hub_installed", "hub_install": {"version": "0.1.1"}}
+
+    def mock_run_systemctl(command):
+        calls.append(command)
+
+    monkeypatch.setattr(update_checker, "status", mock_status)
+    monkeypatch.setattr(update_checker, "install_hub", mock_install_hub)
+    monkeypatch.setattr(hub_app, "run_systemctl", mock_run_systemctl)
+
+    response = client.post("/api/updates/hub")
+
+    assert response.status_code == 200
+    assert calls == [
+        ["sudo", "systemctl", "start", "fitracestudio-hub-updater.service"]
+    ]
+    assert response.json()["version"] == "0.1.1"
+
+
+def test_update_hub_one_click_blocks_while_race_running(monkeypatch):
+    from hub_server.infrastructure.fastapi.app import update_checker
+    from hub_server.infrastructure.fastapi import app as hub_app
+
+    client.post("/api/race/reset")
+    client.post(
+        "/api/race/configure",
+        json={"race_type": "time", "target_value": 0, "duration_sec": 60},
+    )
+    client.post("/api/race/start")
+
+    calls = []
+
+    def mock_install_hub():
+        calls.append("install_hub")
+        return {"state": "hub_installed"}
+
+    def mock_run_systemctl(command):
+        calls.append(command)
+
+    monkeypatch.setattr(update_checker, "install_hub", mock_install_hub)
+    monkeypatch.setattr(hub_app, "run_systemctl", mock_run_systemctl)
+
+    response = client.post("/api/updates/hub")
+
+    assert response.status_code == 409
+    assert "IDLE" in response.json()["detail"]
+    assert calls == []
+    client.post("/api/race/reset")
+
+
 def test_hub_checks_updates_once_on_startup(monkeypatch):
     from hub_server.infrastructure.fastapi.app import update_checker
 
