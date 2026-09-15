@@ -229,33 +229,38 @@ def test_one_click_hub_update_handles_error():
 
 def test_one_click_hub_update_no_hardcoded_strings():
     """The oneClickHubUpdate function must not contain hardcoded English or
-    Chinese status strings -- all strings must route through t()."""
+    Chinese status strings -- all strings passed to setMessage() and
+    window.confirm() must route through t()."""
     source = _script(_read())
     body = _extract_function(source, "async function oneClickHubUpdate(", STOPS)
 
-    # These exact strings are common status messages and should NOT be hardcoded
-    hardcoded = [
-        "Downloading",
-        "Installing",
-        "Restarting",
-        "Update complete",
-        "下載",
-        "安裝",
-        "重新啟動",
-        "更新完成",
-    ]
-
     body_stripped = _strip_js_comments(body)
-    for literal in hardcoded:
-        # Allow the literal only if it's clearly inside a string that's being
-        # passed to t() or setMessage
-        if f'"{literal}"' in body_stripped or f"'{literal}'" in body_stripped:
-            # Check if it's part of a t() call or a comment
-            # For now, just flag obvious hardcoded literals outside function calls
-            if f"t({literal})" not in body and f'"{literal}"' not in "t(":
-                # Be permissive: we're checking the spirit of the rule, not being
-                # overly strict about every possible context
-                pass
+
+    # Assert: no setMessage with a bare string literal as second arg
+    # Pattern: setMessage("...", "string literal that's NOT a t(...) call)
+    # This catches setMessage("update-message", "Downloading...", "ok")
+    bare_setmessage = re.findall(r'setMessage\([^,]+,\s*"[^{]', body_stripped)
+    assert (
+        not bare_setmessage
+    ), f"setMessage calls must use t(...) not bare strings: {bare_setmessage}"
+
+    # Also check for single quotes
+    bare_setmessage_single = re.findall(r"setMessage\([^,]+,\s*'[^{]", body_stripped)
+    assert (
+        not bare_setmessage_single
+    ), f"setMessage calls must use t(...) not bare strings: {bare_setmessage_single}"
+
+    # Assert: no window.confirm with a bare string literal
+    # Pattern: window.confirm("string literal that's NOT a t(...) call)
+    bare_confirm = re.findall(r'window\.confirm\(\s*"[^{]', body_stripped)
+    assert (
+        not bare_confirm
+    ), f"window.confirm calls must use t(...) not bare strings: {bare_confirm}"
+
+    bare_confirm_single = re.findall(r"window\.confirm\(\s*'[^{]", body_stripped)
+    assert (
+        not bare_confirm_single
+    ), f"window.confirm calls must use t(...) not bare strings: {bare_confirm_single}"
 
 
 def test_one_click_hub_update_calls_polling_helper():
@@ -366,6 +371,36 @@ def test_hub_restart_polling_helper_has_delay():
     assert re.search(
         r"2000|2_000|2\s*\*\s*1000", body
     ), "Polling helper should delay ~2000ms between polls"
+
+
+# ---------------------------------------------------------------------------
+# 4b. oneClickHubUpdate preserves prior state fields (no clobbering)
+# ---------------------------------------------------------------------------
+
+
+def test_one_click_hub_update_merges_state_not_clobbers():
+    """The oneClickHubUpdate function must merge the response into state.update,
+    not replace it entirely. This preserves latest_hub_version, current_version,
+    and other fields so the detail display doesn't collapse to all '--' during
+    the update."""
+    source = _script(_read())
+    body = _extract_function(source, "async function oneClickHubUpdate(", STOPS)
+
+    body_stripped = _strip_js_comments(body)
+
+    # Must use spread/merge syntax: state.update = { ...state.update, ...response }
+    # or similar, NOT a bare assignment like state.update = response
+    has_merge = re.search(r"state\.update\s*=\s*\{.*\.\.\.state\.update", body_stripped)
+    assert (
+        has_merge
+    ), "state.update must use merge syntax { ...state.update, ...response } to preserve fields"
+
+    # Assert that the bare-replace anti-pattern is absent
+    # (but allow it if it's clearly being used to set up a merge, e.g. in a loop or condition)
+    bare_replace_pattern = r"state\.update\s*=\s*(?!.*\.\.\.state\.update)(?!.*\.\.\.response)\s*(?:response|await)"
+    assert not re.search(
+        bare_replace_pattern, body_stripped
+    ), "state.update must not be replaced by a bare assignment (await fetchJson(...)); must use merge syntax"
 
 
 # ---------------------------------------------------------------------------

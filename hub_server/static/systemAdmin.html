@@ -1382,9 +1382,6 @@
         "button.clear_orphaned_stations": "Clear Orphaned Stations",
         "button.assign": "Assign",
         "button.check_now": "Check Now",
-        "button.download": "Download",
-        "button.install_hub": "Install Hub",
-        "button.apply_hub": "Apply Hub",
         "button.update_hub": "Update Hub to {version}",
         "button.restart_hub_service": "Restart Hub Service",
         "button.reboot_hub": "Reboot Hub",
@@ -1450,7 +1447,6 @@
         "wifi.level_poor": "Poor",
         "wifi.checking": "Checking",
         "wifi.disconnected": "Disconnected",
-        "confirm.apply_hub_update": "Apply Hub update and restart the Hub service?",
         "confirm.update_hub": "Update Hub to {version}? This downloads, installs, and restarts the Hub (about 1 minute). Do not do this during a race.",
         "wifi.choose_network": "Choose a Wi-Fi network to connect.",
         "wifi.not_connected": "not connected",
@@ -1531,9 +1527,6 @@
       "button.clear_orphaned_stations": "清除孤立的站位",
       "button.assign": "指派",
       "button.check_now": "立即檢查",
-      "button.download": "下載",
-      "button.install_hub": "安裝 Hub",
-      "button.apply_hub": "套用 Hub",
       "button.update_hub": "更新 Hub 至 {version}",
       "button.restart_hub_service": "重啟 Hub 服務",
       "button.reboot_hub": "重開機 Hub",
@@ -1599,7 +1592,6 @@
       "wifi.level_poor": "極弱",
       "wifi.checking": "偵測中",
       "wifi.disconnected": "未連線",
-      "confirm.apply_hub_update": "確定套用 Hub 更新並重新啟動 Hub 服務?",
       "confirm.update_hub": "確定要將 Hub 更新至 {version} 嗎？這會下載、安裝並重新啟動 Hub（約需一分鐘）。請勿在比賽進行中執行。",
       "wifi.choose_network": "請選擇要連線的 Wi-Fi 網路。",
       "wifi.not_connected": "未連線",
@@ -2352,19 +2344,6 @@
       await updateCommand("/api/updates/check", "Update check complete.");
     }
 
-    async function downloadUpdates() {
-      await updateCommand("/api/updates/download", "Artifacts downloaded.");
-    }
-
-    async function installHubUpdate() {
-      await updateCommand("/api/updates/install/hub", "Hub update staged.");
-    }
-
-    async function applyHubUpdate() {
-      if (!window.confirm(t("confirm.apply_hub_update"))) return;
-      await updateCommand("/api/updates/apply/hub", "Hub updater started.");
-    }
-
     async function pollHubRestart(targetVersion) {
       const startTime = Date.now();
       const timeoutMs = 3 * 60 * 1000; // 3 minutes
@@ -2405,7 +2384,7 @@
           method: "POST",
           headers: adminHeaders(),
         });
-        state.update = response;
+        state.update = { ...state.update, ...response };
         renderUpdate();
 
         setMessage("update-message", t("message.update_hub_restarting"), "ok");
