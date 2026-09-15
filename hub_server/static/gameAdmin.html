@@ -285,6 +285,13 @@
       margin-top: 14px;
     }
 
+    .race-group-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 10px;
+    }
+
     .button-group {
       display: flex;
       gap: 10px;
@@ -518,6 +525,10 @@
     .field.is-disabled select {
       opacity: 0.5;
       cursor: not-allowed;
+    }
+
+    .field.field-collapsed {
+      display: none;
     }
 
     .race-state {
@@ -996,6 +1007,7 @@
                       <option value="calories" data-i18n="option.calories">Calories Challenge</option>
                       <option value="time" data-i18n="option.time">Time Challenge</option>
                       <option value="max_power" data-i18n="option.max_power">Max Power Challenge</option>
+                      <option value="mixed" data-i18n="option.mixed">Multi-equipment Groups</option>
                     </select>
                     <p class="field-note show" id="race-type-note" data-i18n="text.race_note_distance">Set a target distance. First athlete to reach it wins; ties are broken by finish time. The progress bar shows distance over target.</p>
                   </div>
@@ -1003,8 +1015,8 @@
                     <label for="competition-mode" data-i18n="label.competition">Competition</label>
                     <select id="competition-mode" onchange="syncCompetitionFields(); renderStations(); markRaceConfigDirty()">
                       <option value="individual" data-i18n="option.individual">Individual Race (Anonymous Allowed)</option>
-                      <option value="team" data-i18n="option.team">Team Race</option>
-                      <option value="relay" data-i18n="option.relay">Relay Race (same machine)</option>
+                      <option value="team" id="competition-option-team" data-i18n="option.team">Team Race</option>
+                      <option value="relay" id="competition-option-relay" data-i18n="option.relay">Relay Race (same machine)</option>
                     </select>
                   </div>
                   <div class="field" id="relay-legs-field">
@@ -1031,6 +1043,13 @@
                   <div class="field" id="target-field">
                     <label for="race-target" id="race-target-label" data-i18n="label.target_distance">Target Distance (m)</label>
                     <input type="number" id="race-target" min="1" value="500" oninput="markRaceConfigDirty()">
+                  </div>
+                </div>
+                <div class="field field-collapsed" id="race-groups-field">
+                  <label data-i18n="label.race_groups">Equipment Groups</label>
+                  <div id="race-groups-list"></div>
+                  <div class="race-group-actions">
+                    <button type="button" id="btn-add-race-group" onclick="addRaceGroup()" data-i18n="button.add_race_group">Add Group</button>
                   </div>
                 </div>
               </div>
@@ -1318,6 +1337,7 @@
         "option.calories": "Calories Challenge",
         "option.time": "Time Challenge",
         "option.max_power": "Max Power Challenge",
+        "option.mixed": "Multi-equipment Groups",
         "option.individual": "Individual Race (Anonymous Allowed)",
         "option.team": "Team Race",
         "option.relay": "Relay Race (same machine)",
@@ -1431,6 +1451,20 @@
         "text.race_note_calories": "Set a target calorie count. First athlete to reach it wins. The progress bar shows calories over target.",
         "text.race_note_time": "Set a challenge duration. When time runs out, the greatest total distance wins. The progress bar shows elapsed time.",
         "text.race_note_max_power": "Set a challenge duration. When time runs out, the highest single peak wattage wins (peak, not average). The progress bar shows elapsed time.",
+        "text.race_note_mixed": "Each equipment group races its own target from the same start and ranks separately.",
+        "label.race_groups": "Equipment Groups",
+        "button.add_race_group": "Add Group",
+        "button.remove_race_group": "Remove",
+        "equipment_type.treadmill": "Treadmill",
+        "equipment_type.curved_treadmill": "Curved Treadmill",
+        "equipment_type.spin_bike": "Spin Bike",
+        "equipment_type.fan_bike": "Fan Bike",
+        "equipment_type.upright_bike": "Upright Bike",
+        "equipment_type.recumbent_bike": "Recumbent Bike",
+        "equipment_type.elliptical": "Elliptical",
+        "equipment_type.stair_climber": "Stair Climber",
+        "equipment_type.rowing_machine": "Rowing Machine",
+        "equipment_type.ski_erg": "Ski Erg",
         "text.completion_rule_time_based_note": "Time-based race types do not apply a completion rule; the race ends when the clock runs out.",
         "text.team_total_overridden_by_everyone_finishes": "Under Everyone Finishes, team score is fixed to average progress, so the Team Total setting has no effect.",
         "leaderboard.mode_race_track_time_based_detail": "In this race type every lane fills by elapsed time, not performance, so lanes advance identically and the track shows nothing about who is winning. Try Classic or Sprint Board instead.",
@@ -1524,6 +1558,7 @@
       "option.calories": "卡路里挑戰",
       "option.time": "時間挑戰",
       "option.max_power": "最大功率挑戰",
+      "option.mixed": "多器材分組",
       "option.individual": "個人賽（可匿名參加）",
       "option.team": "隊伍賽",
       "option.relay": "接力賽（同一台機器）",
@@ -1637,6 +1672,20 @@
       "text.race_note_calories": "設定目標卡路里,率先達成者獲勝;進度條為卡路里除以目標。",
       "text.race_note_time": "設定挑戰時限,時間結束時累積距離最多者獲勝;進度條顯示經過時間。",
       "text.race_note_max_power": "設定挑戰時限,時間結束時單次最高瓦數(峰值,非平均值)者獲勝;進度條顯示經過時間。",
+      "text.race_note_mixed": "各器材組同時出發、各自的目標、分開排名。",
+      "label.race_groups": "器材分組",
+      "button.add_race_group": "新增分組",
+      "button.remove_race_group": "移除",
+      "equipment_type.treadmill": "跑步機",
+      "equipment_type.curved_treadmill": "曲面跑步機",
+      "equipment_type.spin_bike": "飛輪",
+      "equipment_type.fan_bike": "風扇車",
+      "equipment_type.upright_bike": "直立式健身車",
+      "equipment_type.recumbent_bike": "臥式健身車",
+      "equipment_type.elliptical": "橢圓機",
+      "equipment_type.stair_climber": "踏步機",
+      "equipment_type.rowing_machine": "划船機",
+      "equipment_type.ski_erg": "滑雪機",
       "text.completion_rule_time_based_note": "限時類賽制不套用完成規則;比賽於時限結束時結束。",
       "text.team_total_overridden_by_everyone_finishes": "在「全員完成」規則下,隊伍得分固定為平均進度,因此「隊伍總計」設定不會產生作用。",
       "leaderboard.mode_race_track_time_based_detail": "此賽制下每條跑道皆依經過時間填滿,而非依表現,因此所有跑道進度一致,無法顯示領先狀況。建議改用經典排行榜或衝刺排行。",
@@ -1715,10 +1764,14 @@
       renderRace();
       renderReadinessPanel();
       renderStations();
-      // syncRaceFields() re-derives the race-type note and the Completion
-      // Rule field's disabled/note state for the current locale, then ends
-      // by calling syncCompetitionFields() -> updateControlGuidance() --
-      // one refresh path instead of a second, separate guidance call here.
+      // syncMixedRaceFields() re-renders the group editor's own labels for
+      // the current locale (renderRace() above only runs that path when a
+      // saved config exists and the form isn't dirty). syncRaceFields()
+      // re-derives the race-type note and the Completion Rule field's
+      // disabled/note state for the current locale, then ends by calling
+      // syncCompetitionFields() -> updateControlGuidance() -- one refresh
+      // path instead of a second, separate guidance call here.
+      syncMixedRaceFields();
       syncRaceFields();
     }
 
@@ -1790,12 +1843,118 @@
         calories: "text.race_note_calories",
         time: "text.race_note_time",
         max_power: "text.race_note_max_power",
+        mixed: "text.race_note_mixed",
       };
       return keys[raceType] || keys.distance;
     }
 
     function isRelayCompetitionMode(mode) {
       return mode === "relay";
+    }
+
+    function isMixedRaceType(raceType) {
+      return raceType === "mixed";
+    }
+
+    // Maps a race group's own race_type to the same target-label i18n key
+    // the top-level #race-target-label uses, so a group's target input
+    // reads "Target Distance (m)" / "Time Limit (s)" / etc. exactly like
+    // the single-race field it replaces for a mixed race.
+    function raceGroupTargetLabelKey(raceType) {
+      const keys = {
+        distance: "label.target_distance",
+        calories: "label.target_calories",
+        time: "label.time_limit",
+        max_power: "label.challenge_time",
+      };
+      return keys[raceType] || keys.distance;
+    }
+
+    // Pure-ish markup builder for one group row in the mixed-race editor --
+    // reads t()/escapeHtml/EQUIPMENT_TYPES/state.raceGroups like the rest
+    // of the page's render helpers (e.g. buildRelayRegistrationFormHtml).
+    function buildRaceGroupRowHtml(group, index) {
+      const equipmentOptionsHtml = EQUIPMENT_TYPES.map((equipmentType) => {
+        const checked = (group.equipmentTypes || []).includes(equipmentType) ? "checked" : "";
+        return `
+          <label class="race-group-equipment-option" style="display:inline-flex;align-items:center;gap:6px;margin:0 12px 8px 0;text-transform:none;font-weight:400;color:var(--text);">
+            <input type="checkbox" ${checked} onchange="toggleRaceGroupEquipmentType(${index}, '${equipmentType}', this.checked)">
+            ${escapeHtml(t(`equipment_type.${equipmentType}`))}
+          </label>
+        `;
+      }).join("");
+
+      const raceTypeOptions = ["distance", "calories", "time", "max_power"].map((value) => `
+        <option value="${value}" ${group.raceType === value ? "selected" : ""}>${escapeHtml(t(`option.${value}`))}</option>
+      `).join("");
+
+      const removeDisabled = state.raceGroups.length <= 2 ? "disabled" : "";
+
+      return `
+        <div class="row-card race-group-row" data-group-index="${index}">
+          <div class="race-group-equipment-list">${equipmentOptionsHtml}</div>
+          <div class="grid-2">
+            <div class="field">
+              <label data-i18n="label.race_type">${escapeHtml(t("label.race_type"))}</label>
+              <select onchange="setRaceGroupRaceType(${index}, this.value)">${raceTypeOptions}</select>
+            </div>
+            <div class="field">
+              <label>${escapeHtml(t(raceGroupTargetLabelKey(group.raceType)))}</label>
+              <input type="number" min="1" value="${escapeHtml(group.targetValue)}" oninput="setRaceGroupTarget(${index}, this.value)">
+            </div>
+          </div>
+          <div class="race-group-actions">
+            <button type="button" onclick="removeRaceGroup(${index})" ${removeDisabled} data-i18n="button.remove_race_group">${escapeHtml(t("button.remove_race_group"))}</button>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderRaceGroupsEditor() {
+      const container = $("race-groups-list");
+      if (!container) return;
+      container.innerHTML = state.raceGroups.map((group, index) => buildRaceGroupRowHtml(group, index)).join("");
+      const addButton = $("btn-add-race-group");
+      if (addButton) addButton.disabled = state.raceGroups.length >= 8;
+    }
+
+    function addRaceGroup() {
+      if (state.raceGroups.length >= 8) return;
+      state.raceGroups.push({ equipmentTypes: [], raceType: "distance", targetValue: 0 });
+      markRaceConfigDirty();
+      renderRaceGroupsEditor();
+    }
+
+    function removeRaceGroup(index) {
+      if (state.raceGroups.length <= 2) return;
+      state.raceGroups.splice(index, 1);
+      markRaceConfigDirty();
+      renderRaceGroupsEditor();
+    }
+
+    function toggleRaceGroupEquipmentType(index, equipmentType, checked) {
+      const group = state.raceGroups[index];
+      if (!group) return;
+      const equipmentTypes = new Set(group.equipmentTypes || []);
+      if (checked) equipmentTypes.add(equipmentType);
+      else equipmentTypes.delete(equipmentType);
+      group.equipmentTypes = Array.from(equipmentTypes);
+      markRaceConfigDirty();
+    }
+
+    function setRaceGroupRaceType(index, value) {
+      const group = state.raceGroups[index];
+      if (!group) return;
+      group.raceType = value;
+      markRaceConfigDirty();
+      renderRaceGroupsEditor();
+    }
+
+    function setRaceGroupTarget(index, value) {
+      const group = state.raceGroups[index];
+      if (!group) return;
+      group.targetValue = Number(value);
+      markRaceConfigDirty();
     }
 
     function isMixedRaceType(raceType) {
@@ -1947,6 +2106,39 @@
         summary += ` ${t("text.team_total_overridden_by_everyone_finishes")}`;
       }
       return summary;
+    }
+
+    // Mixed-race lock: while "mixed" is selected, competition is forced to
+    // individual (its team/relay options disabled) and the single target
+    // field is swapped for the group editor. Deliberately NOT called from
+    // inside syncRaceFields()/syncCompetitionFields() (it is instead wired
+    // as its own "change" listener on #race-type, and called explicitly
+    // from renderRace() and at page init, both before syncCompetitionFields()
+    // so the forced competition-mode value is what that function reasons
+    // about) -- those two functions' existing extracted-and-executed
+    // regression tests (test_game_admin_relay_config.py,
+    // test_game_admin_race_rule_guidance.py) run them standalone against a
+    // smaller, pre-existing stub set that does not know about
+    // isMixedRaceType/state/renderRaceGroupsEditor, and must keep passing
+    // unmodified.
+    function syncMixedRaceFields() {
+      const isMixedRace = isMixedRaceType($("race-type").value);
+      $("competition-option-team").disabled = isMixedRace;
+      $("competition-option-relay").disabled = isMixedRace;
+      if (isMixedRace && $("competition-mode").value !== "individual") {
+        $("competition-mode").value = "individual";
+      }
+      $("target-field").classList.toggle("field-collapsed", isMixedRace);
+      $("race-groups-field").classList.toggle("field-collapsed", !isMixedRace);
+      if (isMixedRace) {
+        if (state.raceGroups.length === 0) {
+          state.raceGroups = [
+            { equipmentTypes: [], raceType: "distance", targetValue: 0 },
+            { equipmentTypes: [], raceType: "distance", targetValue: 0 },
+          ];
+        }
+        renderRaceGroupsEditor();
+      }
     }
 
     function syncRaceFields() {
@@ -2137,6 +2329,10 @@
         $("team-scoring-policy").value = config.team_scoring_policy || "average";
         $("team-completion-policy").value = config.team_completion_policy || "aggregate";
         $("relay-legs").value = config.relay_legs || 4;
+        if (config.race_type === "mixed") {
+          state.raceGroups = raceGroupsFromConfig(config.groups);
+        }
+        syncMixedRaceFields();
         syncRaceFields();
         syncCompetitionFields();
         $("race-target").value = (config.race_type === "distance" || config.race_type === "calories")
@@ -2936,7 +3132,13 @@
       if (event.key === "Enter") saveAdminToken();
       if (event.key === "Escape") closeLogin();
     });
+    // Live toggle for the mixed-race lock (target field vs. group editor,
+    // competition-mode lock) as the operator changes #race-type -- see
+    // syncMixedRaceFields() for why this is a separate listener rather than
+    // a call inside syncRaceFields()/syncCompetitionFields() themselves.
+    $("race-type").addEventListener("change", syncMixedRaceFields);
 
+    syncMixedRaceFields();
     syncRaceFields();
     syncCompetitionFields();
     applyTranslations();
