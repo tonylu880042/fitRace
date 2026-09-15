@@ -4579,6 +4579,48 @@
       return nodes.sort((a, b) => metricNumber(b.progress_percent) - metricNumber(a.progress_percent) || compareStation(a, b));
     }
 
+    // A mixed race (config.race_type === "mixed") races several equipment
+    // groups from one start, each with its own race_type/target
+    // (config.groups -- see hub_server.domain.models.RaceGroup). These
+    // pure helpers turn one group into its target label ("800 m" / "30
+    // kcal" / "60 s") and its full section heading, and split a mixed
+    // race progress payload into one ordered section per group plus a
+    // trailing section for rows whose group_index matched no group.
+    function formatMixedGroupTargetLabel(group) {
+      if (group.race_type === "distance") return `${metricNumber(group.target_value).toFixed(0)} m`;
+      if (group.race_type === "calories") return `${metricNumber(group.target_value).toFixed(0)} kcal`;
+      return `${metricNumber(group.duration_sec).toFixed(0)} s`;
+    }
+
+    function buildMixedGroupHeading(group) {
+      const equipmentNames = (group.equipment_types || []).map((type) => t(`equipment_type.${type}`)).join("/");
+      const raceTypeLabel = t(`race_type.${group.race_type}`);
+      return [equipmentNames, raceTypeLabel, formatMixedGroupTargetLabel(group)].join(" · ");
+    }
+
+    function buildMixedRaceTargetSummary(config) {
+      return ((config && config.groups) || []).map(formatMixedGroupTargetLabel).join(" / ");
+    }
+
+    function buildMixedLeaderboardSections(progressData, config) {
+      const groups = (config && config.groups) || [];
+      const nodes = Object.values(progressData || {});
+      const sections = groups.map((group, groupIndex) => ({
+        groupIndex,
+        group,
+        heading: buildMixedGroupHeading(group),
+        rows: sortLeaderboardNodes(
+          nodes.filter((node) => node.group_index === groupIndex),
+          group.race_type
+        ),
+      }));
+      const ungroupedRows = nodes.filter((node) => node.group_index === null || node.group_index === undefined);
+      if (ungroupedRows.length) {
+        sections.push({ groupIndex: null, group: null, heading: t("leaderboard.ungrouped"), rows: ungroupedRows });
+      }
+      return sections;
+    }
+
     function animateLeaderboardReorder(previousRects) {
       const items = document.querySelectorAll(".leaderboard-item, .team-leaderboard-item, .race-track-item, .team-battle-card, .sprint-board-card");
       items.forEach((item) => {
@@ -5942,6 +5984,47 @@
       });
     }
 
+    // Row/section markup for a mixed race -- one row per progress entry,
+    // scored by its OWN group race_type via the existing formatResultScore,
+    // grouped under the section heading built by buildMixedGroupHeading.
+    // Deliberately simpler than the classic per-race-type card (a single
+    // score value rather than three metric columns), matching the shape
+    // the record wall already uses for a ranked row.
+    function renderMixedLeaderboardSectionRows(rows, raceType) {
+      return rows.map((node, index) => {
+        const rank = index + 1;
+        const score = formatResultScore(node, raceType);
+        const rawAthleteName = node.athlete_name || (node.station_number ? `${t("stations.station")} ${node.station_number}` : t("stations.athlete"));
+        const stationBadge = node.station_number
+          ? `<span class="station-pill">${escapeHtml(t("stations.station"))} ${escapeHtml(node.station_number)}</span>`
+          : "";
+        return `
+          <div class="leaderboard-item mixed-group-row" id="node-${escapeHtml(node.node_id)}" data-node-id="${escapeHtml(node.node_id)}">
+            <div class="rank"><span>${rank}</span></div>
+            <div class="athlete-info">
+              <div style="display: flex; flex-direction: column;">
+                <div class="athlete-name">${stationBadge}${escapeHtml(rawAthleteName)}</div>
+                <div class="equipment-tag">${escapeHtml(nodeDisplayName(node))}</div>
+              </div>
+            </div>
+            <div class="metric-group">
+              <div class="metric-val score-primary">${score.value}</div>
+              <div class="metric-lbl">${escapeHtml(score.label)}</div>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function renderMixedLeaderboardSections(sections) {
+      return sections.map((section) => `
+        <div class="mixed-group-section">
+          <div class="mixed-group-heading">${escapeHtml(section.heading)}</div>
+          <div class="leaderboard-list">${renderMixedLeaderboardSectionRows(section.rows, section.group ? section.group.race_type : "distance")}</div>
+        </div>
+      `).join("");
+    }
+
     function renderLeaderboard(progressData, teamData = null) {
       // Untyped WS payloads (per-athlete telemetry progress) never carry
       // session_mode -- only typed state_change messages do. Falling
@@ -5973,6 +6056,32 @@
       // survived getting here, a later class-mode tick could patch text
       // into station cards that are no longer attached to the page.
       if (typeof resetClassBoardCardCache === "function") resetClassBoardCardCache();
+
+      // ponytail: mixed races ignore race_track/sprint_board modes; per-group variants later
+      if (currentConfig && currentConfig.race_type === "mixed") {
+        const mixedContainer = document.getElementById("leaderboard-container");
+        const mixedNodes = Object.values(progressData);
+        leaderboardNodes = mixedNodes;
+        resetLeaderboardCardCache();
+        if (mixedNodes.length === 0) {
+          mixedContainer.innerHTML = renderRegistrationEmptyState(t("leaderboard.waiting_data"));
+          teamLeaderboardRows = [];
+          leaderboardRankByNode = new Map();
+          return;
+        }
+        const mixedSections = buildMixedLeaderboardSections(progressData, currentConfig);
+        mixedContainer.innerHTML = renderMixedLeaderboardSections(mixedSections);
+        leaderboardRankByNode = new Map();
+        mixedSections.forEach((section) => {
+          section.rows.forEach((node, index) => {
+            leaderboardRankByNode.set(node.node_id, index + 1);
+          });
+        });
+        if (isLeaderboardFinal("mixed", mixedNodes)) {
+          triggerFinishCelebration(mixedNodes);
+        }
+        return;
+      }
 
       if (leaderboardDisplayMode === "race_track") {
         renderRaceTrackLeaderboard(progressData, teamData);
