@@ -1241,9 +1241,7 @@
             <button type="button" onclick="checkUpdates()" data-i18n="button.check_now">Check Now</button>
           </div>
           <div class="button-row" id="update-actions" hidden>
-            <button type="button" onclick="downloadUpdates()" data-i18n="button.download">Download</button>
-            <button type="button" onclick="installHubUpdate()" data-i18n="button.install_hub">Install Hub</button>
-            <button type="button" class="danger" onclick="applyHubUpdate()" data-i18n="button.apply_hub">Apply Hub</button>
+            <button type="button" id="btn-update-hub" class="danger" onclick="oneClickHubUpdate()">Update Hub</button>
           </div>
           <div class="status-text" id="update-message"></div>
         </section>
@@ -1384,9 +1382,7 @@
         "button.clear_orphaned_stations": "Clear Orphaned Stations",
         "button.assign": "Assign",
         "button.check_now": "Check Now",
-        "button.download": "Download",
-        "button.install_hub": "Install Hub",
-        "button.apply_hub": "Apply Hub",
+        "button.update_hub": "Update Hub to {version}",
         "button.restart_hub_service": "Restart Hub Service",
         "button.reboot_hub": "Reboot Hub",
         "button.shutdown_hub": "Shutdown Hub",
@@ -1451,7 +1447,7 @@
         "wifi.level_poor": "Poor",
         "wifi.checking": "Checking",
         "wifi.disconnected": "Disconnected",
-        "confirm.apply_hub_update": "Apply Hub update and restart the Hub service?",
+        "confirm.update_hub": "Update Hub to {version}? This downloads, installs, and restarts the Hub (about 1 minute). Do not do this during a race.",
         "wifi.choose_network": "Choose a Wi-Fi network to connect.",
         "wifi.not_connected": "not connected",
         "message.password_required": "Password is required.",
@@ -1477,6 +1473,9 @@
         "message.select_and_copy_link": "Select and copy the signup link.",
         "message.report_copied": "Report copied to clipboard.",
         "message.copy_failed": "Copy failed — select the text above and copy manually.",
+        "message.update_hub_downloading": "Downloading and installing…",
+        "message.update_hub_restarting": "Hub restarting…",
+        "message.update_hub_timeout": "Still waiting for the Hub to come back. Reload the page in a bit — the update may have rolled back.",
         "text.unknown": "Unknown",
         "warning.unassigned_streams": "{count} telemetry stream(s) are unassigned and will not take part in a race until assigned to a station.",
         "warning.orphaned_stations": "{count} station(s) are assigned to devices that no longer exist. Their assignments should be cleared.",
@@ -1528,9 +1527,7 @@
       "button.clear_orphaned_stations": "清除孤立的站位",
       "button.assign": "指派",
       "button.check_now": "立即檢查",
-      "button.download": "下載",
-      "button.install_hub": "安裝 Hub",
-      "button.apply_hub": "套用 Hub",
+      "button.update_hub": "更新 Hub 至 {version}",
       "button.restart_hub_service": "重啟 Hub 服務",
       "button.reboot_hub": "重開機 Hub",
       "button.shutdown_hub": "關閉 Hub",
@@ -1595,7 +1592,7 @@
       "wifi.level_poor": "極弱",
       "wifi.checking": "偵測中",
       "wifi.disconnected": "未連線",
-      "confirm.apply_hub_update": "確定套用 Hub 更新並重新啟動 Hub 服務?",
+      "confirm.update_hub": "確定要將 Hub 更新至 {version} 嗎？這會下載、安裝並重新啟動 Hub（約需一分鐘）。請勿在比賽進行中執行。",
       "wifi.choose_network": "請選擇要連線的 Wi-Fi 網路。",
       "wifi.not_connected": "未連線",
       "message.password_required": "請輸入密碼。",
@@ -1621,6 +1618,9 @@
       "message.select_and_copy_link": "請選取並複製報名連結。",
       "message.report_copied": "報告已複製到剪貼簿。",
       "message.copy_failed": "複製失敗 — 請選取上方文字並手動複製。",
+      "message.update_hub_downloading": "下載並安裝中…",
+      "message.update_hub_restarting": "Hub 重新啟動中…",
+      "message.update_hub_timeout": "Hub 尚未恢復，請稍後重新整理頁面 — 更新可能已回滾。",
       "text.unknown": "未知",
       "warning.unassigned_streams": "有 {count} 個遙測資料流尚未指派站位,在指派站位前不會參與比賽。",
       "warning.orphaned_stations": "{count} 個站位指派給已不存在的設備。應清除這些指派。",
@@ -2319,6 +2319,7 @@
         updateState === "current" ? t("update.strip_up_to_date")
         : updateState === "available" ? t("update.strip_update_available")
         : updateStateLabel(updateState);
+      $("btn-update-hub").textContent = t("button.update_hub", { version: update.latest_hub_version || "--" });
     }
 
 
@@ -2343,17 +2344,56 @@
       await updateCommand("/api/updates/check", "Update check complete.");
     }
 
-    async function downloadUpdates() {
-      await updateCommand("/api/updates/download", "Artifacts downloaded.");
+    async function pollHubRestart(targetVersion) {
+      const startTime = Date.now();
+      const timeoutMs = 3 * 60 * 1000; // 3 minutes
+
+      while (Date.now() - startTime < timeoutMs) {
+        try {
+          const health = await fetchJson("/health", { method: "GET" });
+          if (health.version === targetVersion) {
+            window.location.reload();
+            return;
+          }
+        } catch (error) {
+          // Hub is still restarting, continue polling
+        }
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
+
+      setMessage(
+        "update-message",
+        t("message.update_hub_timeout"),
+        "error"
+      );
     }
 
-    async function installHubUpdate() {
-      await updateCommand("/api/updates/install/hub", "Hub update staged.");
-    }
+    async function oneClickHubUpdate() {
+      const update = state.update || {};
+      const targetVersion = update.latest_hub_version || "--";
+      if (!window.confirm(t("confirm.update_hub", { version: targetVersion }))) {
+        return;
+      }
 
-    async function applyHubUpdate() {
-      if (!window.confirm(t("confirm.apply_hub_update"))) return;
-      await updateCommand("/api/updates/apply/hub", "Hub updater started.");
+      const button = $("btn-update-hub");
+      button.disabled = true;
+
+      try {
+        setMessage("update-message", t("message.update_hub_downloading"), "ok");
+        const response = await fetchJson("/api/updates/hub", {
+          method: "POST",
+          headers: adminHeaders(),
+        });
+        state.update = { ...state.update, ...response };
+        renderUpdate();
+
+        setMessage("update-message", t("message.update_hub_restarting"), "ok");
+        const version = response.version || targetVersion;
+        await pollHubRestart(version);
+      } catch (error) {
+        setMessage("update-message", error.message, "error");
+        button.disabled = false;
+      }
     }
 
     async function powerAction(action) {

@@ -124,6 +124,20 @@ service. Reboot and shutdown remain in dry-run mode. To remove the capability:
 sudo deploy_update/systemd/install-edge-service-restart.sh uninstall
 ```
 
+## Hub update sudoers rule
+
+To allow the Hub service to start the updater without a password prompt, add this sudoers rule:
+
+```text
+fitrace ALL=(root) NOPASSWD: /usr/bin/systemctl start --no-block fitracestudio-hub-updater.service
+```
+
+Validate it with:
+
+```bash
+sudo visudo -cf /etc/sudoers.d/<your-fitrace-drops-in-file>
+```
+
 ## Runtime verification
 
 ```bash
