@@ -327,6 +327,7 @@ class RaceManager:
                 "power_watts": 0,
                 "max_power_watts": 0,
                 "finished_time_ms": None,
+                **self._mixed_group_fields(node_id),
             }
 
         # 2. Initialize from station registrations
@@ -361,6 +362,7 @@ class RaceManager:
                     "max_power_watts": 0,
                     "finished_time_ms": None,
                     **relay_fields,
+                    **self._mixed_group_fields(node_id),
                 }
         return progress
 
@@ -669,6 +671,43 @@ class RaceManager:
             return "unknown"
         return self._active_nodes.get(node_id, "unknown")
 
+    def _mixed_group_index(self, node_id: Optional[str]) -> Optional[int]:
+        """The index of the equipment group that scores this node in a
+        mixed race, or None if the race isn't mixed, the node has no known
+        equipment type yet, or its type matches no group. Used both for
+        live telemetry (fresh self._active_nodes entry) and for placeholder
+        rows created before any telemetry arrives."""
+        if not self._config or self._config.race_type != "mixed" or not node_id:
+            return None
+        equipment_type = self._active_nodes.get(node_id)
+        return self._config.group_index_for(equipment_type)
+
+    def _effective_config_and_group(
+        self, node_id: str
+    ) -> tuple[Optional[RaceConfig], Optional[int]]:
+        """The RaceConfig telemetry scoring should use for this node, plus
+        its mixed-race group_index (None outside a mixed race). In a mixed
+        race the node's equipment_type (self._active_nodes, expected to
+        already be fresh -- callers update it first) picks a group and this
+        returns that group's scoped_config(); a node whose type matches no
+        group gets (None, None) so it never progresses or finishes. In a
+        non-mixed race this is simply (self._config, None), unchanged."""
+        if not self._config or self._config.race_type != "mixed":
+            return self._config, None
+        group_index = self._mixed_group_index(node_id)
+        if group_index is None:
+            return None, None
+        return self._config.scoped_config(group_index), group_index
+
+    def _mixed_group_fields(self, node_id: Optional[str]) -> Dict[str, Any]:
+        """{"group_index": ...} for a mixed race's progress row, empty dict
+        otherwise -- so non-mixed rows never gain the key (backward
+        compatibility) and mixed rows always carry it, splatted in
+        alongside relay_fields."""
+        if not self._config or self._config.race_type != "mixed":
+            return {}
+        return {"group_index": self._mixed_group_index(node_id)}
+
     def ensure_running_node_registered(self, node_id: str):
         if node_id in self.get_registered_nodes():
             return
@@ -854,6 +893,7 @@ class RaceManager:
                 "power_watts": 0,
                 "max_power_watts": 0,
                 "finished_time_ms": None,
+                **self._mixed_group_fields(node_id),
             }
 
         # 2. Initialize from station registrations
@@ -891,6 +931,7 @@ class RaceManager:
                     "max_power_watts": 0,
                     "finished_time_ms": None,
                     **relay_fields,
+                    **self._mixed_group_fields(node_id),
                 }
 
     def stop_race(self):
@@ -1017,6 +1058,13 @@ class RaceManager:
 
         max_power_watts = max(prev_max_power, power_watts)
 
+        # In a mixed race, this node's own equipment type (just refreshed
+        # above via update_active_node) picks which group's scoped config
+        # judges it; a type matching no group gets no effective config at
+        # all, so it never progresses or finishes. Non-mixed races are
+        # unaffected: effective_config is simply self._config.
+        effective_config, group_index = self._effective_config_and_group(node_id)
+
         # Calculate progress percent
         progress_percent = 0.0
         if self._session_mode == "class":
@@ -1028,17 +1076,23 @@ class RaceManager:
                     (elapsed_time_ms / (self._class_plan.total_duration_sec * 1000.0))
                     * 100.0,
                 )
-        elif self._config:
-            if self._config.race_type == "distance" and self._config.target_value > 0:
-                progress_percent = (distance_m / self._config.target_value) * 100.0
-            elif self._config.race_type == "calories" and self._config.target_value > 0:
-                progress_percent = (calories / self._config.target_value) * 100.0
+        elif effective_config:
+            if (
+                effective_config.race_type == "distance"
+                and effective_config.target_value > 0
+            ):
+                progress_percent = (distance_m / effective_config.target_value) * 100.0
             elif (
-                self._config.race_type in ("time", "max_power", "watts")
-                and self._config.duration_sec > 0
+                effective_config.race_type == "calories"
+                and effective_config.target_value > 0
+            ):
+                progress_percent = (calories / effective_config.target_value) * 100.0
+            elif (
+                effective_config.race_type in ("time", "max_power", "watts")
+                and effective_config.duration_sec > 0
             ):
                 progress_percent = (
-                    elapsed_time_ms / (self._config.duration_sec * 1000.0)
+                    elapsed_time_ms / (effective_config.duration_sec * 1000.0)
                 ) * 100.0
 
         # A class has no finish line -- finished_time_ms must stay None for
@@ -1049,19 +1103,19 @@ class RaceManager:
             and progress_percent >= 100.0
             and finished_time_ms is None
         ):
-            if self._config and self._config.race_type == "distance":
+            if effective_config and effective_config.race_type == "distance":
                 finished_time_ms = self._interpolated_finish_time_ms(
                     prev_progress,
                     "distance_m",
-                    self._config.target_value,
+                    effective_config.target_value,
                     distance_m,
                     elapsed_time_ms,
                 )
-            elif self._config and self._config.race_type == "calories":
+            elif effective_config and effective_config.race_type == "calories":
                 finished_time_ms = self._interpolated_finish_time_ms(
                     prev_progress,
                     "calories",
-                    self._config.target_value,
+                    effective_config.target_value,
                     calories,
                     elapsed_time_ms,
                 )
@@ -1084,6 +1138,10 @@ class RaceManager:
             if team_name:
                 row_athlete_name = team_name
 
+        mixed_fields: Dict[str, Any] = {}
+        if self._config and self._config.race_type == "mixed":
+            mixed_fields["group_index"] = group_index
+
         self._progress[node_id] = {
             "node_id": node_id,
             "athlete_name": row_athlete_name,
@@ -1101,25 +1159,59 @@ class RaceManager:
             "max_power_watts": max_power_watts,
             "finished_time_ms": finished_time_ms,
             **relay_fields,
+            **mixed_fields,
         }
 
         # Check if all participants have finished the race. A class is a
         # coach-run session with no ranking or finish line -- it must NEVER
         # auto-stop, so this whole block is skipped in class mode.
+        #
+        # ONE partition pass over self._progress.items(): "station-"
+        # placeholders are always skipped. In a mixed race each remaining
+        # row is classified by its CURRENT equipment type (self._active_nodes,
+        # not the row's own possibly-stale stored group_index):
+        #   - type not known yet (no telemetry from this node at all) ->
+        #     status unknown, so it BLOCKS auto-stop exactly like an
+        #     ordinary not-yet-finished participant. This matters: without
+        #     it, a fast group finishing before a slower group's node has
+        #     sent its very first packet would read as "all matched rows
+        #     finished" and stop the race out from under the slow group.
+        #   - type known but matches no group -> unmatched: never finishes,
+        #     never blocks (skipped, not judged).
+        #   - type known and matches a group -> judged against that
+        #     group's own scoped config.
+        # `judged_any` guards the remaining vacuous-truth case: if a mixed
+        # race's rows are ALL unmatched-but-known, that must not read as
+        # "all finished" either. Non-mixed races keep exactly today's
+        # behaviour (no judged_any gate, no equipment-type branching).
         if self._session_mode != "class" and self._progress:
+            is_mixed = self._config.race_type == "mixed"
             all_finished = True
+            judged_any = False
             for nid, p in self._progress.items():
                 if nid.startswith("station-"):
                     continue
-                if self._config.race_type in ("distance", "calories"):
+                if is_mixed:
+                    known_equipment_type = self._active_nodes.get(nid)
+                    if known_equipment_type is None:
+                        all_finished = False
+                        break
+                    row_group_index = self._config.group_index_for(known_equipment_type)
+                    if row_group_index is None:
+                        continue
+                    row_config = self._config.scoped_config(row_group_index)
+                else:
+                    row_config = self._config
+                judged_any = True
+                if row_config.race_type in ("distance", "calories"):
                     if p.get("finished_time_ms") is None:
                         all_finished = False
                         break
-                elif self._config.race_type in ("time", "max_power", "watts"):
-                    if p.get("elapsed_time_ms", 0) < (self._config.duration_sec * 1000):
+                elif row_config.race_type in ("time", "max_power", "watts"):
+                    if p.get("elapsed_time_ms", 0) < (row_config.duration_sec * 1000):
                         all_finished = False
                         break
-            if all_finished:
+            if all_finished and (judged_any or not is_mixed):
                 self._state = RaceState.STOPPED
                 import time
 
