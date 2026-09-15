@@ -4280,6 +4280,8 @@
     }
 
     function showPodiumOverlay() {
+      // ponytail: per-group podium later
+      if (currentConfig && currentConfig.race_type === "mixed") return;
       const isTeamMode = Boolean(currentConfig && currentConfig.competition_mode === "team");
       const raceType = (currentConfig && currentConfig.race_type) || "distance";
       const source = isTeamMode ? teamLeaderboardRows : leaderboardNodes;
@@ -4420,7 +4422,25 @@
         `);
       });
 
-      if (latestRace && Array.isArray(latestRace.results) && latestRace.results.length) {
+      if (latestRace && latestRace.race_type === "mixed" && Array.isArray(latestRace.groups) && Array.isArray(latestRace.results)) {
+        // A mixed race has no single race_type to rank or score by -- one
+        // slide per group instead, titled with the same heading text the
+        // leaderboard uses (buildMixedGroupHeading) and scored by that
+        // own group race_type, same as the leaderboard sections.
+        latestRace.groups.forEach((group) => {
+          const groupRows = latestRace.results
+            .filter((row) => row.group_index === group.group_index)
+            .slice(0, 3)
+            .map((row) => buildLatestRaceEntry(row, group.race_type));
+          slides.push(`
+            <div class="record-wall-slide">
+              <div class="record-wall-kicker">${escapeHtml(t("record_wall.latest_race"))}</div>
+              <div class="record-wall-title">${escapeHtml(buildMixedGroupHeading(group))}</div>
+              <div class="record-wall-list">${renderRecordWallRows(groupRows, group.race_type)}</div>
+            </div>
+          `);
+        });
+      } else if (latestRace && Array.isArray(latestRace.results) && latestRace.results.length) {
         const topThree = latestRace.results.slice(0, 3).map((row) => buildLatestRaceEntry(row, latestRace.race_type));
         slides.push(`
           <div class="record-wall-slide">
