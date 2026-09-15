@@ -3223,7 +3223,9 @@
           ? `${metricNumber(currentConfig.target_value).toFixed(0)}m`
           : raceType === "calories"
             ? `${metricNumber(currentConfig.target_value).toFixed(0)} kcal`
-            : `${metricNumber(currentConfig.duration_sec).toFixed(0)}s`
+            : raceType === "mixed"
+              ? buildMixedRaceTargetSummary(currentConfig)
+              : `${metricNumber(currentConfig.duration_sec).toFixed(0)}s`
         : "";
       if (stage === "countdown") {
         return {
@@ -6398,6 +6400,10 @@
           } else if (currentConfig.race_type === "max_power" || currentConfig.race_type === "watts") {
             configDesc.innerText = `${competitionLabel} · ${t("race.max_power")}: ${currentConfig.duration_sec}s`;
             typeIndicator.innerText = `${competitionLabel} · ${t("race.max_power")} (${currentConfig.duration_sec}s)`;
+          } else if (currentConfig.race_type === "mixed") {
+            const mixedTarget = buildMixedRaceTargetSummary(currentConfig);
+            configDesc.innerText = `${competitionLabel} · ${t("race_type.mixed")}: ${mixedTarget}`;
+            typeIndicator.innerText = `${competitionLabel} · ${t("race_type.mixed")} (${mixedTarget})`;
           }
         } else {
           configDesc.innerText = t("status.no_config");
