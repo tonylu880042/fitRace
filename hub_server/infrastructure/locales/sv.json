@@ -268,6 +268,7 @@
   "race_type.calories": "Kalorier",
   "race_type.max_power": "Maxeffekt",
   "race_type.watts": "Effekt",
+  "race_type.mixed": "Blandad utrustning",
   "result.error_title": "Resultatet hittades inte",
   "result.error_hint": "Koden kan ha gått ut eller vara ogiltig.",
   "result.back_button": "Tillbaka till instrumentpanelen",

@@ -268,6 +268,7 @@
   "race_type.calories": "卡路里",
   "race_type.max_power": "最大功率",
   "race_type.watts": "功率",
+  "race_type.mixed": "多器材分組",
   "result.error_title": "找不到成績",
   "result.error_hint": "該成績碼可能已過期或無效。",
   "result.back_button": "回儀表板",

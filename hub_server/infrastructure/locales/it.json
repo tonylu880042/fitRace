@@ -268,6 +268,7 @@
   "race_type.calories": "Calorie",
   "race_type.max_power": "Potenza max",
   "race_type.watts": "Potenza",
+  "race_type.mixed": "Multi-attrezzo",
   "result.error_title": "Risultato non trovato",
   "result.error_hint": "Il codice potrebbe essere scaduto o non valido.",
   "result.back_button": "Torna al cruscotto",
