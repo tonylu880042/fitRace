@@ -137,6 +137,91 @@ class RaceResultsQuery:
             )
         return {"records": records}
 
+    def get_standings(self) -> dict[str, Any]:
+        """One combined ranking across every heat of the current event.
+
+        Several heats run on the same couple of machines (e.g. 3 relay
+        heats x 2 teams) are each saved as their own race in the results
+        jsonl -- get_records() only ever surfaces the top 3 of the most
+        recently contested category. This instead scopes to (race_type,
+        label, relay_legs) of the MOST RECENTLY stored race ONLY -- if
+        that newest race is "mixed" (or otherwise not a well-formed
+        category), standings are empty rather than reaching past it to an
+        older category (see `_latest_standings_scope`) -- division is
+        deliberately excluded from the scope key so men's/women's heats of
+        the same event share one scope and are split back into sections
+        afterwards -- and ranks EVERY participant row from EVERY stored
+        race in that scope, with no truncation.
+        """
+        empty: dict[str, Any] = {"race_type": None, "sections": [], "race_count": 0}
+
+        scope = self._latest_standings_scope()
+        if scope is None:
+            return empty
+        race_type, label, relay_legs = scope
+
+        combined_rows: list[dict[str, Any]] = []
+        race_count = 0
+        for record in self._load_records():
+            config = self._record_config(record)
+            if config is None:
+                continue
+            if not self._matches_scope(config, race_type, label, relay_legs):
+                continue
+            snapshot = record["snapshot"]
+            race_count += 1
+            race_start = snapshot.get("start_time_epoch_ms")
+            leaderboard = snapshot.get("leaderboard")
+            for row in self._participant_rows(
+                leaderboard if isinstance(leaderboard, dict) else {}
+            ):
+                enriched = dict(row)
+                enriched["race_start_epoch_ms"] = race_start
+                combined_rows.append(enriched)
+
+        if not combined_rows:
+            return empty
+
+        ordered = self._order_by_race_type(combined_rows, race_type)
+        tagged = [
+            (row, *self._standings_finished_value(race_type, row)) for row in ordered
+        ]
+        deduped = self._dedupe_best_row(tagged)
+
+        sections_by_division: dict[Any, list[dict[str, Any]]] = {}
+        for row, finished, value in deduped:
+            division = row.get("division")
+            sections_by_division.setdefault(division, []).append(
+                {
+                    "athlete_name": row.get("athlete_name"),
+                    "team_name": row.get("team_name"),
+                    "division": division,
+                    "finished": finished,
+                    "value": value,
+                    "station_number": row.get("station_number"),
+                    "relay_members": row.get("relay_members"),
+                    "race_start_epoch_ms": row.get("race_start_epoch_ms"),
+                }
+            )
+
+        sections = []
+        for division in sorted(
+            sections_by_division.keys(), key=self._division_sort_key
+        ):
+            entries = sections_by_division[division]
+            ranked_rows = [
+                {"rank": index, **entry} for index, entry in enumerate(entries, 1)
+            ]
+            sections.append({"division": division, "rows": ranked_rows})
+
+        return {
+            "race_type": race_type,
+            "label": label,
+            "relay_legs": relay_legs,
+            "race_count": race_count,
+            "sections": sections,
+        }
+
     def get_athlete_result(self, token: str) -> Optional[dict[str, Any]]:
         for summary, ranked_rows, _ in self._iter_races():
             for row in ranked_rows:
@@ -424,3 +509,112 @@ class RaceResultsQuery:
                 rows, key=lambda r: _as_number(r.get("max_power_watts")), reverse=True
             )
         return list(rows)
+
+    # -- get_standings() internals --------------------------------------
+
+    @staticmethod
+    def _record_config(record: Any) -> Optional[dict[str, Any]]:
+        """The record's config dict, or None if the record isn't a
+        well-formed stored race (mirrors the guard in `get_records`)."""
+        if not isinstance(record, dict):
+            return None
+        snapshot = record.get("snapshot")
+        if not isinstance(snapshot, dict):
+            return None
+        config = snapshot.get("config")
+        return config if isinstance(config, dict) else {}
+
+    def _latest_standings_scope(
+        self,
+    ) -> Optional[tuple[Any, str, Any]]:
+        """(race_type, label, relay_legs) of the MOST RECENTLY stored race
+        -- and only that race. Deliberately does NOT skip past it to an
+        older category: if the newest race is "mixed" (or otherwise not a
+        well-formed target/time-boxed race -- see `_category_label`),
+        there is no scope and standings are empty, so the dashboard falls
+        back to the existing mixed per-group slides right after a mixed
+        race instead of silently showing a stale ranking for whatever
+        category preceded it. Division is intentionally left out of the
+        scope so per-division heats of the same event share one scope."""
+        records = self._load_records()
+        if not records:
+            return None
+        config = self._record_config(records[0])
+        if config is None:
+            return None
+        race_type = config.get("race_type")
+        if race_type == "mixed":
+            return None
+        label = self._category_label(race_type, config)
+        if label is None:
+            return None
+        return race_type, label, config.get("relay_legs")
+
+    def _matches_scope(
+        self,
+        config: dict[str, Any],
+        race_type: Any,
+        label: str,
+        relay_legs: Any,
+    ) -> bool:
+        if config.get("race_type") != race_type:
+            return False
+        if config.get("relay_legs") != relay_legs:
+            return False
+        return self._category_label(race_type, config) == label
+
+    @staticmethod
+    def _standings_finished_value(
+        race_type: Any, row: dict[str, Any]
+    ) -> tuple[bool, float]:
+        """(finished, value) for one standings row. Target race types
+        (distance/calories) can DNF, so `finished` reflects whether the
+        row actually crossed the line, with `value` falling back to
+        progress for a DNF row. Every other race type always "finishes"
+        once its duration elapses -- there's no DNF concept for time/watts/
+        max_power -- so `value` is simply the ranking metric.
+        """
+        if race_type in _TARGET_RACE_TYPES:
+            finished_time_ms = row.get("finished_time_ms")
+            if finished_time_ms is not None:
+                return True, _as_number(finished_time_ms)
+            progress_field = "distance_m" if race_type == "distance" else "calories"
+            return False, _as_number(row.get(progress_field))
+        if race_type == "max_power":
+            return True, _as_number(row.get("max_power_watts"))
+        return True, _as_number(row.get("distance_m"))
+
+    @staticmethod
+    def _dedupe_best_row(
+        tagged_rows: list[tuple[dict[str, Any], bool, float]],
+    ) -> list[tuple[dict[str, Any], bool, float]]:
+        """Keep only a named athlete's best row across every contributing
+        race (same rule as `_top_three`: a stripped, non-empty name within
+        the same division merges; anonymous rows never merge). The input
+        must already be ordered best-first (see `_order_by_race_type`,
+        which puts every finisher ahead of every non-finisher for target
+        race types) so "first occurrence wins" is enough to also guarantee
+        a finisher always beats that same athlete's DNF row.
+        """
+        deduped = []
+        seen_names: set[tuple[str, Any]] = set()
+        for row, finished, value in tagged_rows:
+            name = row.get("athlete_name")
+            stripped = name.strip() if isinstance(name, str) else None
+            if stripped is not None:
+                key = (stripped, row.get("division"))
+                if key in seen_names:
+                    continue
+                seen_names.add(key)
+            deduped.append((row, finished, value))
+        return deduped
+
+    @staticmethod
+    def _division_sort_key(division: Any) -> tuple[int, str]:
+        if division is None:
+            return (0, "")
+        if division == "men":
+            return (1, "")
+        if division == "women":
+            return (2, "")
+        return (3, str(division))

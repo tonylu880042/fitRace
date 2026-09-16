@@ -980,6 +980,11 @@ def get_race_records():
     return race_results_query.get_records()
 
 
+@app.get("/api/results/standings")
+def get_race_standings():
+    return race_results_query.get_standings()
+
+
 @app.get("/api/results/races/{result_id}")
 def get_race_result_detail(result_id: str):
     race = race_results_query.get_race(result_id)
