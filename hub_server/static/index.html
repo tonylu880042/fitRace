@@ -2377,6 +2377,110 @@
       font-weight: 700;
     }
 
+    /* Overall standings: a single static page (no rotation) that can hold
+       far more rows than the carousel's top-3 slides -- up to ~40 rows on
+       a 1920x1080 projector without scrolling -- so it needs its own,
+       taller allowance and a multi-column flow instead of the carousel's
+       fixed small card height. */
+    .record-wall:has(.standings-view) {
+      overflow: visible;
+      min-height: clamp(260px, 62vh, 840px);
+    }
+
+    .standings-view {
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+    }
+
+    .standings-race-count {
+      color: var(--text-muted);
+      font-size: clamp(0.8rem, 1.2vw, 1.05rem);
+      font-weight: 600;
+      margin-bottom: 0.2rem;
+    }
+
+    .standings-sections {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1.5rem;
+      align-items: flex-start;
+    }
+
+    .standings-section {
+      flex: 1 1 260px;
+      min-width: 0;
+    }
+
+    .standings-section-title {
+      font-family: 'Oswald', sans-serif;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--volt-yellow);
+      font-size: clamp(0.9rem, 1.4vw, 1.15rem);
+      margin-bottom: 0.4rem;
+    }
+
+    .standings-list {
+      display: grid;
+      grid-auto-flow: column;
+      grid-template-rows: repeat(14, auto);
+      gap: 0.3rem 1.25rem;
+    }
+
+    .standings-row {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.3rem 0.55rem;
+      border: 1px solid var(--steel-border);
+      border-radius: 4px;
+      background: rgba(0, 0, 0, 0.25);
+    }
+
+    .standings-row.rank-1 { border-color: var(--volt-yellow); box-shadow: 0 0 14px rgba(226, 255, 59, 0.12); }
+    .standings-row.rank-2, .standings-row.rank-3 { border-color: rgba(226, 255, 59, 0.35); }
+
+    .standings-rank {
+      font-family: 'Oswald', sans-serif;
+      font-size: clamp(0.9rem, 1.3vw, 1.2rem);
+      font-weight: 800;
+      color: var(--text-muted);
+      min-width: 2ch;
+    }
+    .standings-row.rank-1 .standings-rank { color: var(--volt-yellow); }
+    .standings-row.rank-2 .standings-rank,
+    .standings-row.rank-3 .standings-rank { color: rgba(226, 255, 59, 0.75); }
+
+    .standings-name {
+      font-weight: 700;
+      font-size: clamp(0.75rem, 1vw, 0.95rem);
+      text-transform: uppercase;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .standings-team {
+      color: var(--text-muted);
+      font-size: clamp(0.62rem, 0.8vw, 0.75rem);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .standings-value {
+      font-family: 'Oswald', sans-serif;
+      font-size: clamp(0.75rem, 1.1vw, 1rem);
+      font-weight: 800;
+      color: var(--volt-yellow);
+      font-variant-numeric: tabular-nums;
+      text-align: right;
+      white-space: nowrap;
+    }
+
     @media (prefers-reduced-motion: reduce) {
       .finish-banner.show,
       .podium-overlay-card,
@@ -3027,6 +3131,7 @@
     let recordWallIndex = 0;
     let recordWallRotateTimer = null;
     let recordWallRefreshTimer = null;
+    let recordWallStandingsMode = false;
     let classClockInterval = null;
     let currentClassPlan = null;
     let currentClassLeaderboard = {};
@@ -4529,30 +4634,100 @@
       return slides;
     }
 
+    // Overall standings: ONE static page (no rotation) shown instead of the
+    // top-3 carousel while GET /api/results/standings has a real ranking
+    // for the current event -- see RaceResultsQuery.get_standings, which
+    // combines every heat of the latest non-mixed category into one
+    // ranking rather than just the top 3 of the most recent heat.
+    function renderStandingsRows(rows, raceType) {
+      return (rows || []).map((row) => {
+        const rank = row.rank;
+        const rankClass = rank <= 3 ? ` rank-${rank}` : "";
+        const teamHtml = row.team_name && row.team_name !== row.athlete_name
+          ? `<div class="standings-team">${escapeHtml(row.team_name)}</div>`
+          : "";
+        return `
+          <div class="standings-row${rankClass}">
+            <div class="standings-rank">#${rank}</div>
+            <div>
+              <div class="standings-name">${escapeHtml(row.athlete_name || (row.station_number ? `${t("stations.station")} ${row.station_number}` : t("stations.athlete")))}</div>
+              ${teamHtml}
+            </div>
+            <div class="standings-value">${formatRecordWallEntryValue(raceType, row)}</div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function buildOverallStandingsView(standings) {
+      if (!standings || !standings.race_type || !Array.isArray(standings.sections) || standings.sections.length === 0) {
+        return null;
+      }
+      const relaySuffix = standings.relay_legs
+        ? ` &middot; ${escapeHtml(t("record_wall.relay_legs", { legs: standings.relay_legs }))}`
+        : "";
+      const sectionsHtml = standings.sections.map((section) => {
+        const divisionLabel = recordWallDivisionLabel(section.division);
+        const titleHtml = divisionLabel
+          ? `<div class="standings-section-title">${escapeHtml(divisionLabel)}</div>`
+          : "";
+        return `
+          <div class="standings-section">
+            ${titleHtml}
+            <div class="standings-list">${renderStandingsRows(section.rows, standings.race_type)}</div>
+          </div>
+        `;
+      }).join("");
+      return `
+        <div class="record-wall-slide standings-view">
+          <div class="record-wall-kicker">${escapeHtml(t("record_wall.overall_standings"))}</div>
+          <div class="record-wall-title">${escapeHtml(recordWallTypeLabel(standings.race_type))} &middot; ${escapeHtml(standings.label || "")}${relaySuffix}</div>
+          <div class="standings-race-count">${escapeHtml(t("record_wall.race_count", { count: standings.race_count }))}</div>
+          <div class="standings-sections">${sectionsHtml}</div>
+        </div>
+      `;
+    }
+
     function renderRecordWallSlide() {
       const wall = document.getElementById("record-wall");
       if (!wall) return;
-      const dots = recordWallSlides.length > 1
+      const dots = (!recordWallStandingsMode && recordWallSlides.length > 1)
         ? `<div class="record-wall-dots">${recordWallSlides.map((_, i) => `<span class="record-wall-dot ${i === recordWallIndex ? "active" : ""}"></span>`).join("")}</div>`
         : "";
       wall.innerHTML = (recordWallSlides[recordWallIndex] || "") + dots;
     }
 
     function advanceRecordWall() {
-      if (!recordWallActive || recordWallSlides.length === 0) return;
+      if (!recordWallActive || recordWallStandingsMode || recordWallSlides.length === 0) return;
       recordWallIndex = (recordWallIndex + 1) % recordWallSlides.length;
       renderRecordWallSlide();
+    }
+
+    // Only the top-3 carousel rotates -- the static standings page never
+    // schedules (or keeps) this timer.
+    function updateRecordWallRotateTimer() {
+      const shouldRotate = recordWallActive && !recordWallStandingsMode && recordWallSlides.length > 1;
+      if (shouldRotate) {
+        if (!recordWallRotateTimer) {
+          recordWallRotateTimer = window.setInterval(advanceRecordWall, 10000);
+        }
+      } else if (recordWallRotateTimer) {
+        window.clearInterval(recordWallRotateTimer);
+        recordWallRotateTimer = null;
+      }
     }
 
     async function refreshRecordWallData() {
       if (!recordWallActive) return;
       try {
-        const [recordsRes, racesRes] = await Promise.all([
+        const [recordsRes, racesRes, standingsRes] = await Promise.all([
           fetch(`/api/results/records?t=${Date.now()}`),
           fetch(`/api/results/races?limit=1&t=${Date.now()}`),
+          fetch(`/api/results/standings?t=${Date.now()}`),
         ]);
         const recordsData = recordsRes.ok ? await recordsRes.json() : { records: [] };
         const racesData = racesRes.ok ? await racesRes.json() : { races: [] };
+        const standingsData = standingsRes.ok ? await standingsRes.json() : { race_type: null, sections: [] };
 
         let latestRace = null;
         const latestSummary = (racesData.races || [])[0];
@@ -4562,8 +4737,17 @@
         }
 
         if (!recordWallActive) return; // race may have left IDLE while awaiting the fetch
-        recordWallSlides = buildRecordWallSlides(recordsData.records || [], latestRace);
+
+        const standingsView = buildOverallStandingsView(standingsData);
+        if (standingsView) {
+          recordWallStandingsMode = true;
+          recordWallSlides = [standingsView];
+        } else {
+          recordWallStandingsMode = false;
+          recordWallSlides = buildRecordWallSlides(recordsData.records || [], latestRace);
+        }
         recordWallIndex = 0;
+        updateRecordWallRotateTimer();
         renderRecordWallSlide();
       } catch (err) {
         console.error("Failed to load record wall data:", err);
@@ -4581,9 +4765,6 @@
 
       if (!alreadyActive) {
         await refreshRecordWallData();
-        if (!recordWallRotateTimer) {
-          recordWallRotateTimer = window.setInterval(advanceRecordWall, 10000);
-        }
         if (!recordWallRefreshTimer) {
           recordWallRefreshTimer = window.setInterval(refreshRecordWallData, 300000);
         }

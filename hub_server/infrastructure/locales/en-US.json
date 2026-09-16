@@ -98,6 +98,8 @@
   "record_wall.division_women": "Women",
   "record_wall.relay_legs": "{legs}-Leg Relay",
   "record_wall.dnf": "DNF",
+  "record_wall.overall_standings": "Overall Standings",
+  "record_wall.race_count": "{count} races",
   "signup.division": "Division",
   "signup.division_none": "No division",
   "signup.division_men": "Men",
