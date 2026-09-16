@@ -295,6 +295,93 @@ def test_get_standings_excludes_a_different_category(tmp_path):
     assert [r["athlete_name"] for r in rows] == ["Alice"]
 
 
+def test_get_standings_excludes_a_relay_with_a_different_leg_count(tmp_path):
+    # relay_legs IS part of the scope key -- a 3000 m 2-leg relay and a
+    # 3000 m 3-leg relay must never merge into one ranking even though
+    # (race_type, label) match. The newest race (3-leg) defines the scope,
+    # so the older 2-leg heat's rows must be excluded entirely.
+    store = RaceResultStore(tmp_path / "race_results.jsonl")
+    store.save_finished_snapshot(
+        _snapshot(
+            3000,
+            1000,
+            2000,
+            competition_mode="relay",
+            relay_legs=2,
+            rows={
+                "node-01": _row(
+                    "node-01", "TwoLeg", distance_m=3000, finished_time_ms=50000
+                ),
+            },
+        )
+    )
+    store.save_finished_snapshot(
+        _snapshot(
+            3000,
+            3000,
+            4000,
+            competition_mode="relay",
+            relay_legs=3,
+            rows={
+                "node-01": _row(
+                    "node-01", "ThreeLeg", distance_m=3000, finished_time_ms=60000
+                ),
+            },
+        )
+    )
+    query = RaceResultsQuery(store)
+
+    standings = query.get_standings()
+
+    assert standings["label"] == "3000 m"
+    assert standings["relay_legs"] == 3
+    assert standings["race_count"] == 1
+    rows = standings["sections"][0]["rows"]
+    assert [r["athlete_name"] for r in rows] == ["ThreeLeg"]
+
+
+def test_get_standings_excludes_an_individual_race_when_newest_is_a_relay(tmp_path):
+    # relay_legs None (individual) vs relay_legs 3 (relay) at the SAME
+    # distance must never merge -- an individual 3000 m race stored before
+    # a 3000 m 3-leg relay must be excluded from the relay's standings.
+    store = RaceResultStore(tmp_path / "race_results.jsonl")
+    store.save_finished_snapshot(
+        _snapshot(
+            3000,
+            1000,
+            2000,
+            rows={
+                "node-01": _row(
+                    "node-01", "Solo", distance_m=3000, finished_time_ms=45000
+                ),
+            },
+        )
+    )
+    store.save_finished_snapshot(
+        _snapshot(
+            3000,
+            3000,
+            4000,
+            competition_mode="relay",
+            relay_legs=3,
+            rows={
+                "node-01": _row(
+                    "node-01", "ThreeLeg", distance_m=3000, finished_time_ms=60000
+                ),
+            },
+        )
+    )
+    query = RaceResultsQuery(store)
+
+    standings = query.get_standings()
+
+    assert standings["label"] == "3000 m"
+    assert standings["relay_legs"] == 3
+    assert standings["race_count"] == 1
+    rows = standings["sections"][0]["rows"]
+    assert [r["athlete_name"] for r in rows] == ["ThreeLeg"]
+
+
 def test_get_standings_keeps_only_each_athletes_best_row_finisher_beats_dnf(tmp_path):
     store = RaceResultStore(tmp_path / "race_results.jsonl")
     # Heat 1: Alice does not finish (progress only).
