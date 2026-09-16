@@ -673,8 +673,17 @@
       position: absolute;
       top: 0;
       right: 0;
-      width: 26px;
       height: 100%;
+      /* Sized from the bar's own height rather than a flat width, so it
+         stays proportionate at every tier (8px dense, 20px lg, 56px xl)
+         without a per-tier rule -- a flat width went stale the moment the
+         xl bar changed thickness. min-width keeps the original 26px as a
+         floor: on the 8px dense bar the derived width would be 8px. Both
+         are static sizing, never animated -- the keyframes below stay on
+         transform/opacity. */
+      aspect-ratio: 1 / 1;
+      width: auto;
+      min-width: 26px;
       pointer-events: none;
       transform-origin: 100% 50%;
       background: linear-gradient(90deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.92));
@@ -2779,6 +2788,11 @@
        the screen. lg therefore stays at 20px; do not "match" it to xl. */
     .race-board--xl .progress-track {
       height: clamp(4px, calc(11.666vh - 70px), 56px);
+      /* 2px is invisible on an 8px bar and a hard rectangle on a 56px one.
+         Raised only on the tier whose height actually changed; the base
+         track and lg keep 2px. Deliberately not a pill -- everything else
+         on this board is 2-4px. */
+      border-radius: 6px;
     }
 
     .race-board--lg .progress-track {

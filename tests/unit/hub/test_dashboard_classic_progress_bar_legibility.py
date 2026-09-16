@@ -99,6 +99,14 @@ def _matching_brace_end(source: str, open_idx: int) -> int:
     raise AssertionError("unbalanced braces in stylesheet")
 
 
+def _strip_comments(text: str) -> str:
+    """Drop `/* ... */`. Rule bodies here carry explanatory comments right
+    above the declarations they explain, so a comment-blind scan would both
+    miss the real declaration underneath and -- the trap CLAUDE.md names --
+    let a property mentioned only in prose satisfy an assertion."""
+    return re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+
+
 def _rule_bodies(css: str, selector: str) -> list[str]:
     """Bodies of every top-level rule whose selector list contains
     `selector` as a whole comma-separated entry."""
@@ -124,7 +132,9 @@ def _rule_bodies(css: str, selector: str) -> list[str]:
         entries = [part.strip() for part in prelude.split(",")]
         if selector not in entries:
             continue
-        bodies.append(css[open_idx + 1 : _matching_brace_end(css, open_idx) - 1])
+        bodies.append(
+            _strip_comments(css[open_idx + 1 : _matching_brace_end(css, open_idx) - 1])
+        )
     return bodies
 
 
@@ -184,7 +194,7 @@ def _keyframes_body(css: str, name: str) -> str:
     match = re.search(r"@keyframes\s+" + re.escape(name) + r"\s*\{", css)
     assert match, f"@keyframes {name} is not defined"
     open_idx = match.end() - 1
-    return css[open_idx + 1 : _matching_brace_end(css, open_idx) - 1]
+    return _strip_comments(css[open_idx + 1 : _matching_brace_end(css, open_idx) - 1])
 
 
 # ---------------------------------------------------------------------------
@@ -424,6 +434,73 @@ def test_leading_edge_highlight_is_positioned_at_the_head_of_the_fill():
     assert _declared(body, "right") == ["0"], (
         "the highlight must sit at the RIGHT edge of the fill -- that is the "
         "leading edge of progress"
+    )
+
+
+def test_leading_edge_highlight_is_sized_from_the_bar_not_a_flat_width():
+    """The highlight was born as a flat `width: 26px` against a 28px-tall
+    bar. At 56px that same 26px is a sliver, and hardcoding a second flat
+    width per tier means the next height change silently leaves it wrong
+    again. Size it from the element's own height with `aspect-ratio` so it
+    follows every tier -- including tiers that do not exist yet.
+
+    `min-width` keeps the original 26px as a floor, which is what preserves
+    the dense-board look: the untiered bar is 8px tall, so an
+    aspect-ratio-derived width would collapse to 8px there."""
+    body = _rule_bodies(_read_index(), ".progress-fill::after")[0]
+    ratios = _declared(body, "aspect-ratio")
+    assert ratios, (
+        "the leading-edge highlight is not sized from the bar's own height; a "
+        "flat width goes stale every time the bar thickness changes"
+    )
+    widths = [w.strip() for w in _declared(body, "width")]
+    assert widths in ([], ["auto"]), (
+        "a flat width overrides the aspect-ratio sizing and pins the "
+        f"highlight to one tier's thickness again; got {widths}"
+    )
+    floors = [_px(v) for v in _declared(body, "min-width")]
+    assert floors == [26.0], (
+        "the highlight needs the original 26px as a min-width floor, or the "
+        "8px dense-board bar shrinks it to an 8px speck; got "
+        f"{_declared(body, 'min-width')}"
+    )
+
+
+def test_leading_edge_sizing_is_not_animated():
+    """aspect-ratio and min-width size the highlight; neither may end up in
+    the keyframes. Sizing is layout, and this runs per row, every frame,
+    for a whole class."""
+    css = _read_index()
+    body = _keyframes_body(css, _leading_edge_animation_name(css))
+    for prop in ("aspect-ratio", "min-width", "width", "height"):
+        assert prop not in body, (
+            f"@keyframes animates {prop!r} -- the leading-edge highlight must "
+            "stay on the compositor (transform/opacity only)"
+        )
+
+
+def test_xl_tier_softens_the_track_corners_that_only_it_made_visible():
+    """`border-radius: 2px` is invisible on an 8px bar and reads as a hard
+    rectangle on a 56px one. Raised on the xl tier only -- the one tier
+    whose height changed -- so the base track and lg keep today's corners."""
+    css = _read_index()
+    base = _declared(_rule_bodies(css, ".progress-track")[0], "border-radius")
+    assert base == [
+        "2px"
+    ], f"the untiered .progress-track must keep its 2px corners, got {base}"
+    xl = [
+        r
+        for body in _rule_bodies(css, ".race-board--xl .progress-track")
+        for r in _declared(body, "border-radius")
+    ]
+    assert xl, (
+        "the xl tier does not soften .progress-track corners; at 56px tall the "
+        "base 2px radius reads as a sharp rectangle"
+    )
+    assert _px(xl[-1]) > 2.0, f"xl radius must exceed the base 2px, got {xl[-1]!r}"
+    assert _px(xl[-1]) <= 12.0, (
+        "an xl radius this large turns the bar into a pill; the rest of this "
+        f"board is 2-4px, got {xl[-1]!r}"
     )
 
 
