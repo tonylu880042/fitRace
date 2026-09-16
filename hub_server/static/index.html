@@ -2515,7 +2515,6 @@
       line-height: 1.1;
     }
 
-    .race-board--xl .progress-track,
     .race-board--xl .sprint-board-progress {
       height: 16px;
     }
@@ -2618,7 +2617,6 @@
       text-overflow: ellipsis;
     }
 
-    .race-board--lg .progress-track,
     .race-board--lg .sprint-board-progress {
       height: 12px;
     }
@@ -2727,12 +2725,21 @@
       padding: clamp(1px, calc(1.417vh - 8.6px), 7.2px);
     }
 
+    /* The one authoritative classic-bar height per tier (an earlier flat
+       `height: 16px/12px` grouped with .sprint-board-progress used to sit
+       above and be silently overridden here -- it is gone).
+
+       The whole linear term is scaled with the cap, not just the cap: the
+       old terms already saturated at a 1080px viewport (3.333vh - 20px =
+       16px there), so raising only the maximum would have left the venue's
+       projector showing exactly the same hairline. These reach 28px / 20px
+       at 1080px and still shrink toward the 4px floor on short screens. */
     .race-board--xl .progress-track {
-      height: clamp(4px, calc(3.333vh - 20px), 16px);
+      height: clamp(4px, calc(5.833vh - 35px), 28px);
     }
 
     .race-board--lg .progress-track {
-      height: clamp(4px, calc(2.222vh - 12px), 12px);
+      height: clamp(4px, calc(3.704vh - 20px), 20px);
     }
 
     /* Compound selectors again (see the sprint-board-grid comment
