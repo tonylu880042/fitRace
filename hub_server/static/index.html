@@ -2762,13 +2762,23 @@
        `height: 16px/12px` grouped with .sprint-board-progress used to sit
        above and be silently overridden here -- it is gone).
 
-       The whole linear term is scaled with the cap, not just the cap: the
-       old terms already saturated at a 1080px viewport (3.333vh - 20px =
-       16px there), so raising only the maximum would have left the venue's
-       projector showing exactly the same hairline. These reach 28px / 20px
-       at 1080px and still shrink toward the 4px floor on short screens. */
+       The whole linear term is scaled with the cap, not just the cap: every
+       version of these terms saturates exactly at a 1080px viewport, so
+       raising only the maximum leaves the venue's projector showing the
+       previous thickness unchanged. These reach 56px / 20px at 1080px and
+       still shrink toward the 4px floor on short screens (xl is 14px at
+       720px).
+
+       The tiers do NOT scale together. xl rows carry min-height 295px at
+       1080px against ~190px of content, so a 56px bar lands in slack the
+       row already had. lg has no min-height at all, by design (see the lg
+       type comment above) -- its rows are content-sized, so every pixel of
+       bar is a pixel of row on each of up to four rows. Measured at
+       1920x1080 with four relay rows, the bottom of .card.accent sits at
+       1051px with a 20px bar, 1067px at 24px, and 1083px at 28px -- off
+       the screen. lg therefore stays at 20px; do not "match" it to xl. */
     .race-board--xl .progress-track {
-      height: clamp(4px, calc(5.833vh - 35px), 28px);
+      height: clamp(4px, calc(11.666vh - 70px), 56px);
     }
 
     .race-board--lg .progress-track {

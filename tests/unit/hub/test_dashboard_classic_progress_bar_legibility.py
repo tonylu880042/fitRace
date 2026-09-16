@@ -20,13 +20,32 @@ Two separate defects, both in `hub_server/static/index.html`:
    measured viewport: the old `calc(3.333vh - 20px)` evaluates to exactly
    16px at 1080px tall, i.e. the bar was already pinned at its cap, so a
    bigger cap alone changes nothing anyone can see. The whole linear term
-   is therefore rescaled by the same factor as the cap (xl 16 -> 28px,
-   lg 12 -> 20px) so the bar actually reaches the new cap at 1080px while
-   still shrinking on short viewports. Hence the tests below assert the
-   RESOLVED height at 1080px, not merely the literal cap.
+   is therefore rescaled by the same factor as the cap, and the tests
+   below assert the RESOLVED height at 1080px, not merely the literal cap
+   -- a cap-only edit passes the cap test and fails the resolved one.
+
+   The tiers did not move together. xl went 16 -> 28 -> 56px; lg went
+   12 -> 20px and STOPS there. xl rows carry a min-height of 295px at
+   1080px against roughly 190px of content, so a fat bar lands in slack
+   the row already had. lg has no min-height by design, so its rows are
+   content-sized and every pixel of bar is a pixel of row, times four
+   rows -- measured in a browser, a 28px lg bar already pushes the
+   leaderboard card past the bottom of a 1080px screen and a 40px one
+   clips the last row outright. See
+   test_lg_tier_bar_stays_within_the_four_row_height_budget.
 
    The base `.progress-track` stays 8px: dense boards (5+ stations) pack
    many rows onto a non-scrolling projector and cannot spend the space.
+
+   Two pieces of secondary geometry were sized against the old thin bar
+   and had to follow it up: the leading-edge highlight's flat `width:
+   26px` (proportionate at 28px tall, a sliver at 56px) and the track's
+   `border-radius: 2px` (invisible at 8px, a hard rectangle at 56px).
+   The highlight is now sized from the bar's own height via
+   `aspect-ratio` with the old 26px kept as a `min-width` floor, so it
+   tracks every tier -- including any future one -- without a per-tier
+   rule, and the dense-board look is unchanged. The radius is raised on
+   the xl tier only, since that is the only tier whose height changed.
 
 2. MOTION. `.progress-fill` sweeps a gradient via `progressSweep`, which
    at 16px was sub-perceptual. Telemetry frames also arrive seconds
@@ -201,7 +220,7 @@ def test_lg_tier_progress_track_height_is_declared_exactly_once():
     )
 
 
-def test_xl_tier_progress_track_caps_at_28px():
+def test_xl_tier_progress_track_caps_at_56px():
     bodies = _rule_bodies(_read_index(), ".race-board--xl .progress-track")
     heights = [h for body in bodies for h in _declared(body, "height")]
     assert heights, "xl tier declares no .progress-track height"
@@ -209,7 +228,7 @@ def test_xl_tier_progress_track_caps_at_28px():
     clamp = re.fullmatch(r"clamp\((.*)\)", value.strip(), re.DOTALL)
     assert clamp, f"xl tier height must stay a clamp(), got {value!r}"
     low, _preferred, high = _split_args(clamp.group(1))
-    assert _px(high) == 28.0, f"xl tier bar cap must be 28px, got {high!r}"
+    assert _px(high) == 56.0, f"xl tier bar cap must be 56px, got {high!r}"
     assert _px(low) == 4.0, f"xl tier bar floor must stay 4px, got {low!r}"
 
 
@@ -225,15 +244,18 @@ def test_lg_tier_progress_track_caps_at_20px():
     assert _px(low) == 4.0, f"lg tier bar floor must stay 4px, got {low!r}"
 
 
-def test_xl_tier_bar_actually_reaches_28px_on_the_venue_projector():
-    """Raising the cap while leaving the linear term alone would leave the
-    bar at its old 16px on the 1080px projector the venue measured, since
-    the old term already saturated there. Resolve it."""
+def test_xl_tier_bar_actually_reaches_56px_on_the_venue_projector():
+    """Raising the cap while leaving the linear term alone leaves the bar
+    pinned at whatever the old term resolves to at 1080px, because every
+    version of this term has been tuned to saturate exactly there. It has
+    now been the defect twice (16 -> 28 and 28 -> 56), so this resolves the
+    height rather than reading the cap. A cap-only edit passes
+    test_xl_tier_progress_track_caps_at_56px and fails here."""
     bodies = _rule_bodies(_read_index(), ".race-board--xl .progress-track")
     value = [h for body in bodies for h in _declared(body, "height")][-1]
-    assert abs(_px(value) - 28.0) < 0.05, (
+    assert abs(_px(value) - 56.0) < 0.05, (
         "at a 1080px viewport the xl classic bar must resolve to its full "
-        f"28px, got {_px(value)}px from {value!r}"
+        f"56px, got {_px(value)}px from {value!r}"
     )
 
 
@@ -243,6 +265,62 @@ def test_lg_tier_bar_actually_reaches_20px_on_the_venue_projector():
     assert abs(_px(value) - 20.0) < 0.05, (
         "at a 1080px viewport the lg classic bar must resolve to its full "
         f"20px, got {_px(value)}px from {value!r}"
+    )
+
+
+def test_lg_tier_bar_stays_within_the_four_row_height_budget():
+    """lg must NOT be scaled up alongside xl, and this is the assertion that
+    says so.
+
+    xl rows carry `min-height: clamp(96px, calc(50vh - 245px), 300px)` --
+    295px at 1080px -- against roughly 190px of content, so a taller bar is
+    absorbed by slack the row already has. lg deliberately has no
+    min-height at all (see the comment above `.race-board--lg
+    .athlete-name`: it never forces a row taller than its content), so every
+    extra pixel of bar height adds a pixel to EACH of up to four rows.
+
+    Measured in a browser at 1920x1080 with four relay rows, reading the
+    bottom edge of the enclosing `.card.accent`:
+
+        bar 12px -> 1019px    bar 24px -> 1067px
+        bar 20px -> 1051px    bar 28px -> 1083px  (clipped)
+        bar 40px -> 1131px  (clipped by 51px -- the last row's bar is cut)
+
+    So 24px is the largest value that still fits, and it leaves 13px of
+    slack -- less than one line of the equipment tag. 20px is kept. The
+    ceiling asserted here is the measured 24px rather than 20px so a future
+    deliberate nudge is allowed, while doubling lg the way xl was doubled
+    fails loudly."""
+    bodies = _rule_bodies(_read_index(), ".race-board--lg .progress-track")
+    value = [h for body in bodies for h in _declared(body, "height")][-1]
+    resolved = _px(value)
+    assert resolved <= 24.0, (
+        f"the lg classic bar resolves to {resolved}px at 1080px; anything "
+        "above 24px pushes the fourth row's bar off the bottom of the "
+        "projector, because lg rows are content-sized and have no min-height "
+        "slack to absorb it"
+    )
+
+
+def test_xl_bar_is_thicker_than_lg_because_only_xl_rows_have_slack():
+    css = _read_index()
+    xl = _px(
+        [
+            h
+            for b in _rule_bodies(css, ".race-board--xl .progress-track")
+            for h in _declared(b, "height")
+        ][-1]
+    )
+    lg = _px(
+        [
+            h
+            for b in _rule_bodies(css, ".race-board--lg .progress-track")
+            for h in _declared(b, "height")
+        ][-1]
+    )
+    assert xl > lg, (
+        f"xl ({xl}px) must stay thicker than lg ({lg}px): xl has 1-2 rows "
+        "with min-height slack to spend, lg has 3-4 content-sized rows"
     )
 
 
@@ -256,7 +334,7 @@ def test_tiered_bars_still_shrink_on_a_short_viewport():
     try:
         VH = 768.0 / 100.0
         for selector, cap in (
-            (".race-board--xl .progress-track", 28.0),
+            (".race-board--xl .progress-track", 56.0),
             (".race-board--lg .progress-track", 20.0),
         ):
             bodies = _rule_bodies(css, selector)
