@@ -1,7 +1,9 @@
 """The CLASSIC leaderboard's per-row progress bar was unreadable from the
-floor of a gym.
+floor of a gym, and the motion meant to say "this is live" was invisible.
 
-1. HEIGHT (`hub_server/static/index.html`). At the low-density tiers the row is deliberately huge -- on a
+Two separate defects, both in `hub_server/static/index.html`:
+
+1. HEIGHT. At the low-density tiers the row is deliberately huge -- on a
    1920x1080 projector with two stations racing (`race-board--xl`) the
    athlete name renders at 38px and the progress percentage at 51px --
    but the bar under it stayed 16px, so it read as a hairline rule rather
@@ -25,6 +27,22 @@ floor of a gym.
 
    The base `.progress-track` stays 8px: dense boards (5+ stations) pack
    many rows onto a non-scrolling projector and cannot spend the space.
+
+2. MOTION. `.progress-fill` sweeps a gradient via `progressSweep`, which
+   at 16px was sub-perceptual. Telemetry frames also arrive seconds
+   apart, so between frames the fill width is completely static and the
+   bar looks frozen. A leading-edge highlight pseudo-element now pulses
+   at the head of the fill, so the bar reads as live regardless of when
+   the next frame lands. It is compositor-only by requirement -- this
+   dashboard is measured by scripts/measure_dashboard_render_cost.mjs and
+   runs unattended for a whole class -- so its keyframes may animate
+   `transform` and `opacity` and nothing else. Animating `width`, `left`
+   or `box-shadow` would force layout/paint on every frame for every row.
+
+   Both the sweep and the new highlight must be silenced under
+   `prefers-reduced-motion: reduce`. The sweep already was; the new
+   pseudo-element is added to that same existing block rather than a
+   competing one.
 
 Scope guard: `.race-track-rail`, `.sprint-board-progress` and
 `.class-progress-track` are different bars on different views and are
@@ -282,4 +300,138 @@ def test_race_track_rail_and_class_progress_track_are_untouched():
     ), ".race-board--lg .race-track-rail is out of scope and must be unchanged"
     assert (
         ".class-board--ultra .class-progress-track { height: 10px !important; }" in css
+    )
+
+
+# ---------------------------------------------------------------------------
+# 3. Motion: a leading-edge highlight, compositor-only.
+# ---------------------------------------------------------------------------
+
+
+def _leading_edge_animation_name(css: str) -> str:
+    bodies = _rule_bodies(css, ".progress-fill::after")
+    assert bodies, (
+        "the classic bar has no leading-edge highlight: .progress-fill::after "
+        "is not styled, so between telemetry frames the bar looks frozen"
+    )
+    body = bodies[0]
+    assert _declared(body, "content"), ".progress-fill::after needs a content property"
+    animations = _declared(body, "animation")
+    assert animations, ".progress-fill::after declares no animation"
+    names = re.findall(r"[A-Za-z_][\w-]*", animations[0])
+    keyframe_names = [
+        n for n in names if re.search(r"@keyframes\s+" + re.escape(n) + r"\s*\{", css)
+    ]
+    assert keyframe_names, (
+        f"the animation on .progress-fill::after ({animations[0]!r}) names no "
+        "@keyframes defined in this stylesheet"
+    )
+    assert "infinite" in animations[0], (
+        "the leading-edge highlight must loop forever -- it has to read as live "
+        "during the seconds-long gaps between telemetry frames"
+    )
+    return keyframe_names[0]
+
+
+def test_leading_edge_highlight_is_positioned_at_the_head_of_the_fill():
+    css = _read_index()
+    fill_bodies = _rule_bodies(css, ".progress-fill")
+    assert any(
+        "relative" in v for body in fill_bodies for v in _declared(body, "position")
+    ), ".progress-fill must be a positioning context for its leading-edge highlight"
+    body = _rule_bodies(css, ".progress-fill::after")[0]
+    assert _declared(body, "position") == [
+        "absolute"
+    ], "the leading-edge highlight must be absolutely positioned inside the fill"
+    assert _declared(body, "right") == ["0"], (
+        "the highlight must sit at the RIGHT edge of the fill -- that is the "
+        "leading edge of progress"
+    )
+
+
+def test_leading_edge_keyframes_animate_only_transform_and_opacity():
+    css = _read_index()
+    name = _leading_edge_animation_name(css)
+    body = _keyframes_body(css, name)
+    props = {
+        m.group(1).strip() for m in re.finditer(r"(?:^|[;{])\s*([a-z-]+)\s*:", body)
+    }
+    assert props, f"@keyframes {name} declares nothing"
+    assert props <= {"transform", "opacity"}, (
+        f"@keyframes {name} animates {sorted(props - {'transform', 'opacity'})}; "
+        "this dashboard runs for a whole class on a projector and is measured by "
+        "scripts/measure_dashboard_render_cost.mjs, so per-row animation must stay "
+        "on the compositor -- transform/opacity only, never width/left/box-shadow"
+    )
+
+
+def test_leading_edge_highlight_does_not_transition_expensive_properties():
+    body = _rule_bodies(_read_index(), ".progress-fill::after")[0]
+    for value in _declared(body, "transition"):
+        for expensive in ("width", "left", "right", "box-shadow", "height", "all"):
+            assert expensive not in value, (
+                f"the leading-edge highlight transitions {expensive!r}, which "
+                "forces layout or paint every frame on every row"
+            )
+
+
+# ---------------------------------------------------------------------------
+# 4. Reduced motion covers BOTH the sweep and the new highlight.
+# ---------------------------------------------------------------------------
+
+
+def _reduced_motion_blocks(css: str) -> list[str]:
+    blocks = []
+    for match in re.finditer(
+        r"@media\s*\(\s*prefers-reduced-motion\s*:\s*reduce\s*\)\s*\{", css
+    ):
+        open_idx = match.end() - 1
+        blocks.append(css[open_idx + 1 : _matching_brace_end(css, open_idx) - 1])
+    assert blocks, "the stylesheet has no prefers-reduced-motion block at all"
+    return blocks
+
+
+def test_progress_fill_sweep_is_silenced_under_reduced_motion():
+    blocks = _reduced_motion_blocks(_read_index())
+    owning = [b for b in blocks if re.search(r"(?:^|,)\s*\.progress-fill\s*[,{]", b)]
+    assert owning, (
+        "no prefers-reduced-motion block lists .progress-fill, so the "
+        "progressSweep gradient keeps running for viewers who asked for less "
+        "motion"
+    )
+    assert any(
+        re.search(r"animation\s*:\s*none\s*!important", b) for b in owning
+    ), "the reduced-motion block covering .progress-fill does not stop animations"
+
+
+def test_leading_edge_highlight_is_silenced_under_reduced_motion():
+    css = _read_index()
+    blocks = _reduced_motion_blocks(css)
+    owning = [
+        b for b in blocks if re.search(r"(?:^|,)\s*\.progress-fill::after\s*[,{]", b)
+    ]
+    assert owning, (
+        "the new leading-edge highlight keeps pulsing under "
+        "prefers-reduced-motion: reduce -- .progress-fill::after is in no "
+        "reduced-motion block"
+    )
+    assert any(
+        re.search(r"animation\s*:\s*none\s*!important", b) for b in owning
+    ), "the reduced-motion block covering .progress-fill::after does not stop animations"
+
+
+def test_both_progress_motions_are_silenced_by_the_same_existing_block():
+    """Extend the block that already owns .progress-fill rather than adding a
+    competing one -- two blocks asserting the same thing drift apart."""
+    css = _read_index()
+    blocks = _reduced_motion_blocks(css)
+    together = [
+        b
+        for b in blocks
+        if re.search(r"(?:^|,)\s*\.progress-fill\s*[,{]", b)
+        and re.search(r"(?:^|,)\s*\.progress-fill::after\s*[,{]", b)
+    ]
+    assert together, (
+        "the sweep and the leading-edge highlight are silenced by different "
+        "prefers-reduced-motion blocks; keep them in one"
     )
