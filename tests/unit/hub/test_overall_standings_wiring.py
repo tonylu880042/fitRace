@@ -96,8 +96,10 @@ _FUNCTION_NAMES = (
     "renderRecordWallSlide",
     "advanceRecordWall",
     "updateRecordWallRotateTimer",
+    "scrollRecordWallIntoView",
     "refreshRecordWallData",
     "enterIdleRecordWall",
+    "exitIdleRecordWall",
 )
 
 
@@ -160,6 +162,7 @@ let recordWallRotateTimer = null;
 let recordWallRefreshTimer = null;
 let recordWallStandingsMode = false;
 
+const scrollIntoViewCalls = [];
 const wallEl = {
   innerHTML: "",
   classList: {
@@ -168,6 +171,7 @@ const wallEl = {
     remove(c) { this._set.delete(c); },
     contains(c) { return this._set.has(c); },
   },
+  scrollIntoView(opts) { scrollIntoViewCalls.push(opts); },
 };
 const containerEl = { style: {} };
 global.document = {
@@ -179,6 +183,7 @@ global.document = {
 };
 
 const intervalCalls = [];
+const scrollToCalls = [];
 let nextTimerId = 1;
 global.window = {
   setInterval(fn, ms) {
@@ -191,6 +196,7 @@ global.window = {
       if (intervalCalls[i].id === id) intervalCalls.splice(i, 1);
     }
   },
+  scrollTo(opts) { scrollToCalls.push(opts); },
 };
 """
 
@@ -395,3 +401,54 @@ def test_empty_standings_with_mixed_latest_race_renders_mixed_group_slides():
     assert result["slidesHaveTreadmillGroup"] is True
     assert result["slidesHaveFanBikeGroup"] is True
     assert result["slidesHaveAlex"] is True
+
+
+def test_entering_standings_mode_scrolls_the_wall_into_view_once():
+    # A 1280x720 projector viewport can already have the record wall's own
+    # top edge ~444px down the page (below the header/hero and the race
+    # stage banner), leaving too little room below for every standings row
+    # to stay on screen. scrollRecordWallIntoView must fire exactly once,
+    # on the transition INTO standings mode -- not on every periodic
+    # refresh while it stays showing (that would visibly jerk an
+    # unattended, display-only projector every 5 minutes).
+    harness = _harness(
+        _fetch_stub(_SIX_ROW_STANDINGS),
+        """
+(async () => {
+  await enterIdleRecordWall();
+  const afterFirstEntry = scrollIntoViewCalls.length;
+  await refreshRecordWallData();
+  const afterSecondRefresh = scrollIntoViewCalls.length;
+  console.log(JSON.stringify({
+    afterFirstEntry,
+    afterSecondRefresh,
+    firstCallArgs: scrollIntoViewCalls[0],
+  }));
+})();
+""",
+    )
+    output = _run_node(harness)
+    result = json.loads(output)
+    assert result["afterFirstEntry"] == 1
+    assert result["afterSecondRefresh"] == 1  # unchanged -- no re-scroll
+    assert result["firstCallArgs"] == {"block": "start"}
+
+
+def test_exiting_standings_mode_scrolls_back_to_the_top():
+    harness = _harness(
+        _fetch_stub(_SIX_ROW_STANDINGS),
+        """
+(async () => {
+  await enterIdleRecordWall();
+  exitIdleRecordWall();
+  console.log(JSON.stringify({
+    scrollToCallCount: scrollToCalls.length,
+    lastScrollToArgs: scrollToCalls[scrollToCalls.length - 1],
+  }));
+})();
+""",
+    )
+    output = _run_node(harness)
+    result = json.loads(output)
+    assert result["scrollToCallCount"] == 1
+    assert result["lastScrollToArgs"] == {"top": 0}
