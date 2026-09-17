@@ -420,6 +420,67 @@ el("btn-clear-results").focus();
     assert result["shownAfter"] is False
 
 
+def test_non_escape_keys_via_document_do_not_close_modal_or_post_at_either_step():
+    # Regression guard for handleClearResultsKeydown: since the Escape
+    # handler now lives on `document` (fixed in 4b10299) instead of just
+    # the modal element, it must still check event.key === "Escape" and
+    # ignore everything else -- otherwise Tab/Enter/Space anywhere on the
+    # page (e.g. Enter on "下一步" or "取消") would close the dialog.
+    harness = _harness("""
+const calls = [];
+global.fetch = async (url, options) => {
+  calls.push({ url, method: (options && options.method) || "GET" });
+  if (url.startsWith("/api/results/races")) {
+    return {
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      text: async () => JSON.stringify({ races: [{}, {}, {}] }),
+    };
+  }
+  return {
+    ok: true,
+    status: 200,
+    text: async () => JSON.stringify({ cleared_count: 0, backup_path: null }),
+  };
+};
+el("btn-clear-results").focus();
+
+(async () => {
+  await openClearResultsModal();
+  ["Enter", "Tab", "a"].forEach((key) => document.dispatchKeydown({ key }));
+  const atStep1 = {
+    modalShown: el("clear-results-modal").classList.contains("show"),
+    step1Hidden: el("clear-results-step-1").hidden,
+    step2Hidden: el("clear-results-step-2").hidden,
+  };
+
+  goToClearResultsStep2();
+  ["Enter", "Tab", "a"].forEach((key) => document.dispatchKeydown({ key }));
+  const atStep2 = {
+    modalShown: el("clear-results-modal").classList.contains("show"),
+    step1Hidden: el("clear-results-step-1").hidden,
+    step2Hidden: el("clear-results-step-2").hidden,
+  };
+
+  console.log(JSON.stringify({
+    atStep1,
+    atStep2,
+    clearResultsPostCalls: calls.filter((c) => c.url === "/api/results/clear").length,
+  }));
+})();
+""")
+    output = _run_node(harness)
+    result = json.loads(output)
+    assert result["atStep1"]["modalShown"] is True
+    assert result["atStep1"]["step1Hidden"] is False
+    assert result["atStep1"]["step2Hidden"] is True
+    assert result["atStep2"]["modalShown"] is True
+    assert result["atStep2"]["step1Hidden"] is True
+    assert result["atStep2"]["step2Hidden"] is False
+    assert result["clearResultsPostCalls"] == 0
+
+
 def test_confirm_sends_post_with_admin_headers_and_empty_password():
     harness = _harness("""
 const calls = [];
