@@ -596,6 +596,286 @@ def test_roster_endpoints_require_admin_token_when_configured(monkeypatch):
     assert client.post("/api/roster/entries", json={"name": "A"}).status_code == 401
     assert client.post("/api/roster/entries/x/absent").status_code == 401
     assert client.post("/api/roster/entries/x/requeue").status_code == 401
+    assert client.post("/api/roster/current-heat/cancel").status_code == 401
 
     ok_headers = {"X-FitRace-Admin-Token": "admin-secret"}
     assert client.get("/api/roster", headers=ok_headers).status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# POST /api/roster/current-heat/cancel -- venue incident: a loaded-but-
+# unraced heat got orphaned by a race config change/reset, and the operator
+# needs a way back to a loadable roster without duplicating results.
+# ---------------------------------------------------------------------------
+
+
+def test_cancel_current_heat_clears_registrations_and_next_heat_works_without_force():
+    _assign_two_stations()
+    client.post(
+        "/api/roster/import",
+        json={"csv": "name\nAlice\nBob\nCarol\nDave\n"},
+    )
+    client.post(
+        "/api/race/configure", json={"race_type": "distance", "target_value": 500}
+    )
+    res = client.post("/api/roster/next-heat")  # Alice, Bob loaded
+    assert res.status_code == 200
+
+    res = client.post("/api/roster/current-heat/cancel")
+    assert res.status_code == 200
+    statuses = {e["name"]: e["status"] for e in res.json()["entries"]}
+    assert statuses["Alice"] == "pending"
+    assert statuses["Bob"] == "pending"
+
+    stations = client.get("/api/stations").json()["stations"]
+    assert stations["1"]["registered"] is False
+    assert stations["2"]["registered"] is False
+
+    state = client.get("/api/race/state").json()
+    assert state["state"] == "READY"
+
+    # Loading the next heat again -- without force -- picks the SAME two
+    # people back onto the stations, since a cancelled heat is not "loaded".
+    res = client.post("/api/roster/next-heat")
+    assert res.status_code == 200
+    roster = client.get("/api/roster").json()
+    statuses = {e["name"]: e["status"] for e in roster["entries"]}
+    assert statuses["Alice"] == "loaded"
+    assert statuses["Bob"] == "loaded"
+    stations = client.get("/api/stations").json()["stations"]
+    assert stations["1"]["athlete_name"] == "Alice"
+    assert stations["2"]["athlete_name"] == "Bob"
+
+
+def test_cancel_current_heat_returns_409_while_running_and_changes_nothing():
+    _assign_two_stations()
+    client.post("/api/roster/import", json={"csv": "name\nAlice\nBob\n"})
+    client.post(
+        "/api/race/configure", json={"race_type": "distance", "target_value": 500}
+    )
+    client.post("/api/roster/next-heat")
+    app_module.race_manager.start_race()
+
+    roster_before = client.get("/api/roster").json()
+    stations_before = client.get("/api/stations").json()
+
+    res = client.post("/api/roster/current-heat/cancel")
+    assert res.status_code == 409
+
+    assert client.get("/api/roster").json() == roster_before
+    assert client.get("/api/stations").json() == stations_before
+
+    app_module.race_manager.stop_race()
+
+
+def test_cancel_current_heat_with_no_current_heat_returns_409():
+    _assign_two_stations()
+    client.post("/api/roster/import", json={"csv": "name\nAlice\n"})
+    client.post(
+        "/api/race/configure", json={"race_type": "distance", "target_value": 500}
+    )
+
+    res = client.post("/api/roster/current-heat/cancel")
+    assert res.status_code == 409
+    assert res.json()["detail"] == "no current heat"
+
+
+def test_cancel_current_heat_already_raced_returns_409_and_changes_nothing():
+    _assign_two_stations()
+    client.post("/api/roster/import", json={"csv": "name\nAlice\nBob\n"})
+    client.post(
+        "/api/race/configure", json={"race_type": "distance", "target_value": 500}
+    )
+    client.post("/api/roster/next-heat")
+    app_module.race_manager.start_race()
+    app_module.roster_manager.mark_current_heat_started()
+    app_module.race_manager.stop_race()
+
+    roster_before = client.get("/api/roster").json()
+
+    res = client.post("/api/roster/current-heat/cancel")
+    assert res.status_code == 409
+    assert res.json()["detail"] == "current heat already raced"
+
+    assert client.get("/api/roster").json() == roster_before
+
+
+def test_cancel_current_heat_when_race_is_stopped_resets_and_reapplies_config():
+    """Exercises the STOPPED branch of POST /api/roster/current-heat/cancel,
+    mirroring how /api/roster/next-heat handles a STOPPED race: capture the
+    saved config, reset_race_state(), then re-apply that same config so the
+    race ends up READY again -- before clearing station registrations. The
+    race is forced into STOPPED directly (the same technique
+    test_next_heat_from_idle_with_saved_config_applies_config_and_registers
+    above uses to force IDLE via _config) rather than through a full
+    start/stop cycle: a heat that actually raced to STOPPED would already
+    be "started" and rejected by cancel_current_heat() itself, so this
+    isolates the endpoint's STOPPED-state plumbing instead."""
+    _assign_two_stations()
+    client.post("/api/roster/import", json={"csv": "name\nAlice\nBob\n"})
+    client.post(
+        "/api/race/configure", json={"race_type": "distance", "target_value": 500}
+    )
+    client.post("/api/roster/next-heat")  # Alice, Bob loaded, READY
+
+    app_module.race_manager._state = RaceState.STOPPED
+
+    res = client.post("/api/roster/current-heat/cancel")
+    assert res.status_code == 200
+
+    state = client.get("/api/race/state").json()
+    assert state["state"] == "READY"
+    assert state["config"]["race_type"] == "distance"
+    assert state["config"]["target_value"] == 500
+
+    roster = client.get("/api/roster").json()
+    statuses = {e["name"]: e["status"] for e in roster["entries"]}
+    assert statuses["Alice"] == "pending"
+    assert statuses["Bob"] == "pending"
+
+    stations = client.get("/api/stations").json()["stations"]
+    assert stations["1"]["registered"] is False
+    assert stations["2"]["registered"] is False
+
+
+def test_cancel_current_heat_relay_mode_clears_team_registrations():
+    _assign_two_stations()
+    client.post(
+        "/api/roster/import",
+        json={"csv": "name,team\nAlice,Volt\nBob,Volt\nCara,Surge\nDan,Surge\n"},
+    )
+    client.post(
+        "/api/race/configure",
+        json={
+            "race_type": "distance",
+            "competition_mode": "relay",
+            "relay_legs": 2,
+            "target_value": 500,
+        },
+    )
+    client.post("/api/roster/next-heat")  # Volt on 1, Surge on 2
+
+    res = client.post("/api/roster/current-heat/cancel")
+    assert res.status_code == 200
+    statuses = {e["name"]: e["status"] for e in res.json()["entries"]}
+    assert all(status == "pending" for status in statuses.values())
+
+    stations = client.get("/api/stations").json()["stations"]
+    assert stations["1"]["registered"] is False
+    assert stations["2"]["registered"] is False
+
+    res = client.post("/api/roster/next-heat")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["current_heat_teams"] == [
+        {"team": "Volt", "station_number": 1, "members": ["Alice", "Bob"]},
+        {"team": "Surge", "station_number": 2, "members": ["Cara", "Dan"]},
+    ]
+
+
+def test_venue_incident_cancel_current_heat_unblocks_next_heat():
+    """Reproduces the real venue incident end to end: an operator loads a
+    heat, then the race config changes/gets reset (station_number stays on
+    the entry, started stays False) -- next-heat is blocked ("save race
+    settings first") and there is no way back except Cancel Current Heat.
+    Cancelling must free the SAME first people so re-saving the config and
+    pressing next-heat lands them right back on the same stations."""
+    _assign_two_stations()
+    client.post(
+        "/api/roster/import",
+        json={"csv": "name\nAlice\nBob\nCarol\nDave\n"},
+    )
+    client.post(
+        "/api/race/configure", json={"race_type": "distance", "target_value": 500}
+    )
+    res = client.post("/api/roster/next-heat")  # Alice, Bob loaded
+    assert res.status_code == 200
+
+    res = client.post("/api/race/reset")
+    assert res.status_code == 200
+    assert res.json()["state"] == "IDLE"
+
+    res = client.post("/api/roster/next-heat")
+    assert res.status_code == 409
+    assert res.json()["detail"] == "save race settings first"
+
+    res = client.post("/api/roster/current-heat/cancel")
+    assert res.status_code == 200
+    roster = client.get("/api/roster").json()
+    statuses = {e["name"]: e["status"] for e in roster["entries"]}
+    assert statuses["Alice"] == "pending"
+    assert statuses["Bob"] == "pending"
+
+    client.post(
+        "/api/race/configure", json={"race_type": "distance", "target_value": 500}
+    )
+
+    res = client.post("/api/roster/next-heat")
+    assert res.status_code == 200
+    roster = client.get("/api/roster").json()
+    statuses = {e["name"]: e["status"] for e in roster["entries"]}
+    assert statuses["Alice"] == "loaded"
+    assert statuses["Bob"] == "loaded"
+    stations = client.get("/api/stations").json()["stations"]
+    assert stations["1"]["athlete_name"] == "Alice"
+    assert stations["2"]["athlete_name"] == "Bob"
+
+
+# ---------------------------------------------------------------------------
+# DELETE /api/roster -- must refuse while RUNNING, and must clear station
+# registrations left behind by a loaded (but never cleared) heat.
+# ---------------------------------------------------------------------------
+
+
+def test_delete_roster_returns_409_while_running_and_changes_nothing():
+    _assign_two_stations()
+    client.post("/api/roster/import", json={"csv": "name\nAlice\nBob\n"})
+    client.post(
+        "/api/race/configure", json={"race_type": "distance", "target_value": 500}
+    )
+    client.post("/api/roster/next-heat")
+    app_module.race_manager.start_race()
+
+    roster_before = client.get("/api/roster").json()
+
+    res = client.delete("/api/roster")
+    assert res.status_code == 409
+
+    assert client.get("/api/roster").json() == roster_before
+
+    app_module.race_manager.stop_race()
+
+
+def test_delete_roster_with_loaded_heat_clears_station_registrations():
+    _assign_two_stations()
+    client.post("/api/roster/import", json={"csv": "name\nAlice\nBob\n"})
+    client.post(
+        "/api/race/configure", json={"race_type": "distance", "target_value": 500}
+    )
+    client.post("/api/roster/next-heat")  # Alice, Bob loaded
+
+    res = client.delete("/api/roster")
+    assert res.status_code == 200
+    assert res.json()["entries"] == []
+
+    stations = client.get("/api/stations").json()["stations"]
+    assert stations["1"]["registered"] is False
+    assert stations["2"]["registered"] is False
+
+
+def test_delete_roster_with_no_loaded_heat_does_not_touch_stations():
+    _assign_two_stations()
+    client.post("/api/roster/import", json={"csv": "name\nAlice\nBob\n"})
+    client.post(
+        "/api/race/configure", json={"race_type": "distance", "target_value": 500}
+    )
+    # Nothing loaded -- registrations are already empty; DELETE must not
+    # error out reaching for clear_station_registrations() in a state where
+    # it would be disallowed (it isn't here, but this pins the "only when a
+    # loaded heat existed" branch instead of an unconditional call).
+    stations_before = client.get("/api/stations").json()
+
+    res = client.delete("/api/roster")
+    assert res.status_code == 200
+
+    assert client.get("/api/stations").json() == stations_before

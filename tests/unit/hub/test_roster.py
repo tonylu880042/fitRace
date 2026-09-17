@@ -505,3 +505,144 @@ def test_summary_with_relay_legs_includes_current_and_next_heat_teams(tmp_path):
         {"team": "Surge", "station_number": 1, "members": ["Cara", "Dan"]}
     ]
     assert summary["counts"] == {"pending": 2, "loaded": 2, "done": 0, "absent": 0}
+
+
+# ---------------------------------------------------------------------------
+# cancel_current_heat: loaded -> pending, keeping order, reversible
+# ---------------------------------------------------------------------------
+
+
+def test_cancel_current_heat_returns_loaded_entries_to_pending_keeping_order(tmp_path):
+    manager = _manager(tmp_path)
+    manager.import_csv("name\nAlice\nBob\nCarol\nDave\n")
+    manager.load_next_heat([1, 2])  # Alice, Bob loaded
+
+    manager.cancel_current_heat()
+
+    entries = {e["name"]: e for e in manager.entries()}
+    assert entries["Alice"]["status"] == "pending"
+    assert entries["Alice"]["station_number"] is None
+    assert entries["Alice"]["started"] is False
+    assert entries["Bob"]["status"] == "pending"
+    assert entries["Bob"]["station_number"] is None
+    assert entries["Bob"]["started"] is False
+    assert entries["Carol"]["status"] == "pending"
+    assert entries["Dave"]["status"] == "pending"
+
+    # order is unchanged -- Alice and Bob are still first in line, so the
+    # next load_next_heat() picks the SAME two people onto the SAME
+    # stations, not Carol/Dave.
+    loaded = manager.load_next_heat([1, 2])
+    assert {e["name"]: e["station_number"] for e in loaded} == {
+        "Alice": 1,
+        "Bob": 2,
+    }
+
+
+def test_cancel_current_heat_persists(tmp_path):
+    path = tmp_path / "roster.json"
+    manager = RosterManager(RaceSettingsStore(path))
+    manager.import_csv("name\nAlice\nBob\n")
+    manager.load_next_heat([1, 2])
+
+    manager.cancel_current_heat()
+
+    reloaded = RosterManager(RaceSettingsStore(path))
+    statuses = {e["name"]: e["status"] for e in reloaded.entries()}
+    assert statuses == {"Alice": "pending", "Bob": "pending"}
+
+
+def test_cancel_current_heat_with_nothing_loaded_raises(tmp_path):
+    manager = _manager(tmp_path)
+    manager.import_csv("name\nAlice\n")
+    with pytest.raises(ValueError, match="no current heat"):
+        manager.cancel_current_heat()
+
+
+def test_cancel_current_heat_with_nothing_loaded_leaves_state_unchanged_and_persisted(
+    tmp_path,
+):
+    path = tmp_path / "roster.json"
+    manager = RosterManager(RaceSettingsStore(path))
+    manager.import_csv("name\nAlice\n")
+    before = manager.entries()
+
+    with pytest.raises(ValueError):
+        manager.cancel_current_heat()
+
+    assert manager.entries() == before
+    reloaded = RosterManager(RaceSettingsStore(path))
+    assert reloaded.entries() == before
+
+
+def test_cancel_current_heat_raises_when_heat_already_started(tmp_path):
+    manager = _manager(tmp_path)
+    manager.import_csv("name\nAlice\nBob\n")
+    manager.load_next_heat([1, 2])
+    manager.mark_current_heat_started()
+
+    with pytest.raises(ValueError, match="current heat already raced"):
+        manager.cancel_current_heat()
+
+
+def test_cancel_current_heat_already_started_leaves_state_unchanged_and_persisted(
+    tmp_path,
+):
+    path = tmp_path / "roster.json"
+    manager = RosterManager(RaceSettingsStore(path))
+    manager.import_csv("name\nAlice\nBob\n")
+    manager.load_next_heat([1, 2])
+    manager.mark_current_heat_started()
+    before = manager.entries()
+
+    with pytest.raises(ValueError):
+        manager.cancel_current_heat()
+
+    assert manager.entries() == before
+    reloaded = RosterManager(RaceSettingsStore(path))
+    assert reloaded.entries() == before
+
+
+def test_cancel_current_heat_partially_started_raises_and_changes_nothing(tmp_path):
+    """A heat where only SOME loaded entries have started=True (should never
+    happen in practice -- start_race() marks the whole heat at once -- but
+    the guard must treat ANY started entry as "this heat already raced",
+    not require ALL of them)."""
+    path = tmp_path / "roster.json"
+    manager = RosterManager(RaceSettingsStore(path))
+    manager.import_csv("name\nAlice\nBob\n")
+    manager.load_next_heat([1, 2])
+    alice_id = next(e["id"] for e in manager.entries() if e["name"] == "Alice")
+    entry = next(e for e in manager._entries if e["id"] == alice_id)
+    entry["started"] = True
+    before = manager.entries()
+
+    with pytest.raises(ValueError, match="current heat already raced"):
+        manager.cancel_current_heat()
+
+    assert manager.entries() == before
+
+
+def test_cancel_current_heat_teams_relay_mode_returns_to_pending(tmp_path):
+    manager = _manager(tmp_path)
+    manager.import_csv("name,team\nAlice,Volt\nBob,Volt\nCara,Surge\nDan,Surge\n")
+    manager.load_next_heat_teams([1, 2], relay_legs=2)  # Volt, Surge loaded
+
+    manager.cancel_current_heat()
+
+    statuses = {e["name"]: e["status"] for e in manager.entries()}
+    assert statuses == {
+        "Alice": "pending",
+        "Bob": "pending",
+        "Cara": "pending",
+        "Dan": "pending",
+    }
+
+    # The same two teams, in the same order, load back onto the same
+    # stations.
+    loaded_teams = manager.load_next_heat_teams([1, 2], relay_legs=2)
+    assert [t["team"] for t in loaded_teams] == ["Volt", "Surge"]
+    assert {t["team"]: t["station_number"] for t in loaded_teams} == {
+        "Volt": 1,
+        "Surge": 2,
+    }

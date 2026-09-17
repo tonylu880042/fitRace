@@ -1162,6 +1162,7 @@
               <input type="file" id="roster-file-input" accept=".csv,text/csv" onchange="handleRosterFileSelected(event)">
               <button type="button" id="btn-download-results-csv" onclick="downloadResultsCsv()" data-i18n="button.download_results_csv">Download Results (CSV)</button>
               <button type="button" class="danger" id="btn-clear-results" onclick="openClearResultsModal()" data-i18n="button.clear_results">Clear Results</button>
+              <button type="button" class="danger" id="btn-clear-roster" onclick="openClearRosterModal()" data-i18n="button.clear_roster">Clear Roster</button>
             </div>
           </div>
           <div class="status-text" id="roster-import-message"></div>
@@ -1177,7 +1178,10 @@
           </div>
 
           <div class="control-block">
-            <h3 class="control-block-title" data-i18n="panel.current_heat">Current Heat</h3>
+            <div class="control-block-header">
+              <h3 class="control-block-title" data-i18n="panel.current_heat">Current Heat</h3>
+              <button type="button" id="btn-cancel-current-heat" onclick="openCancelHeatModal()" data-i18n="button.cancel_current_heat" hidden>Cancel Current Heat</button>
+            </div>
             <div class="list" id="roster-current-heat"></div>
           </div>
 
@@ -1284,6 +1288,40 @@
         </div>
       </div>
       <div class="status-text" id="clear-results-modal-message"></div>
+    </div>
+  </div>
+
+  <div class="login" id="clear-roster-modal" role="dialog" aria-modal="true" aria-labelledby="clear-roster-title">
+    <div class="login-box">
+      <div id="clear-roster-step-1">
+        <h2 id="clear-roster-title" data-i18n="clear_roster.title">Clear Roster</h2>
+        <p id="clear-roster-step1-body"></p>
+        <div class="button-row">
+          <button type="button" id="btn-clear-roster-cancel-1" onclick="closeClearRosterModal()" data-i18n="button.cancel">Cancel</button>
+          <button type="button" class="primary" id="btn-clear-roster-next" onclick="goToClearRosterStep2()" data-i18n="button.clear_roster_next">Next</button>
+        </div>
+      </div>
+      <div id="clear-roster-step-2" hidden>
+        <h2 data-i18n="clear_roster.step2_title">Confirm Clear</h2>
+        <p id="clear-roster-step2-body"></p>
+        <div class="button-row">
+          <button type="button" id="btn-clear-roster-cancel-2" onclick="closeClearRosterModal()" data-i18n="button.cancel">Cancel</button>
+          <button type="button" class="danger" id="btn-clear-roster-confirm" onclick="confirmClearRoster()" data-i18n="button.clear_roster_confirm">Clear Roster</button>
+        </div>
+      </div>
+      <div class="status-text" id="clear-roster-modal-message"></div>
+    </div>
+  </div>
+
+  <div class="login" id="cancel-heat-modal" role="dialog" aria-modal="true" aria-labelledby="cancel-heat-title">
+    <div class="login-box">
+      <h2 id="cancel-heat-title" data-i18n="cancel_heat.title">Cancel Current Heat</h2>
+      <p id="cancel-heat-body"></p>
+      <div class="button-row">
+        <button type="button" id="btn-cancel-heat-cancel" onclick="closeCancelHeatModal()" data-i18n="button.cancel">Cancel</button>
+        <button type="button" class="danger" id="btn-cancel-heat-confirm" onclick="confirmCancelHeat()" data-i18n="button.cancel_heat_confirm">Cancel Heat</button>
+      </div>
+      <div class="status-text" id="cancel-heat-modal-message"></div>
     </div>
   </div>
 
@@ -1586,7 +1624,27 @@
         "message.clear_results_success": "Cleared {count} race result(s). Backup: {backup}",
         "message.clear_results_race_running": "Race is running -- cannot clear results.",
         "message.clear_results_unauthorized": "Admin password required. Unlock via Operator Unlock first.",
-        "message.clear_results_failed": "Failed to clear results: {error}"
+        "message.clear_results_failed": "Failed to clear results: {error}",
+        "button.clear_roster": "Clear Roster",
+        "button.clear_roster_next": "Next",
+        "button.clear_roster_confirm": "Clear Roster",
+        "clear_roster.title": "Clear Roster",
+        "clear_roster.step1_body": "{pending} pending, {loaded} in the current heat, {done} done, and {absent} absent will be removed. Race results are NOT affected.",
+        "clear_roster.step1_body_empty": "There is no roster to clear.",
+        "clear_roster.step2_title": "Confirm Clear",
+        "clear_roster.step2_body": "Are you sure you want to clear the entire roster ({total} entries)? This cannot be undone from this page.",
+        "message.roster_cleared": "Roster cleared.",
+        "message.clear_roster_race_running": "Race is running -- cannot clear the roster.",
+        "message.clear_roster_failed": "Failed to clear roster: {error}",
+        "button.cancel_current_heat": "Cancel Current Heat",
+        "button.cancel_heat_confirm": "Cancel Heat",
+        "cancel_heat.title": "Cancel Current Heat",
+        "cancel_heat.body": "Cancel the current heat ({names})? They will return to the front of the pending queue.",
+        "message.heat_cancelled": "Current heat cancelled.",
+        "message.cancel_heat_race_running": "Race is running -- cannot cancel the heat.",
+        "message.cancel_heat_already_raced": "This heat has already raced -- use Load Next Heat instead.",
+        "message.cancel_heat_no_current_heat": "There is no current heat loaded.",
+        "message.cancel_heat_failed": "Failed to cancel the heat: {error}"
       }
     };
 
@@ -1830,7 +1888,27 @@
       "message.clear_results_success": "已清除 {count} 場成績。備份檔案:{backup}",
       "message.clear_results_race_running": "比賽進行中，無法清除",
       "message.clear_results_unauthorized": "需要管理密碼，請先透過「操作者解鎖」設定密碼",
-      "message.clear_results_failed": "清除失敗：{error}"
+      "message.clear_results_failed": "清除失敗：{error}",
+      "button.clear_roster": "清除名單",
+      "button.clear_roster_next": "下一步",
+      "button.clear_roster_confirm": "確定清除名單",
+      "clear_roster.title": "清除名單",
+      "clear_roster.step1_body": "將清除 待比賽 {pending}・目前這組 {loaded}・已完成 {done}・缺席 {absent}，比賽成績不受影響。",
+      "clear_roster.step1_body_empty": "目前沒有名單，無需清除。",
+      "clear_roster.step2_title": "再次確認",
+      "clear_roster.step2_body": "確定要清除全部名單（共 {total} 筆）嗎？此動作無法從頁面復原。",
+      "message.roster_cleared": "名單已清除。",
+      "message.clear_roster_race_running": "比賽進行中，無法清除名單",
+      "message.clear_roster_failed": "清除名單失敗：{error}",
+      "button.cancel_current_heat": "取消目前這組",
+      "button.cancel_heat_confirm": "確定取消",
+      "cancel_heat.title": "取消目前這組",
+      "cancel_heat.body": "確定要取消目前這組（{names}）嗎？他們將回到待比賽名單最前面。",
+      "message.heat_cancelled": "已取消目前這組。",
+      "message.cancel_heat_race_running": "比賽進行中，無法取消",
+      "message.cancel_heat_already_raced": "這組已經比過，請用載入下一組",
+      "message.cancel_heat_no_current_heat": "目前沒有已載入的分組",
+      "message.cancel_heat_failed": "取消失敗：{error}"
     };
 
     function t(key, params = {}) {
@@ -2758,6 +2836,11 @@
 
       const raceState = state.race?.state || "IDLE";
       $("btn-load-next-heat").disabled = raceState === "RUNNING";
+      $("btn-clear-roster").disabled = raceState === "RUNNING";
+
+      const hasCurrentHeat = (counts.loaded || 0) > 0;
+      $("btn-cancel-current-heat").hidden = !hasCurrentHeat;
+      $("btn-cancel-current-heat").disabled = raceState === "RUNNING";
 
       if (roster.mode === "relay") {
         renderRosterTeamHeatList("roster-current-heat", roster.current_heat_teams || [], "text.no_current_heat");
@@ -2998,6 +3081,184 @@
 
     function handleClearResultsKeydown(event) {
       if (event.key === "Escape") closeClearResultsModal();
+    }
+
+    // Two-step "Clear Roster" confirmation, same pattern as "Clear Results"
+    // above -- but the counts to show are already sitting in state.roster
+    // (no separate count fetch needed): step 1 breaks down how many
+    // entries of each status will be removed and states that race RESULTS
+    // are not touched; step 2 is a second, differently-worded confirmation
+    // with the destructive button. Nothing is sent to DELETE /api/roster
+    // until the operator reaches step 2 and presses the danger button
+    // there.
+    function clearRosterTotal() {
+      const counts = (state.roster && state.roster.counts) || {};
+      return (
+        (counts.pending || 0) +
+        (counts.loaded || 0) +
+        (counts.done || 0) +
+        (counts.absent || 0)
+      );
+    }
+
+    function openClearRosterModal() {
+      if ($("btn-clear-roster").disabled) return;
+      $("clear-roster-step-1").hidden = false;
+      $("clear-roster-step-2").hidden = true;
+      $("clear-roster-modal-message").textContent = "";
+      const counts = (state.roster && state.roster.counts) || {};
+      const total = clearRosterTotal();
+      if (total === 0) {
+        $("clear-roster-step1-body").textContent = t("clear_roster.step1_body_empty");
+        $("btn-clear-roster-next").hidden = true;
+      } else {
+        $("clear-roster-step1-body").textContent = t("clear_roster.step1_body", {
+          pending: counts.pending || 0,
+          loaded: counts.loaded || 0,
+          done: counts.done || 0,
+          absent: counts.absent || 0,
+        });
+        $("btn-clear-roster-next").hidden = false;
+      }
+      $("clear-roster-modal").classList.add("show");
+      $("btn-clear-roster-cancel-1").focus();
+      document.addEventListener("keydown", handleClearRosterKeydown);
+    }
+
+    function closeClearRosterModal() {
+      $("clear-roster-modal").classList.remove("show");
+      $("clear-roster-step-1").hidden = false;
+      $("clear-roster-step-2").hidden = true;
+      $("clear-roster-modal-message").textContent = "";
+      document.removeEventListener("keydown", handleClearRosterKeydown);
+    }
+
+    function goToClearRosterStep2() {
+      $("clear-roster-step-1").hidden = true;
+      $("clear-roster-step-2").hidden = false;
+      $("clear-roster-step2-body").textContent = t("clear_roster.step2_body", { total: clearRosterTotal() });
+      // Initial focus lands on Cancel, never the danger button, so an
+      // accidental Enter press cannot clear the roster.
+      $("btn-clear-roster-cancel-2").focus();
+    }
+
+    async function confirmClearRoster() {
+      const confirmBtn = $("btn-clear-roster-confirm");
+      if (confirmBtn.disabled) return;
+      confirmBtn.disabled = true;
+      try {
+        const response = await fetch("/api/roster", {
+          method: "DELETE",
+          headers: adminHeaders(),
+        });
+        const text = await response.text();
+        const payload = text ? JSON.parse(text) : {};
+        if (response.status === 409) {
+          setMessage("clear-roster-modal-message", t("message.clear_roster_race_running"), "error");
+          return;
+        }
+        if (!response.ok) {
+          setMessage("clear-roster-modal-message", t("message.clear_roster_failed", { error: payload.detail || response.statusText || "" }), "error");
+          return;
+        }
+        state.roster = payload;
+        closeClearRosterModal();
+        await refreshOperationalState();
+        renderRoster();
+        setMessage("roster-heat-message", t("message.roster_cleared"), "ok");
+      } catch (error) {
+        setMessage("clear-roster-modal-message", t("message.clear_roster_failed", { error: error.message }), "error");
+      } finally {
+        confirmBtn.disabled = false;
+      }
+    }
+
+    function handleClearRosterBackdropClick(event) {
+      if (event.target.id === "clear-roster-modal") closeClearRosterModal();
+    }
+
+    function handleClearRosterKeydown(event) {
+      if (event.key === "Escape") closeClearRosterModal();
+    }
+
+    // One-step "Cancel Current Heat" confirmation: reversible (the entries
+    // just go back to pending), so a single in-page confirm naming who is
+    // in the current heat is enough -- unlike Clear Roster/Clear Results,
+    // which destroy data and get a two-step dialog. Initial focus still
+    // lands on Cancel, never the danger button.
+    function currentHeatDisplayNames() {
+      const roster = state.roster || {};
+      if (roster.mode === "relay") {
+        return (roster.current_heat_teams || [])
+          .map((team) => team.team)
+          .filter(Boolean)
+          .join(", ");
+      }
+      return (roster.current_heat || [])
+        .map((entry) => entry.name)
+        .filter(Boolean)
+        .join(", ");
+    }
+
+    function openCancelHeatModal() {
+      if ($("btn-cancel-current-heat").disabled || $("btn-cancel-current-heat").hidden) return;
+      $("cancel-heat-modal-message").textContent = "";
+      $("cancel-heat-body").textContent = t("cancel_heat.body", { names: currentHeatDisplayNames() });
+      $("cancel-heat-modal").classList.add("show");
+      $("btn-cancel-heat-cancel").focus();
+      document.addEventListener("keydown", handleCancelHeatKeydown);
+    }
+
+    function closeCancelHeatModal() {
+      $("cancel-heat-modal").classList.remove("show");
+      $("cancel-heat-modal-message").textContent = "";
+      document.removeEventListener("keydown", handleCancelHeatKeydown);
+    }
+
+    async function confirmCancelHeat() {
+      const confirmBtn = $("btn-cancel-heat-confirm");
+      if (confirmBtn.disabled) return;
+      confirmBtn.disabled = true;
+      try {
+        const response = await fetch("/api/roster/current-heat/cancel", {
+          method: "POST",
+          headers: adminHeaders({ "Content-Type": "application/json" }),
+        });
+        const text = await response.text();
+        const payload = text ? JSON.parse(text) : {};
+        if (!response.ok) {
+          const detail = payload.detail;
+          let message;
+          if (detail === "current heat already raced") {
+            message = t("message.cancel_heat_already_raced");
+          } else if (detail === "no current heat") {
+            message = t("message.cancel_heat_no_current_heat");
+          } else if (detail === "Race is running") {
+            message = t("message.cancel_heat_race_running");
+          } else {
+            message = t("message.cancel_heat_failed", { error: detail || response.statusText || "" });
+          }
+          setMessage("cancel-heat-modal-message", message, "error");
+          return;
+        }
+        state.roster = payload;
+        closeCancelHeatModal();
+        await refreshOperationalState();
+        renderRoster();
+        setMessage("roster-heat-message", t("message.heat_cancelled"), "ok");
+      } catch (error) {
+        setMessage("cancel-heat-modal-message", t("message.cancel_heat_failed", { error: error.message }), "error");
+      } finally {
+        confirmBtn.disabled = false;
+      }
+    }
+
+    function handleCancelHeatBackdropClick(event) {
+      if (event.target.id === "cancel-heat-modal") closeCancelHeatModal();
+    }
+
+    function handleCancelHeatKeydown(event) {
+      if (event.key === "Escape") closeCancelHeatModal();
     }
 
     async function addWalkIn() {
@@ -3399,6 +3660,8 @@
       if (event.key === "Escape") closeLogin();
     });
     $("clear-results-modal").addEventListener("click", handleClearResultsBackdropClick);
+    $("clear-roster-modal").addEventListener("click", handleClearRosterBackdropClick);
+    $("cancel-heat-modal").addEventListener("click", handleCancelHeatBackdropClick);
     // Live toggle for the mixed-race lock (target field vs. group editor,
     // competition-mode lock) as the operator changes #race-type -- see
     // syncMixedRaceFields() for why this is a separate listener rather than
