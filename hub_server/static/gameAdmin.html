@@ -2878,6 +2878,14 @@
       $("clear-results-step1-body").textContent = t("text.clear_results_loading");
       $("btn-clear-results-next").hidden = true;
       $("clear-results-modal").classList.add("show");
+      // Move focus into the dialog (never onto "Next") and listen for
+      // Escape on document rather than on the modal element itself: a real
+      // Escape keypress is delivered to whatever is focused and bubbles up
+      // from there, which is never the modal unless focus is actually
+      // inside it. Binding to document catches it regardless, and is torn
+      // down again in closeClearResultsModal() so it never lingers.
+      $("btn-clear-results-cancel-1").focus();
+      document.addEventListener("keydown", handleClearResultsKeydown);
       try {
         const data = await fetchJson("/api/results/races?limit=500");
         const count = (data.races || []).length;
@@ -2900,6 +2908,7 @@
       $("clear-results-step-1").hidden = false;
       $("clear-results-step-2").hidden = true;
       $("clear-results-modal-message").textContent = "";
+      document.removeEventListener("keydown", handleClearResultsKeydown);
     }
 
     function goToClearResultsStep2() {
@@ -3320,7 +3329,6 @@
       if (event.key === "Escape") closeLogin();
     });
     $("clear-results-modal").addEventListener("click", handleClearResultsBackdropClick);
-    $("clear-results-modal").addEventListener("keydown", handleClearResultsKeydown);
     // Live toggle for the mixed-race lock (target field vs. group editor,
     // competition-mode lock) as the operator changes #race-type -- see
     // syncMixedRaceFields() for why this is a separate listener rather than

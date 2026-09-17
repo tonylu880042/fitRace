@@ -122,7 +122,7 @@ function el(id) {
       className: "",
       _classes: new Set(),
       focusCallCount: 0,
-      focus() { element.focusCallCount += 1; },
+      focus() { element.focusCallCount += 1; document.activeElement = element; },
     };
     element.classList = makeClassList(element);
     elements[id] = element;
@@ -142,6 +142,30 @@ function setMessage(id, text, kind) {
 }
 function adminHeaders(extra = {}) { return { ...extra, "X-FitRace-Admin-Token": "secret" }; }
 const state = { clearResultsCount: 0 };
+
+// Minimal `document` stand-in: tracks the currently focused element (set by
+// el().focus() above) and lets a real keydown listener be registered/removed
+// on it, so a test can simulate "Escape reaches document" (how a real
+// browser bubbles a keydown from whatever is actually focused) instead of
+// calling a handler function directly against the modal element -- which
+// would pass even if the real code never wired the listener anywhere the
+// event could reach.
+const _documentListeners = { keydown: [] };
+const document = {
+  activeElement: null,
+  addEventListener(type, handler) {
+    const list = _documentListeners[type] || (_documentListeners[type] = []);
+    if (!list.includes(handler)) list.push(handler);
+  },
+  removeEventListener(type, handler) {
+    const list = _documentListeners[type];
+    if (list) _documentListeners[type] = list.filter((h) => h !== handler);
+  },
+  listenerCount(type) { return (_documentListeners[type] || []).length; },
+  dispatchKeydown(event) {
+    (_documentListeners.keydown || []).slice().forEach((handler) => handler(event));
+  },
+};
 """
 
 
@@ -298,7 +322,7 @@ const calls = [];
     assert result["resultsClearCalls"] == 0
 
 
-def test_backdrop_click_and_escape_close_the_modal():
+def test_backdrop_click_closes_the_modal():
     harness = _harness("""
 el("clear-results-modal").classList.add("show");
 el("clear-results-step-2").hidden = false;
@@ -315,18 +339,85 @@ const afterMissClick = {
   modalShown: el("clear-results-modal").classList.contains("show"),
 };
 
-handleClearResultsKeydown({ key: "Escape" });
-const afterEscape = {
-  modalShown: el("clear-results-modal").classList.contains("show"),
-};
-
-console.log(JSON.stringify({ afterBackdrop, afterMissClick, afterEscape }));
+console.log(JSON.stringify({ afterBackdrop, afterMissClick }));
 """)
     output = _run_node(harness)
     result = json.loads(output)
     assert result["afterBackdrop"]["modalShown"] is False
     assert result["afterMissClick"]["modalShown"] is True
-    assert result["afterEscape"]["modalShown"] is False
+
+
+def test_open_modal_moves_focus_to_step1_cancel_not_next():
+    # Before the dialog opens, focus is wherever a real click left it: on
+    # the trigger button out in the roster panel, NOT inside the modal.
+    harness = _harness(f"""
+const calls = [];
+{_races_fetch_script(3)}
+el("btn-clear-results").focus();
+
+(async () => {{
+  await openClearResultsModal();
+  console.log(JSON.stringify({{
+    activeElementId: document.activeElement ? document.activeElement.id : null,
+  }}));
+}})();
+""")
+    output = _run_node(harness)
+    result = json.loads(output)
+    assert result["activeElementId"] == "btn-clear-results-cancel-1"
+
+
+def test_escape_via_document_closes_modal_at_step1_even_though_trigger_had_focus():
+    # Regression test: a real browser dispatches Escape to whatever is
+    # focused, then it bubbles to document -- it is never delivered
+    # straight to the modal element. Simulate that faithfully: focus starts
+    # on the outer trigger button (as it would after a real click), and the
+    # test only ever calls document.dispatchKeydown(), never
+    # handleClearResultsKeydown() directly against the modal.
+    harness = _harness(f"""
+const calls = [];
+{_races_fetch_script(3)}
+el("btn-clear-results").focus();
+
+(async () => {{
+  await openClearResultsModal();
+  const shownBefore = el("clear-results-modal").classList.contains("show");
+  document.dispatchKeydown({{ key: "Escape" }});
+  console.log(JSON.stringify({{
+    shownBefore,
+    shownAfter: el("clear-results-modal").classList.contains("show"),
+    listenerCountAfter: document.listenerCount("keydown"),
+  }}));
+}})();
+""")
+    output = _run_node(harness)
+    result = json.loads(output)
+    assert result["shownBefore"] is True
+    assert result["shownAfter"] is False
+    assert result["listenerCountAfter"] == 0
+
+
+def test_escape_via_document_closes_modal_at_step2():
+    harness = _harness(f"""
+const calls = [];
+{_races_fetch_script(3)}
+el("btn-clear-results").focus();
+
+(async () => {{
+  await openClearResultsModal();
+  goToClearResultsStep2();
+  const shownBefore = el("clear-results-modal").classList.contains("show");
+  document.dispatchKeydown({{ key: "Escape" }});
+  console.log(JSON.stringify({{
+    shownBefore,
+    shownAfter: el("clear-results-modal").classList.contains("show"),
+  }}));
+}})();
+""")
+    output = _run_node(harness)
+    result = json.loads(output)
+    assert result["shownBefore"] is True
+    assert result["shownAfter"] is False
 
 
 def test_confirm_sends_post_with_admin_headers_and_empty_password():
