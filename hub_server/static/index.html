@@ -205,6 +205,27 @@
       display: none;
     }
 
+    /* Dashboard QR visibility (applyDashboardQrVisibility() toggles these
+       body classes from backend race-state, never a page control -- see
+       CLAUDE.md's display-only rule for this page). !important is
+       required on #header-qr-container: that element carries its own
+       inline style="display: flex; ..." in the markup, which otherwise
+       outranks any class-based rule regardless of selector specificity. It
+       is applied uniformly here so a future inline style added to any of
+       these targets can't silently defeat this rule either. Scoping by a
+       body class (rather than hiding each element directly) means any of
+       these blocks rendered later -- e.g. .registration-empty-qr rebuilt
+       by a telemetry-triggered renderLeaderboard() tick, well after this
+       class was set -- is still covered with no further JS involved. */
+    body.hide-signup-qr #header-qr-container,
+    body.hide-signup-qr .registration-empty-qr {
+      display: none !important;
+    }
+
+    body.hide-admin-qr #game-admin-qr-card {
+      display: none !important;
+    }
+
     /* Main Content Area */
     main {
       display: flex;
@@ -3045,7 +3066,7 @@
       </div>
 
       <!-- Game Admin QR -->
-      <div class="card">
+      <div class="card" id="game-admin-qr-card">
         <div class="card-title" data-i18n="game_admin.title">Game Admin</div>
         <div class="admin-qr-panel">
           <div class="admin-qr-copy" data-i18n="game_admin.scan_to_manage">
@@ -4957,6 +4978,32 @@
       leaderboardDisplayMode = normalizeLeaderboardDisplayMode(mode);
     }
 
+    // Display-only projection screen (CLAUDE.md): visibility of the QR
+    // codes is driven purely by backend state carried on every race-state
+    // payload (initial fetch + state_change WS messages), never by a
+    // control on this page. A missing field (older hub build) means
+    // visible, matching every other "missing key = default" contract in
+    // this state payload.
+    //
+    // Deliberately declarative rather than per-element: .registration-
+    // empty-qr blocks are rebuilt in several places that never call this
+    // function at all -- the WebSocket telemetry handler in
+    // connectWebSocket() (renderLeaderboard() on every progress tick) and
+    // resetRace() (which overwrites the leaderboard container's innerHTML
+    // right after updateUIState() already ran). Setting el.style.display
+    // here only ever reaches elements that exist in the DOM at this exact
+    // moment -- any block created afterwards by one of those other paths
+    // would come back visible with no state change at all. Toggling a
+    // class on document.body instead, paired with the CSS rule below,
+    // covers any such block automatically: the browser re-evaluates the
+    // CSS rule on every paint, not just when this function last ran.
+    function applyDashboardQrVisibility(data) {
+      const signupVisible = !(data && data.signup_qr_visible === false);
+      const adminVisible = !(data && data.admin_qr_visible === false);
+      document.body.classList.toggle("hide-signup-qr", !signupVisible);
+      document.body.classList.toggle("hide-admin-qr", !adminVisible);
+    }
+
     function getRankedTeamRows(progressData, teamData, raceType) {
       return sortTeamLeaderboardRows(
         Array.isArray(teamData) && teamData.length
@@ -6756,6 +6803,11 @@
         // Race mode
         renderLeaderboard(data.leaderboard, data.team_leaderboard || null);
       }
+
+      // Runs after the render above so any QR block it just rebuilt (the
+      // empty-state signup QR) is corrected immediately rather than
+      // flashing visible for a frame.
+      applyDashboardQrVisibility(data);
 
       // A2: full-screen podium reveal, only on a live RUNNING -> STOPPED
       // transition -- never when the page merely loads into an already-

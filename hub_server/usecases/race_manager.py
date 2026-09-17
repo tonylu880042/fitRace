@@ -18,6 +18,13 @@ class RaceManager:
         self._config: Optional[RaceConfig] = None
         self._leaderboard_display_mode: str = "classic"
         self._start_countdown_sound_enabled: bool = True
+        # Venue dashboard QR visibility: operators can hide the self
+        # sign-up and/or Game Admin control-page QR codes on the projector
+        # screen (e.g. once a race's registration window has closed).
+        # Default True so existing installs and settings files written
+        # before this feature existed keep showing both QRs.
+        self._signup_qr_visible: bool = True
+        self._admin_qr_visible: bool = True
         self._settings_store = settings_store
         self._session_mode: str = "race"
         self._class_plan: Optional[ClassPlan] = None
@@ -80,6 +87,10 @@ class RaceManager:
             self._leaderboard_display_mode = mode
         if isinstance(data.get("start_countdown_sound_enabled"), bool):
             self._start_countdown_sound_enabled = data["start_countdown_sound_enabled"]
+        if isinstance(data.get("signup_qr_visible"), bool):
+            self._signup_qr_visible = data["signup_qr_visible"]
+        if isinstance(data.get("admin_qr_visible"), bool):
+            self._admin_qr_visible = data["admin_qr_visible"]
         config = data.get("config")
         if isinstance(config, dict):
             try:
@@ -123,6 +134,8 @@ class RaceManager:
                 "stations": {str(sn): nid for sn, nid in self._stations.items()},
                 "leaderboard_display_mode": self._leaderboard_display_mode,
                 "start_countdown_sound_enabled": self._start_countdown_sound_enabled,
+                "signup_qr_visible": self._signup_qr_visible,
+                "admin_qr_visible": self._admin_qr_visible,
                 "config": self._config.model_dump() if self._config else None,
                 "session_mode": self._session_mode,
                 "class_plan": (
@@ -211,6 +224,22 @@ class RaceManager:
         self._persist_settings()
         return self._start_countdown_sound_enabled
 
+    def get_signup_qr_visible(self) -> bool:
+        return self._signup_qr_visible
+
+    def set_signup_qr_visible(self, visible: bool) -> bool:
+        self._signup_qr_visible = bool(visible)
+        self._persist_settings()
+        return self._signup_qr_visible
+
+    def get_admin_qr_visible(self) -> bool:
+        return self._admin_qr_visible
+
+    def set_admin_qr_visible(self, visible: bool) -> bool:
+        self._admin_qr_visible = bool(visible)
+        self._persist_settings()
+        return self._admin_qr_visible
+
     @staticmethod
     def _empty_participant_progress(
         node_id: str,
@@ -279,6 +308,8 @@ class RaceManager:
             "end_time_epoch_ms": self.get_end_time_epoch_ms(),
             "leaderboard_display_mode": self.get_leaderboard_display_mode(),
             "start_countdown_sound_enabled": self.get_start_countdown_sound_enabled(),
+            "signup_qr_visible": self.get_signup_qr_visible(),
+            "admin_qr_visible": self.get_admin_qr_visible(),
             "leaderboard": self.get_leaderboard_progress(),
             "team_leaderboard": team_leaderboard,
             "session_mode": self.get_session_mode(),

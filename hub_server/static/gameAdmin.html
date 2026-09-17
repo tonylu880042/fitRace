@@ -1081,6 +1081,22 @@
                     </select>
                   </div>
                 </div>
+                <div class="grid-2">
+                  <div class="field">
+                    <label for="signup-qr-visible" data-i18n="label.signup_qr_visible">Show Sign-up QR on Dashboard</label>
+                    <select id="signup-qr-visible" onchange="setSignupQrVisible(this.value === 'true')">
+                      <option value="true" selected data-i18n="option.qr_visible">Visible</option>
+                      <option value="false" data-i18n="option.qr_hidden">Hidden</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label for="admin-qr-visible" data-i18n="label.admin_qr_visible">Show Game Admin QR on Dashboard</label>
+                    <select id="admin-qr-visible" onchange="setAdminQrVisible(this.value === 'true')">
+                      <option value="true" selected data-i18n="option.qr_visible">Visible</option>
+                      <option value="false" data-i18n="option.qr_hidden">Hidden</option>
+                    </select>
+                  </div>
+                </div>
                 <div class="field">
                   <button type="button" class="primary" id="btn-switch-to-race-mode" onclick="switchToRaceMode()" data-i18n="button.switch_to_race_mode">Switch Projector to Race Mode</button>
                   <p class="field-note show" id="switch-to-race-mode-note" data-i18n="text.switch_to_race_mode_note">Switches the dashboard to show the race leaderboard.</p>
@@ -1357,6 +1373,8 @@
         "label.refresh": "Refresh",
         "label.leaderboard_view": "Leaderboard View",
         "label.start_sound_select": "Start Sound",
+        "label.signup_qr_visible": "Show Sign-up QR on Dashboard",
+        "label.admin_qr_visible": "Show Game Admin QR on Dashboard",
         "label.access_code": "Access Code",
         "panel.race_control": "Race Control",
         "panel.station_status": "Station Status",
@@ -1381,6 +1399,8 @@
         "option.sprint_board": "Sprint Board",
         "option.play_countdown": "Play 3, 2, 1, Go",
         "option.silent_start": "Silent Start",
+        "option.qr_visible": "Visible",
+        "option.qr_hidden": "Hidden",
         "guidance.team_rule": "Team Rule",
         "guidance.leaderboard_preview": "Leaderboard Preview",
         "guidance.start_flow": "Start Flow",
@@ -1441,6 +1461,10 @@
         "message.race_reset": "Race reset.",
         "message.start_sound_enabled": "Start sound enabled.",
         "message.start_sound_disabled": "Start sound disabled.",
+        "message.signup_qr_shown": "Sign-up QR shown on dashboard.",
+        "message.signup_qr_hidden": "Sign-up QR hidden from dashboard.",
+        "message.admin_qr_shown": "Game Admin QR shown on dashboard.",
+        "message.admin_qr_hidden": "Game Admin QR hidden from dashboard.",
         "state.sound_on": "ON",
         "state.sound_off": "OFF",
         "label.lane": "Lane",
@@ -1593,6 +1617,8 @@
       "label.refresh": "重新整理",
       "label.leaderboard_view": "排行榜顯示",
       "label.start_sound_select": "啟動聲音",
+      "label.signup_qr_visible": "大螢幕顯示報名 QR Code",
+      "label.admin_qr_visible": "大螢幕顯示 Game Admin QR Code",
       "label.access_code": "存取碼",
       "panel.race_control": "比賽控制",
       "panel.station_status": "站位狀態",
@@ -1617,6 +1643,8 @@
       "option.sprint_board": "衝刺排行",
       "option.play_countdown": "播放 3, 2, 1, Go",
       "option.silent_start": "靜音啟動",
+      "option.qr_visible": "顯示",
+      "option.qr_hidden": "隱藏",
       "guidance.team_rule": "隊伍規則",
       "guidance.leaderboard_preview": "排行榜預覽",
       "guidance.start_flow": "啟動流程",
@@ -1677,6 +1705,10 @@
       "message.race_reset": "比賽已重設。",
       "message.start_sound_enabled": "啟動聲音已開啟。",
       "message.start_sound_disabled": "啟動聲音已關閉。",
+      "message.signup_qr_shown": "已在大螢幕顯示報名 QR Code。",
+      "message.signup_qr_hidden": "已在大螢幕隱藏報名 QR Code。",
+      "message.admin_qr_shown": "已在大螢幕顯示 Game Admin QR Code。",
+      "message.admin_qr_hidden": "已在大螢幕隱藏 Game Admin QR Code。",
       "state.sound_on": "開",
       "state.sound_off": "關",
       "label.lane": "跑道",
@@ -2376,6 +2408,8 @@
       const config = race.config;
       $("leaderboard-display-mode").value = normalizeLeaderboardDisplayMode(race.leaderboard_display_mode);
       $("start-sound-enabled").value = race.start_countdown_sound_enabled === false ? "false" : "true";
+      $("signup-qr-visible").value = race.signup_qr_visible === false ? "false" : "true";
+      $("admin-qr-visible").value = race.admin_qr_visible === false ? "false" : "true";
       if (config && !state.raceConfigDirty) {
         $("race-type").value = config.race_type || "distance";
         $("competition-mode").value = config.competition_mode || "individual";
@@ -3158,6 +3192,38 @@
         setMessage("race-message", enabled ? t("message.start_sound_enabled") : t("message.start_sound_disabled"), "ok");
       } catch (error) {
         $("start-sound-enabled").value = previousValue;
+        setMessage("race-message", error.message, "error");
+      }
+    }
+
+    async function setSignupQrVisible(visible) {
+      const previousValue = state.race?.signup_qr_visible === false ? "false" : "true";
+      try {
+        state.race = await fetchJson("/api/dashboard/qr-visibility", {
+          method: "POST",
+          headers: adminHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({ signup_qr_visible: visible }),
+        });
+        renderRace();
+        setMessage("race-message", visible ? t("message.signup_qr_shown") : t("message.signup_qr_hidden"), "ok");
+      } catch (error) {
+        $("signup-qr-visible").value = previousValue;
+        setMessage("race-message", error.message, "error");
+      }
+    }
+
+    async function setAdminQrVisible(visible) {
+      const previousValue = state.race?.admin_qr_visible === false ? "false" : "true";
+      try {
+        state.race = await fetchJson("/api/dashboard/qr-visibility", {
+          method: "POST",
+          headers: adminHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({ admin_qr_visible: visible }),
+        });
+        renderRace();
+        setMessage("race-message", visible ? t("message.admin_qr_shown") : t("message.admin_qr_hidden"), "ok");
+      } catch (error) {
+        $("admin-qr-visible").value = previousValue;
         setMessage("race-message", error.message, "error");
       }
     }
