@@ -313,6 +313,36 @@ class RosterManager:
         self._persist()
         return loaded
 
+    def cancel_current_heat(self) -> None:
+        """Return every currently "loaded" entry to "pending", KEEPING its
+        original `order` so the same people are next in line again -- the
+        operator's fix for a heat that got loaded and then orphaned by a
+        race config change/reset before it raced (see POST /api/roster/
+        current-heat/cancel). Atomic like load_next_heat(): builds on a
+        working copy and only swaps it into self._entries (and persists)
+        once every validation has passed.
+
+        Raises ValueError("no current heat") when nothing is loaded, and
+        ValueError("current heat already raced") if ANY loaded entry has
+        started=True -- re-running a raced heat would duplicate results, so
+        the operator must use load_next_heat() instead.
+        """
+        loaded = [entry for entry in self._entries if entry["status"] == "loaded"]
+        if not loaded:
+            raise ValueError("no current heat")
+        if any(entry.get("started") for entry in loaded):
+            raise ValueError("current heat already raced")
+
+        working = [dict(entry) for entry in self._entries]
+        for entry in working:
+            if entry["status"] == "loaded":
+                entry["status"] = "pending"
+                entry["station_number"] = None
+                entry["started"] = False
+
+        self._entries = working
+        self._persist()
+
     def _group_pending_by_team(
         self, entries: list[dict[str, Any]]
     ) -> list[dict[str, Any]]:
