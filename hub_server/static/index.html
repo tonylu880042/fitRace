@@ -3045,7 +3045,7 @@
       </div>
 
       <!-- Game Admin QR -->
-      <div class="card">
+      <div class="card" id="game-admin-qr-card">
         <div class="card-title" data-i18n="game_admin.title">Game Admin</div>
         <div class="admin-qr-panel">
           <div class="admin-qr-copy" data-i18n="game_admin.scan_to_manage">
@@ -4957,6 +4957,31 @@
       leaderboardDisplayMode = normalizeLeaderboardDisplayMode(mode);
     }
 
+    // Display-only projection screen (CLAUDE.md): visibility of the QR
+    // codes is driven purely by backend state carried on every race-state
+    // payload (initial fetch + state_change WS messages), never by a
+    // control on this page. A missing field (older hub build) means
+    // visible, matching every other "missing key = default" contract in
+    // this state payload.
+    function applyDashboardQrVisibility(data) {
+      const signupVisible = !(data && data.signup_qr_visible === false);
+      const adminVisible = !(data && data.admin_qr_visible === false);
+
+      const headerQr = document.getElementById("header-qr-container");
+      if (headerQr) headerQr.style.display = signupVisible ? "flex" : "none";
+
+      // Covers both the static empty-state block rendered at load time and
+      // every one rebuilt later by renderRegistrationEmptyState() -- this
+      // runs after every render, so a freshly rebuilt block is corrected
+      // immediately instead of flashing visible.
+      document.querySelectorAll(".registration-empty-qr").forEach((qrBlock) => {
+        qrBlock.style.display = signupVisible ? "" : "none";
+      });
+
+      const adminQrCard = document.getElementById("game-admin-qr-card");
+      if (adminQrCard) adminQrCard.style.display = adminVisible ? "" : "none";
+    }
+
     function getRankedTeamRows(progressData, teamData, raceType) {
       return sortTeamLeaderboardRows(
         Array.isArray(teamData) && teamData.length
@@ -6756,6 +6781,11 @@
         // Race mode
         renderLeaderboard(data.leaderboard, data.team_leaderboard || null);
       }
+
+      // Runs after the render above so any QR block it just rebuilt (the
+      // empty-state signup QR) is corrected immediately rather than
+      // flashing visible for a frame.
+      applyDashboardQrVisibility(data);
 
       // A2: full-screen podium reveal, only on a live RUNNING -> STOPPED
       // transition -- never when the page merely loads into an already-
