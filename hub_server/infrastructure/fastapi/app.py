@@ -1004,12 +1004,16 @@ def get_athlete_result_by_token(token: str):
 @app.post("/api/results/clear")
 async def clear_race_results(payload: ClearResultsPayload, request: Request):
     expected_token = os.getenv("FITRACE_ADMIN_TOKEN")
-    if not expected_token:
-        raise HTTPException(status_code=403, detail="admin password is not configured")
-    if not hmac.compare_digest(
-        payload.password.encode("utf-8"), expected_token.encode("utf-8")
-    ):
-        raise HTTPException(status_code=401, detail="Invalid password")
+    if expected_token:
+        provided_header = request.headers.get("X-FitRace-Admin-Token") or ""
+        header_matches = hmac.compare_digest(
+            provided_header.encode("utf-8"), expected_token.encode("utf-8")
+        )
+        password_matches = hmac.compare_digest(
+            payload.password.encode("utf-8"), expected_token.encode("utf-8")
+        )
+        if not (header_matches or password_matches):
+            raise HTTPException(status_code=401, detail="Invalid password")
     if race_manager.get_state() == RaceState.RUNNING:
         raise HTTPException(status_code=409, detail="Race is running")
     result = race_result_store.archive(datetime.now())
