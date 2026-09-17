@@ -1567,7 +1567,28 @@ async def import_roster(payload: RosterImportPayload, request: Request):
 @app.delete("/api/roster")
 async def clear_roster(request: Request):
     require_admin(request)
+    if race_manager.get_state() == RaceState.RUNNING:
+        raise HTTPException(status_code=409, detail="Race is running")
+
+    had_loaded_heat = any(
+        entry.get("status") == "loaded" for entry in roster_manager.entries()
+    )
     roster_manager.clear()
+
+    if had_loaded_heat:
+        # Mirrors POST /api/roster/current-heat/cancel's STOPPED handling
+        # (and, in turn, /api/roster/next-heat's): a STOPPED race must be
+        # reset and re-configured with the same saved config before its
+        # station registrations can be cleared, since clear_station_
+        # registrations() is only valid in IDLE/READY.
+        if race_manager.get_state() == RaceState.STOPPED:
+            config = race_manager.get_config()
+            reset_race_state()
+            if config is not None:
+                apply_race_config(config)
+        race_manager.clear_station_registrations()
+        await broadcast_race_state()
+
     return roster_summary_response()
 
 
@@ -1598,6 +1619,33 @@ async def requeue_roster_entry(entry_id: str, request: Request):
         roster_manager.requeue(entry_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    return roster_summary_response()
+
+
+@app.post("/api/roster/current-heat/cancel")
+async def cancel_current_heat(request: Request):
+    require_admin(request)
+    if race_manager.get_state() == RaceState.RUNNING:
+        raise HTTPException(status_code=409, detail="Race is running")
+
+    try:
+        roster_manager.cancel_current_heat()
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+    # Mirrors /api/roster/next-heat's STOPPED handling: capture the saved
+    # config BEFORE reset_race_state() clears it, reset, then re-apply that
+    # same config so the race lands back on READY -- clear_station_
+    # registrations() below is only valid in IDLE/READY, never STOPPED.
+    if race_manager.get_state() == RaceState.STOPPED:
+        config = race_manager.get_config()
+        reset_race_state()
+        if config is not None:
+            apply_race_config(config)
+
+    race_manager.clear_station_registrations()
+
+    await broadcast_race_state()
     return roster_summary_response()
 
 
