@@ -1,23 +1,23 @@
 {
   "schema_version": 1,
   "product": "fitracestudio",
-  "release_version": "0.3.0",
+  "release_version": "0.4.0",
   "channel": "stable",
-  "published_at": "2026-09-14T23:01:00Z",
+  "published_at": "2026-09-17T09:21:18Z",
   "minimum_hub_version": "0.1.0",
   "minimum_edge_version": "0.1.0",
   "components": {
     "hub": {
-      "version": "0.3.0",
-      "artifact_url": "https://dd9tnec1hh2ts.cloudfront.net/releases/0.3.0/fitrace-hub-0.3.0.tar.zst",
-      "sha256": "ea6d5b211c9223fea33fb71a12e5cd01e879390fdb8dd1b73def5626f16dc7b1",
+      "version": "0.4.0",
+      "artifact_url": "https://dd9tnec1hh2ts.cloudfront.net/releases/0.4.0/fitrace-hub-0.4.0.tar.zst",
+      "sha256": "ab559ba91c8ea8ba1a4f44752469bcf72d256c979ddf19da2ad9f36a46496c2b",
       "requires_reboot": false,
       "systemd_units": ["fitracestudio-hub.service"]
     },
     "edge": {
-      "version": "0.3.0",
-      "artifact_url": "https://dd9tnec1hh2ts.cloudfront.net/releases/0.3.0/fitrace-edge-0.3.0.tar.zst",
-      "sha256": "175c8b3145ab859f228dc5522e52808963e5365c841e311a81320b3cbeac3960",
+      "version": "0.4.0",
+      "artifact_url": "https://dd9tnec1hh2ts.cloudfront.net/releases/0.4.0/fitrace-edge-0.4.0.tar.zst",
+      "sha256": "6b3fac070ac35c8cb3c28b02b6120552ff1bb3caa5aa0ad74186b64e03909271",
       "requires_reboot": false,
       "systemd_units": ["fitracestudio-edge.service", "fitracestudio-edge-web.service"]
     }
@@ -31,5 +31,5 @@
     "install_mode": "manual",
     "allow_during_race": false
   },
-  "notes": "Event-day roster heats, same-machine relay races, divisions, interpolated finish times, results CSV export and clear, treadmill pace with effects, adaptive race board sizing, class mode, and OTA health-check rollback. Requires segno and websockets in the hub environment."
+  "notes": "Multi-equipment race groups, cross-heat overall standings, Game Admin clear results / clear roster / cancel current heat with confirmations, dashboard QR visibility toggles, thicker classic progress bar, and one-click hub update. No new Python dependencies since 0.3.0 (still requires segno and websockets)."
 }
