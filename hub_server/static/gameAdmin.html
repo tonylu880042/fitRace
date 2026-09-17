@@ -72,6 +72,10 @@
       cursor: not-allowed;
     }
 
+    #btn-clear-results {
+      white-space: nowrap;
+    }
+
     .primary {
       background: var(--accent);
       border-color: var(--accent);
@@ -1141,6 +1145,7 @@
               <label for="roster-file-input" data-i18n="button.import_roster">Import Roster</label>
               <input type="file" id="roster-file-input" accept=".csv,text/csv" onchange="handleRosterFileSelected(event)">
               <button type="button" id="btn-download-results-csv" onclick="downloadResultsCsv()" data-i18n="button.download_results_csv">Download Results (CSV)</button>
+              <button type="button" class="danger" id="btn-clear-results" onclick="openClearResultsModal()" data-i18n="button.clear_results">Clear Results</button>
             </div>
           </div>
           <div class="status-text" id="roster-import-message"></div>
@@ -1241,6 +1246,28 @@
         <button type="button" onclick="closeLogin()" data-i18n="button.cancel">Cancel</button>
       </div>
       <div class="status-text" id="login-message"></div>
+    </div>
+  </div>
+
+  <div class="login" id="clear-results-modal" role="dialog" aria-modal="true" aria-labelledby="clear-results-title">
+    <div class="login-box">
+      <div id="clear-results-step-1">
+        <h2 id="clear-results-title" data-i18n="clear_results.title">Clear Race Results</h2>
+        <p id="clear-results-step1-body"></p>
+        <div class="button-row">
+          <button type="button" id="btn-clear-results-cancel-1" onclick="closeClearResultsModal()" data-i18n="button.cancel">Cancel</button>
+          <button type="button" class="primary" id="btn-clear-results-next" onclick="goToClearResultsStep2()" data-i18n="button.clear_results_next">Next</button>
+        </div>
+      </div>
+      <div id="clear-results-step-2" hidden>
+        <h2 data-i18n="clear_results.step2_title">Confirm Clear</h2>
+        <p id="clear-results-step2-body"></p>
+        <div class="button-row">
+          <button type="button" id="btn-clear-results-cancel-2" onclick="closeClearResultsModal()" data-i18n="button.cancel">Cancel</button>
+          <button type="button" class="danger" id="btn-clear-results-confirm" onclick="confirmClearResults()" data-i18n="button.clear_results_confirm">Clear Results</button>
+        </div>
+      </div>
+      <div class="status-text" id="clear-results-modal-message"></div>
     </div>
   </div>
 
@@ -1521,7 +1548,21 @@
         "text.relay_heat_mode_note": "Relay mode: heats load by team.",
         "button.download_results_csv": "Download Results (CSV)",
         "message.results_downloaded": "Results downloaded.",
-        "message.results_download_failed": "Download failed: {error}"
+        "message.results_download_failed": "Download failed: {error}",
+        "button.clear_results": "Clear Results",
+        "button.clear_results_next": "Next",
+        "button.clear_results_confirm": "Clear Results",
+        "clear_results.title": "Clear Race Results",
+        "clear_results.step1_body": "{count} stored race result(s) will be cleared. Download the CSV first if you need a copy. The original file is kept as a .bak backup on the hub, but the dashboard's overall standings will become empty.",
+        "clear_results.step1_body_empty": "There are no stored race results to clear.",
+        "clear_results.step2_title": "Confirm Clear",
+        "clear_results.step2_body": "Are you sure you want to clear {count} race result(s)? This cannot be undone from this page.",
+        "text.clear_results_loading": "Loading...",
+        "text.clear_results_count_failed": "Could not load the result count: {error}",
+        "message.clear_results_success": "Cleared {count} race result(s). Backup: {backup}",
+        "message.clear_results_race_running": "Race is running -- cannot clear results.",
+        "message.clear_results_unauthorized": "Admin password required. Unlock via Operator Unlock first.",
+        "message.clear_results_failed": "Failed to clear results: {error}"
       }
     };
 
@@ -1743,7 +1784,21 @@
       "text.relay_heat_mode_note": "接力模式：依隊伍載入",
       "button.download_results_csv": "下載成績 (CSV)",
       "message.results_downloaded": "成績已下載",
-      "message.results_download_failed": "下載失敗：{error}"
+      "message.results_download_failed": "下載失敗：{error}",
+      "button.clear_results": "清除成績",
+      "button.clear_results_next": "下一步",
+      "button.clear_results_confirm": "確定清除",
+      "clear_results.title": "清除比賽成績",
+      "clear_results.step1_body": "目前已儲存 {count} 場比賽成績,清除後無法復原。建議先下載 CSV 備份;原始檔案會在主機上保留為 .bak 備份,但大螢幕的總排名將會變成空白。",
+      "clear_results.step1_body_empty": "目前沒有已儲存的比賽成績,無需清除。",
+      "clear_results.step2_title": "再次確認",
+      "clear_results.step2_body": "確定要清除 {count} 場成績嗎？此動作無法從頁面復原。",
+      "text.clear_results_loading": "讀取中…",
+      "text.clear_results_count_failed": "無法取得成績數量：{error}",
+      "message.clear_results_success": "已清除 {count} 場成績。備份檔案:{backup}",
+      "message.clear_results_race_running": "比賽進行中，無法清除",
+      "message.clear_results_unauthorized": "需要管理密碼，請先透過「操作者解鎖」設定密碼",
+      "message.clear_results_failed": "清除失敗：{error}"
     };
 
     function t(key, params = {}) {
@@ -2348,6 +2403,7 @@
       renderRaceActionButtons();
       $("btn-stop").disabled = raceState !== "RUNNING";
       $("btn-reset").disabled = raceState === "RUNNING";
+      $("btn-clear-results").disabled = raceState === "RUNNING";
       $("countdown-status").classList.toggle("show", state.countdownActive);
       updateControlGuidance();
       renderReadinessPanel();
@@ -2811,6 +2867,105 @@
       }
     }
 
+    // Two-step "Clear Results" confirmation (hub_server/static/gameAdmin.html):
+    // step 1 fetches how many races are stored and states the .bak backup /
+    // empty-standings consequences; step 2 is a second, differently-worded
+    // confirmation with the destructive button. Nothing is sent to
+    // POST /api/results/clear until the operator reaches step 2 and presses
+    // the danger button there -- opening the dialog or pressing "Next" in
+    // step 1 never issues the request.
+    async function openClearResultsModal() {
+      state.clearResultsCount = 0;
+      $("clear-results-step-1").hidden = false;
+      $("clear-results-step-2").hidden = true;
+      $("clear-results-modal-message").textContent = "";
+      $("clear-results-step1-body").textContent = t("text.clear_results_loading");
+      $("btn-clear-results-next").hidden = true;
+      $("clear-results-modal").classList.add("show");
+      // Move focus into the dialog (never onto "Next") and listen for
+      // Escape on document rather than on the modal element itself: a real
+      // Escape keypress is delivered to whatever is focused and bubbles up
+      // from there, which is never the modal unless focus is actually
+      // inside it. Binding to document catches it regardless, and is torn
+      // down again in closeClearResultsModal() so it never lingers.
+      $("btn-clear-results-cancel-1").focus();
+      document.addEventListener("keydown", handleClearResultsKeydown);
+      try {
+        const data = await fetchJson("/api/results/races?limit=500");
+        const count = (data.races || []).length;
+        state.clearResultsCount = count;
+        if (count === 0) {
+          $("clear-results-step1-body").textContent = t("clear_results.step1_body_empty");
+          $("btn-clear-results-next").hidden = true;
+        } else {
+          $("clear-results-step1-body").textContent = t("clear_results.step1_body", { count });
+          $("btn-clear-results-next").hidden = false;
+        }
+      } catch (error) {
+        $("clear-results-step1-body").textContent = t("text.clear_results_count_failed", { error: error.message });
+        $("btn-clear-results-next").hidden = true;
+      }
+    }
+
+    function closeClearResultsModal() {
+      $("clear-results-modal").classList.remove("show");
+      $("clear-results-step-1").hidden = false;
+      $("clear-results-step-2").hidden = true;
+      $("clear-results-modal-message").textContent = "";
+      document.removeEventListener("keydown", handleClearResultsKeydown);
+    }
+
+    function goToClearResultsStep2() {
+      $("clear-results-step-1").hidden = true;
+      $("clear-results-step-2").hidden = false;
+      $("clear-results-step2-body").textContent = t("clear_results.step2_body", { count: state.clearResultsCount || 0 });
+      // Initial focus lands on Cancel, never the danger button, so an
+      // accidental Enter press cannot clear results.
+      $("btn-clear-results-cancel-2").focus();
+    }
+
+    async function confirmClearResults() {
+      const confirmBtn = $("btn-clear-results-confirm");
+      if (confirmBtn.disabled) return;
+      confirmBtn.disabled = true;
+      try {
+        const response = await fetch("/api/results/clear", {
+          method: "POST",
+          headers: adminHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({ password: "" }),
+        });
+        const text = await response.text();
+        const payload = text ? JSON.parse(text) : {};
+        if (response.status === 409) {
+          setMessage("clear-results-modal-message", t("message.clear_results_race_running"), "error");
+          return;
+        }
+        if (response.status === 401) {
+          setMessage("clear-results-modal-message", t("message.clear_results_unauthorized"), "error");
+          return;
+        }
+        if (!response.ok) {
+          setMessage("clear-results-modal-message", t("message.clear_results_failed", { error: payload.detail || response.statusText || "" }), "error");
+          return;
+        }
+        const backupName = (payload.backup_path || "").split("/").pop();
+        closeClearResultsModal();
+        setMessage("results-export-message", t("message.clear_results_success", { count: payload.cleared_count, backup: backupName }), "ok");
+      } catch (error) {
+        setMessage("clear-results-modal-message", t("message.clear_results_failed", { error: error.message }), "error");
+      } finally {
+        confirmBtn.disabled = false;
+      }
+    }
+
+    function handleClearResultsBackdropClick(event) {
+      if (event.target.id === "clear-results-modal") closeClearResultsModal();
+    }
+
+    function handleClearResultsKeydown(event) {
+      if (event.key === "Escape") closeClearResultsModal();
+    }
+
     async function addWalkIn() {
       const name = $("walk-in-name").value.trim();
       if (!name) return;
@@ -3177,6 +3332,7 @@
       if (event.key === "Enter") saveAdminToken();
       if (event.key === "Escape") closeLogin();
     });
+    $("clear-results-modal").addEventListener("click", handleClearResultsBackdropClick);
     // Live toggle for the mixed-race lock (target field vs. group editor,
     // competition-mode lock) as the operator changes #race-type -- see
     // syncMixedRaceFields() for why this is a separate listener rather than

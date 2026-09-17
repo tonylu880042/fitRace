@@ -2419,8 +2419,14 @@ def test_stopping_a_race_with_an_unwritable_results_path_still_returns_200(
         restore()
 
 
-def test_clear_results_without_admin_token_configured(monkeypatch, tmp_path):
-    """POST /api/results/clear without FITRACE_ADMIN_TOKEN returns 403."""
+def test_clear_results_without_admin_token_configured_allows_clear(
+    monkeypatch, tmp_path
+):
+    """POST /api/results/clear without FITRACE_ADMIN_TOKEN configured is
+    allowed with no password: the venue box ships with no admin token set,
+    so the old fail-closed 403 meant nobody could ever clear results. This
+    is an intentional product decision -- Game Admin's own two-step
+    confirmation dialog is the only guard in that case."""
     import hub_server.infrastructure.fastapi.app as hub_app
     from hub_server.usecases.race_result_store import RaceResultStore
 
@@ -2428,7 +2434,6 @@ def test_clear_results_without_admin_token_configured(monkeypatch, tmp_path):
     monkeypatch.setattr(hub_app, "race_result_store", store)
     monkeypatch.delenv("FITRACE_ADMIN_TOKEN", raising=False)
 
-    # Create a result to verify it's not touched
     snapshot = {
         "state": "STOPPED",
         "config": {"race_type": "distance"},
@@ -2438,12 +2443,12 @@ def test_clear_results_without_admin_token_configured(monkeypatch, tmp_path):
     }
     store.save_finished_snapshot(snapshot)
 
-    response = client.post("/api/results/clear", json={"password": "any-password"})
+    response = client.post("/api/results/clear", json={"password": ""})
 
-    assert response.status_code == 403
-    # File should still exist with original content
-    assert store._path.exists()
-    assert len(store.list_results()) == 1
+    assert response.status_code == 200
+    data = response.json()
+    assert data["cleared_count"] == 1
+    assert len(store.list_results()) == 0
 
 
 def test_clear_results_with_wrong_password(monkeypatch, tmp_path):
@@ -2524,14 +2529,15 @@ def test_clear_results_with_empty_password_in_body(monkeypatch, tmp_path):
     assert len(store.list_results()) == 1
 
 
-def test_clear_results_valid_header_without_body_password_still_401(
+def test_clear_results_valid_header_without_body_password_succeeds(
     monkeypatch, tmp_path
 ):
-    """POST /api/results/clear with valid header but no body password returns 401.
-
-    The header alone is NOT sufficient; the password must be in the request body.
-    This prevents accidental header-only authentication bypasses.
-    """
+    """POST /api/results/clear with a valid X-FitRace-Admin-Token header and
+    no body password returns 200. Game Admin's clear-results dialog has no
+    password field -- it authenticates purely via the operator's unlocked
+    admin header -- so the header alone must be sufficient (either the
+    header or the body password authenticates; this is the new, intentional
+    rule replacing body-password-only)."""
     import hub_server.infrastructure.fastapi.app as hub_app
     from hub_server.usecases.race_result_store import RaceResultStore
 
@@ -2554,6 +2560,38 @@ def test_clear_results_valid_header_without_body_password_still_401(
         "/api/results/clear",
         json={},
         headers={"X-FitRace-Admin-Token": "admin-secret"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["cleared_count"] == 1
+    assert len(store.list_results()) == 0
+
+
+def test_clear_results_with_wrong_header_and_no_body_password(monkeypatch, tmp_path):
+    """POST /api/results/clear with a configured token, a mismatched
+    X-FitRace-Admin-Token header, and no body password returns 401. Neither
+    credential matches, so the file must stay untouched."""
+    import hub_server.infrastructure.fastapi.app as hub_app
+    from hub_server.usecases.race_result_store import RaceResultStore
+
+    store = RaceResultStore(tmp_path / "race_results.jsonl")
+    monkeypatch.setattr(hub_app, "race_result_store", store)
+    monkeypatch.setenv("FITRACE_ADMIN_TOKEN", "admin-secret")
+
+    snapshot = {
+        "state": "STOPPED",
+        "config": {"race_type": "distance"},
+        "start_time_epoch_ms": 1000,
+        "end_time_epoch_ms": 2000,
+        "leaderboard": {"node-01": {"distance_m": 100}},
+    }
+    store.save_finished_snapshot(snapshot)
+
+    response = client.post(
+        "/api/results/clear",
+        json={},
+        headers={"X-FitRace-Admin-Token": "wrong-token"},
     )
 
     assert response.status_code == 401
