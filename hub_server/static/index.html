@@ -652,6 +652,42 @@
       box-shadow: 0 0 14px rgba(226, 255, 59, 0.45);
       transition: width 0.45s cubic-bezier(0.1, 0.8, 0.25, 1);
       animation: progressSweep 1.8s linear infinite;
+      position: relative;
+    }
+
+    /* Leading-edge highlight at the head of the fill. Telemetry frames land
+       seconds apart, so between two frames the fill's width is completely
+       static and the row reads as frozen from across the gym -- the sweep
+       above is a gradient slide that says very little on its own. This
+       pulses at the bar's leading edge so the row keeps saying "live"
+       whenever the next frame lands. The track clips it, so at 0% there is
+       nothing to see.
+
+       Compositor-only by requirement: this page is measured by
+       scripts/measure_dashboard_render_cost.mjs and runs unattended on a
+       projector for a whole class, with one of these per row. Animate
+       transform and opacity ONLY -- width/left/box-shadow would force
+       layout or paint on every frame for every row. */
+    .progress-fill::after {
+      content: "";
+      position: absolute;
+      top: 0;
+      right: 0;
+      height: 100%;
+      /* Sized from the bar's own height rather than a flat width, so it
+         stays proportionate at every tier (8px dense, 20px lg, 56px xl)
+         without a per-tier rule -- a flat width went stale the moment the
+         xl bar changed thickness. min-width keeps the original 26px as a
+         floor: on the 8px dense bar the derived width would be 8px. Both
+         are static sizing, never animated -- the keyframes below stay on
+         transform/opacity. */
+      aspect-ratio: 1 / 1;
+      width: auto;
+      min-width: 26px;
+      pointer-events: none;
+      transform-origin: 100% 50%;
+      background: linear-gradient(90deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.92));
+      animation: progressHeadPulse 1.1s ease-in-out infinite;
     }
 
     .team-leaderboard-list {
@@ -1277,6 +1313,11 @@
       to { background-position: 160px 0, 0 0; }
     }
 
+    @keyframes progressHeadPulse {
+      0%, 100% { opacity: 0.3; transform: scaleX(0.45); }
+      50% { opacity: 1; transform: scaleX(1); }
+    }
+
     @keyframes rankUpPulse {
       0% { box-shadow: 0 0 0 rgba(226, 255, 59, 0); }
       35% { box-shadow: 0 0 34px rgba(226, 255, 59, 0.32); border-color: var(--volt-yellow); }
@@ -1558,6 +1599,7 @@
       .team-battle-card,
       .sprint-board-card,
       .progress-fill,
+      .progress-fill::after,
       .podium-card.place-1,
       .celebration-flash,
       .confetti-piece,
@@ -2515,7 +2557,6 @@
       line-height: 1.1;
     }
 
-    .race-board--xl .progress-track,
     .race-board--xl .sprint-board-progress {
       height: 16px;
     }
@@ -2618,7 +2659,6 @@
       text-overflow: ellipsis;
     }
 
-    .race-board--lg .progress-track,
     .race-board--lg .sprint-board-progress {
       height: 12px;
     }
@@ -2727,12 +2767,36 @@
       padding: clamp(1px, calc(1.417vh - 8.6px), 7.2px);
     }
 
+    /* The one authoritative classic-bar height per tier (an earlier flat
+       `height: 16px/12px` grouped with .sprint-board-progress used to sit
+       above and be silently overridden here -- it is gone).
+
+       The whole linear term is scaled with the cap, not just the cap: every
+       version of these terms saturates exactly at a 1080px viewport, so
+       raising only the maximum leaves the venue's projector showing the
+       previous thickness unchanged. These reach 56px / 20px at 1080px and
+       still shrink toward the 4px floor on short screens (xl is 14px at
+       720px).
+
+       The tiers do NOT scale together. xl rows carry min-height 295px at
+       1080px against ~190px of content, so a 56px bar lands in slack the
+       row already had. lg has no min-height at all, by design (see the lg
+       type comment above) -- its rows are content-sized, so every pixel of
+       bar is a pixel of row on each of up to four rows. Measured at
+       1920x1080 with four relay rows, the bottom of .card.accent sits at
+       1051px with a 20px bar, 1067px at 24px, and 1083px at 28px -- off
+       the screen. lg therefore stays at 20px; do not "match" it to xl. */
     .race-board--xl .progress-track {
-      height: clamp(4px, calc(3.333vh - 20px), 16px);
+      height: clamp(4px, calc(11.666vh - 70px), 56px);
+      /* 2px is invisible on an 8px bar and a hard rectangle on a 56px one.
+         Raised only on the tier whose height actually changed; the base
+         track and lg keep 2px. Deliberately not a pill -- everything else
+         on this board is 2-4px. */
+      border-radius: 6px;
     }
 
     .race-board--lg .progress-track {
-      height: clamp(4px, calc(2.222vh - 12px), 12px);
+      height: clamp(4px, calc(3.704vh - 20px), 20px);
     }
 
     /* Compound selectors again (see the sprint-board-grid comment

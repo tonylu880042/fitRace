@@ -1,0 +1,592 @@
+"""The CLASSIC leaderboard's per-row progress bar was unreadable from the
+floor of a gym, and the motion meant to say "this is live" was invisible.
+
+Two separate defects, both in `hub_server/static/index.html`:
+
+1. HEIGHT. At the low-density tiers the row is deliberately huge -- on a
+   1920x1080 projector with two stations racing (`race-board--xl`) the
+   athlete name renders at 38px and the progress percentage at 51px --
+   but the bar under it stayed 16px, so it read as a hairline rule rather
+   than a gauge. Worse, `.race-board--xl .progress-track` was declared
+   TWICE: a flat `height: 16px` grouped with `.sprint-board-progress`,
+   and, several hundred lines later, `height: clamp(4px, calc(3.333vh -
+   20px), 16px)`. The later one won, so any edit to the first was a
+   no-op on screen. The duplicate is now collapsed: the grouped rule
+   keeps only `.sprint-board-progress` (out of scope, untouched) and the
+   single viewport-relative clamp is the one authoritative height per
+   tier.
+
+   Raising only the clamp's MAXIMUM would also have been a no-op at the
+   measured viewport: the old `calc(3.333vh - 20px)` evaluates to exactly
+   16px at 1080px tall, i.e. the bar was already pinned at its cap, so a
+   bigger cap alone changes nothing anyone can see. The whole linear term
+   is therefore rescaled by the same factor as the cap, and the tests
+   below assert the RESOLVED height at 1080px, not merely the literal cap
+   -- a cap-only edit passes the cap test and fails the resolved one.
+
+   The tiers did not move together. xl went 16 -> 28 -> 56px; lg went
+   12 -> 20px and STOPS there. xl rows carry a min-height of 295px at
+   1080px against roughly 190px of content, so a fat bar lands in slack
+   the row already had. lg has no min-height by design, so its rows are
+   content-sized and every pixel of bar is a pixel of row, times four
+   rows -- measured in a browser, a 28px lg bar already pushes the
+   leaderboard card past the bottom of a 1080px screen and a 40px one
+   clips the last row outright. See
+   test_lg_tier_bar_stays_within_the_four_row_height_budget.
+
+   The base `.progress-track` stays 8px: dense boards (5+ stations) pack
+   many rows onto a non-scrolling projector and cannot spend the space.
+
+   Two pieces of secondary geometry were sized against the old thin bar
+   and had to follow it up: the leading-edge highlight's flat `width:
+   26px` (proportionate at 28px tall, a sliver at 56px) and the track's
+   `border-radius: 2px` (invisible at 8px, a hard rectangle at 56px).
+   The highlight is now sized from the bar's own height via
+   `aspect-ratio` with the old 26px kept as a `min-width` floor, so it
+   tracks every tier -- including any future one -- without a per-tier
+   rule, and the dense-board look is unchanged. The radius is raised on
+   the xl tier only, since that is the only tier whose height changed.
+
+2. MOTION. `.progress-fill` sweeps a gradient via `progressSweep`, which
+   at 16px was sub-perceptual. Telemetry frames also arrive seconds
+   apart, so between frames the fill width is completely static and the
+   bar looks frozen. A leading-edge highlight pseudo-element now pulses
+   at the head of the fill, so the bar reads as live regardless of when
+   the next frame lands. It is compositor-only by requirement -- this
+   dashboard is measured by scripts/measure_dashboard_render_cost.mjs and
+   runs unattended for a whole class -- so its keyframes may animate
+   `transform` and `opacity` and nothing else. Animating `width`, `left`
+   or `box-shadow` would force layout/paint on every frame for every row.
+
+   Both the sweep and the new highlight must be silenced under
+   `prefers-reduced-motion: reduce`. The sweep already was; the new
+   pseudo-element is added to that same existing block rather than a
+   competing one.
+
+Scope guard: `.race-track-rail`, `.sprint-board-progress` and
+`.class-progress-track` are different bars on different views and are
+asserted UNCHANGED here, because the duplicate-collapsing edit above
+touches a selector list that `.sprint-board-progress` shares.
+"""
+
+import re
+from pathlib import Path
+
+STATIC_DIR = Path(__file__).resolve().parents[3] / "hub_server" / "static"
+
+# The projector the venue actually uses, and the viewport every height in
+# this module is resolved against.
+VIEWPORT_HEIGHT_PX = 1080.0
+VH = VIEWPORT_HEIGHT_PX / 100.0
+
+
+def _read_index() -> str:
+    return (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+
+
+def _matching_brace_end(source: str, open_idx: int) -> int:
+    """Index just past the `}` closing the `{` at `open_idx`."""
+    depth = 0
+    i = open_idx
+    while i < len(source):
+        if source[i] == "{":
+            depth += 1
+        elif source[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return i + 1
+        i += 1
+    raise AssertionError("unbalanced braces in stylesheet")
+
+
+def _strip_comments(text: str) -> str:
+    """Drop `/* ... */`. Rule bodies here carry explanatory comments right
+    above the declarations they explain, so a comment-blind scan would both
+    miss the real declaration underneath and -- the trap CLAUDE.md names --
+    let a property mentioned only in prose satisfy an assertion."""
+    return re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+
+
+def _rule_bodies(css: str, selector: str) -> list[str]:
+    """Bodies of every top-level rule whose selector list contains
+    `selector` as a whole comma-separated entry."""
+    bodies = []
+    for match in re.finditer(re.escape(selector) + r"\s*[,{]", css):
+        # Walk back to the start of the selector list: whichever of the
+        # previous rule's `}`, an enclosing at-rule's `{` or a preceding
+        # comment's `*/` sits closest. Comments matter -- several of these
+        # rules are documented in place, and a prelude cut mid-comment
+        # would silently drop the rule from this scan.
+        prelude_start = (
+            max(
+                css.rfind("}", 0, match.start()),
+                css.rfind("{", 0, match.start()),
+                css.rfind("*/", 0, match.start()) + 1,  # past both chars
+            )
+            + 1
+        )
+        open_idx = css.find("{", match.start())
+        if open_idx < 0:
+            continue
+        prelude = re.sub(r"/\*.*?\*/", "", css[prelude_start:open_idx], flags=re.DOTALL)
+        entries = [part.strip() for part in prelude.split(",")]
+        if selector not in entries:
+            continue
+        bodies.append(
+            _strip_comments(css[open_idx + 1 : _matching_brace_end(css, open_idx) - 1])
+        )
+    return bodies
+
+
+def _declared(body: str, prop: str) -> list[str]:
+    """Every value declared for `prop` in a rule body."""
+    return [
+        m.group(1).strip()
+        for m in re.finditer(r"(?:^|;)\s*" + re.escape(prop) + r"\s*:([^;}]*)", body)
+    ]
+
+
+def _px(expr: str) -> float:
+    """Resolve a px / vh / calc() / clamp() length at VIEWPORT_HEIGHT_PX."""
+    expr = expr.replace("!important", "").strip()
+    clamp = re.fullmatch(r"clamp\((.*)\)", expr, re.DOTALL)
+    if clamp:
+        parts = _split_args(clamp.group(1))
+        assert len(parts) == 3, f"clamp() needs 3 args: {expr}"
+        low, preferred, high = (_px(p) for p in parts)
+        return min(max(low, preferred), high)
+    calc = re.fullmatch(r"calc\((.*)\)", expr, re.DOTALL)
+    if calc:
+        expr = calc.group(1)
+    total = 0.0
+    sign = 1.0
+    for token in re.findall(r"[+-]|[0-9.]+(?:px|vh)?", expr):
+        if token == "+":
+            sign = 1.0
+        elif token == "-":
+            sign = -1.0
+        elif token.endswith("vh"):
+            total += sign * float(token[:-2]) * VH
+        elif token.endswith("px"):
+            total += sign * float(token[:-2])
+        else:
+            total += sign * float(token)
+    return total
+
+
+def _split_args(arg_text: str) -> list[str]:
+    parts, depth, current = [], 0, ""
+    for char in arg_text:
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+        if char == "," and depth == 0:
+            parts.append(current)
+            current = ""
+            continue
+        current += char
+    parts.append(current)
+    return [p.strip() for p in parts]
+
+
+def _keyframes_body(css: str, name: str) -> str:
+    match = re.search(r"@keyframes\s+" + re.escape(name) + r"\s*\{", css)
+    assert match, f"@keyframes {name} is not defined"
+    open_idx = match.end() - 1
+    return _strip_comments(css[open_idx + 1 : _matching_brace_end(css, open_idx) - 1])
+
+
+# ---------------------------------------------------------------------------
+# 1. Height: one authoritative declaration per tier, resolving big at 1080px.
+# ---------------------------------------------------------------------------
+
+
+def test_base_progress_track_stays_eight_px_for_dense_boards():
+    bodies = _rule_bodies(_read_index(), ".progress-track")
+    heights = [h for body in bodies for h in _declared(body, "height")]
+    assert heights == ["8px"], (
+        "the untiered .progress-track must stay 8px -- dense boards pack many "
+        f"rows onto a non-scrolling projector; got {heights}"
+    )
+
+
+def test_xl_tier_progress_track_height_is_declared_exactly_once():
+    bodies = _rule_bodies(_read_index(), ".race-board--xl .progress-track")
+    heights = [h for body in bodies for h in _declared(body, "height")]
+    assert len(heights) == 1, (
+        "the xl classic progress bar height must be declared exactly once; a "
+        "second, later declaration silently overrides the first and makes any "
+        f"edit to it a no-op. Got {heights}"
+    )
+
+
+def test_lg_tier_progress_track_height_is_declared_exactly_once():
+    bodies = _rule_bodies(_read_index(), ".race-board--lg .progress-track")
+    heights = [h for body in bodies for h in _declared(body, "height")]
+    assert len(heights) == 1, (
+        "the lg classic progress bar height must be declared exactly once; "
+        f"got {heights}"
+    )
+
+
+def test_xl_tier_progress_track_caps_at_56px():
+    bodies = _rule_bodies(_read_index(), ".race-board--xl .progress-track")
+    heights = [h for body in bodies for h in _declared(body, "height")]
+    assert heights, "xl tier declares no .progress-track height"
+    value = heights[-1]
+    clamp = re.fullmatch(r"clamp\((.*)\)", value.strip(), re.DOTALL)
+    assert clamp, f"xl tier height must stay a clamp(), got {value!r}"
+    low, _preferred, high = _split_args(clamp.group(1))
+    assert _px(high) == 56.0, f"xl tier bar cap must be 56px, got {high!r}"
+    assert _px(low) == 4.0, f"xl tier bar floor must stay 4px, got {low!r}"
+
+
+def test_lg_tier_progress_track_caps_at_20px():
+    bodies = _rule_bodies(_read_index(), ".race-board--lg .progress-track")
+    heights = [h for body in bodies for h in _declared(body, "height")]
+    assert heights, "lg tier declares no .progress-track height"
+    value = heights[-1]
+    clamp = re.fullmatch(r"clamp\((.*)\)", value.strip(), re.DOTALL)
+    assert clamp, f"lg tier height must stay a clamp(), got {value!r}"
+    low, _preferred, high = _split_args(clamp.group(1))
+    assert _px(high) == 20.0, f"lg tier bar cap must be 20px, got {high!r}"
+    assert _px(low) == 4.0, f"lg tier bar floor must stay 4px, got {low!r}"
+
+
+def test_xl_tier_bar_actually_reaches_56px_on_the_venue_projector():
+    """Raising the cap while leaving the linear term alone leaves the bar
+    pinned at whatever the old term resolves to at 1080px, because every
+    version of this term has been tuned to saturate exactly there. It has
+    now been the defect twice (16 -> 28 and 28 -> 56), so this resolves the
+    height rather than reading the cap. A cap-only edit passes
+    test_xl_tier_progress_track_caps_at_56px and fails here."""
+    bodies = _rule_bodies(_read_index(), ".race-board--xl .progress-track")
+    value = [h for body in bodies for h in _declared(body, "height")][-1]
+    assert abs(_px(value) - 56.0) < 0.05, (
+        "at a 1080px viewport the xl classic bar must resolve to its full "
+        f"56px, got {_px(value)}px from {value!r}"
+    )
+
+
+def test_lg_tier_bar_actually_reaches_20px_on_the_venue_projector():
+    bodies = _rule_bodies(_read_index(), ".race-board--lg .progress-track")
+    value = [h for body in bodies for h in _declared(body, "height")][-1]
+    assert abs(_px(value) - 20.0) < 0.05, (
+        "at a 1080px viewport the lg classic bar must resolve to its full "
+        f"20px, got {_px(value)}px from {value!r}"
+    )
+
+
+def test_lg_tier_bar_stays_within_the_four_row_height_budget():
+    """lg must NOT be scaled up alongside xl, and this is the assertion that
+    says so.
+
+    xl rows carry `min-height: clamp(96px, calc(50vh - 245px), 300px)` --
+    295px at 1080px -- against roughly 190px of content, so a taller bar is
+    absorbed by slack the row already has. lg deliberately has no
+    min-height at all (see the comment above `.race-board--lg
+    .athlete-name`: it never forces a row taller than its content), so every
+    extra pixel of bar height adds a pixel to EACH of up to four rows.
+
+    Measured in a browser at 1920x1080 with four relay rows, reading the
+    bottom edge of the enclosing `.card.accent`:
+
+        bar 12px -> 1019px    bar 24px -> 1067px
+        bar 20px -> 1051px    bar 28px -> 1083px  (clipped)
+        bar 40px -> 1131px  (clipped by 51px -- the last row's bar is cut)
+
+    So 24px is the largest value that still fits, and it leaves 13px of
+    slack -- less than one line of the equipment tag. 20px is kept. The
+    ceiling asserted here is the measured 24px rather than 20px so a future
+    deliberate nudge is allowed, while doubling lg the way xl was doubled
+    fails loudly."""
+    bodies = _rule_bodies(_read_index(), ".race-board--lg .progress-track")
+    value = [h for body in bodies for h in _declared(body, "height")][-1]
+    resolved = _px(value)
+    assert resolved <= 24.0, (
+        f"the lg classic bar resolves to {resolved}px at 1080px; anything "
+        "above 24px pushes the fourth row's bar off the bottom of the "
+        "projector, because lg rows are content-sized and have no min-height "
+        "slack to absorb it"
+    )
+
+
+def test_xl_bar_is_thicker_than_lg_because_only_xl_rows_have_slack():
+    css = _read_index()
+    xl = _px(
+        [
+            h
+            for b in _rule_bodies(css, ".race-board--xl .progress-track")
+            for h in _declared(b, "height")
+        ][-1]
+    )
+    lg = _px(
+        [
+            h
+            for b in _rule_bodies(css, ".race-board--lg .progress-track")
+            for h in _declared(b, "height")
+        ][-1]
+    )
+    assert xl > lg, (
+        f"xl ({xl}px) must stay thicker than lg ({lg}px): xl has 1-2 rows "
+        "with min-height slack to spend, lg has 3-4 content-sized rows"
+    )
+
+
+def test_tiered_bars_still_shrink_on_a_short_viewport():
+    """The clamp exists so a 768px-tall projector does not get a bar taller
+    than its own rows. Rescaling the linear term must not flatten it into
+    a constant."""
+    global VH
+    css = _read_index()
+    original = VH
+    try:
+        VH = 768.0 / 100.0
+        for selector, cap in (
+            (".race-board--xl .progress-track", 56.0),
+            (".race-board--lg .progress-track", 20.0),
+        ):
+            bodies = _rule_bodies(css, selector)
+            value = [h for body in bodies for h in _declared(body, "height")][-1]
+            resolved = _px(value)
+            assert 4.0 <= resolved < cap, (
+                f"{selector} must shrink below its {cap}px cap on a 768px "
+                f"viewport, got {resolved}px"
+            )
+    finally:
+        VH = original
+
+
+# ---------------------------------------------------------------------------
+# 2. Scope guard: the other three bars are not ours to resize.
+# ---------------------------------------------------------------------------
+
+
+def test_sprint_board_progress_heights_are_untouched():
+    css = _read_index()
+    for selector, expected in (
+        (".race-board--xl .sprint-board-progress", "16px"),
+        (".race-board--lg .sprint-board-progress", "12px"),
+    ):
+        heights = [
+            h for body in _rule_bodies(css, selector) for h in _declared(body, "height")
+        ]
+        assert heights == [expected], (
+            f"{selector} is out of scope for the classic-bar fix and must stay "
+            f"{expected}; got {heights}"
+        )
+
+
+def test_race_track_rail_and_class_progress_track_are_untouched():
+    css = _read_index()
+    assert (
+        "height: clamp(30px, calc(11.667vh - 54px), 72px);" in css
+    ), ".race-board--xl .race-track-rail is out of scope and must be unchanged"
+    assert (
+        "height: clamp(22px, calc(10.833vh - 54px), 63px);" in css
+    ), ".race-board--lg .race-track-rail is out of scope and must be unchanged"
+    assert (
+        ".class-board--ultra .class-progress-track { height: 10px !important; }" in css
+    )
+
+
+# ---------------------------------------------------------------------------
+# 3. Motion: a leading-edge highlight, compositor-only.
+# ---------------------------------------------------------------------------
+
+
+def _leading_edge_animation_name(css: str) -> str:
+    bodies = _rule_bodies(css, ".progress-fill::after")
+    assert bodies, (
+        "the classic bar has no leading-edge highlight: .progress-fill::after "
+        "is not styled, so between telemetry frames the bar looks frozen"
+    )
+    body = bodies[0]
+    assert _declared(body, "content"), ".progress-fill::after needs a content property"
+    animations = _declared(body, "animation")
+    assert animations, ".progress-fill::after declares no animation"
+    names = re.findall(r"[A-Za-z_][\w-]*", animations[0])
+    keyframe_names = [
+        n for n in names if re.search(r"@keyframes\s+" + re.escape(n) + r"\s*\{", css)
+    ]
+    assert keyframe_names, (
+        f"the animation on .progress-fill::after ({animations[0]!r}) names no "
+        "@keyframes defined in this stylesheet"
+    )
+    assert "infinite" in animations[0], (
+        "the leading-edge highlight must loop forever -- it has to read as live "
+        "during the seconds-long gaps between telemetry frames"
+    )
+    return keyframe_names[0]
+
+
+def test_leading_edge_highlight_is_positioned_at_the_head_of_the_fill():
+    css = _read_index()
+    fill_bodies = _rule_bodies(css, ".progress-fill")
+    assert any(
+        "relative" in v for body in fill_bodies for v in _declared(body, "position")
+    ), ".progress-fill must be a positioning context for its leading-edge highlight"
+    body = _rule_bodies(css, ".progress-fill::after")[0]
+    assert _declared(body, "position") == [
+        "absolute"
+    ], "the leading-edge highlight must be absolutely positioned inside the fill"
+    assert _declared(body, "right") == ["0"], (
+        "the highlight must sit at the RIGHT edge of the fill -- that is the "
+        "leading edge of progress"
+    )
+
+
+def test_leading_edge_highlight_is_sized_from_the_bar_not_a_flat_width():
+    """The highlight was born as a flat `width: 26px` against a 28px-tall
+    bar. At 56px that same 26px is a sliver, and hardcoding a second flat
+    width per tier means the next height change silently leaves it wrong
+    again. Size it from the element's own height with `aspect-ratio` so it
+    follows every tier -- including tiers that do not exist yet.
+
+    `min-width` keeps the original 26px as a floor, which is what preserves
+    the dense-board look: the untiered bar is 8px tall, so an
+    aspect-ratio-derived width would collapse to 8px there."""
+    body = _rule_bodies(_read_index(), ".progress-fill::after")[0]
+    ratios = _declared(body, "aspect-ratio")
+    assert ratios, (
+        "the leading-edge highlight is not sized from the bar's own height; a "
+        "flat width goes stale every time the bar thickness changes"
+    )
+    widths = [w.strip() for w in _declared(body, "width")]
+    assert widths in ([], ["auto"]), (
+        "a flat width overrides the aspect-ratio sizing and pins the "
+        f"highlight to one tier's thickness again; got {widths}"
+    )
+    floors = [_px(v) for v in _declared(body, "min-width")]
+    assert floors == [26.0], (
+        "the highlight needs the original 26px as a min-width floor, or the "
+        "8px dense-board bar shrinks it to an 8px speck; got "
+        f"{_declared(body, 'min-width')}"
+    )
+
+
+def test_leading_edge_sizing_is_not_animated():
+    """aspect-ratio and min-width size the highlight; neither may end up in
+    the keyframes. Sizing is layout, and this runs per row, every frame,
+    for a whole class."""
+    css = _read_index()
+    body = _keyframes_body(css, _leading_edge_animation_name(css))
+    for prop in ("aspect-ratio", "min-width", "width", "height"):
+        assert prop not in body, (
+            f"@keyframes animates {prop!r} -- the leading-edge highlight must "
+            "stay on the compositor (transform/opacity only)"
+        )
+
+
+def test_xl_tier_softens_the_track_corners_that_only_it_made_visible():
+    """`border-radius: 2px` is invisible on an 8px bar and reads as a hard
+    rectangle on a 56px one. Raised on the xl tier only -- the one tier
+    whose height changed -- so the base track and lg keep today's corners."""
+    css = _read_index()
+    base = _declared(_rule_bodies(css, ".progress-track")[0], "border-radius")
+    assert base == [
+        "2px"
+    ], f"the untiered .progress-track must keep its 2px corners, got {base}"
+    xl = [
+        r
+        for body in _rule_bodies(css, ".race-board--xl .progress-track")
+        for r in _declared(body, "border-radius")
+    ]
+    assert xl, (
+        "the xl tier does not soften .progress-track corners; at 56px tall the "
+        "base 2px radius reads as a sharp rectangle"
+    )
+    assert _px(xl[-1]) > 2.0, f"xl radius must exceed the base 2px, got {xl[-1]!r}"
+    assert _px(xl[-1]) <= 12.0, (
+        "an xl radius this large turns the bar into a pill; the rest of this "
+        f"board is 2-4px, got {xl[-1]!r}"
+    )
+
+
+def test_leading_edge_keyframes_animate_only_transform_and_opacity():
+    css = _read_index()
+    name = _leading_edge_animation_name(css)
+    body = _keyframes_body(css, name)
+    props = {
+        m.group(1).strip() for m in re.finditer(r"(?:^|[;{])\s*([a-z-]+)\s*:", body)
+    }
+    assert props, f"@keyframes {name} declares nothing"
+    assert props <= {"transform", "opacity"}, (
+        f"@keyframes {name} animates {sorted(props - {'transform', 'opacity'})}; "
+        "this dashboard runs for a whole class on a projector and is measured by "
+        "scripts/measure_dashboard_render_cost.mjs, so per-row animation must stay "
+        "on the compositor -- transform/opacity only, never width/left/box-shadow"
+    )
+
+
+def test_leading_edge_highlight_does_not_transition_expensive_properties():
+    body = _rule_bodies(_read_index(), ".progress-fill::after")[0]
+    for value in _declared(body, "transition"):
+        for expensive in ("width", "left", "right", "box-shadow", "height", "all"):
+            assert expensive not in value, (
+                f"the leading-edge highlight transitions {expensive!r}, which "
+                "forces layout or paint every frame on every row"
+            )
+
+
+# ---------------------------------------------------------------------------
+# 4. Reduced motion covers BOTH the sweep and the new highlight.
+# ---------------------------------------------------------------------------
+
+
+def _reduced_motion_blocks(css: str) -> list[str]:
+    blocks = []
+    for match in re.finditer(
+        r"@media\s*\(\s*prefers-reduced-motion\s*:\s*reduce\s*\)\s*\{", css
+    ):
+        open_idx = match.end() - 1
+        blocks.append(css[open_idx + 1 : _matching_brace_end(css, open_idx) - 1])
+    assert blocks, "the stylesheet has no prefers-reduced-motion block at all"
+    return blocks
+
+
+def test_progress_fill_sweep_is_silenced_under_reduced_motion():
+    blocks = _reduced_motion_blocks(_read_index())
+    owning = [b for b in blocks if re.search(r"(?:^|,)\s*\.progress-fill\s*[,{]", b)]
+    assert owning, (
+        "no prefers-reduced-motion block lists .progress-fill, so the "
+        "progressSweep gradient keeps running for viewers who asked for less "
+        "motion"
+    )
+    assert any(
+        re.search(r"animation\s*:\s*none\s*!important", b) for b in owning
+    ), "the reduced-motion block covering .progress-fill does not stop animations"
+
+
+def test_leading_edge_highlight_is_silenced_under_reduced_motion():
+    css = _read_index()
+    blocks = _reduced_motion_blocks(css)
+    owning = [
+        b for b in blocks if re.search(r"(?:^|,)\s*\.progress-fill::after\s*[,{]", b)
+    ]
+    assert owning, (
+        "the new leading-edge highlight keeps pulsing under "
+        "prefers-reduced-motion: reduce -- .progress-fill::after is in no "
+        "reduced-motion block"
+    )
+    assert any(
+        re.search(r"animation\s*:\s*none\s*!important", b) for b in owning
+    ), "the reduced-motion block covering .progress-fill::after does not stop animations"
+
+
+def test_both_progress_motions_are_silenced_by_the_same_existing_block():
+    """Extend the block that already owns .progress-fill rather than adding a
+    competing one -- two blocks asserting the same thing drift apart."""
+    css = _read_index()
+    blocks = _reduced_motion_blocks(css)
+    together = [
+        b
+        for b in blocks
+        if re.search(r"(?:^|,)\s*\.progress-fill\s*[,{]", b)
+        and re.search(r"(?:^|,)\s*\.progress-fill::after\s*[,{]", b)
+    ]
+    assert together, (
+        "the sweep and the leading-edge highlight are silenced by different "
+        "prefers-reduced-motion blocks; keep them in one"
+    )
