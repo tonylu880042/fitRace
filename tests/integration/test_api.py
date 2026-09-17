@@ -76,6 +76,7 @@ def test_hub_management_endpoints_require_admin_token(monkeypatch):
         ("/api/stations/assign", {"station_number": 1, "node_id": "node-01"}),
         ("/api/leaderboard/display", {"mode": "classic"}),
         ("/api/race/start-sound", {"enabled": True}),
+        ("/api/dashboard/qr-visibility", {"signup_qr_visible": True}),
     ]
     for route, payload in blocked_routes:
         response = client.post(route, json=payload)
@@ -1107,6 +1108,92 @@ def test_start_countdown_sound_defaults_on_and_can_be_controlled_from_game_admin
     enabled = client.post("/api/race/start-sound", json={"enabled": True})
     assert enabled.status_code == 200
     assert enabled.json()["start_countdown_sound_enabled"] is True
+
+
+def test_dashboard_qr_visibility_defaults_true_and_is_present_in_race_state():
+    client.post("/api/race/reset")
+    state = client.get("/api/race/state")
+    assert state.status_code == 200
+    assert state.json()["signup_qr_visible"] is True
+    assert state.json()["admin_qr_visible"] is True
+
+
+def test_dashboard_qr_visibility_endpoint_updates_only_the_sent_field():
+    client.post("/api/race/reset")
+    try:
+        signup_off = client.post(
+            "/api/dashboard/qr-visibility", json={"signup_qr_visible": False}
+        )
+        assert signup_off.status_code == 200
+        assert signup_off.json()["signup_qr_visible"] is False
+        # admin_qr_visible was not sent -- must be unchanged.
+        assert signup_off.json()["admin_qr_visible"] is True
+
+        admin_off = client.post(
+            "/api/dashboard/qr-visibility", json={"admin_qr_visible": False}
+        )
+        assert admin_off.status_code == 200
+        assert admin_off.json()["admin_qr_visible"] is False
+        # signup_qr_visible was not sent this time -- stays as it was left.
+        assert admin_off.json()["signup_qr_visible"] is False
+
+        both_on = client.post(
+            "/api/dashboard/qr-visibility",
+            json={"signup_qr_visible": True, "admin_qr_visible": True},
+        )
+        assert both_on.status_code == 200
+        assert both_on.json()["signup_qr_visible"] is True
+        assert both_on.json()["admin_qr_visible"] is True
+
+        state = client.get("/api/race/state")
+        assert state.json()["signup_qr_visible"] is True
+        assert state.json()["admin_qr_visible"] is True
+    finally:
+        # This flag is durable venue configuration (mirrors
+        # leaderboard_display_mode) -- it survives reset_race(), so it must
+        # be restored to the suite-wide default here or later tests that
+        # assert the default would see whatever this test left behind.
+        client.post(
+            "/api/dashboard/qr-visibility",
+            json={"signup_qr_visible": True, "admin_qr_visible": True},
+        )
+
+
+def test_dashboard_qr_visibility_rejects_non_bool_with_422():
+    client.post("/api/race/reset")
+    res = client.post(
+        "/api/dashboard/qr-visibility", json={"signup_qr_visible": "not-a-bool"}
+    )
+    assert res.status_code == 422
+
+
+def test_dashboard_qr_visibility_requires_admin_token(monkeypatch):
+    monkeypatch.setenv("FITRACE_ADMIN_TOKEN", "admin-secret")
+    res = client.post("/api/dashboard/qr-visibility", json={"signup_qr_visible": False})
+    assert res.status_code == 401
+    monkeypatch.delenv("FITRACE_ADMIN_TOKEN", raising=False)
+
+
+def test_dashboard_qr_visibility_endpoint_works_while_race_is_running():
+    prepare_individual_ready_race()
+    started = client.post("/api/race/start")
+    assert started.status_code == 200
+    assert started.json()["state"] == "RUNNING"
+
+    try:
+        res = client.post(
+            "/api/dashboard/qr-visibility", json={"signup_qr_visible": False}
+        )
+        assert res.status_code == 200
+        assert res.json()["signup_qr_visible"] is False
+        assert res.json()["state"] == "RUNNING"
+    finally:
+        client.post("/api/race/stop")
+        client.post("/api/race/reset")
+        client.post(
+            "/api/dashboard/qr-visibility",
+            json={"signup_qr_visible": True, "admin_qr_visible": True},
+        )
 
 
 def test_team_race_state_exposes_team_leaderboard(monkeypatch):

@@ -199,6 +199,11 @@ class StartCountdownSoundPayload(BaseModel):
     enabled: bool
 
 
+class DashboardQrVisibilityPayload(BaseModel):
+    signup_qr_visible: Optional[bool] = None
+    admin_qr_visible: Optional[bool] = None
+
+
 class AssignStationPayload(BaseModel):
     station_number: int = Field(..., ge=1)
     node_id: Optional[str] = None
@@ -1037,6 +1042,20 @@ async def set_start_countdown_sound(
 ):
     require_admin(request)
     race_manager.set_start_countdown_sound_enabled(payload.enabled)
+    return await broadcast_race_state()
+
+
+@app.post("/api/dashboard/qr-visibility")
+async def set_dashboard_qr_visibility(
+    payload: DashboardQrVisibilityPayload, request: Request
+):
+    require_admin(request)
+    # Display-only setting -- allowed in any race state, including
+    # RUNNING. Either field is optional: only what's sent is updated.
+    if payload.signup_qr_visible is not None:
+        race_manager.set_signup_qr_visible(payload.signup_qr_visible)
+    if payload.admin_qr_visible is not None:
+        race_manager.set_admin_qr_visible(payload.admin_qr_visible)
     return await broadcast_race_state()
 
 
