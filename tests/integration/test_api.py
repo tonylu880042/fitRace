@@ -974,6 +974,58 @@ def test_individual_race_can_start_anonymously_with_an_online_station():
     client.post("/api/race/reset")
 
 
+def test_race_readiness_warns_on_edge_clock_skew_without_blocking():
+    from hub_server.infrastructure.fastapi.app import node_registry
+
+    client.post("/api/race/reset")
+    node_registry.clear()
+    now_ms = int(time.time() * 1000)
+    node_registry.update_status(
+        {
+            "edge_node_id": "edge-01",
+            "status": "online",
+            # Edge's own clock reads 300ms behind the hub's -- past the
+            # 250ms warn threshold. clock_offset_ms is already applied to
+            # elapsed-time correction, so this is only a heads-up.
+            "last_seen_epoch_ms": now_ms - 300,
+            "equipment_streams": [
+                {
+                    "node_id": "node-01",
+                    "equipment_id": "BIKE_01",
+                    "equipment_type": "fan_bike",
+                    "status": "configured",
+                    "last_telemetry_epoch_ms": now_ms,
+                }
+            ],
+        }
+    )
+    client.post(
+        "/api/stations/assign",
+        json={"station_number": 1, "node_id": "node-01"},
+    )
+    client.post(
+        "/api/race/configure",
+        json={
+            "race_type": "distance",
+            "target_value": 100,
+            "duration_sec": 0,
+            "competition_mode": "individual",
+        },
+    )
+
+    readiness = client.get("/api/race/readiness")
+
+    assert readiness.status_code == 200
+    payload = readiness.json()
+    assert payload["ready"] is True
+    assert payload["blocking_issues"] == []
+    assert payload["checks"]["clock"]["status"] == "warn"
+    assert "Node01" in payload["checks"]["clock"]["message"]
+    assert "300" in payload["checks"]["clock"]["message"]
+
+    client.post("/api/race/reset")
+
+
 def test_race_readiness_passes_for_online_registered_team_race():
     from hub_server.infrastructure.fastapi.app import node_registry
 
