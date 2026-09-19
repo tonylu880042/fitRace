@@ -108,16 +108,21 @@ async def add_no_cache_header(request: Request, call_next):
 
 
 # Global instances (Shared Context)
+# node_registry is constructed before race_manager so its
+# get_clock_offset_ms can be injected into RaceManager -- RaceManager
+# (a usecase) must never import the registry itself, only receive this
+# callable, per Clean Architecture's inward-only dependency direction.
+node_registry = NodeRegistry()
 race_manager = RaceManager(
     settings_store=RaceSettingsStore(
         os.getenv("FITRACE_RACE_SETTINGS_PATH", "data/race_settings.json")
-    )
+    ),
+    clock_offset_ms_fn=node_registry.get_clock_offset_ms,
 )
 roster_manager = RosterManager(
     RaceSettingsStore(os.getenv("FITRACE_ROSTER_PATH", "data/roster.json"))
 )
 ws_manager = WebSocketManager()
-node_registry = NodeRegistry()
 race_event_engine = RaceEventEngine()
 _race_results_path = os.getenv("FITRACE_RACE_RESULTS_PATH", "data/race_results.jsonl")
 race_result_store = RaceResultStore(_race_results_path)

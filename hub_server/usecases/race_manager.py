@@ -1,4 +1,4 @@
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Callable, Optional
 from hub_server.domain.models import RaceState, RaceConfig
 from hub_server.domain.class_models import ClassPlan, segment_at
 
@@ -13,7 +13,11 @@ class RaceManager:
 
     VALID_SESSION_MODES = {"race", "class"}
 
-    def __init__(self, settings_store=None):
+    def __init__(
+        self,
+        settings_store=None,
+        clock_offset_ms_fn: Optional[Callable[[str], int]] = None,
+    ):
         self._state: RaceState = RaceState.IDLE
         self._config: Optional[RaceConfig] = None
         self._leaderboard_display_mode: str = "classic"
@@ -26,6 +30,12 @@ class RaceManager:
         self._signup_qr_visible: bool = True
         self._admin_qr_visible: bool = True
         self._settings_store = settings_store
+        # Injected callable, never the registry itself (Clean Architecture:
+        # this usecase must not import an adapter). Resolves an edge's
+        # hub_now_ms - edge_now_ms estimate from its edge_node_id; None or
+        # an unknown edge_node_id means "no correction" (0), today's
+        # existing behaviour.
+        self._clock_offset_ms_fn = clock_offset_ms_fn
         self._session_mode: str = "race"
         self._class_plan: Optional[ClassPlan] = None
         # Durable, named library of class plans -- venue configuration, like
@@ -1396,11 +1406,28 @@ class RaceManager:
             return elapsed_time_ms
         timestamp_ms = payload.get("timestamp_epoch_ms")
         if self._start_time_epoch_ms and timestamp_ms:
-            return max(
-                0, int(self._metric_number(timestamp_ms)) - self._start_time_epoch_ms
-            )
+            corrected_timestamp_ms = int(
+                self._metric_number(timestamp_ms)
+            ) + self._clock_offset_ms(payload)
+            return max(0, corrected_timestamp_ms - self._start_time_epoch_ms)
         import time
 
         if self._start_time_epoch_ms:
             return max(0, int(time.time() * 1000) - self._start_time_epoch_ms)
         return 0
+
+    def _clock_offset_ms(self, payload: Dict[str, Any]) -> int:
+        """hub_now_ms - edge_now_ms for the edge that sent this telemetry.
+
+        timestamp_epoch_ms is the EDGE's clock; adding this offset back
+        converts it to hub-equivalent time before subtracting the hub's own
+        _start_time_epoch_ms. 0 (no correction) when no callable was
+        injected, the payload carries no edge_node_id, or that edge has no
+        recorded offset yet -- all today's existing behaviour.
+        """
+        if not self._clock_offset_ms_fn:
+            return 0
+        edge_node_id = payload.get("edge_node_id")
+        if not edge_node_id:
+            return 0
+        return int(self._clock_offset_ms_fn(edge_node_id))

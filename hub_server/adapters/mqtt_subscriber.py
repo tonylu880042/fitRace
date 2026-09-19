@@ -76,6 +76,17 @@ class MqttSubscriber:
         list_nodes = getattr(self._node_registry, "list_nodes", None)
         return list_nodes() if callable(list_nodes) else []
 
+    def _find_edge_node_id_for_node(self, node_id: str) -> str | None:
+        """Reverse-lookup which edge owns node_id via the node registry's
+        equipment_streams -- the antenna telemetry path never fills
+        TelemetryData.edge_node_id itself, but RaceManager needs it to look
+        up that edge's clock_offset_ms."""
+        for edge in self._registered_nodes():
+            for stream in edge.get("equipment_streams", []) or []:
+                if stream.get("node_id") == node_id:
+                    return edge.get("edge_node_id")
+        return None
+
     def start_listening(self):
         """
         Configures callbacks and subscribes to telemetry and node status topics.
@@ -196,6 +207,10 @@ class MqttSubscriber:
 
         telemetry_payload = telemetry.model_dump(exclude_none=True)
         node_id = telemetry_payload["node_id"]
+        if not telemetry_payload.get("edge_node_id"):
+            resolved_edge_node_id = self._find_edge_node_id_for_node(node_id)
+            if resolved_edge_node_id:
+                telemetry_payload["edge_node_id"] = resolved_edge_node_id
         if self._node_registry:
             self._node_registry.update_telemetry(telemetry_payload)
 
