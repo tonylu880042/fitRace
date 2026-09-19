@@ -1,15 +1,22 @@
 import ipaddress
 import re
 import time
+from collections import deque
 
 from hub_server.domain.models import EdgeNodeStatus
 
 
 class NodeRegistry:
+    # ~1 minute of heartbeats at the edge's 5s cadence. Network delay only
+    # ever inflates hub_now_ms - edge_reported_epoch_ms, so the minimum
+    # sample in this window is the best estimate of the true clock offset.
+    _CLOCK_OFFSET_SAMPLE_WINDOW = 12
+
     def __init__(self, now_ms=None, offline_timeout_ms: int = 10_000):
         self._now_ms = now_ms or (lambda: int(time.time() * 1000))
         self._offline_timeout_ms = offline_timeout_ms
         self._nodes: dict[str, EdgeNodeStatus] = {}
+        self._clock_offset_samples: dict[str, deque] = {}
 
     # Live per-stream fields come from telemetry, not the heartbeat, so a
     # heartbeat's config-only stream list must not clobber them.
@@ -48,11 +55,48 @@ class NodeRegistry:
         data = dict(payload)
         if edge_node_id:
             data["edge_node_id"] = edge_node_id
-        data.setdefault("last_seen_epoch_ms", self._now_ms())
+        resolved_edge_id = data.get("edge_node_id")
+
+        # Liveness must always be judged by when the HUB received the
+        # heartbeat, never by the edge's own (possibly wrong) clock -- a
+        # fast edge clock would then never look offline, a slow one would
+        # look offline while it is still sending heartbeats fine. The
+        # edge's own reading is kept separately, for diagnostics only.
+        now_ms = self._now_ms()
+        edge_reported_epoch_ms = data.get("last_seen_epoch_ms")
+        data["edge_reported_epoch_ms"] = edge_reported_epoch_ms
+        data["last_seen_epoch_ms"] = now_ms
+
+        if resolved_edge_id and edge_reported_epoch_ms is not None:
+            self._record_clock_offset_sample(
+                resolved_edge_id, now_ms - edge_reported_epoch_ms
+            )
+        if resolved_edge_id:
+            data["clock_offset_ms"] = self.get_clock_offset_ms(resolved_edge_id)
+
         self._preserve_live_stream_fields(data)
         status = EdgeNodeStatus.model_validate(data)
         self._nodes[status.edge_node_id] = status
         return status
+
+    def _record_clock_offset_sample(self, edge_node_id: str, sample: int) -> None:
+        window = self._clock_offset_samples.setdefault(
+            edge_node_id, deque(maxlen=self._CLOCK_OFFSET_SAMPLE_WINDOW)
+        )
+        window.append(sample)
+
+    def get_clock_offset_ms(self, edge_node_id: str | None) -> int:
+        """Best current estimate of hub_now_ms - edge_now_ms for this edge.
+
+        0 when no heartbeat sample has been recorded yet -- callers should
+        treat that as "no correction", which is today's existing behaviour.
+        """
+        if not edge_node_id:
+            return 0
+        samples = self._clock_offset_samples.get(edge_node_id)
+        if not samples:
+            return 0
+        return min(samples)
 
     def _preserve_live_stream_fields(self, data: dict) -> None:
         """Carry forward telemetry-derived stream fields across a heartbeat.
@@ -144,3 +188,4 @@ class NodeRegistry:
 
     def clear(self):
         self._nodes.clear()
+        self._clock_offset_samples.clear()

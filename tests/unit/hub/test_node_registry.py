@@ -174,3 +174,109 @@ def test_heartbeat_preserves_live_stream_telemetry_fields():
     stream = registry.list_nodes()[0]["equipment_streams"][0]
     assert stream["last_telemetry_epoch_ms"] == 3_000_000
     assert stream["rssi"] == -70
+
+
+def test_clock_offset_takes_the_minimum_of_recent_heartbeat_samples():
+    # sample = hub_now_ms - payload.last_seen_epoch_ms. Network delay only
+    # ever inflates a sample, so the true offset is the smallest one seen.
+    now_ms = 1_000_000
+    registry = NodeRegistry(now_ms=lambda: now_ms)
+
+    for sample in (120, 35, 80):
+        registry.update_status(
+            {
+                "edge_node_id": "fitrace-edge-01",
+                "status": "online",
+                "last_seen_epoch_ms": now_ms - sample,
+                "equipment_streams": [],
+            }
+        )
+        now_ms += 5_000
+
+    node = registry.list_nodes()[0]
+    assert node["clock_offset_ms"] == 35
+    assert registry.get_clock_offset_ms("fitrace-edge-01") == 35
+
+
+def test_clock_offset_sliding_window_evicts_old_minimum():
+    # N=12 heartbeats (~1 minute at 5s/heartbeat): once the sample holding
+    # the minimum ages out of the window, a fresh (larger) minimum applies.
+    now_ms = 1_000_000
+    registry = NodeRegistry(now_ms=lambda: now_ms)
+
+    registry.update_status(
+        {
+            "edge_node_id": "fitrace-edge-01",
+            "status": "online",
+            "last_seen_epoch_ms": now_ms - 10,
+            "equipment_streams": [],
+        }
+    )
+    now_ms += 5_000
+
+    for _ in range(12):
+        registry.update_status(
+            {
+                "edge_node_id": "fitrace-edge-01",
+                "status": "online",
+                "last_seen_epoch_ms": now_ms - 200,
+                "equipment_streams": [],
+            }
+        )
+        now_ms += 5_000
+
+    assert registry.get_clock_offset_ms("fitrace-edge-01") == 200
+
+
+def test_edge_reported_epoch_ms_kept_separately_for_diagnostics():
+    now_ms = 1_000_000
+    registry = NodeRegistry(now_ms=lambda: now_ms)
+
+    registry.update_status(
+        {
+            "edge_node_id": "fitrace-edge-01",
+            "status": "online",
+            "last_seen_epoch_ms": now_ms - 300,
+            "equipment_streams": [],
+        }
+    )
+
+    node = registry.list_nodes()[0]
+    # Liveness always uses the hub's own receipt time now...
+    assert node["last_seen_epoch_ms"] == now_ms
+    # ...while the edge's own clock reading is preserved separately.
+    assert node["edge_reported_epoch_ms"] == now_ms - 300
+
+
+def test_slow_edge_clock_does_not_cause_premature_offline():
+    now_ms = 1_000_000
+    registry = NodeRegistry(now_ms=lambda: now_ms, offline_timeout_ms=10_000)
+
+    # Edge's own clock reads 10 minutes behind the hub's.
+    registry.update_status(
+        {
+            "edge_node_id": "fitrace-edge-01",
+            "status": "online",
+            "last_seen_epoch_ms": now_ms - 600_000,
+            "equipment_streams": [],
+        }
+    )
+    assert registry.list_nodes()[0]["status"] == "online"
+
+    # Heartbeats keep arriving on time -- must stay online despite the
+    # 10-minute clock skew, since liveness is judged by hub receipt time.
+    now_ms += 5_000
+    registry.update_status(
+        {
+            "edge_node_id": "fitrace-edge-01",
+            "status": "online",
+            "last_seen_epoch_ms": now_ms - 600_000,
+            "equipment_streams": [],
+        }
+    )
+    assert registry.list_nodes()[0]["status"] == "online"
+
+    # Heartbeats actually stop -- offline only once the timeout elapses,
+    # measured in hub time.
+    now_ms += 10_001
+    assert registry.list_nodes()[0]["status"] == "offline"
