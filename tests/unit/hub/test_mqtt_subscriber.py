@@ -156,6 +156,45 @@ async def test_mqtt_subscriber_backfills_missing_edge_node_id_from_registry():
 
 
 @pytest.mark.asyncio
+async def test_mqtt_subscriber_keeps_telemetrys_own_edge_node_id_over_a_stale_registry_lookup():
+    # A device that has physically moved to a different edge can still
+    # have a stale binding in the registry (equipment_streams not yet
+    # updated). The registry's reverse lookup must only ever FILL a
+    # missing edge_node_id -- telemetry that already names its own edge
+    # must never be rewritten to the (wrong) edge the lookup would answer,
+    # or that lane would be corrected with the wrong clock offset.
+    race_manager = FakeRaceManager(progress={})
+    ws_manager = FakeWebSocketManager()
+    node_registry = FakeNodeRegistry(
+        nodes=[
+            {
+                "edge_node_id": "fitrace-edge-stale",
+                "equipment_streams": [{"node_id": "node-01"}],
+            }
+        ]
+    )
+    subscriber = MqttSubscriber(
+        async_mqtt_client=None,
+        race_manager=race_manager,
+        ws_manager=ws_manager,
+        node_registry=node_registry,
+    )
+
+    await subscriber._handle_telemetry(
+        {
+            "node_id": "node-01",
+            "edge_node_id": "fitrace-edge-actual",
+            "equipment_type": "fan_bike",
+            "distance_m": 12.5,
+            "elapsed_time_ms": 1000,
+        }
+    )
+
+    assert race_manager.payloads[0]["edge_node_id"] == "fitrace-edge-actual"
+    assert node_registry.telemetry_payloads[0]["edge_node_id"] == "fitrace-edge-actual"
+
+
+@pytest.mark.asyncio
 async def test_mqtt_subscriber_broadcasts_operator_node_labels():
     node_id = "fitrace-edge-01-01"
     race_manager = FakeRaceManager(
