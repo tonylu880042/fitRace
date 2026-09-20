@@ -36,6 +36,15 @@ class RaceManager:
         # an unknown edge_node_id means "no correction" (0), today's
         # existing behaviour.
         self._clock_offset_ms_fn = clock_offset_ms_fn
+        # edge_node_id -> the clock offset frozen for the CURRENT race. The
+        # live callable keeps refining its estimate on every heartbeat
+        # (readiness/display want that), but re-reading it on every
+        # telemetry sample would let a mid-race re-estimate (a slow first
+        # heartbeat, or an NTP step on the edge) shift that edge's
+        # already-recorded samples and make elapsed time jump backwards.
+        # So each edge's offset is frozen the first time it's used after
+        # start_race(), and released again on the next start_race().
+        self._frozen_clock_offsets_ms: Dict[str, int] = {}
         self._session_mode: str = "race"
         self._class_plan: Optional[ClassPlan] = None
         # Durable, named library of class plans -- venue configuration, like
@@ -904,6 +913,9 @@ class RaceManager:
         if self._session_mode == "class" and self._class_plan is None:
             raise ValueError("Cannot start a class without a configured plan")
         self._state = RaceState.RUNNING
+        # Release last race's frozen clock offsets -- this race re-freezes
+        # each edge's offset fresh, the first time it's used.
+        self._frozen_clock_offsets_ms = {}
         import time
 
         self._start_time_epoch_ms = int(time.time() * 1000)
@@ -1424,10 +1436,25 @@ class RaceManager:
         _start_time_epoch_ms. 0 (no correction) when no callable was
         injected, the payload carries no edge_node_id, or that edge has no
         recorded offset yet -- all today's existing behaviour.
+
+        While a race is RUNNING, the value is frozen the first time each
+        edge_node_id is seen (whether that is right at start_race() or,
+        for an edge whose first sample arrives only after start, at that
+        later moment -- either way, "current live estimate at first use"
+        is what gets frozen) and reused for every later sample from that
+        edge, so a heartbeat re-estimating the live offset mid-race can
+        never shift already-running elapsed-time math. Outside RUNNING
+        (e.g. diagnostics call sites) it just reads the live estimate.
         """
         if not self._clock_offset_ms_fn:
             return 0
         edge_node_id = payload.get("edge_node_id")
         if not edge_node_id:
             return 0
-        return int(self._clock_offset_ms_fn(edge_node_id))
+        if self._state != RaceState.RUNNING:
+            return int(self._clock_offset_ms_fn(edge_node_id))
+        if edge_node_id not in self._frozen_clock_offsets_ms:
+            self._frozen_clock_offsets_ms[edge_node_id] = int(
+                self._clock_offset_ms_fn(edge_node_id)
+            )
+        return self._frozen_clock_offsets_ms[edge_node_id]

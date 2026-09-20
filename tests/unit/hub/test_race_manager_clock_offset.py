@@ -134,6 +134,89 @@ def test_elapsed_time_is_unchanged_when_no_clock_offset_fn_is_injected():
     assert progress["treadmill-01"]["elapsed_time_ms"] == 5000
 
 
+def test_clock_offset_is_frozen_at_first_use_during_a_running_race():
+    # A heartbeat re-estimates the live clock_offset_ms on every sample
+    # (see NodeRegistry.get_clock_offset_ms). If RaceManager kept calling
+    # the live callable on every telemetry sample, a mid-race re-estimate
+    # (a slow first heartbeat, or an NTP step on the edge) would shift
+    # every subsequent sample from that edge and could make elapsed time
+    # jump backwards. The racing correction must instead freeze at the
+    # value seen the first time this edge is used after start_race().
+    offsets = {"edge-01": 800}
+    manager = RaceManager(clock_offset_ms_fn=lambda edge_node_id: offsets[edge_node_id])
+    manager.configure(RaceConfig(race_type="distance", target_value=500.0))
+    manager.register_node("treadmill-01", "Runner A")
+    manager.start_race()
+    start_ms = manager.get_start_time_epoch_ms()
+
+    progress = manager.update_telemetry(
+        {
+            "node_id": "treadmill-01",
+            "edge_node_id": "edge-01",
+            "elapsed_time_ms": 0,
+            "timestamp_epoch_ms": start_ms + 5000 - 800,
+            "delta_distance_m": 50.0,
+        }
+    )
+    assert progress["treadmill-01"]["elapsed_time_ms"] == 5000
+
+    # The live estimate for this edge changes mid-race (e.g. a heartbeat
+    # sample refines it) -- the frozen racing correction must not move.
+    offsets["edge-01"] = 1400
+
+    progress = manager.update_telemetry(
+        {
+            "node_id": "treadmill-01",
+            "edge_node_id": "edge-01",
+            "elapsed_time_ms": 0,
+            "timestamp_epoch_ms": start_ms + 6000 - 800,
+            "delta_distance_m": 5.0,
+        }
+    )
+    # Still corrected with the frozen 800ms offset (elapsed keeps
+    # advancing monotonically), not the new 1400ms live value (which would
+    # make it jump to 6600).
+    assert progress["treadmill-01"]["elapsed_time_ms"] == 6000
+
+
+def test_frozen_clock_offset_is_released_and_retaken_on_the_next_start_race():
+    offsets = {"edge-01": 800}
+    manager = RaceManager(clock_offset_ms_fn=lambda edge_node_id: offsets[edge_node_id])
+    manager.configure(RaceConfig(race_type="distance", target_value=500.0))
+    manager.register_node("treadmill-01", "Runner A")
+    manager.start_race()
+    first_start_ms = manager.get_start_time_epoch_ms()
+    manager.update_telemetry(
+        {
+            "node_id": "treadmill-01",
+            "edge_node_id": "edge-01",
+            "elapsed_time_ms": 0,
+            "timestamp_epoch_ms": first_start_ms + 5000 - 800,
+            "delta_distance_m": 50.0,
+        }
+    )
+    manager.stop_race()
+
+    # New race, new (corrected) edge clock reading -- must NOT still be
+    # stuck on the previous race's frozen 800ms offset.
+    manager.configure(RaceConfig(race_type="distance", target_value=500.0))
+    manager.register_node("treadmill-01", "Runner A")
+    offsets["edge-01"] = 300
+    manager.start_race()
+    second_start_ms = manager.get_start_time_epoch_ms()
+
+    progress = manager.update_telemetry(
+        {
+            "node_id": "treadmill-01",
+            "edge_node_id": "edge-01",
+            "elapsed_time_ms": 0,
+            "timestamp_epoch_ms": second_start_ms + 5000 - 300,
+            "delta_distance_m": 50.0,
+        }
+    )
+    assert progress["treadmill-01"]["elapsed_time_ms"] == 5000
+
+
 def test_elapsed_time_unaffected_by_offset_when_edge_has_no_recorded_offset():
     # A node/edge the callable doesn't know about must fall back to 0
     # correction -- today's existing behaviour.
