@@ -114,6 +114,7 @@ class RaceResultsQuery:
                 bucket["rows"].append(
                     {
                         "athlete_name": row.get("athlete_name"),
+                        "is_registered_name": row.get("is_registered_name"),
                         "team_name": row.get("team_name"),
                         "division": division,
                         "value": value,
@@ -137,7 +138,9 @@ class RaceResultsQuery:
             )
         return {"records": records}
 
-    def get_standings(self) -> dict[str, Any]:
+    def get_standings(
+        self, event_start_epoch_ms: Optional[float] = None
+    ) -> dict[str, Any]:
         """One combined ranking across every heat of the current event.
 
         Several heats run on the same couple of machines (e.g. 3 relay
@@ -152,17 +155,28 @@ class RaceResultsQuery:
         the same event share one scope and are split back into sections
         afterwards -- and ranks EVERY participant row from EVERY stored
         race in that scope, with no truncation.
+
+        `event_start_epoch_ms` draws the "current event" boundary an
+        operator sets via Game Admin's "Start new event" action (see
+        RaceManager.start_new_event): when given, a race whose
+        start_time_epoch_ms is missing or falls before the boundary is
+        dropped BEFORE the "most recently stored race" scope is even
+        picked -- so an old rehearsal race sharing the same (race_type,
+        label, relay_legs) as today's heats never becomes the scope, and
+        never contributes rows either. None (the default) keeps counting
+        the entire history, unchanged from before this parameter existed.
         """
         empty: dict[str, Any] = {"race_type": None, "sections": [], "race_count": 0}
 
-        scope = self._latest_standings_scope()
+        records = self._records_since(event_start_epoch_ms)
+        scope = self._latest_standings_scope(records)
         if scope is None:
             return empty
         race_type, label, relay_legs = scope
 
         combined_rows: list[dict[str, Any]] = []
         race_count = 0
-        for record in self._load_records():
+        for record in records:
             config = self._record_config(record)
             if config is None:
                 continue
@@ -451,6 +465,30 @@ class RaceResultsQuery:
             return _as_number(row.get("max_power_watts"))
         return None
 
+    _STATION_PLACEHOLDER_PREFIX = "Station "
+
+    @staticmethod
+    def _is_genuine_name(row: dict[str, Any], stripped_name: Optional[str]) -> bool:
+        """Whether `stripped_name` is a real, registered athlete/team name
+        that should merge duplicate rows of the same person -- rather than
+        a station-number placeholder (e.g. "Station 1") that two entirely
+        different, never-registered participants across different heats can
+        share verbatim.
+
+        Prefers the robust signal set by RaceManager.update_telemetry,
+        `is_registered_name`, when the stored row actually has it. Falls
+        back to the previous string-prefix heuristic only for older stored
+        rows saved before that field existed, so historical data doesn't
+        regress.
+        """
+        if stripped_name is None:
+            return False
+        if "is_registered_name" in row and row["is_registered_name"] is not None:
+            return bool(row["is_registered_name"])
+        return not stripped_name.startswith(
+            RaceResultsQuery._STATION_PLACEHOLDER_PREFIX
+        )
+
     @staticmethod
     def _top_three(rows: list[dict[str, Any]], race_type: Any) -> list[dict[str, Any]]:
         # distance/calories records rank the fastest finish (ascending);
@@ -461,15 +499,16 @@ class RaceResultsQuery:
         # A named athlete who raced this category more than once must only
         # occupy one record slot -- keep their best row (the first one we
         # meet in `ordered`, since it's already sorted best-first) and drop
-        # the rest. Anonymous rows (athlete_name is None) are never merged
-        # with each other -- only a shared, stripped, non-empty name (within
-        # the same division) merges.
+        # the rest. Anonymous rows (athlete_name is None) and station-
+        # placeholder rows (see `_is_genuine_name`) are never merged with
+        # each other -- only a shared, stripped, non-empty, GENUINE name
+        # (within the same division) merges.
         deduped = []
         seen_names: set[tuple[str, Any]] = set()
         for row in ordered:
             name = row.get("athlete_name")
             stripped = name.strip() if isinstance(name, str) else None
-            if stripped is not None:
+            if RaceResultsQuery._is_genuine_name(row, stripped):
                 key = (stripped, row.get("division"))
                 if key in seen_names:
                     continue
@@ -524,19 +563,41 @@ class RaceResultsQuery:
         config = snapshot.get("config")
         return config if isinstance(config, dict) else {}
 
+    def _records_since(self, event_start_epoch_ms: Optional[float]) -> list[Any]:
+        """Every stored record (newest-first, per `_load_records`), or --
+        when `event_start_epoch_ms` is given -- only those whose snapshot
+        start_time_epoch_ms is a number >= the boundary. A record with a
+        missing/non-numeric start time is dropped once a boundary is set:
+        it can't be shown to be at/after the boundary, so it's excluded
+        rather than assumed current."""
+        records = self._load_records()
+        if event_start_epoch_ms is None:
+            return records
+        filtered = []
+        for record in records:
+            config_snapshot = (
+                record.get("snapshot") if isinstance(record, dict) else None
+            )
+            if not isinstance(config_snapshot, dict):
+                continue
+            start = config_snapshot.get("start_time_epoch_ms")
+            if isinstance(start, (int, float)) and start >= event_start_epoch_ms:
+                filtered.append(record)
+        return filtered
+
     def _latest_standings_scope(
-        self,
+        self, records: list[Any]
     ) -> Optional[tuple[Any, str, Any]]:
         """(race_type, label, relay_legs) of the MOST RECENTLY stored race
-        -- and only that race. Deliberately does NOT skip past it to an
-        older category: if the newest race is "mixed" (or otherwise not a
-        well-formed target/time-boxed race -- see `_category_label`),
-        there is no scope and standings are empty, so the dashboard falls
-        back to the existing mixed per-group slides right after a mixed
-        race instead of silently showing a stale ranking for whatever
-        category preceded it. Division is intentionally left out of the
-        scope so per-division heats of the same event share one scope."""
-        records = self._load_records()
+        in `records` -- and only that race. Deliberately does NOT skip past
+        it to an older category: if the newest race is "mixed" (or
+        otherwise not a well-formed target/time-boxed race -- see
+        `_category_label`), there is no scope and standings are empty, so
+        the dashboard falls back to the existing mixed per-group slides
+        right after a mixed race instead of silently showing a stale
+        ranking for whatever category preceded it. Division is
+        intentionally left out of the scope so per-division heats of the
+        same event share one scope."""
         if not records:
             return None
         config = self._record_config(records[0])
@@ -589,19 +650,23 @@ class RaceResultsQuery:
         tagged_rows: list[tuple[dict[str, Any], bool, float]],
     ) -> list[tuple[dict[str, Any], bool, float]]:
         """Keep only a named athlete's best row across every contributing
-        race (same rule as `_top_three`: a stripped, non-empty name within
-        the same division merges; anonymous rows never merge). The input
-        must already be ordered best-first (see `_order_by_race_type`,
-        which puts every finisher ahead of every non-finisher for target
-        race types) so "first occurrence wins" is enough to also guarantee
-        a finisher always beats that same athlete's DNF row.
+        race (same rule as `_top_three`: a stripped, non-empty, GENUINE
+        name -- see `_is_genuine_name` -- within the same division merges;
+        anonymous and station-placeholder rows never merge, since a
+        station-fallback name like "Station 1" is shared by whichever
+        different, never-registered participant used that station in each
+        heat). The input must already be ordered best-first (see
+        `_order_by_race_type`, which puts every finisher ahead of every
+        non-finisher for target race types) so "first occurrence wins" is
+        enough to also guarantee a finisher always beats that same
+        athlete's DNF row.
         """
         deduped = []
         seen_names: set[tuple[str, Any]] = set()
         for row, finished, value in tagged_rows:
             name = row.get("athlete_name")
             stripped = name.strip() if isinstance(name, str) else None
-            if stripped is not None:
+            if RaceResultsQuery._is_genuine_name(row, stripped):
                 key = (stripped, row.get("division"))
                 if key in seen_names:
                     continue

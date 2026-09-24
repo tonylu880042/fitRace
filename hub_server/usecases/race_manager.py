@@ -66,6 +66,10 @@ class RaceManager:
         self._node_equipment_ids: Dict[str, str] = {}
         self._start_time_epoch_ms: Optional[int] = None
         self._end_time_epoch_ms: Optional[int] = None
+        # Overall-standings event boundary (see RaceResultsQuery.get_standings):
+        # None means "no boundary set", i.e. count the whole results history,
+        # which is the pre-existing behaviour every install already has.
+        self._event_start_epoch_ms: Optional[int] = None
 
         self._load_settings()
 
@@ -114,6 +118,9 @@ class RaceManager:
         # loads as an empty library, and one bad entry (fails
         # ClassPlan.model_validate) is skipped individually rather than
         # discarding the whole library or crashing startup.
+        event_start = data.get("event_start_epoch_ms")
+        if isinstance(event_start, (int, float)):
+            self._event_start_epoch_ms = int(event_start)
         class_plans = data.get("class_plans")
         if isinstance(class_plans, dict):
             loaded_plans: Dict[str, ClassPlan] = {}
@@ -144,6 +151,7 @@ class RaceManager:
                 "class_plans": {
                     name: plan.model_dump() for name, plan in self._class_plans.items()
                 },
+                "event_start_epoch_ms": self._event_start_epoch_ms,
             }
         )
 
@@ -232,6 +240,26 @@ class RaceManager:
         self._persist_settings()
         return self._signup_qr_visible
 
+    def get_event_start_epoch_ms(self) -> Optional[int]:
+        return self._event_start_epoch_ms
+
+    def start_new_event(self, now_epoch_ms: Optional[int] = None) -> int:
+        """Draw a new "current event" boundary for overall standings (see
+        RaceResultsQuery.get_standings): only races at/after this timestamp
+        count from now on. Blocked while a race is RUNNING -- switching the
+        boundary out from under a race in progress would be confusing and
+        serves no operator need (see CLAUDE.md's Game Admin/Class Admin
+        mutual-exclusion pattern for the same "not while RUNNING" rule)."""
+        if self._state == RaceState.RUNNING:
+            raise ValueError("Cannot start a new event while a race is RUNNING")
+        if now_epoch_ms is None:
+            import time
+
+            now_epoch_ms = int(time.time() * 1000)
+        self._event_start_epoch_ms = now_epoch_ms
+        self._persist_settings()
+        return self._event_start_epoch_ms
+
     def get_admin_qr_visible(self) -> bool:
         return self._admin_qr_visible
 
@@ -310,6 +338,7 @@ class RaceManager:
             "start_countdown_sound_enabled": self.get_start_countdown_sound_enabled(),
             "signup_qr_visible": self.get_signup_qr_visible(),
             "admin_qr_visible": self.get_admin_qr_visible(),
+            "event_start_epoch_ms": self.get_event_start_epoch_ms(),
             "leaderboard": self.get_leaderboard_progress(),
             "team_leaderboard": team_leaderboard,
             "session_mode": self.get_session_mode(),
@@ -1033,6 +1062,17 @@ class RaceManager:
         division = None
         avatar_url = None
         if station_number is not None:
+            # A station explicitly present in _station_registrations was
+            # registered by an operator/athlete (register_athlete() sets
+            # the key even for an anonymous "no name given" registration --
+            # see its docstring). Absent entirely means nobody ever
+            # registered this station and athlete_name falls back to the
+            # "Station N" placeholder below -- that fallback must never be
+            # confused with a genuine name downstream (see
+            # RaceResultsQuery._dedupe_best_row/_top_three, which use this
+            # flag to avoid merging two different unassigned stations that
+            # happen to share the same placeholder text across heats).
+            is_registered_name = station_number in self._station_registrations
             athlete_name = self._station_registrations.get(
                 station_number, self._default_participant_name(node_id)
             )
@@ -1047,6 +1087,7 @@ class RaceManager:
                 else None
             )
         else:
+            is_registered_name = node_id in self._registered_nodes
             athlete_name = self._registered_nodes.get(
                 node_id, self._default_participant_name(node_id)
             )
@@ -1176,6 +1217,7 @@ class RaceManager:
         self._progress[node_id] = {
             "node_id": node_id,
             "athlete_name": row_athlete_name,
+            "is_registered_name": is_registered_name,
             "equipment_type": self._active_nodes.get(node_id, "unknown"),
             "station_number": station_number,
             "team_name": team_name,

@@ -987,7 +987,7 @@ def get_race_records():
 
 @app.get("/api/results/standings")
 def get_race_standings():
-    return race_results_query.get_standings()
+    return race_results_query.get_standings(race_manager.get_event_start_epoch_ms())
 
 
 @app.get("/api/results/races/{result_id}")
@@ -1024,6 +1024,24 @@ async def clear_race_results(payload: ClearResultsPayload, request: Request):
     result = race_result_store.archive(datetime.now())
     await ws_manager.broadcast({"type": "results_cleared"})
     return result
+
+
+@app.post("/api/race/new-event")
+async def start_new_event(request: Request):
+    require_admin(request)
+    if race_manager.get_state() == RaceState.RUNNING:
+        raise HTTPException(status_code=409, detail="Race is running")
+    try:
+        event_start_epoch_ms = race_manager.start_new_event()
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    # Reuses the existing "results_cleared" refresh mechanism -- the
+    # dashboard's record wall already re-fetches /api/results/standings on
+    # this message (see refreshRecordWallData()); no dashboard controls or
+    # new WebSocket message type needed (see CLAUDE.md's dashboard
+    # page-boundary rule).
+    await ws_manager.broadcast({"type": "results_cleared"})
+    return {"event_start_epoch_ms": event_start_epoch_ms}
 
 
 @app.post("/api/leaderboard/display")
