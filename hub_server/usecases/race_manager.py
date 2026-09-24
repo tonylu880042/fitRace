@@ -1,3 +1,4 @@
+import time
 from typing import Dict, Any, Optional
 from hub_server.domain.models import RaceState, RaceConfig
 from hub_server.domain.class_models import ClassPlan, segment_at
@@ -253,8 +254,6 @@ class RaceManager:
         if self._state == RaceState.RUNNING:
             raise ValueError("Cannot start a new event while a race is RUNNING")
         if now_epoch_ms is None:
-            import time
-
             now_epoch_ms = int(time.time() * 1000)
         self._event_start_epoch_ms = now_epoch_ms
         self._persist_settings()
