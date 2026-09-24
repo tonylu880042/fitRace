@@ -316,5 +316,13 @@
   "equipment_type.stair_climber": "Trappmaskin",
   "equipment_type.rowing_machine": "Roddmaskin",
   "equipment_type.ski_erg": "SkiErg",
-  "leaderboard.ungrouped": "Ej tilldelad en grupp"
+  "leaderboard.ungrouped": "Ej tilldelad en grupp",
+  "label.overall_standings_event": "Totalställning – händelse",
+  "button.start_new_event": "Starta ny händelse",
+  "text.event_start_none": "Räknar hela historiken.",
+  "text.event_start_since": "Sedan {time}.",
+  "text.start_new_event_note": "Utesluter äldre lopp från totalställningen på skärmen -- påverkar inte rekordväggen.",
+  "confirm.start_new_event": "Starta en ny händelse? Äldre lopp räknas inte längre in i totalställningen på skärmen.",
+  "message.new_event_started": "Ny händelse startad -- totalställningen räknas nu från denna punkt.",
+  "message.new_event_failed": "Det gick inte att starta ny händelse: {error}"
 }

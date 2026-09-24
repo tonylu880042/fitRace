@@ -94,7 +94,7 @@ def _en_zh_blocks(source: str):
     en_start = source.index('"en-US": {')
     zh_start = source.index('dictionaries["zh-TW"] = {')
     en_block = source[en_start:zh_start]
-    zh_block = source[zh_start : zh_start + 12000]
+    zh_block = source[zh_start : zh_start + 14000]
     return en_block, zh_block
 
 

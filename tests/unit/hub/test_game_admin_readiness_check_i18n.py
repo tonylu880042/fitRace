@@ -83,7 +83,7 @@ def test_check_labels_present_in_both_dictionaries_with_expected_copy():
     en_start = source.index('"en-US": {')
     zh_start = source.index('dictionaries["zh-TW"] = {')
     en_block = source[en_start:zh_start]
-    zh_block = source[zh_start : zh_start + 12000]
+    zh_block = source[zh_start : zh_start + 14000]
 
     for key, (en_text, zh_text) in NEW_CHECK_KEYS.items():
         assert (
@@ -99,7 +99,7 @@ def test_i18n_keys_stay_symmetric_between_dictionaries():
     en_start = source.index('"en-US": {')
     zh_start = source.index('dictionaries["zh-TW"] = {')
     en_block = source[en_start:zh_start]
-    zh_block = source[zh_start : zh_start + 12000]
+    zh_block = source[zh_start : zh_start + 14000]
 
     en_keys = set(re.findall(r'"([a-zA-Z0-9_.]+)":\s*"', en_block))
     zh_keys = set(re.findall(r'"([a-zA-Z0-9_.]+)":\s*"', zh_block))

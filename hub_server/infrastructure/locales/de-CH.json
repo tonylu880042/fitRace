@@ -316,5 +316,13 @@
   "equipment_type.stair_climber": "Stepper",
   "equipment_type.rowing_machine": "Rudergerät",
   "equipment_type.ski_erg": "Skiergometer",
-  "leaderboard.ungrouped": "Keiner Gruppe zugewiesen"
+  "leaderboard.ungrouped": "Keiner Gruppe zugewiesen",
+  "label.overall_standings_event": "Gesamtwertung Ereignis",
+  "button.start_new_event": "Neues Ereignis starten",
+  "text.event_start_none": "Zählt die gesamte Historie.",
+  "text.event_start_since": "Seit {time}.",
+  "text.start_new_event_note": "Schliesst ältere Läufe von der Gesamtwertung im Dashboard aus -- betrifft die Rekordwand nicht.",
+  "confirm.start_new_event": "Neues Ereignis starten? Ältere Läufe zählen dann nicht mehr zur Gesamtwertung im Dashboard.",
+  "message.new_event_started": "Neues Ereignis gestartet -- die Gesamtwertung beginnt ab jetzt.",
+  "message.new_event_failed": "Neues Ereignis konnte nicht gestartet werden: {error}"
 }

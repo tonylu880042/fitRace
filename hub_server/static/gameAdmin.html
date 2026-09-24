@@ -289,6 +289,14 @@
       margin-top: 14px;
     }
 
+    .event-start-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      margin-top: 8px;
+    }
+
     .race-group-actions {
       display: flex;
       flex-wrap: wrap;
@@ -1098,6 +1106,14 @@
                   </div>
                 </div>
                 <div class="field">
+                  <label data-i18n="label.overall_standings_event">Overall Standings Event</label>
+                  <div class="event-start-row">
+                    <button type="button" id="btn-start-new-event" onclick="startNewEvent()" data-i18n="button.start_new_event">Start New Event</button>
+                    <span class="field-note show" id="event-start-label" data-i18n="text.event_start_none">Counting the full history.</span>
+                  </div>
+                  <p class="field-note show" data-i18n="text.start_new_event_note">Excludes older races from the dashboard's overall standings -- does not touch the Record Wall.</p>
+                </div>
+                <div class="field">
                   <button type="button" class="primary" id="btn-switch-to-race-mode" onclick="switchToRaceMode()" data-i18n="button.switch_to_race_mode">Switch Projector to Race Mode</button>
                   <p class="field-note show" id="switch-to-race-mode-note" data-i18n="text.switch_to_race_mode_note">Switches the dashboard to show the race leaderboard.</p>
                 </div>
@@ -1569,6 +1585,14 @@
         "text.switch_to_race_mode_note": "Switches the dashboard to show the race leaderboard.",
         "text.switch_to_race_mode_note_disabled": "Stop the current session before switching the projector to race mode.",
         "message.mode_switched_to_race": "Projector switched to race mode.",
+        "label.overall_standings_event": "Overall Standings Event",
+        "button.start_new_event": "Start New Event",
+        "text.event_start_none": "Counting the full history.",
+        "text.event_start_since": "Since {time}.",
+        "text.start_new_event_note": "Excludes older races from the dashboard's overall standings -- does not touch the Record Wall.",
+        "confirm.start_new_event": "Start a new event? Older races will no longer count toward the overall standings on the dashboard.",
+        "message.new_event_started": "New event started -- overall standings now start from this point.",
+        "message.new_event_failed": "Failed to start new event: {error}",
         "panel.roster_heats": "Roster & Heats",
         "panel.current_heat": "Current Heat",
         "panel.next_heat": "Next Heat",
@@ -1908,7 +1932,15 @@
       "message.cancel_heat_race_running": "比賽進行中，無法取消",
       "message.cancel_heat_already_raced": "這組已經比過，請用載入下一組",
       "message.cancel_heat_no_current_heat": "目前沒有已載入的分組",
-      "message.cancel_heat_failed": "取消失敗：{error}"
+      "message.cancel_heat_failed": "取消失敗：{error}",
+      "label.overall_standings_event": "總排名活動範圍",
+      "button.start_new_event": "開始新活動",
+      "text.event_start_none": "目前計入全部歷史紀錄。",
+      "text.event_start_since": "自 {time} 起。",
+      "text.start_new_event_note": "會將較舊的比賽排除在大螢幕總排名之外,不影響紀錄牆。",
+      "confirm.start_new_event": "確定要開始新活動嗎?較舊的比賽將不再計入大螢幕總排名。",
+      "message.new_event_started": "已開始新活動,總排名將從現在起算。",
+      "message.new_event_failed": "開始新活動失敗:{error}"
     };
 
     function t(key, params = {}) {
@@ -2488,6 +2520,15 @@
       $("start-sound-enabled").value = race.start_countdown_sound_enabled === false ? "false" : "true";
       $("signup-qr-visible").value = race.signup_qr_visible === false ? "false" : "true";
       $("admin-qr-visible").value = race.admin_qr_visible === false ? "false" : "true";
+      $("event-start-label").textContent = race.event_start_epoch_ms
+        ? t("text.event_start_since", {
+            time: new Date(race.event_start_epoch_ms).toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+          })
+        : t("text.event_start_none");
+      $("btn-start-new-event").disabled = raceState === "RUNNING";
       if (config && !state.raceConfigDirty) {
         $("race-type").value = config.race_type || "distance";
         $("competition-mode").value = config.competition_mode || "individual";
@@ -3486,6 +3527,21 @@
       } catch (error) {
         $("admin-qr-visible").value = previousValue;
         setMessage("race-message", error.message, "error");
+      }
+    }
+
+    async function startNewEvent() {
+      if (!window.confirm(t("confirm.start_new_event"))) return;
+      try {
+        const response = await fetchJson("/api/race/new-event", {
+          method: "POST",
+          headers: adminHeaders(),
+        });
+        if (state.race) state.race.event_start_epoch_ms = response.event_start_epoch_ms;
+        renderRace();
+        setMessage("race-message", t("message.new_event_started"), "ok");
+      } catch (error) {
+        setMessage("race-message", t("message.new_event_failed", { error: error.message }), "error");
       }
     }
 

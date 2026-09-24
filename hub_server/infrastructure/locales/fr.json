@@ -316,5 +316,13 @@
   "equipment_type.stair_climber": "Simulateur d'escalier",
   "equipment_type.rowing_machine": "Rameur",
   "equipment_type.ski_erg": "SkiErg",
-  "leaderboard.ungrouped": "Non assigné à un groupe"
+  "leaderboard.ungrouped": "Non assigné à un groupe",
+  "label.overall_standings_event": "Événement du classement général",
+  "button.start_new_event": "Démarrer un nouvel événement",
+  "text.event_start_none": "Comptabilise tout l'historique.",
+  "text.event_start_since": "Depuis {time}.",
+  "text.start_new_event_note": "Exclut les anciennes courses du classement général du tableau de bord -- n'affecte pas le mur des records.",
+  "confirm.start_new_event": "Démarrer un nouvel événement ? Les anciennes courses ne compteront plus dans le classement général du tableau de bord.",
+  "message.new_event_started": "Nouvel événement démarré -- le classement général repart de ce point.",
+  "message.new_event_failed": "Échec du démarrage du nouvel événement : {error}"
 }

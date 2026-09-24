@@ -316,5 +316,13 @@
   "equipment_type.stair_climber": "Stair Climber",
   "equipment_type.rowing_machine": "Rowing Machine",
   "equipment_type.ski_erg": "Ski Erg",
-  "leaderboard.ungrouped": "Not in any group"
+  "leaderboard.ungrouped": "Not in any group",
+  "label.overall_standings_event": "Overall Standings Event",
+  "button.start_new_event": "Start New Event",
+  "text.event_start_none": "Counting the full history.",
+  "text.event_start_since": "Since {time}.",
+  "text.start_new_event_note": "Excludes older races from the dashboard's overall standings -- does not touch the Record Wall.",
+  "confirm.start_new_event": "Start a new event? Older races will no longer count toward the overall standings on the dashboard.",
+  "message.new_event_started": "New event started -- overall standings now start from this point.",
+  "message.new_event_failed": "Failed to start new event: {error}"
 }

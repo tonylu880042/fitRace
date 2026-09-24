@@ -316,5 +316,13 @@
   "equipment_type.stair_climber": "踏步機",
   "equipment_type.rowing_machine": "划船機",
   "equipment_type.ski_erg": "滑雪機",
-  "leaderboard.ungrouped": "未分組"
+  "leaderboard.ungrouped": "未分組",
+  "label.overall_standings_event": "總排名活動範圍",
+  "button.start_new_event": "開始新活動",
+  "text.event_start_none": "目前計入全部歷史紀錄。",
+  "text.event_start_since": "自 {time} 起。",
+  "text.start_new_event_note": "會將較舊的比賽排除在大螢幕總排名之外,不影響紀錄牆。",
+  "confirm.start_new_event": "確定要開始新活動嗎?較舊的比賽將不再計入大螢幕總排名。",
+  "message.new_event_started": "已開始新活動,總排名將從現在起算。",
+  "message.new_event_failed": "開始新活動失敗:{error}"
 }
