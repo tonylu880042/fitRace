@@ -330,5 +330,6 @@
   "idle.metric.power": "Effekt",
   "idle.metric.cadence": "Kadens",
   "idle.metric.heart_rate": "Puls",
-  "idle.best_title": "Sessionens bästa"
+  "idle.best_title": "Sessionens bästa",
+  "idle.metric.pace": "Tempo"
 }

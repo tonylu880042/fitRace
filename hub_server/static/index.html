@@ -1902,6 +1902,17 @@
       letter-spacing: 0.05em;
     }
 
+    /* Treadmill idle card: pace is the primary, largest number -- see
+       renderIdleStationCard/formatTreadmillPace. */
+    .idle-metric-primary {
+      grid-column: 1 / -1;
+    }
+
+    .idle-metric-value-primary {
+      font-size: clamp(2.2rem, 4.4vw, 3.2rem);
+      color: var(--volt-yellow);
+    }
+
     .idle-station-waiting-label {
       color: var(--text-muted);
       font-size: 1rem;
@@ -3892,6 +3903,21 @@
       return t("stations.athlete");
     }
 
+    // Single place the treadmill pace computation happens (requirement B):
+    // pace_sec_per_km = 3600 / kph, formatted "m:ss /km". Speed below ~1
+    // km/h (including 0, i.e. no signal) shows "--" rather than a
+    // nonsensical 60:00+ pace. Both the station card's primary tile and the
+    // mini leaderboard's treadmill-only fastest-pace row call this one
+    // formatter, so there is exactly one formula to get right.
+    function formatTreadmillPace(speedKph) {
+      const speed = Number(speedKph);
+      if (!Number.isFinite(speed) || speed < 1) return "--";
+      const totalSeconds = Math.round(3600 / speed);
+      const minutes = Math.floor(totalSeconds / 60);
+      const seconds = String(totalSeconds % 60).padStart(2, "0");
+      return `${minutes}:${seconds} /km`;
+    }
+
     function renderIdleStationCard(station) {
       const name = idleParticipantLabel(station.station_number);
       if (station.is_stale) {
@@ -3902,6 +3928,38 @@
               <span class="idle-station-name">${escapeHtml(name)}</span>
             </div>
             <div class="idle-station-waiting-label">${t("idle.waiting")}</div>
+          </div>`;
+      }
+      // Treadmills (and curved treadmills) show pace as the primary,
+      // largest number instead of raw speed, and drop the power tile
+      // entirely (usually absent/meaningless for a treadmill). Every other
+      // equipment type -- bike, fan bike, ski erg, rower, anything else --
+      // keeps the same speed + power (+ cadence + heart rate) layout.
+      if (isRunningEquipment(station.equipment_type)) {
+        return `
+          <div class="idle-station-card">
+            <div class="idle-station-header">
+              <span class="idle-station-number">#${station.station_number}</span>
+              <span class="idle-station-name">${escapeHtml(name)}</span>
+            </div>
+            <div class="idle-station-metrics idle-station-metrics-treadmill">
+              <div class="idle-metric-primary">
+                <div class="idle-metric-value idle-metric-value-primary">${formatTreadmillPace(station.instantaneous_speed_kph)}</div>
+                <div class="idle-metric-label">${t("idle.metric.pace")}</div>
+              </div>
+              <div>
+                <div class="idle-metric-value">${formatIdleMetricValue(station.instantaneous_speed_kph, " km/h", 1)}</div>
+                <div class="idle-metric-label">${t("idle.metric.speed")}</div>
+              </div>
+              <div>
+                <div class="idle-metric-value">${formatIdleMetricValue(station.cadence_rpm, "")}</div>
+                <div class="idle-metric-label">${t("idle.metric.cadence")}</div>
+              </div>
+              <div>
+                <div class="idle-metric-value">${formatIdleMetricValue(station.heart_rate_bpm, "")}</div>
+                <div class="idle-metric-label">${t("idle.metric.heart_rate")}</div>
+              </div>
+            </div>
           </div>`;
       }
       return `
@@ -3932,9 +3990,16 @@
     }
 
     function renderIdleBestRow(row) {
+      const name = idleParticipantLabel(row.station_number);
+      // Treadmill-only fastest pace: row.value is the fastest treadmill
+      // SPEED seen (see TREADMILL_PACE_BEST_KEY in IdleTelemetryTracker) --
+      // formatTreadmillPace is the one place that turns it into "m:ss /km".
+      if (row.metric === "treadmill_pace_speed_kph") {
+        const paceText = formatTreadmillPace(row.value);
+        return `<div class="idle-best-row">${t("idle.metric.pace")}: <strong>${paceText}</strong> - ${escapeHtml(name)}</div>`;
+      }
       const labelKey = IDLE_BEST_METRIC_LABEL_KEYS[row.metric];
       const label = labelKey ? t(labelKey) : row.metric;
-      const name = idleParticipantLabel(row.station_number);
       const isSpeed = row.metric === "instantaneous_speed_kph";
       const isPower = row.metric === "power_watts";
       const unit = isSpeed ? " km/h" : isPower ? " W" : "";

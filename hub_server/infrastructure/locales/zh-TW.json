@@ -330,5 +330,6 @@
   "idle.metric.power": "功率",
   "idle.metric.cadence": "迴轉/步頻",
   "idle.metric.heart_rate": "心率",
-  "idle.best_title": "本節最佳"
+  "idle.best_title": "本節最佳",
+  "idle.metric.pace": "配速"
 }

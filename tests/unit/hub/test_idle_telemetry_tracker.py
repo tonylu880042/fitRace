@@ -66,3 +66,91 @@ def test_reset_clears_samples_and_best():
     tracker.reset()
     assert tracker.get_sample("node-1") is None
     assert tracker.get_best() == {}
+
+
+# ---------------------------------------------------------------------------
+# Equipment-aware best tracking (requirement B): a treadmill's speed/power
+# are not comparable to other equipment types -- treadmill "speed" instead
+# feeds the separate fastest-pace tracking, and treadmill power isn't shown
+# in the idle view at all (see hub_server/static/index.html's
+# renderIdleStationCard).
+# ---------------------------------------------------------------------------
+
+
+def test_treadmill_samples_never_win_the_generic_speed_or_power_best():
+    tracker = IdleTelemetryTracker()
+    tracker.record_sample(
+        "tread-1",
+        {
+            "instantaneous_speed_kph": 20.0,
+            "power_watts": 500,
+            "equipment_type": "treadmill",
+        },
+    )
+    tracker.record_sample(
+        "bike-1",
+        {
+            "instantaneous_speed_kph": 5.0,
+            "power_watts": 50,
+            "equipment_type": "fan_bike",
+        },
+    )
+
+    best = tracker.get_best()
+    # The bike's much lower numbers still win because the treadmill's much
+    # higher numbers are never eligible for these two metrics at all.
+    assert best["instantaneous_speed_kph"]["node_id"] == "bike-1"
+    assert best["power_watts"]["node_id"] == "bike-1"
+
+
+def test_curved_treadmill_is_treated_the_same_as_treadmill():
+    tracker = IdleTelemetryTracker()
+    tracker.record_sample(
+        "curved-1",
+        {
+            "instantaneous_speed_kph": 20.0,
+            "power_watts": 500,
+            "equipment_type": "curved_treadmill",
+        },
+    )
+    assert tracker.get_best() == {
+        "treadmill_pace_speed_kph": {"value": 20.0, "node_id": "curved-1"}
+    }
+
+
+def test_treadmill_pace_speed_tracks_the_fastest_treadmill_only():
+    tracker = IdleTelemetryTracker()
+    tracker.record_sample(
+        "tread-1", {"instantaneous_speed_kph": 10.0, "equipment_type": "treadmill"}
+    )
+    tracker.record_sample(
+        "tread-2", {"instantaneous_speed_kph": 14.0, "equipment_type": "treadmill"}
+    )
+    # A non-treadmill machine going even faster must not affect the
+    # treadmill-only fastest-pace tracking.
+    tracker.record_sample(
+        "bike-1", {"instantaneous_speed_kph": 30.0, "equipment_type": "fan_bike"}
+    )
+
+    best = tracker.get_best()
+    assert best["treadmill_pace_speed_kph"]["value"] == 14.0
+    assert best["treadmill_pace_speed_kph"]["node_id"] == "tread-2"
+
+
+def test_treadmill_pace_speed_ignores_zero_speed():
+    tracker = IdleTelemetryTracker()
+    tracker.record_sample(
+        "tread-1", {"instantaneous_speed_kph": 0.0, "equipment_type": "treadmill"}
+    )
+    assert "treadmill_pace_speed_kph" not in tracker.get_best()
+
+
+def test_cadence_and_heart_rate_best_are_not_equipment_restricted():
+    tracker = IdleTelemetryTracker()
+    tracker.record_sample(
+        "tread-1",
+        {"cadence_rpm": 180, "heart_rate_bpm": 160, "equipment_type": "treadmill"},
+    )
+    best = tracker.get_best()
+    assert best["cadence_rpm"]["node_id"] == "tread-1"
+    assert best["heart_rate_bpm"]["node_id"] == "tread-1"

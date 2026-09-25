@@ -23,6 +23,17 @@ BEST_METRICS = (
     "heart_rate_bpm",
 )
 
+# Equipment types the dashboard shows a running pace for instead of raw
+# speed (mirrors the dashboard's own isRunningEquipment in index.html).
+TREADMILL_EQUIPMENT_TYPES = frozenset({"treadmill", "curved_treadmill"})
+
+# The pseudo-metric key the mini leaderboard's treadmill-only "fastest pace"
+# entry is stored under -- its value is the fastest treadmill SPEED seen
+# (higher speed = faster pace); the dashboard formats it into a pace string
+# with a single JS formatter (formatTreadmillPace), so no seconds-per-km
+# conversion happens on this side.
+TREADMILL_PACE_BEST_KEY = "treadmill_pace_speed_kph"
+
 
 class IdleTelemetryTracker:
     def __init__(self, now_ms: Optional[Callable[[], int]] = None):
@@ -44,13 +55,33 @@ class IdleTelemetryTracker:
         self._update_best(node_id, metrics)
 
     def _update_best(self, node_id: str, metrics: Dict[str, Any]) -> None:
+        is_treadmill = metrics.get("equipment_type") in TREADMILL_EQUIPMENT_TYPES
         for metric_name in BEST_METRICS:
+            if is_treadmill and metric_name in (
+                "instantaneous_speed_kph",
+                "power_watts",
+            ):
+                # A treadmill's speed isn't comparable to other equipment's
+                # speed (it feeds the separate fastest-pace tracking below
+                # instead), and treadmill power isn't shown in the idle view
+                # at all -- see requirement B / renderIdleStationCard.
+                continue
             value = metrics.get(metric_name)
             if value is None or value <= 0:
                 continue
             current = self._best.get(metric_name)
             if current is None or value > current["value"]:
                 self._best[metric_name] = {"value": value, "node_id": node_id}
+
+        if is_treadmill:
+            speed = metrics.get("instantaneous_speed_kph")
+            if speed is not None and speed > 0:
+                current = self._best.get(TREADMILL_PACE_BEST_KEY)
+                if current is None or speed > current["value"]:
+                    self._best[TREADMILL_PACE_BEST_KEY] = {
+                        "value": speed,
+                        "node_id": node_id,
+                    }
 
     def get_sample(self, node_id: str) -> Optional[Dict[str, Any]]:
         sample = self._samples.get(node_id)

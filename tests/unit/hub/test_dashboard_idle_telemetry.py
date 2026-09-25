@@ -127,6 +127,8 @@ def _run_render_idle_telemetry(
         _strip_js_comments(_extract_function(source, "hideIdleTelemetry")),
         _strip_js_comments(_extract_function(source, "formatIdleMetricValue")),
         _strip_js_comments(_extract_function(source, "idleParticipantLabel")),
+        _strip_js_comments(_extract_function(source, "isRunningEquipment")),
+        _strip_js_comments(_extract_function(source, "formatTreadmillPace")),
         _strip_js_comments(_extract_function(source, "renderIdleStationCard")),
         _strip_js_comments(_extract_function(source, "renderIdleBestRow")),
         _strip_js_comments(_extract_function(source, "renderIdleTelemetry")),

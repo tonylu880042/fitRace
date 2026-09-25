@@ -330,5 +330,6 @@
   "idle.metric.power": "Leistung",
   "idle.metric.cadence": "Trittfrequenz",
   "idle.metric.heart_rate": "Herzfrequenz",
-  "idle.best_title": "Bestwert der Session"
+  "idle.best_title": "Bestwert der Session",
+  "idle.metric.pace": "Tempo"
 }

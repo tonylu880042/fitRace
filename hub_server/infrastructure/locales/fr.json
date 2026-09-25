@@ -330,5 +330,6 @@
   "idle.metric.power": "Puissance",
   "idle.metric.cadence": "Cadence",
   "idle.metric.heart_rate": "Fréquence cardiaque",
-  "idle.best_title": "Meilleur de la session"
+  "idle.best_title": "Meilleur de la session",
+  "idle.metric.pace": "Allure"
 }

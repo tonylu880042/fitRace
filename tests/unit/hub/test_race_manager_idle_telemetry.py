@@ -146,25 +146,66 @@ def test_stale_sample_shown_as_waiting_not_frozen_numbers():
 
 
 def test_mini_leaderboard_tracks_best_speed_and_power_by_station_number():
+    # Non-treadmill equipment (e.g. fan_bike) is what feeds the generic
+    # speed/power bests -- see requirement B: treadmill speed/power are
+    # excluded from these two buckets entirely (treadmill has its own
+    # fastest-pace tracking instead, covered separately below).
     manager = RaceManager()
-    manager.assign_station(1, "treadmill-01")
-    manager.assign_station(2, "treadmill-02")
-    manager.assign_station(1, "treadmill-01")
+    manager.assign_station(1, "bike-01")
+    manager.assign_station(2, "bike-02")
     manager.register_athlete(1, "Alice")
     manager.register_athlete(2, "Bob")
 
     manager.ingest_telemetry(
         _treadmill_payload(
-            "treadmill-01", instantaneous_speed_kph=10.0, power_watts=100
+            "bike-01",
+            equipment_type="fan_bike",
+            instantaneous_speed_kph=10.0,
+            power_watts=100,
         )
     )
     manager.ingest_telemetry(
-        _treadmill_payload("treadmill-02", instantaneous_speed_kph=15.0, power_watts=90)
+        _treadmill_payload(
+            "bike-02",
+            equipment_type="fan_bike",
+            instantaneous_speed_kph=15.0,
+            power_watts=90,
+        )
     )
 
     best = {row["metric"]: row for row in manager.get_idle_telemetry_snapshot()["best"]}
     assert best["instantaneous_speed_kph"]["station_number"] == 2
     assert best["power_watts"]["station_number"] == 1
+
+
+def test_mini_leaderboard_treadmill_pace_best_excludes_non_treadmill_and_vice_versa():
+    manager = RaceManager()
+    manager.assign_station(1, "treadmill-01")
+    manager.assign_station(2, "bike-01")
+
+    manager.ingest_telemetry(
+        _treadmill_payload(
+            "treadmill-01", equipment_type="treadmill", instantaneous_speed_kph=12.0
+        )
+    )
+    manager.ingest_telemetry(
+        _treadmill_payload(
+            "bike-01",
+            equipment_type="fan_bike",
+            instantaneous_speed_kph=25.0,
+            power_watts=200,
+        )
+    )
+
+    best = {row["metric"]: row for row in manager.get_idle_telemetry_snapshot()["best"]}
+    # The treadmill's speed feeds only the pace bucket, never the generic
+    # speed best (the bike is the only eligible contender there).
+    assert best["instantaneous_speed_kph"]["station_number"] == 2
+    assert best["treadmill_pace_speed_kph"]["station_number"] == 1
+    assert best["treadmill_pace_speed_kph"]["value"] == 12.0
+    # Treadmill power was never tracked at all -- the bike's is the only
+    # power best.
+    assert best["power_watts"]["station_number"] == 2
 
 
 def test_idle_snapshot_never_includes_athlete_name_even_when_registered():

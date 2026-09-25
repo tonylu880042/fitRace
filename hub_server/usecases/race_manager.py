@@ -4,6 +4,7 @@ from hub_server.domain.models import RaceState, RaceConfig
 from hub_server.domain.class_models import ClassPlan, segment_at
 from hub_server.usecases.idle_telemetry_tracker import (
     BEST_METRICS as IDLE_BEST_METRICS,
+    TREADMILL_PACE_BEST_KEY,
     IdleTelemetryTracker,
 )
 
@@ -331,7 +332,6 @@ class RaceManager:
             "power_watts": payload.get("power_watts", 0),
             "cadence_rpm": payload.get("cadence_rpm", 0),
             "heart_rate_bpm": payload.get("heart_rate_bpm", 0),
-            "pace_sec_per_500m": payload.get("pace_sec_per_500m"),
             "equipment_type": equipment_type,
         }
         self._idle_telemetry.record_sample(node_id, metrics)
@@ -367,14 +367,11 @@ class RaceManager:
                     "heart_rate_bpm": (
                         None if is_stale else sample.get("heart_rate_bpm")
                     ),
-                    "pace_sec_per_500m": (
-                        None if is_stale else sample.get("pace_sec_per_500m")
-                    ),
                 }
             )
 
         best_rows = []
-        for metric_name in IDLE_BEST_METRICS:
+        for metric_name in IDLE_BEST_METRICS + (TREADMILL_PACE_BEST_KEY,):
             entry = self._idle_telemetry.get_best().get(metric_name)
             if not entry:
                 continue
