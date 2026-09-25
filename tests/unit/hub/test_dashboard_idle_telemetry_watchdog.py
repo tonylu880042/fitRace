@@ -212,3 +212,110 @@ def test_watchdog_does_not_act_when_panel_is_not_shown():
         ),
     )
     assert result["gridHtml"] == ""
+
+
+# ---------------------------------------------------------------------------
+# 4. End-to-end through the real message path: handleIdleTelemetryMessage ->
+#    ensureIdleTelemetryWatchdog -> window.setInterval(checkIdleTelemetryWatchdog).
+#
+# The tests above call checkIdleTelemetryWatchdog directly, which cannot
+# catch a broken ensureIdleTelemetryWatchdog (e.g. one that never actually
+# calls window.setInterval, so the watchdog is wired up in source but never
+# runs in the real page). This harness never calls checkIdleTelemetryWatchdog
+# by name at all -- it stubs window.setInterval to CAPTURE whatever callback
+# handleIdleTelemetryMessage's own call chain hands it, advances a
+# controllable Date.now() past the stale threshold with no second message,
+# and then invokes that captured callback exactly as a real browser's timer
+# would. If ensureIdleTelemetryWatchdog is ever changed to skip calling
+# window.setInterval, no callback is captured and this fails.
+# ---------------------------------------------------------------------------
+
+
+def _run_full_message_path_watchdog():
+    source = _read_index()
+    pieces = [
+        _strip_js_comments(_extract_const(source, "IDLE_TELEMETRY_STALE_WATCHDOG_MS")),
+        _strip_js_comments(
+            _extract_const(source, "IDLE_TELEMETRY_WATCHDOG_INTERVAL_MS")
+        ),
+        _strip_js_comments(_extract_const(source, "IDLE_BEST_METRIC_LABEL_KEYS")),
+        _strip_js_comments(_extract_function(source, "hideIdleTelemetry")),
+        _strip_js_comments(_extract_function(source, "formatIdleMetricValue")),
+        _strip_js_comments(_extract_function(source, "idleParticipantLabel")),
+        _strip_js_comments(_extract_function(source, "renderIdleStationCard")),
+        _strip_js_comments(_extract_function(source, "renderIdleBestRow")),
+        _strip_js_comments(_extract_function(source, "renderIdleTelemetry")),
+        _strip_js_comments(_extract_function(source, "shouldForceIdleStale")),
+        _strip_js_comments(_extract_function(source, "markIdleStationsStale")),
+        _strip_js_comments(_extract_function(source, "checkIdleTelemetryWatchdog")),
+        _strip_js_comments(_extract_function(source, "ensureIdleTelemetryWatchdog")),
+        _strip_js_comments(_extract_function(source, "handleIdleTelemetryMessage")),
+    ]
+    script = (
+        # Race-state globals renderIdleTelemetry reads: IDLE + race mode, so
+        # the message is actually rendered rather than hidden.
+        'let currentState = "IDLE";\n'
+        'let currentSessionMode = "race";\n'
+        "let lastIdleTelemetryStations = null;\n"
+        "let lastIdleTelemetryReceivedAtMs = null;\n"
+        "let idleTelemetryWatchdogTimer = null;\n"
+        "function t(key) { return key; }\n"
+        "function escapeHtml(value) { return String(value); }\n"
+        "function enterIdleRecordWall() {}\n"
+        "function exitIdleRecordWall() {}\n"
+        # Controllable clock -- the production code calls Date.now(), never
+        # a locally-scoped variable, so overriding the global is what makes
+        # this genuinely simulate time passing with no new message.
+        "let nowMs = 1000;\n"
+        "Date.now = () => nowMs;\n"
+        # window.setInterval stub: records every (callback, delay) call so
+        # the test can assert one was actually registered, then lets the
+        # test fire it manually -- exactly the real callback function
+        # object handleIdleTelemetryMessage's call chain produced, not a
+        # reimplementation.
+        "const setIntervalCalls = [];\n"
+        "const window = { setInterval: (fn, delay) => { setIntervalCalls.push({ fn, delay }); return setIntervalCalls.length; } };\n"
+        "const gridEl = { innerHTML: '' };\n"
+        "const bestPanelEl = { innerHTML: '', style: { display: '' } };\n"
+        "const leaderboardEl = { style: { display: '' } };\n"
+        "const panelEl = { classes: new Set() };\n"
+        "panelEl.classList = { add: (cls) => panelEl.classes.add(cls), remove: (cls) => panelEl.classes.delete(cls), contains: (cls) => panelEl.classes.has(cls) };\n"
+        "const elements = { 'idle-stations-panel': panelEl, 'idle-stations-grid': gridEl, 'idle-best-panel': bestPanelEl, 'leaderboard-container': leaderboardEl };\n"
+        "const document = { getElementById: (id) => elements[id] || null };\n"
+        + "\n".join(pieces)
+        + "\n"
+        # Step 1: a real "idle_telemetry" WS message arrives with one live
+        # station -- this is the exact call the WS onmessage handler makes.
+        + "handleIdleTelemetryMessage({ visible: true, stations: ["
+        + "  { station_number: 1, athlete_name: 'Alice', instantaneous_speed_kph: 9.0, power_watts: 100, cadence_rpm: 150, heart_rate_bpm: 120, is_stale: false }"
+        + "], best: [] });\n"
+        + "const gridAfterFirstMessage = gridEl.innerHTML;\n"
+        # Step 2: time passes well beyond the stale threshold, and no
+        # second message ever arrives.
+        + "nowMs += 6000;\n"
+        # Step 3: fire whatever callback window.setInterval was actually
+        # given -- if ensureIdleTelemetryWatchdog never called
+        # window.setInterval, setIntervalCalls is empty and this throws,
+        # which is exactly the failure this test exists to produce.
+        + "setIntervalCalls[0].fn();\n"
+        + "console.log(JSON.stringify({\n"
+        + "  setIntervalCallCount: setIntervalCalls.length,\n"
+        + "  gridAfterFirstMessage,\n"
+        + "  gridAfterWatchdogFires: gridEl.innerHTML,\n"
+        + "}));\n"
+    )
+    return json.loads(_run_node(script))
+
+
+def test_watchdog_actually_runs_through_the_real_message_and_timer_wiring():
+    result = _run_full_message_path_watchdog()
+    # A watchdog was genuinely registered with window.setInterval as a
+    # side effect of the real WS message handler -- not skipped.
+    assert result["setIntervalCallCount"] == 1
+    # Before any silence, the grid shows real live numbers.
+    assert "9.0" in result["gridAfterFirstMessage"]
+    assert "idle-station-waiting-label" not in result["gridAfterFirstMessage"]
+    # After the registered timer callback fires with no second message
+    # having arrived, the card is forced into the waiting state.
+    assert "idle-station-waiting-label" in result["gridAfterWatchdogFires"]
+    assert "9.0" not in result["gridAfterWatchdogFires"]
