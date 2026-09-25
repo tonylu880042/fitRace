@@ -324,5 +324,11 @@
   "text.start_new_event_note": "會將較舊的比賽排除在大螢幕總排名之外,不影響紀錄牆。",
   "confirm.start_new_event": "確定要開始新活動嗎?較舊的比賽將不再計入大螢幕總排名。",
   "message.new_event_started": "已開始新活動,總排名將從現在起算。",
-  "message.new_event_failed": "開始新活動失敗:{error}"
+  "message.new_event_failed": "開始新活動失敗:{error}",
+  "idle.waiting": "等待資料中...",
+  "idle.metric.speed": "速度",
+  "idle.metric.power": "功率",
+  "idle.metric.cadence": "迴轉/步頻",
+  "idle.metric.heart_rate": "心率",
+  "idle.best_title": "本節最佳"
 }

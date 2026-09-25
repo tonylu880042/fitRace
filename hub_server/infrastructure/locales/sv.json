@@ -324,5 +324,11 @@
   "text.start_new_event_note": "Utesluter äldre lopp från totalställningen på skärmen -- påverkar inte rekordväggen.",
   "confirm.start_new_event": "Starta en ny händelse? Äldre lopp räknas inte längre in i totalställningen på skärmen.",
   "message.new_event_started": "Ny händelse startad -- totalställningen räknas nu från denna punkt.",
-  "message.new_event_failed": "Det gick inte att starta ny händelse: {error}"
+  "message.new_event_failed": "Det gick inte att starta ny händelse: {error}",
+  "idle.waiting": "Väntar på data...",
+  "idle.metric.speed": "Hastighet",
+  "idle.metric.power": "Effekt",
+  "idle.metric.cadence": "Kadens",
+  "idle.metric.heart_rate": "Puls",
+  "idle.best_title": "Sessionens bästa"
 }

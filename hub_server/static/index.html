@@ -1830,6 +1830,111 @@
       border-radius: 4px;
     }
 
+    /* Idle live telemetry: Layout A -- one big card per bound station,
+       shown on the main dashboard area while IDLE/READY (see
+       renderIdleTelemetry). Large type for a 1280x720 projector viewed
+       from across the venue floor. */
+    .idle-stations-panel {
+      display: none;
+    }
+
+    .idle-stations-panel.show {
+      display: block;
+    }
+
+    .idle-stations-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .idle-station-card {
+      background: rgba(255, 255, 255, 0.03);
+      border: 2px solid var(--steel-border);
+      border-radius: 6px;
+      padding: 1.1rem;
+    }
+
+    .idle-station-card.waiting {
+      opacity: 0.45;
+    }
+
+    .idle-station-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 0.6rem;
+    }
+
+    .idle-station-number {
+      font-family: 'Oswald', sans-serif;
+      color: var(--volt-yellow);
+      font-weight: 700;
+      font-size: 1.1rem;
+    }
+
+    .idle-station-name {
+      color: var(--text-main);
+      font-weight: 600;
+      font-size: 1.05rem;
+      text-align: right;
+    }
+
+    .idle-station-metrics {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0.5rem;
+    }
+
+    .idle-metric-value {
+      font-family: 'Oswald', sans-serif;
+      font-size: clamp(1.6rem, 3.2vw, 2.4rem);
+      font-weight: 700;
+      color: var(--text-main);
+      line-height: 1.1;
+    }
+
+    .idle-metric-label {
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .idle-station-waiting-label {
+      color: var(--text-muted);
+      font-size: 1rem;
+      font-style: italic;
+    }
+
+    .idle-best-panel {
+      border-top: 1px dashed var(--steel-border);
+      padding-top: 0.75rem;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 0.5rem;
+    }
+
+    .idle-best-title {
+      grid-column: 1 / -1;
+      color: var(--hazard-amber);
+      font-weight: 700;
+      font-size: 0.9rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.25rem;
+    }
+
+    .idle-best-row {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+    }
+
+    .idle-best-row strong {
+      color: var(--volt-yellow);
+    }
+
     .empty-state svg {
       width: 50px;
       height: 50px;
@@ -3027,6 +3132,10 @@
           <div class="race-stage-timer" id="race-stage-timer">--:--</div>
         </div>
 
+        <div id="idle-stations-panel" class="idle-stations-panel" aria-live="polite">
+          <div id="idle-stations-grid" class="idle-stations-grid"></div>
+          <div id="idle-best-panel" class="idle-best-panel" style="display: none;"></div>
+        </div>
         <div id="leaderboard-container">
           <div class="empty-state registration-empty">
             <div class="registration-empty-copy">
@@ -3309,6 +3418,11 @@
     }
 
     async function playDashboardRaceCountdown(eventData = {}) {
+      // The 3-2-1-Go countdown means a race is about to start -- idle live
+      // telemetry must disappear immediately rather than wait for the next
+      // throttled idle_telemetry broadcast (which may not arrive again
+      // before RUNNING begins).
+      hideIdleTelemetry();
       const durationMs = metricNumber(eventData.duration_ms, 3120);
       setRaceStageOverride("countdown", durationMs + 260);
       showRaceCountdownOverlay(durationMs);
@@ -3587,6 +3701,10 @@
           playDashboardRaceCountdown(data);
           return;
         }
+        if (data.type === "idle_telemetry") {
+          renderIdleTelemetry(data);
+          return;
+        }
         if (data.type === "node_status") {
           renderEdgeNodes(data.nodes || (data.node ? [data.node] : []));
           return;
@@ -3706,6 +3824,134 @@
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#039;");
+    }
+
+    // Idle live telemetry (venue-visitor Layout A): one big card per bound
+    // station, shown on the main dashboard area while the backend says
+    // IDLE/READY telemetry is "visible" -- see get_idle_telemetry_snapshot
+    // in hub_server/usecases/race_manager.py. Driven entirely by the
+    // throttled "idle_telemetry" WS message and by race state; there is no
+    // local control on this page (CLAUDE.md page boundaries).
+    const IDLE_BEST_METRIC_LABEL_KEYS = {
+      instantaneous_speed_kph: "idle.metric.speed",
+      power_watts: "idle.metric.power",
+      cadence_rpm: "idle.metric.cadence",
+      heart_rate_bpm: "idle.metric.heart_rate",
+    };
+
+    function hideIdleTelemetry() {
+      const panel = document.getElementById("idle-stations-panel");
+      if (panel) panel.classList.remove("show");
+      const leaderboardContainer = document.getElementById("leaderboard-container");
+      if (leaderboardContainer) leaderboardContainer.style.display = "";
+    }
+
+    function formatIdleMetricValue(value, unit, digits = 0) {
+      const num = Number(value);
+      if (value === null || value === undefined || !Number.isFinite(num)) return "--";
+      return `${num.toFixed(digits)}${unit}`;
+    }
+
+    function idleParticipantLabel(name, stationNumber) {
+      if (name) return name;
+      if (stationNumber !== null && stationNumber !== undefined) {
+        return `${t("stations.station")} ${stationNumber}`;
+      }
+      return t("stations.athlete");
+    }
+
+    function renderIdleStationCard(station) {
+      const name = idleParticipantLabel(station.athlete_name, station.station_number);
+      if (station.is_stale) {
+        return `
+          <div class="idle-station-card waiting">
+            <div class="idle-station-header">
+              <span class="idle-station-number">#${station.station_number}</span>
+              <span class="idle-station-name">${escapeHtml(name)}</span>
+            </div>
+            <div class="idle-station-waiting-label">${t("idle.waiting")}</div>
+          </div>`;
+      }
+      return `
+        <div class="idle-station-card">
+          <div class="idle-station-header">
+            <span class="idle-station-number">#${station.station_number}</span>
+            <span class="idle-station-name">${escapeHtml(name)}</span>
+          </div>
+          <div class="idle-station-metrics">
+            <div>
+              <div class="idle-metric-value">${formatIdleMetricValue(station.instantaneous_speed_kph, " km/h", 1)}</div>
+              <div class="idle-metric-label">${t("idle.metric.speed")}</div>
+            </div>
+            <div>
+              <div class="idle-metric-value">${formatIdleMetricValue(station.power_watts, " W")}</div>
+              <div class="idle-metric-label">${t("idle.metric.power")}</div>
+            </div>
+            <div>
+              <div class="idle-metric-value">${formatIdleMetricValue(station.cadence_rpm, "")}</div>
+              <div class="idle-metric-label">${t("idle.metric.cadence")}</div>
+            </div>
+            <div>
+              <div class="idle-metric-value">${formatIdleMetricValue(station.heart_rate_bpm, "")}</div>
+              <div class="idle-metric-label">${t("idle.metric.heart_rate")}</div>
+            </div>
+          </div>
+        </div>`;
+    }
+
+    function renderIdleBestRow(row) {
+      const labelKey = IDLE_BEST_METRIC_LABEL_KEYS[row.metric];
+      const label = labelKey ? t(labelKey) : row.metric;
+      const name = idleParticipantLabel(row.athlete_name, row.station_number);
+      const isSpeed = row.metric === "instantaneous_speed_kph";
+      const isPower = row.metric === "power_watts";
+      const unit = isSpeed ? " km/h" : isPower ? " W" : "";
+      const value = formatIdleMetricValue(row.value, unit, isSpeed ? 1 : 0);
+      return `<div class="idle-best-row">${label}: <strong>${value}</strong> - ${escapeHtml(name)}</div>`;
+    }
+
+    function renderIdleTelemetry(data) {
+      // A late, throttled broadcast that lands just after RUNNING started
+      // (or during class mode, which has its own board) must never
+      // resurrect the idle grid on top of the real leaderboard.
+      if (currentState === "RUNNING" || currentState === "STOPPED" || currentSessionMode === "class") {
+        hideIdleTelemetry();
+        return;
+      }
+
+      const stations = Array.isArray(data.stations) ? data.stations : [];
+      if (!data.visible || stations.length === 0) {
+        hideIdleTelemetry();
+        // Nothing to show as idle telemetry -- fall back to the existing
+        // idle record wall carousel rather than leaving a blank panel.
+        if (currentState === "IDLE" && currentSessionMode !== "class") {
+          enterIdleRecordWall();
+        }
+        return;
+      }
+
+      const panel = document.getElementById("idle-stations-panel");
+      const grid = document.getElementById("idle-stations-grid");
+      const bestPanel = document.getElementById("idle-best-panel");
+      const leaderboardContainer = document.getElementById("leaderboard-container");
+      if (!panel || !grid || !bestPanel) return;
+
+      grid.innerHTML = stations.map(renderIdleStationCard).join("");
+
+      const best = Array.isArray(data.best) ? data.best : [];
+      if (best.length > 0) {
+        bestPanel.style.display = "";
+        bestPanel.innerHTML =
+          `<div class="idle-best-title">${t("idle.best_title")}</div>` +
+          best.map(renderIdleBestRow).join("");
+      } else {
+        bestPanel.style.display = "none";
+        bestPanel.innerHTML = "";
+      }
+
+      panel.classList.add("show");
+      if (leaderboardContainer) leaderboardContainer.style.display = "none";
+      exitIdleRecordWall();
     }
 
     function nodeDisplayName(node) {
@@ -6824,6 +7070,15 @@
         enterIdleRecordWall();
       } else {
         exitIdleRecordWall();
+      }
+
+      // Idle live telemetry only makes sense outside a running/finished
+      // race (see get_idle_telemetry_snapshot's "visible" rule) -- this is
+      // the backend-state-driven hide half; the show half happens when the
+      // next throttled "idle_telemetry" WS message actually arrives (see
+      // renderIdleTelemetry), never from a local dashboard control.
+      if (currentState === "RUNNING" || currentState === "STOPPED" || data.session_mode === "class") {
+        hideIdleTelemetry();
       }
 
       renderCurrentStateLabel(currentState);

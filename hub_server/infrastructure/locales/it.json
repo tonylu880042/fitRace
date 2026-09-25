@@ -324,5 +324,11 @@
   "text.start_new_event_note": "Esclude le gare precedenti dalla classifica generale del dashboard -- non influisce sul muro dei record.",
   "confirm.start_new_event": "Avviare un nuovo evento? Le gare precedenti non conteggeranno più nella classifica generale del dashboard.",
   "message.new_event_started": "Nuovo evento avviato -- la classifica generale riparte da questo momento.",
-  "message.new_event_failed": "Impossibile avviare il nuovo evento: {error}"
+  "message.new_event_failed": "Impossibile avviare il nuovo evento: {error}",
+  "idle.waiting": "In attesa di dati...",
+  "idle.metric.speed": "Velocità",
+  "idle.metric.power": "Potenza",
+  "idle.metric.cadence": "Cadenza",
+  "idle.metric.heart_rate": "Frequenza cardiaca",
+  "idle.best_title": "Miglior risultato"
 }

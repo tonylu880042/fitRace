@@ -324,5 +324,11 @@
   "text.start_new_event_note": "Exclut les anciennes courses du classement général du tableau de bord -- n'affecte pas le mur des records.",
   "confirm.start_new_event": "Démarrer un nouvel événement ? Les anciennes courses ne compteront plus dans le classement général du tableau de bord.",
   "message.new_event_started": "Nouvel événement démarré -- le classement général repart de ce point.",
-  "message.new_event_failed": "Échec du démarrage du nouvel événement : {error}"
+  "message.new_event_failed": "Échec du démarrage du nouvel événement : {error}",
+  "idle.waiting": "En attente de données...",
+  "idle.metric.speed": "Vitesse",
+  "idle.metric.power": "Puissance",
+  "idle.metric.cadence": "Cadence",
+  "idle.metric.heart_rate": "Fréquence cardiaque",
+  "idle.best_title": "Meilleur de la session"
 }

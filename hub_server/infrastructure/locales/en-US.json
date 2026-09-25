@@ -324,5 +324,11 @@
   "text.start_new_event_note": "Excludes older races from the dashboard's overall standings -- does not touch the Record Wall.",
   "confirm.start_new_event": "Start a new event? Older races will no longer count toward the overall standings on the dashboard.",
   "message.new_event_started": "New event started -- overall standings now start from this point.",
-  "message.new_event_failed": "Failed to start new event: {error}"
+  "message.new_event_failed": "Failed to start new event: {error}",
+  "idle.waiting": "Waiting for data...",
+  "idle.metric.speed": "Speed",
+  "idle.metric.power": "Power",
+  "idle.metric.cadence": "Cadence",
+  "idle.metric.heart_rate": "Heart Rate",
+  "idle.best_title": "Session Best"
 }
