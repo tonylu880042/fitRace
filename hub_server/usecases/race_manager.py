@@ -351,7 +351,11 @@ class RaceManager:
                 {
                     "station_number": station_number,
                     "node_id": node_id,
-                    "athlete_name": self._station_registrations.get(station_number),
+                    # No athlete/registered name -- product decision: during
+                    # a showcase nobody knows who's on a machine, so the
+                    # idle view identifies a station by number only, never
+                    # by name. The key is not merely left empty, it does
+                    # not exist at all, so a rendering bug can't leak it.
                     "equipment_type": (sample or {}).get("equipment_type")
                     or self._active_nodes.get(node_id),
                     "is_stale": is_stale,
@@ -379,18 +383,15 @@ class RaceManager:
                 (sn for sn, nid in self._stations.items() if nid == best_node_id),
                 None,
             )
-            athlete_name = (
-                self._station_registrations.get(best_station_number)
-                if best_station_number is not None
-                else None
-            )
+            # No athlete_name here either -- the mini leaderboard names the
+            # station that holds a best, never a person (same product
+            # decision as the station cards above).
             best_rows.append(
                 {
                     "metric": metric_name,
                     "value": entry["value"],
                     "node_id": best_node_id,
                     "station_number": best_station_number,
-                    "athlete_name": athlete_name,
                 }
             )
 

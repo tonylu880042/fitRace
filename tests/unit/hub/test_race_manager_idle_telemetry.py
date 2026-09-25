@@ -145,7 +145,7 @@ def test_stale_sample_shown_as_waiting_not_frozen_numbers():
     assert station["instantaneous_speed_kph"] is None
 
 
-def test_mini_leaderboard_tracks_best_speed_and_power_with_station_and_name():
+def test_mini_leaderboard_tracks_best_speed_and_power_by_station_number():
     manager = RaceManager()
     manager.assign_station(1, "treadmill-01")
     manager.assign_station(2, "treadmill-02")
@@ -164,9 +164,27 @@ def test_mini_leaderboard_tracks_best_speed_and_power_with_station_and_name():
 
     best = {row["metric"]: row for row in manager.get_idle_telemetry_snapshot()["best"]}
     assert best["instantaneous_speed_kph"]["station_number"] == 2
-    assert best["instantaneous_speed_kph"]["athlete_name"] == "Bob"
     assert best["power_watts"]["station_number"] == 1
-    assert best["power_watts"]["athlete_name"] == "Alice"
+
+
+def test_idle_snapshot_never_includes_athlete_name_even_when_registered():
+    # Product decision: nobody knows who's on a machine during a showcase.
+    # A registered athlete name must never leak into either the per-station
+    # cards or the mini leaderboard rows.
+    manager = RaceManager()
+    manager.assign_station(1, "treadmill-01")
+    manager.register_athlete(1, "Alice")
+    manager.ingest_telemetry(
+        _treadmill_payload(
+            "treadmill-01", instantaneous_speed_kph=10.0, power_watts=100
+        )
+    )
+
+    snapshot = manager.get_idle_telemetry_snapshot()
+    assert "athlete_name" not in snapshot["stations"][0]
+    assert snapshot["best"]
+    for row in snapshot["best"]:
+        assert "athlete_name" not in row
 
 
 def test_mini_leaderboard_resets_when_a_race_starts_and_on_reset():

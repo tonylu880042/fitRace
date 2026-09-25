@@ -179,13 +179,13 @@ def test_watchdog_forces_all_known_stations_stale_after_silence():
         now_offset_ms=6000,
         panel_has_show_class=True,
         last_stations_js=(
-            '[{"station_number": 1, "athlete_name": "Alice", '
+            '[{"station_number": 1, '
             '"instantaneous_speed_kph": 9.0, "is_stale": false}]'
         ),
     )
     assert "idle-station-waiting-label" in result["gridHtml"]
     assert "9.0" not in result["gridHtml"]
-    assert "Alice" in result["gridHtml"]
+    assert "stations.station 1" in result["gridHtml"]
 
 
 def test_watchdog_does_not_touch_grid_before_the_threshold():
@@ -194,7 +194,7 @@ def test_watchdog_does_not_touch_grid_before_the_threshold():
         now_offset_ms=2000,
         panel_has_show_class=True,
         last_stations_js=(
-            '[{"station_number": 1, "athlete_name": "Alice", '
+            '[{"station_number": 1, '
             '"instantaneous_speed_kph": 9.0, "is_stale": false}]'
         ),
     )
@@ -207,7 +207,7 @@ def test_watchdog_does_not_act_when_panel_is_not_shown():
         now_offset_ms=6000,
         panel_has_show_class=False,
         last_stations_js=(
-            '[{"station_number": 1, "athlete_name": "Alice", '
+            '[{"station_number": 1, '
             '"instantaneous_speed_kph": 9.0, "is_stale": false}]'
         ),
     )
@@ -287,7 +287,7 @@ def _run_full_message_path_watchdog():
         # Step 1: a real "idle_telemetry" WS message arrives with one live
         # station -- this is the exact call the WS onmessage handler makes.
         + "handleIdleTelemetryMessage({ visible: true, stations: ["
-        + "  { station_number: 1, athlete_name: 'Alice', instantaneous_speed_kph: 9.0, power_watts: 100, cadence_rpm: 150, heart_rate_bpm: 120, is_stale: false }"
+        + "  { station_number: 1, instantaneous_speed_kph: 9.0, power_watts: 100, cadence_rpm: 150, heart_rate_bpm: 120, is_stale: false }"
         + "], best: [] });\n"
         + "const gridAfterFirstMessage = gridEl.innerHTML;\n"
         # Step 2: time passes well beyond the stale threshold, and no

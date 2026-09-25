@@ -196,12 +196,13 @@ def test_render_idle_telemetry_shows_grid_when_visible_with_stations():
         "IDLE",
         "race",
         '{"visible": true, "stations": [{"station_number": 1, '
-        '"athlete_name": "Alice", "instantaneous_speed_kph": 9.5, '
+        '"instantaneous_speed_kph": 9.5, '
         '"power_watts": 120, "cadence_rpm": 80, "heart_rate_bpm": 140, '
         '"is_stale": false}], "best": []}',
     )
     assert result["panelShown"] is True
-    assert "Alice" in result["gridHtml"]
+    # Product decision: no athlete name is ever shown, only the station.
+    assert "stations.station 1" in result["gridHtml"]
     assert "9.5" in result["gridHtml"]
     assert result["leaderboardDisplay"] == "none"
     # Idle telemetry takes over from the older idle record wall carousel.
@@ -213,7 +214,7 @@ def test_render_idle_telemetry_shows_waiting_label_for_stale_station():
         "READY",
         "race",
         '{"visible": true, "stations": [{"station_number": 2, '
-        '"athlete_name": null, "is_stale": true}], "best": []}',
+        '"is_stale": true}], "best": []}',
     )
     assert "idle-station-waiting-label" in result["gridHtml"]
     assert "9.5" not in result["gridHtml"]
@@ -226,10 +227,11 @@ def test_render_idle_telemetry_renders_mini_leaderboard_rows():
         '{"visible": true, "stations": [{"station_number": 1, '
         '"instantaneous_speed_kph": 9.5, "is_stale": false}], '
         '"best": [{"metric": "instantaneous_speed_kph", "value": 20.0, '
-        '"station_number": 3, "athlete_name": "Bob"}]}',
+        '"station_number": 3}]}',
     )
     assert result["bestDisplay"] == ""
-    assert "Bob" in result["bestHtml"]
+    # Product decision: the best row names the station, never a person.
+    assert "stations.station 3" in result["bestHtml"]
     assert "20.0" in result["bestHtml"]
 
 

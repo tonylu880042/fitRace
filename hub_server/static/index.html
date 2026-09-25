@@ -3879,8 +3879,13 @@
       return `${num.toFixed(digits)}${unit}`;
     }
 
-    function idleParticipantLabel(name, stationNumber) {
-      if (name) return name;
+    // No athlete/registered name is ever shown in the idle view (product
+    // decision: during a showcase nobody knows who's on a machine) -- only
+    // the station label. The backend doesn't even send athlete_name in the
+    // idle snapshot (see RaceManager.get_idle_telemetry_snapshot), but this
+    // function takes only a station number anyway so the page cannot show
+    // one even if a stray field appeared in the payload.
+    function idleParticipantLabel(stationNumber) {
       if (stationNumber !== null && stationNumber !== undefined) {
         return `${t("stations.station")} ${stationNumber}`;
       }
@@ -3888,7 +3893,7 @@
     }
 
     function renderIdleStationCard(station) {
-      const name = idleParticipantLabel(station.athlete_name, station.station_number);
+      const name = idleParticipantLabel(station.station_number);
       if (station.is_stale) {
         return `
           <div class="idle-station-card waiting">
@@ -3929,7 +3934,7 @@
     function renderIdleBestRow(row) {
       const labelKey = IDLE_BEST_METRIC_LABEL_KEYS[row.metric];
       const label = labelKey ? t(labelKey) : row.metric;
-      const name = idleParticipantLabel(row.athlete_name, row.station_number);
+      const name = idleParticipantLabel(row.station_number);
       const isSpeed = row.metric === "instantaneous_speed_kph";
       const isPower = row.metric === "power_watts";
       const unit = isSpeed ? " km/h" : isPower ? " W" : "";
