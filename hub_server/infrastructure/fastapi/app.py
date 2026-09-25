@@ -58,6 +58,11 @@ MAX_AVATAR_BYTES = 256 * 1024
 RACE_START_COUNTDOWN_AUDIO_URL = "/static/audio/countdown_start.wav"
 RACE_START_COUNTDOWN_DURATION_MS = 3120
 STATION_TELEMETRY_STALE_MS = 10_000
+# clock_offset_ms is already applied to elapsed-time correction (see
+# RaceManager._clock_offset_ms), so a readiness warning past this
+# threshold is only a heads-up that an edge's own clock is off -- it never
+# blocks start.
+CLOCK_SKEW_WARN_THRESHOLD_MS = 250
 
 
 def run_systemctl(command: list[str]):
@@ -108,16 +113,21 @@ async def add_no_cache_header(request: Request, call_next):
 
 
 # Global instances (Shared Context)
+# node_registry is constructed before race_manager so its
+# get_clock_offset_ms can be injected into RaceManager -- RaceManager
+# (a usecase) must never import the registry itself, only receive this
+# callable, per Clean Architecture's inward-only dependency direction.
+node_registry = NodeRegistry()
 race_manager = RaceManager(
     settings_store=RaceSettingsStore(
         os.getenv("FITRACE_RACE_SETTINGS_PATH", "data/race_settings.json")
-    )
+    ),
+    clock_offset_ms_fn=node_registry.get_clock_offset_ms,
 )
 roster_manager = RosterManager(
     RaceSettingsStore(os.getenv("FITRACE_ROSTER_PATH", "data/roster.json"))
 )
 ws_manager = WebSocketManager()
-node_registry = NodeRegistry()
 race_event_engine = RaceEventEngine()
 _race_results_path = os.getenv("FITRACE_RACE_RESULTS_PATH", "data/race_results.jsonl")
 race_result_store = RaceResultStore(_race_results_path)
@@ -663,6 +673,42 @@ def build_check(status: str, message: str) -> dict:
     return {"status": status, "message": message}
 
 
+def edge_clock_skew_messages(assigned_stations: list) -> list[str]:
+    """One message per assigned station's edge whose |clock_offset_ms|
+    exceeds the warn threshold -- clock_offset_ms is already applied to
+    elapsed-time correction, so this is a diagnostic heads-up only, never
+    blocking. Each edge is reported at most once even if several assigned
+    stations share it."""
+    reported_edge_ids: set[str] = set()
+    messages: list[str] = []
+    for _, station in assigned_stations:
+        node_id = station.get("node_id")
+        if not node_id:
+            continue
+        edge = next(
+            (
+                candidate
+                for candidate in node_registry.list_nodes()
+                if any(
+                    stream.get("node_id") == node_id
+                    for stream in candidate.get("equipment_streams", [])
+                )
+            ),
+            None,
+        )
+        if not edge:
+            continue
+        edge_id = edge.get("edge_node_id")
+        if not edge_id or edge_id in reported_edge_ids:
+            continue
+        offset_ms = edge.get("clock_offset_ms") or 0
+        if abs(offset_ms) > CLOCK_SKEW_WARN_THRESHOLD_MS:
+            reported_edge_ids.add(edge_id)
+            edge_label = edge.get("display_name") or edge_id
+            messages.append(f"{edge_label}: clock offset {offset_ms}ms.")
+    return messages
+
+
 def get_race_readiness_status() -> dict:
     race_state = race_manager.get_state()
     config = race_manager.get_config()
@@ -678,6 +724,7 @@ def get_race_readiness_status() -> dict:
         "teams": build_check("ok", "Team setup is valid."),
         "stations": build_check("ok", "Participant stations are online."),
         "sound": build_check("ok", "Start sound is enabled."),
+        "clock": build_check("ok", "Edge clocks are in sync."),
     }
 
     if race_state != RaceState.READY:
@@ -706,6 +753,12 @@ def get_race_readiness_status() -> dict:
         if station.get("node_id")
     ]
     assigned_stations.sort(key=lambda item: item[0])
+
+    clock_skew_messages = edge_clock_skew_messages(assigned_stations)
+    if clock_skew_messages:
+        warnings.extend(clock_skew_messages)
+        checks["clock"] = build_check("warn", " ".join(clock_skew_messages))
+
     registered_stations = [
         (int(station_number), station)
         for station_number, station in stations.items()

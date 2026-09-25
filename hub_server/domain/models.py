@@ -232,4 +232,13 @@ class EdgeNodeStatus(BaseModel):
     max_ftms_connections: int = 5
     available_channels: int = 2
     last_seen_epoch_ms: int
+    # The edge's own last_seen_epoch_ms as it reported it, kept only for
+    # diagnostics -- last_seen_epoch_ms above always holds the hub's own
+    # receipt time now, so an edge with a wrong clock can't be judged
+    # offline early (fast clock) or never (slow clock). See NodeRegistry.
+    edge_reported_epoch_ms: int | None = None
+    # hub_now_ms - edge_reported_epoch_ms, taken as the minimum over the
+    # last N heartbeat samples (network delay only ever makes a sample
+    # larger, never smaller). 0 when no sample has been recorded yet.
+    clock_offset_ms: int = 0
     equipment_streams: list[EquipmentStreamStatus] = Field(default_factory=list)
