@@ -1104,6 +1104,13 @@
                       <option value="false" data-i18n="option.qr_hidden">Hidden</option>
                     </select>
                   </div>
+                  <div class="field">
+                    <label for="idle-live-telemetry-visible" data-i18n="label.idle_live_telemetry_visible">Show Live Data While Idle</label>
+                    <select id="idle-live-telemetry-visible" onchange="setIdleLiveTelemetryVisible(this.value === 'true')">
+                      <option value="true" selected data-i18n="option.qr_visible">Visible</option>
+                      <option value="false" data-i18n="option.qr_hidden">Hidden</option>
+                    </select>
+                  </div>
                 </div>
                 <div class="field">
                   <label data-i18n="label.overall_standings_event">Overall Standings Event</label>
@@ -1429,6 +1436,7 @@
         "label.start_sound_select": "Start Sound",
         "label.signup_qr_visible": "Show Sign-up QR on Dashboard",
         "label.admin_qr_visible": "Show Game Admin QR on Dashboard",
+        "label.idle_live_telemetry_visible": "Show Live Data While Idle",
         "label.access_code": "Access Code",
         "panel.race_control": "Race Control",
         "panel.station_status": "Station Status",
@@ -1519,6 +1527,8 @@
         "message.signup_qr_hidden": "Sign-up QR hidden from dashboard.",
         "message.admin_qr_shown": "Game Admin QR shown on dashboard.",
         "message.admin_qr_hidden": "Game Admin QR hidden from dashboard.",
+        "message.idle_live_telemetry_shown": "Live data will show on the dashboard while idle.",
+        "message.idle_live_telemetry_hidden": "Live data hidden from the dashboard while idle.",
         "state.sound_on": "ON",
         "state.sound_off": "OFF",
         "label.lane": "Lane",
@@ -1701,6 +1711,7 @@
       "label.start_sound_select": "啟動聲音",
       "label.signup_qr_visible": "大螢幕顯示報名 QR Code",
       "label.admin_qr_visible": "大螢幕顯示 Game Admin QR Code",
+      "label.idle_live_telemetry_visible": "待機時顯示即時數據",
       "label.access_code": "存取碼",
       "panel.race_control": "比賽控制",
       "panel.station_status": "站位狀態",
@@ -1791,6 +1802,8 @@
       "message.signup_qr_hidden": "已在大螢幕隱藏報名 QR Code。",
       "message.admin_qr_shown": "已在大螢幕顯示 Game Admin QR Code。",
       "message.admin_qr_hidden": "已在大螢幕隱藏 Game Admin QR Code。",
+      "message.idle_live_telemetry_shown": "待機時將在大螢幕顯示即時數據。",
+      "message.idle_live_telemetry_hidden": "已在待機時隱藏大螢幕即時數據。",
       "state.sound_on": "開",
       "state.sound_off": "關",
       "label.lane": "跑道",
@@ -2520,6 +2533,7 @@
       $("start-sound-enabled").value = race.start_countdown_sound_enabled === false ? "false" : "true";
       $("signup-qr-visible").value = race.signup_qr_visible === false ? "false" : "true";
       $("admin-qr-visible").value = race.admin_qr_visible === false ? "false" : "true";
+      $("idle-live-telemetry-visible").value = race.idle_live_telemetry_visible === false ? "false" : "true";
       $("event-start-label").textContent = race.event_start_epoch_ms
         ? t("text.event_start_since", {
             time: new Date(race.event_start_epoch_ms).toLocaleTimeString([], {
@@ -3526,6 +3540,22 @@
         setMessage("race-message", visible ? t("message.admin_qr_shown") : t("message.admin_qr_hidden"), "ok");
       } catch (error) {
         $("admin-qr-visible").value = previousValue;
+        setMessage("race-message", error.message, "error");
+      }
+    }
+
+    async function setIdleLiveTelemetryVisible(visible) {
+      const previousValue = state.race?.idle_live_telemetry_visible === false ? "false" : "true";
+      try {
+        state.race = await fetchJson("/api/dashboard/idle-telemetry-visibility", {
+          method: "POST",
+          headers: adminHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({ visible }),
+        });
+        renderRace();
+        setMessage("race-message", visible ? t("message.idle_live_telemetry_shown") : t("message.idle_live_telemetry_hidden"), "ok");
+      } catch (error) {
+        $("idle-live-telemetry-visible").value = previousValue;
         setMessage("race-message", error.message, "error");
       }
     }
