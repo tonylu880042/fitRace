@@ -3846,6 +3846,22 @@
       if (leaderboardContainer) leaderboardContainer.style.display = "";
     }
 
+    // Pure decision, no DOM access (mirrors shouldPlayClassSegmentCue):
+    // called from the state_change handler (updateUIState) on every race
+    // state broadcast, which is the ONLY message a Game Admin toggle flip
+    // is guaranteed to reach -- MqttSubscriber stops sending
+    // "idle_telemetry" broadcasts entirely once the toggle is off, so
+    // renderIdleTelemetry's own `!data.visible` check alone can never hide
+    // an already-shown panel in that case.
+    function shouldHideIdleTelemetry(data, state) {
+      return (
+        state === "RUNNING" ||
+        state === "STOPPED" ||
+        data.session_mode === "class" ||
+        data.idle_live_telemetry_visible === false
+      );
+    }
+
     function formatIdleMetricValue(value, unit, digits = 0) {
       const num = Number(value);
       if (value === null || value === undefined || !Number.isFinite(num)) return "--";
@@ -7073,11 +7089,19 @@
       }
 
       // Idle live telemetry only makes sense outside a running/finished
-      // race (see get_idle_telemetry_snapshot's "visible" rule) -- this is
-      // the backend-state-driven hide half; the show half happens when the
-      // next throttled "idle_telemetry" WS message actually arrives (see
+      // race (see get_idle_telemetry_snapshot's "visible" rule) and while
+      // the Game Admin toggle is on -- this is the backend-state-driven
+      // hide half; the show half happens when the next throttled
+      // "idle_telemetry" WS message actually arrives (see
       // renderIdleTelemetry), never from a local dashboard control.
-      if (currentState === "RUNNING" || currentState === "STOPPED" || data.session_mode === "class") {
+      //
+      // This must be checked here, not only inside renderIdleTelemetry:
+      // the backend stops sending "idle_telemetry" broadcasts entirely once
+      // the toggle is off (see MqttSubscriber._maybe_broadcast_idle_telemetry),
+      // so a state_change (which always fires from the toggle's own API
+      // endpoint) is the ONLY message that can ever tell an already-shown
+      // panel to go away.
+      if (shouldHideIdleTelemetry(data, currentState)) {
         hideIdleTelemetry();
       }
 
