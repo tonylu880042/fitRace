@@ -2,6 +2,10 @@ import time
 from typing import Dict, Any, Callable, Optional
 from hub_server.domain.models import RaceState, RaceConfig
 from hub_server.domain.class_models import ClassPlan, segment_at
+from hub_server.usecases.idle_telemetry_tracker import (
+    BEST_METRICS as IDLE_BEST_METRICS,
+    IdleTelemetryTracker,
+)
 
 
 class RaceManager:
@@ -14,11 +18,17 @@ class RaceManager:
 
     VALID_SESSION_MODES = {"race", "class"}
 
+    # A station's idle sample older than this looks "waiting" rather than
+    # showing frozen numbers -- see get_idle_telemetry_snapshot().
+    IDLE_STALE_MS = 5_000
+
     def __init__(
         self,
         settings_store=None,
         clock_offset_ms_fn: Optional[Callable[[str], int]] = None,
+        now_ms: Optional[Callable[[], int]] = None,
     ):
+        self._now_ms: Callable[[], int] = now_ms or (lambda: int(time.time() * 1000))
         self._state: RaceState = RaceState.IDLE
         self._config: Optional[RaceConfig] = None
         self._leaderboard_display_mode: str = "classic"
@@ -30,6 +40,13 @@ class RaceManager:
         # before this feature existed keep showing both QRs.
         self._signup_qr_visible: bool = True
         self._admin_qr_visible: bool = True
+        # Venue-visitor "idle live telemetry": show current speed/power/
+        # cadence/heart-rate per bound station on the dashboard while no
+        # race is running. Completely separate from race progress/results
+        # -- see hub_server/usecases/idle_telemetry_tracker.py. Default ON,
+        # persisted like the QR visibility toggles above.
+        self._idle_live_telemetry_visible: bool = True
+        self._idle_telemetry = IdleTelemetryTracker(now_ms=self._now_ms)
         self._settings_store = settings_store
         # Injected callable, never the registry itself (Clean Architecture:
         # this usecase must not import an adapter). Resolves an edge's
@@ -115,6 +132,8 @@ class RaceManager:
             self._signup_qr_visible = data["signup_qr_visible"]
         if isinstance(data.get("admin_qr_visible"), bool):
             self._admin_qr_visible = data["admin_qr_visible"]
+        if isinstance(data.get("idle_live_telemetry_visible"), bool):
+            self._idle_live_telemetry_visible = data["idle_live_telemetry_visible"]
         config = data.get("config")
         if isinstance(config, dict):
             try:
@@ -163,6 +182,7 @@ class RaceManager:
                 "start_countdown_sound_enabled": self._start_countdown_sound_enabled,
                 "signup_qr_visible": self._signup_qr_visible,
                 "admin_qr_visible": self._admin_qr_visible,
+                "idle_live_telemetry_visible": self._idle_live_telemetry_visible,
                 "config": self._config.model_dump() if self._config else None,
                 "session_mode": self._session_mode,
                 "class_plan": (
@@ -286,6 +306,103 @@ class RaceManager:
         self._persist_settings()
         return self._admin_qr_visible
 
+    def get_idle_live_telemetry_visible(self) -> bool:
+        return self._idle_live_telemetry_visible
+
+    def set_idle_live_telemetry_visible(self, visible: bool) -> bool:
+        self._idle_live_telemetry_visible = bool(visible)
+        self._persist_settings()
+        return self._idle_live_telemetry_visible
+
+    # -- idle live telemetry (venue-visitor display) ---------------------
+    # Totally separate from race progress/results/records -- see
+    # IdleTelemetryTracker's module docstring. In-memory only, never
+    # persisted, and reset whenever a race/class starts or is reset.
+    # Capture is deliberately gated to IDLE/READY only (not RUNNING/
+    # STOPPED) -- see get_idle_telemetry_snapshot's "visible" rule and
+    # tests/unit/hub/test_race_manager_idle_telemetry.py.
+
+    def _record_idle_telemetry_sample(
+        self, node_id: str, payload: Dict[str, Any]
+    ) -> None:
+        equipment_type = self._active_nodes.get(node_id, payload.get("equipment_type"))
+        metrics = {
+            "instantaneous_speed_kph": payload.get("instantaneous_speed_kph", 0.0),
+            "power_watts": payload.get("power_watts", 0),
+            "cadence_rpm": payload.get("cadence_rpm", 0),
+            "heart_rate_bpm": payload.get("heart_rate_bpm", 0),
+            "pace_sec_per_500m": payload.get("pace_sec_per_500m"),
+            "equipment_type": equipment_type,
+        }
+        self._idle_telemetry.record_sample(node_id, metrics)
+
+    def reset_idle_telemetry(self) -> None:
+        self._idle_telemetry.reset()
+
+    def get_idle_telemetry_snapshot(self) -> Dict[str, Any]:
+        now_ms = self._now_ms()
+        stations = []
+        for station_number, node_id in sorted(self._stations.items()):
+            sample = self._idle_telemetry.get_sample(node_id)
+            is_stale = sample is None or (
+                now_ms - sample["received_epoch_ms"] > self.IDLE_STALE_MS
+            )
+            stations.append(
+                {
+                    "station_number": station_number,
+                    "node_id": node_id,
+                    "athlete_name": self._station_registrations.get(station_number),
+                    "equipment_type": (sample or {}).get("equipment_type")
+                    or self._active_nodes.get(node_id),
+                    "is_stale": is_stale,
+                    "instantaneous_speed_kph": (
+                        None if is_stale else sample.get("instantaneous_speed_kph")
+                    ),
+                    "power_watts": None if is_stale else sample.get("power_watts"),
+                    "cadence_rpm": None if is_stale else sample.get("cadence_rpm"),
+                    "heart_rate_bpm": (
+                        None if is_stale else sample.get("heart_rate_bpm")
+                    ),
+                    "pace_sec_per_500m": (
+                        None if is_stale else sample.get("pace_sec_per_500m")
+                    ),
+                }
+            )
+
+        best_rows = []
+        for metric_name in IDLE_BEST_METRICS:
+            entry = self._idle_telemetry.get_best().get(metric_name)
+            if not entry:
+                continue
+            best_node_id = entry["node_id"]
+            best_station_number = next(
+                (sn for sn, nid in self._stations.items() if nid == best_node_id),
+                None,
+            )
+            athlete_name = (
+                self._station_registrations.get(best_station_number)
+                if best_station_number is not None
+                else None
+            )
+            best_rows.append(
+                {
+                    "metric": metric_name,
+                    "value": entry["value"],
+                    "node_id": best_node_id,
+                    "station_number": best_station_number,
+                    "athlete_name": athlete_name,
+                }
+            )
+
+        return {
+            "visible": (
+                self._idle_live_telemetry_visible
+                and self._state in (RaceState.IDLE, RaceState.READY)
+            ),
+            "stations": stations,
+            "best": best_rows,
+        }
+
     @staticmethod
     def _empty_participant_progress(
         node_id: str,
@@ -356,6 +473,7 @@ class RaceManager:
             "start_countdown_sound_enabled": self.get_start_countdown_sound_enabled(),
             "signup_qr_visible": self.get_signup_qr_visible(),
             "admin_qr_visible": self.get_admin_qr_visible(),
+            "idle_live_telemetry_visible": self.get_idle_live_telemetry_visible(),
             "event_start_epoch_ms": self.get_event_start_epoch_ms(),
             "leaderboard": self.get_leaderboard_progress(),
             "team_leaderboard": team_leaderboard,
@@ -817,6 +935,9 @@ class RaceManager:
         equipment_type = payload.get("equipment_type", "unknown")
         self.update_active_node(node_id, equipment_type, payload.get("equipment_id"))
 
+        if self._state in (RaceState.IDLE, RaceState.READY):
+            self._record_idle_telemetry_sample(node_id, payload)
+
         if self.get_state() != RaceState.RUNNING:
             return None
 
@@ -944,6 +1065,12 @@ class RaceManager:
         # Release last race's frozen clock offsets -- this race re-freezes
         # each edge's offset fresh, the first time it's used.
         self._frozen_clock_offsets_ms = {}
+        # A running race must start its "idle period" mini leaderboard from
+        # a clean slate -- there is no backend COUNTDOWN state (the 3-2-1-Go
+        # countdown is a client-side overlay sent while still READY, see
+        # /api/race/countdown-start), so this READY->RUNNING transition is
+        # the reliable equivalent reset point.
+        self.reset_idle_telemetry()
         import time
 
         self._start_time_epoch_ms = int(time.time() * 1000)
@@ -1050,6 +1177,7 @@ class RaceManager:
         self._station_relay_members.clear()
         self._station_has_avatar.clear()
         self._active_nodes.clear()
+        self.reset_idle_telemetry()
         # Reset must actually stick: without this, race_settings.json still
         # holds the cleared config, and the next hub restart resurrects it
         # via _load_settings(). Station mapping, display mode, sound
