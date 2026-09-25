@@ -214,6 +214,10 @@ class DashboardQrVisibilityPayload(BaseModel):
     admin_qr_visible: Optional[bool] = None
 
 
+class IdleLiveTelemetryVisibilityPayload(BaseModel):
+    visible: bool
+
+
 class AssignStationPayload(BaseModel):
     station_number: int = Field(..., ge=1)
     node_id: Optional[str] = None
@@ -1127,6 +1131,17 @@ async def set_dashboard_qr_visibility(
         race_manager.set_signup_qr_visible(payload.signup_qr_visible)
     if payload.admin_qr_visible is not None:
         race_manager.set_admin_qr_visible(payload.admin_qr_visible)
+    return await broadcast_race_state()
+
+
+@app.post("/api/dashboard/idle-telemetry-visibility")
+async def set_idle_live_telemetry_visibility(
+    payload: IdleLiveTelemetryVisibilityPayload, request: Request
+):
+    require_admin(request)
+    # Display-only setting -- allowed in any race state, same as the QR
+    # visibility toggles above.
+    race_manager.set_idle_live_telemetry_visible(payload.visible)
     return await broadcast_race_state()
 
 

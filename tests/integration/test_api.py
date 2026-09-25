@@ -77,6 +77,7 @@ def test_hub_management_endpoints_require_admin_token(monkeypatch):
         ("/api/leaderboard/display", {"mode": "classic"}),
         ("/api/race/start-sound", {"enabled": True}),
         ("/api/dashboard/qr-visibility", {"signup_qr_visible": True}),
+        ("/api/dashboard/idle-telemetry-visibility", {"visible": True}),
     ]
     for route, payload in blocked_routes:
         response = client.post(route, json=payload)

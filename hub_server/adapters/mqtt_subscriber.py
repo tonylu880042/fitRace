@@ -49,6 +49,11 @@ class TelemetryPayload(BaseModel):
 
 
 class MqttSubscriber:
+    # Idle live telemetry is a per-station dashboard display, not a race
+    # scoring stream -- ~2Hz total is plenty and keeps a venue with several
+    # machines from flooding the dashboard with one WS message per sample.
+    IDLE_TELEMETRY_BROADCAST_MIN_INTERVAL_S = 0.5
+
     def __init__(
         self,
         async_mqtt_client,
@@ -71,6 +76,7 @@ class MqttSubscriber:
         self._race_event_engine = race_event_engine
         self._race_result_store = race_result_store
         self._loop = asyncio.get_event_loop()
+        self._last_idle_telemetry_broadcast_monotonic: float | None = None
 
     def _registered_nodes(self) -> list[dict]:
         list_nodes = getattr(self._node_registry, "list_nodes", None)
@@ -247,3 +253,27 @@ class MqttSubscriber:
         else:
             # Trigger frontend refresh for new active node discovery
             await self._ws_manager.broadcast({})
+            await self._maybe_broadcast_idle_telemetry()
+
+    async def _maybe_broadcast_idle_telemetry(self):
+        """Throttled dashboard broadcast of the idle-period telemetry
+        snapshot (per-station live values + mini leaderboard). Degrades to a
+        no-op for a race_manager collaborator that doesn't implement
+        get_idle_telemetry_snapshot() (e.g. an older test double) -- this
+        must never break ordinary telemetry handling."""
+        get_snapshot = getattr(self._race_manager, "get_idle_telemetry_snapshot", None)
+        if not callable(get_snapshot):
+            return
+        snapshot = get_snapshot()
+        if not snapshot or not snapshot.get("visible"):
+            return
+
+        now = self._loop.time()
+        if (
+            self._last_idle_telemetry_broadcast_monotonic is not None
+            and now - self._last_idle_telemetry_broadcast_monotonic
+            < self.IDLE_TELEMETRY_BROADCAST_MIN_INTERVAL_S
+        ):
+            return
+        self._last_idle_telemetry_broadcast_monotonic = now
+        await self._ws_manager.broadcast({"type": "idle_telemetry", **snapshot})
