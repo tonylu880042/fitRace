@@ -224,6 +224,25 @@ def test_an_unknown_or_missing_type_still_gets_an_icon():
     assert _icons(html) == ["generic", "generic"]
 
 
+def test_curved_treadmill_gets_the_treadmill_icon():
+    # Regression: curved_treadmill was missing from FAMILIES entirely and
+    # fell back to generic, even though it is a treadmill in every way that
+    # matters for the icon.
+    html = _board_html(["curved_treadmill"])
+    assert _icons(html) == ["treadmill"]
+
+
+def test_upright_and_recumbent_bike_get_the_bike_icon():
+    html = _board_html(["upright_bike", "recumbent_bike"])
+    assert _icons(html) == ["bike", "bike"]
+
+
+def test_elliptical_and_stair_climber_stay_generic():
+    # Left generic on purpose -- no close-enough existing family shape.
+    html = _board_html(["elliptical", "stair_climber"])
+    assert _icons(html) == ["generic", "generic"]
+
+
 def test_one_icon_per_station_card():
     html = _board_html(["spin_bike"] * 24)
     assert len(_icons(html)) == 24

@@ -177,6 +177,29 @@ def test_card_shows_a_generic_icon_for_unknown_equipment_never_a_broken_element(
     )
     assert 'data-equipment-icon="generic"' in html
     assert 'aria-label="T[equipment_type.generic]"' in html
+
+
+def test_curved_treadmill_card_gets_the_treadmill_icon():
+    # Regression: curved_treadmill was missing from equipmentIconSvg's
+    # FAMILIES entirely, so curved treadmills -- the main equipment at the
+    # upcoming running event -- fell back to the generic icon even though
+    # their label correctly says "Curved Treadmill" / 曲面跑步機.
+    html = _run_render_station_card(
+        '{"station_number": 5, "equipment_type": "curved_treadmill", '
+        '"instantaneous_speed_kph": 12.0, "cadence_rpm": 160, '
+        '"heart_rate_bpm": 140, "is_stale": false}'
+    )
+    assert 'data-equipment-icon="treadmill"' in html
+
+
+def test_upright_and_recumbent_bike_cards_get_the_bike_icon():
+    for equipment_type in ("upright_bike", "recumbent_bike"):
+        html = _run_render_station_card(
+            f'{{"station_number": 6, "equipment_type": "{equipment_type}", '
+            '"instantaneous_speed_kph": 20.0, "power_watts": 150, '
+            '"cadence_rpm": 90, "heart_rate_bpm": 130, "is_stale": false}'
+        )
+        assert 'data-equipment-icon="bike"' in html
     assert "<svg" in html and "</svg>" in html
 
 
