@@ -262,7 +262,11 @@ def _run_build_class_board_html(session_data_js: str, clock_js: str) -> str:
     # nested copy of its own.
     is_running = _strip_js_comments(_extract_function(source, "isRunningEquipment"))
     format_pace = _strip_js_comments(_extract_function(source, "formatPacePerKm"))
-    fn = _strip_js_comments(_extract_function(source, "buildClassBoardHtml"))
+    fn = (
+        _strip_js_comments(_extract_function(source, "equipmentIconSvg"))
+        + "\n"
+        + _strip_js_comments(_extract_function(source, "buildClassBoardHtml"))
+    )
     script = (
         _t_stub()
         + _metric_number_stub()

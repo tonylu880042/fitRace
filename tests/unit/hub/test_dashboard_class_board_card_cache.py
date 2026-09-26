@@ -89,6 +89,7 @@ _FN_NAMES = [
     # rather than a nested copy of their own.
     "isRunningEquipment",
     "formatPacePerKm",
+    "equipmentIconSvg",
     "resetClassBoardCardCache",
     "classTargetStatusForPatch",
     "computeClassProgressPercentForPatch",

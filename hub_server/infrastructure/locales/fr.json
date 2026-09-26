@@ -331,5 +331,10 @@
   "idle.metric.cadence": "Cadence",
   "idle.metric.heart_rate": "Fréquence cardiaque",
   "idle.best_title": "Meilleur de la session",
-  "idle.metric.pace": "Allure"
+  "idle.metric.pace": "Allure",
+  "equipment_type.bike": "Vélo",
+  "equipment_type.indoor_bike": "Vélo d'intérieur",
+  "equipment_type.rower": "Rameur",
+  "equipment_type.skierg": "Ski Erg",
+  "equipment_type.generic": "Appareil"
 }

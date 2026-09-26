@@ -139,6 +139,10 @@ def _run_render_station_card(station_js: str) -> str:
         _strip_js_comments(_extract_function(source, "formatTreadmillPace")),
         _strip_js_comments(_extract_function(source, "formatIdleMetricValue")),
         _strip_js_comments(_extract_function(source, "idleParticipantLabel")),
+        _strip_js_comments(_extract_const(source, "KNOWN_EQUIPMENT_TYPES_FOR_LABEL")),
+        _strip_js_comments(_extract_function(source, "equipmentTypeLabelKey")),
+        _strip_js_comments(_extract_function(source, "equipmentIconSvg")),
+        _strip_js_comments(_extract_function(source, "idleStationIconHtml")),
         _strip_js_comments(_extract_function(source, "renderIdleStationCard")),
     ]
     script = (

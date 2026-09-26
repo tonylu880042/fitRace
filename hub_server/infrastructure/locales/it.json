@@ -331,5 +331,10 @@
   "idle.metric.cadence": "Cadenza",
   "idle.metric.heart_rate": "Frequenza cardiaca",
   "idle.best_title": "Miglior risultato",
-  "idle.metric.pace": "Passo"
+  "idle.metric.pace": "Passo",
+  "equipment_type.bike": "Bici",
+  "equipment_type.indoor_bike": "Bici indoor",
+  "equipment_type.rower": "Vogatore",
+  "equipment_type.skierg": "Ski Erg",
+  "equipment_type.generic": "Attrezzo"
 }

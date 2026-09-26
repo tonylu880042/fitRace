@@ -331,5 +331,10 @@
   "idle.metric.cadence": "Kadens",
   "idle.metric.heart_rate": "Puls",
   "idle.best_title": "Sessionens bästa",
-  "idle.metric.pace": "Tempo"
+  "idle.metric.pace": "Tempo",
+  "equipment_type.bike": "Cykel",
+  "equipment_type.indoor_bike": "Inomhuscykel",
+  "equipment_type.rower": "Roddmaskin",
+  "equipment_type.skierg": "Ski Erg",
+  "equipment_type.generic": "Maskin"
 }

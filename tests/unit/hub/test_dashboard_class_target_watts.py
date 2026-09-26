@@ -204,7 +204,11 @@ def _run_build_class_board_html(session_data_js: str, clock_js: str) -> str:
     # nested copy of its own.
     is_running = _strip_js_comments(_extract_function(source, "isRunningEquipment"))
     format_pace = _strip_js_comments(_extract_function(source, "formatPacePerKm"))
-    fn = _strip_js_comments(_extract_function(source, "buildClassBoardHtml"))
+    fn = (
+        _strip_js_comments(_extract_function(source, "equipmentIconSvg"))
+        + "\n"
+        + _strip_js_comments(_extract_function(source, "buildClassBoardHtml"))
+    )
     script = (
         _t_stub()
         + _metric_number_stub()
@@ -520,7 +524,9 @@ def _run_render_class_board(data_js: str) -> dict:
     is_running_fn = _strip_js_comments(_extract_function(source, "isRunningEquipment"))
     format_pace_fn = _strip_js_comments(_extract_function(source, "formatPacePerKm"))
     build_class_board_html_fn = _strip_js_comments(
-        _extract_function(source, "buildClassBoardHtml")
+        _extract_function(source, "equipmentIconSvg")
+        + "\n"
+        + _extract_function(source, "buildClassBoardHtml")
     )
 
     script = (
