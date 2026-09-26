@@ -104,11 +104,11 @@ def _run_format_pace(speed_kph):
 
 
 def test_pace_at_12_kph_is_5_00():
-    assert _run_format_pace(12) == "5:00 /km"
+    assert _run_format_pace(12) == '5:00<span class="idle-metric-unit"> /km</span>'
 
 
 def test_pace_at_10_5_kph_is_5_43():
-    assert _run_format_pace(10.5) == "5:43 /km"
+    assert _run_format_pace(10.5) == '5:43<span class="idle-metric-unit"> /km</span>'
 
 
 def test_pace_at_zero_is_dashes():
@@ -162,7 +162,7 @@ def test_treadmill_card_shows_pace_as_primary_and_no_power_tile():
         '"cadence_rpm": 160, "heart_rate_bpm": 140, "is_stale": false}'
     )
     assert "idle-metric-value-primary" in html
-    assert "5:00 /km" in html
+    assert "5:00" in html and "idle-metric-unit" in html and "/km" in html
     assert "12.0" in html  # secondary speed tile
     assert "160" in html
     assert "140" in html
@@ -178,7 +178,7 @@ def test_curved_treadmill_card_also_shows_pace_not_power():
         '"instantaneous_speed_kph": 12.0, "power_watts": 300, '
         '"cadence_rpm": 160, "heart_rate_bpm": 140, "is_stale": false}'
     )
-    assert "5:00 /km" in html
+    assert "5:00" in html and "idle-metric-unit" in html and "/km" in html
     assert "300" not in html
 
 
@@ -244,7 +244,7 @@ def test_best_row_renders_treadmill_pace_with_station_label():
     html = _run_render_best_row(
         '{"metric": "treadmill_pace_speed_kph", "value": 12.0, "station_number": 2}'
     )
-    assert "5:00 /km" in html
+    assert "5:00" in html and "idle-metric-unit" in html and "/km" in html
     assert "stations.station 2" in html
 
 

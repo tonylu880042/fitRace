@@ -99,7 +99,9 @@ def _run_format(value, unit, digits=0):
 
 
 def test_format_idle_metric_value_renders_number_with_unit():
-    assert _run_format(9.5, " km/h", 1) == "9.5 km/h"
+    assert (
+        _run_format(9.5, " km/h", 1) == '9.5<span class="idle-metric-unit"> km/h</span>'
+    )
 
 
 def test_format_idle_metric_value_renders_dash_for_none():

@@ -1898,6 +1898,16 @@
       font-weight: 700;
       color: var(--text-main);
       line-height: 1.1;
+      white-space: nowrap;
+    }
+
+    /* The unit (km/h, W, /km) rides inline with the number, in its own
+       smaller size, and never wraps onto a second line -- see
+       formatIdleMetricValue/formatTreadmillPace. */
+    .idle-metric-unit {
+      font-size: 0.5em;
+      font-weight: 600;
+      color: var(--text-muted);
     }
 
     .idle-metric-label {
@@ -3892,7 +3902,12 @@
     function formatIdleMetricValue(value, unit, digits = 0) {
       const num = Number(value);
       if (value === null || value === undefined || !Number.isFinite(num)) return "--";
-      return `${num.toFixed(digits)}${unit}`;
+      const numberText = num.toFixed(digits);
+      // Unit wrapped in its own (smaller, CSS-styled) span so it never
+      // wraps onto a second line and never competes with the number for
+      // size -- see .idle-metric-unit / white-space: nowrap.
+      if (!unit) return numberText;
+      return `${numberText}<span class="idle-metric-unit">${unit}</span>`;
     }
 
     // No athlete/registered name is ever shown in the idle view (product
@@ -3920,7 +3935,9 @@
       const totalSeconds = Math.round(3600 / speed);
       const minutes = Math.floor(totalSeconds / 60);
       const seconds = String(totalSeconds % 60).padStart(2, "0");
-      return `${minutes}:${seconds} /km`;
+      // "/km" wrapped the same way formatIdleMetricValue wraps its unit --
+      // smaller, inline, never wraps to a second line.
+      return `${minutes}:${seconds}<span class="idle-metric-unit"> /km</span>`;
     }
 
     // Accessible label for the idle station icon (aria-label/title): the
