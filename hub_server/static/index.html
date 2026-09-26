@@ -3869,11 +3869,13 @@
     // in hub_server/usecases/race_manager.py. Driven entirely by the
     // throttled "idle_telemetry" WS message and by race state; there is no
     // local control on this page (CLAUDE.md page boundaries).
+    // Heart rate is deliberately absent here: the mini "best of session"
+    // leaderboard never includes it (product decision, keeps the row
+    // fitting on one line) -- it still shows on every per-station card.
     const IDLE_BEST_METRIC_LABEL_KEYS = {
       instantaneous_speed_kph: "idle.metric.speed",
       power_watts: "idle.metric.power",
       cadence_rpm: "idle.metric.cadence",
-      heart_rate_bpm: "idle.metric.heart_rate",
     };
 
     function hideIdleTelemetry() {

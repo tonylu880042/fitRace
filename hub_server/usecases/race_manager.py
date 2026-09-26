@@ -370,8 +370,11 @@ class RaceManager:
                 }
             )
 
+        # Product-specified mini-leaderboard order: pace, then speed, power,
+        # cadence -- heart rate is never included (see BEST_METRICS's own
+        # comment in idle_telemetry_tracker.py).
         best_rows = []
-        for metric_name in IDLE_BEST_METRICS + (TREADMILL_PACE_BEST_KEY,):
+        for metric_name in (TREADMILL_PACE_BEST_KEY,) + IDLE_BEST_METRICS:
             entry = self._idle_telemetry.get_best().get(metric_name)
             if not entry:
                 continue

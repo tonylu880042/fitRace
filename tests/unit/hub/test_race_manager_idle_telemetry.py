@@ -203,9 +203,45 @@ def test_mini_leaderboard_treadmill_pace_best_excludes_non_treadmill_and_vice_ve
     assert best["instantaneous_speed_kph"]["station_number"] == 2
     assert best["treadmill_pace_speed_kph"]["station_number"] == 1
     assert best["treadmill_pace_speed_kph"]["value"] == 12.0
-    # Treadmill power was never tracked at all -- the bike's is the only
-    # power best.
-    assert best["power_watts"]["station_number"] == 2
+
+
+def test_mini_leaderboard_orders_pace_speed_power_cadence_and_drops_heart_rate():
+    manager = RaceManager()
+    manager.assign_station(1, "treadmill-01")
+    manager.assign_station(2, "bike-01")
+
+    manager.ingest_telemetry(
+        _treadmill_payload(
+            "treadmill-01",
+            equipment_type="treadmill",
+            instantaneous_speed_kph=12.0,
+            cadence_rpm=170,
+            heart_rate_bpm=140,
+        )
+    )
+    manager.ingest_telemetry(
+        _treadmill_payload(
+            "bike-01",
+            equipment_type="fan_bike",
+            instantaneous_speed_kph=25.0,
+            power_watts=200,
+            cadence_rpm=90,
+            heart_rate_bpm=150,
+        )
+    )
+
+    best_rows = manager.get_idle_telemetry_snapshot()["best"]
+    metrics_in_order = [row["metric"] for row in best_rows]
+    assert metrics_in_order == [
+        "treadmill_pace_speed_kph",
+        "instantaneous_speed_kph",
+        "power_watts",
+        "cadence_rpm",
+    ]
+    # Heart rate is never included in the mini leaderboard, even though
+    # both stations reported it -- it still shows on the per-station cards
+    # (see test_idle_snapshot_shows_bound_station_with_live_sample_while_idle).
+    assert "heart_rate_bpm" not in metrics_in_order
 
 
 def test_idle_snapshot_never_includes_athlete_name_even_when_registered():

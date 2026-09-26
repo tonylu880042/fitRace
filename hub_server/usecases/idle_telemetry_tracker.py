@@ -16,11 +16,14 @@ from typing import Any, Callable, Dict, Optional
 
 # Metrics tracked for the idle "best of session" mini leaderboard. Kept to
 # cheap, already-normalized telemetry fields -- see TELEMETRY_SPEC.md.
+# heart_rate_bpm is deliberately NOT tracked here (product decision): the
+# mini leaderboard drops it entirely to keep the row fitting on one line at
+# 1280px wide. It still shows on every per-station card as usual -- this
+# only affects the "best of session" aggregate.
 BEST_METRICS = (
     "instantaneous_speed_kph",
     "power_watts",
     "cadence_rpm",
-    "heart_rate_bpm",
 )
 
 # Equipment types the dashboard shows a running pace for instead of raw

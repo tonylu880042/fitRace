@@ -145,7 +145,7 @@ def test_treadmill_pace_speed_ignores_zero_speed():
     assert "treadmill_pace_speed_kph" not in tracker.get_best()
 
 
-def test_cadence_and_heart_rate_best_are_not_equipment_restricted():
+def test_cadence_best_is_not_equipment_restricted():
     tracker = IdleTelemetryTracker()
     tracker.record_sample(
         "tread-1",
@@ -153,4 +153,12 @@ def test_cadence_and_heart_rate_best_are_not_equipment_restricted():
     )
     best = tracker.get_best()
     assert best["cadence_rpm"]["node_id"] == "tread-1"
-    assert best["heart_rate_bpm"]["node_id"] == "tread-1"
+
+
+def test_heart_rate_never_appears_in_best_at_all():
+    # Product decision: the mini "best of session" leaderboard drops heart
+    # rate entirely (keeps the row fitting on one line) -- it still shows on
+    # every per-station card as usual, but is never tracked as a "best".
+    tracker = IdleTelemetryTracker()
+    tracker.record_sample("n1", {"heart_rate_bpm": 190, "equipment_type": "fan_bike"})
+    assert "heart_rate_bpm" not in tracker.get_best()
