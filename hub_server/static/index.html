@@ -1867,9 +1867,15 @@
       margin-bottom: 0.6rem;
     }
 
+    /* Scoped to the idle view only -- class mode's .class-station-icon
+       keeps its own, smaller sizing (24-station board has no room to
+       spare). Owner request: clearly bigger than the "Station N" header
+       text (.idle-station-name, 1.05rem) -- roughly 1.6-2x that text
+       height. The header stays flex row / one line regardless of icon
+       height, so this never causes a wrap. */
     .idle-station-icon {
-      width: 22px;
-      height: 22px;
+      width: 2rem;
+      height: 2rem;
       flex: none;
       color: var(--volt-yellow);
       display: inline-flex;
@@ -1959,6 +1965,15 @@
 
     .idle-best-row strong {
       color: var(--volt-yellow);
+    }
+
+    /* Owner request: the unit inside a 本節最佳 row (/km, km/h, W) reused
+       .idle-metric-unit's 0.5em, which is unreadable on a projector at
+       this row's smaller (0.95rem) base size. Scoped to just this row so
+       the per-station card tiles (where 0.5em already reads fine against
+       their much larger clamp()'d number) are untouched. */
+    .idle-best-row .idle-metric-unit {
+      font-size: 0.72em;
     }
 
     .empty-state svg {
