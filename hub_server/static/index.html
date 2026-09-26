@@ -3883,6 +3883,11 @@
       if (panel) panel.classList.remove("show");
       const leaderboardContainer = document.getElementById("leaderboard-container");
       if (leaderboardContainer) leaderboardContainer.style.display = "";
+      // Restore the venue-status banner the moment the idle panel goes
+      // away -- see the hide half in renderIdleTelemetry below for why it
+      // is hidden in the first place (1280x720 fit).
+      const banner = document.getElementById("race-stage-banner");
+      if (banner) banner.style.display = "";
     }
 
     // Pure decision, no DOM access (mirrors shouldPlayClassSegmentCue):
@@ -4114,6 +4119,14 @@
 
       panel.classList.add("show");
       if (leaderboardContainer) leaderboardContainer.style.display = "none";
+      // Collapse the venue-status banner ("Waiting for setup" etc) while
+      // idle telemetry is shown -- at 1280x720 there is no room for both,
+      // and the idle cards are the more useful thing to show a venue
+      // visitor. hideIdleTelemetry() restores it the moment this panel
+      // goes away, so this is entirely backend-state-driven (the same
+      // "visible" signal that shows the cards), never a local control.
+      const banner = document.getElementById("race-stage-banner");
+      if (banner) banner.style.display = "none";
       exitIdleRecordWall();
     }
 

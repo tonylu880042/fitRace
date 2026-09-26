@@ -160,7 +160,8 @@ def _run_render_idle_telemetry(
         "'idle-stations-panel': makeElement(), "
         "'idle-stations-grid': makeElement(), "
         "'idle-best-panel': makeElement(), "
-        "'leaderboard-container': makeElement() };\n"
+        "'leaderboard-container': makeElement(), "
+        "'race-stage-banner': makeElement() };\n"
         "const document = { getElementById: (id) => elements[id] || null };\n"
         + "\n".join(pieces)
         + "\n"
@@ -171,6 +172,7 @@ def _run_render_idle_telemetry(
         + "  bestHtml: elements['idle-best-panel'].innerHTML,\n"
         + "  bestDisplay: elements['idle-best-panel'].style.display,\n"
         + "  leaderboardDisplay: elements['leaderboard-container'].style.display,\n"
+        + "  bannerDisplay: elements['race-stage-banner'].style.display,\n"
         + "  enterIdleRecordWallCalls,\n"
         + "  exitIdleRecordWallCalls,\n"
         + "}));\n"
@@ -215,6 +217,8 @@ def test_render_idle_telemetry_shows_grid_when_visible_with_stations():
     assert result["leaderboardDisplay"] == "none"
     # Idle telemetry takes over from the older idle record wall carousel.
     assert result["exitIdleRecordWallCalls"] == 1
+    # 1280x720 fit: the venue-status banner collapses while idle cards show.
+    assert result["bannerDisplay"] == "none"
 
 
 def test_render_idle_telemetry_shows_waiting_label_for_stale_station():
@@ -260,3 +264,22 @@ def test_render_idle_telemetry_falls_back_to_record_wall_when_not_visible():
     )
     assert result["panelShown"] is False
     assert result["enterIdleRecordWallCalls"] == 1
+
+
+def test_render_idle_telemetry_restores_venue_banner_when_falling_back():
+    # The banner must come back the moment the idle panel goes away, not
+    # stay collapsed forever.
+    result = _run_render_idle_telemetry(
+        "IDLE", "race", '{"visible": true, "stations": [], "best": []}'
+    )
+    assert result["bannerDisplay"] == ""
+
+
+def test_render_idle_telemetry_restores_venue_banner_while_running():
+    result = _run_render_idle_telemetry(
+        "RUNNING",
+        "race",
+        '{"visible": true, "stations": [{"station_number": 1, '
+        '"instantaneous_speed_kph": 9.0, "is_stale": false}], "best": []}',
+    )
+    assert result["bannerDisplay"] == ""
