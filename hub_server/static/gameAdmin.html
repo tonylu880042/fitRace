@@ -1726,6 +1726,7 @@
         "button.confirm_import": "Confirm Import",
         "roster_import_preview.replace_note": "This will replace the current {count} entr(y/ies).",
         "roster_import_preview.team_size_warning": "{count} member(s), expected {expected}.",
+        "roster_import_preview.teamless_warning": "{count} athletes have no team (required for relay)",
         "roster_error.missing_header_row": "CSV has no header row",
         "roster_error.missing_header_name": "Missing required column: name",
         "roster_error.missing_name": "Missing name",
@@ -2008,6 +2009,7 @@
       "button.confirm_import": "確認匯入",
       "roster_import_preview.replace_note": "將取代目前 {count} 筆名單",
       "roster_import_preview.team_size_warning": "共 {count} 人，預期 {expected} 人",
+      "roster_import_preview.teamless_warning": "{count} 位選手未填隊伍（接力賽必填）",
       "roster_error.missing_header_row": "CSV 沒有標題列",
       "roster_error.missing_header_name": "缺少必要欄位：姓名",
       "roster_error.missing_name": "缺少姓名",
@@ -3155,7 +3157,7 @@
       $("roster-import-preview-table").innerHTML = errorRows + entryRows;
 
       const teamWarnings = preview.team_warnings || [];
-      $("roster-import-preview-warnings").innerHTML = teamWarnings.map((warning) => `
+      const teamWarningsHtml = teamWarnings.map((warning) => `
         <div class="row-card row-warning">
           <div class="row-main">
             <div>
@@ -3165,6 +3167,19 @@
           </div>
         </div>
       `).join("");
+
+      const teamlessCount = preview.teamless_count || 0;
+      const teamlessWarningHtml = teamlessCount > 0 ? `
+        <div class="row-card row-warning">
+          <div class="row-main">
+            <div>
+              <div class="row-meta">${escapeHtml(t("roster_import_preview.teamless_warning", { count: teamlessCount }))}</div>
+            </div>
+          </div>
+        </div>
+      ` : "";
+
+      $("roster-import-preview-warnings").innerHTML = teamWarningsHtml + teamlessWarningHtml;
 
       $("btn-roster-import-preview-confirm").disabled = errors.length > 0;
       $("roster-import-preview-message").textContent = "";

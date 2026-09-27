@@ -311,6 +311,78 @@ console.log(JSON.stringify({
     assert "Blue" in result["warnings"]
 
 
+def test_render_preview_modal_shows_teamless_warning_when_present():
+    source = _strip_js_comments(_read())
+    render_fn, division_label = _extract(
+        source, "renderRosterImportPreviewModal", "divisionLabel"
+    )
+
+    harness = _harness(
+        division_label,
+        render_fn,
+        extra="""
+state.rosterImportPreview = {
+  text: "irrelevant",
+  entries: [{ name: "A", division: null, team: null }],
+  errors: [],
+  existing_count: 0,
+  team_warnings: [],
+  teamless_count: 3,
+};
+renderRosterImportPreviewModal();
+console.log(JSON.stringify({
+  warnings: el("roster-import-preview-warnings").innerHTML,
+}));
+""",
+    )
+    output = _run_node(harness)
+    result = json.loads(output)
+    assert "3" in result["warnings"]
+    assert "row-warning" in result["warnings"]
+
+
+def test_render_preview_modal_hides_teamless_warning_when_zero_or_absent():
+    source = _strip_js_comments(_read())
+    render_fn, division_label = _extract(
+        source, "renderRosterImportPreviewModal", "divisionLabel"
+    )
+
+    harness = _harness(
+        division_label,
+        render_fn,
+        extra="""
+state.rosterImportPreview = {
+  text: "irrelevant",
+  entries: [{ name: "A", division: null, team: "Blue" }],
+  errors: [],
+  existing_count: 0,
+  team_warnings: [],
+  teamless_count: 0,
+};
+renderRosterImportPreviewModal();
+const zeroCase = el("roster-import-preview-warnings").innerHTML;
+
+state.rosterImportPreview = {
+  text: "irrelevant",
+  entries: [{ name: "A", division: null, team: "Blue" }],
+  errors: [],
+  existing_count: 0,
+  team_warnings: [],
+};
+renderRosterImportPreviewModal();
+const absentCase = el("roster-import-preview-warnings").innerHTML;
+
+console.log(JSON.stringify({ zeroCase, absentCase }));
+""",
+    )
+    output = _run_node(harness)
+    result = json.loads(output)
+    assert "teamless" not in result["zeroCase"].lower()
+    assert "teamless" not in result["absentCase"].lower()
+    assert result["zeroCase"] == ""
+    assert result["absentCase"] == ""
+
+
 def test_confirm_roster_import_sends_real_import_and_closes_modal():
     source = _strip_js_comments(_read())
     confirm_fn, render_fn, import_fn, render_errors_fn, close_fn = _extract(
