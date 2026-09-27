@@ -217,6 +217,71 @@ def test_fastest_pace_highlight_is_still_infinitely_animated():
     )
 
 
+def _extract_flip_target_selectors() -> list:
+    """`animateLeaderboardReorder` (index.html) does a FLIP reorder
+    animation: it writes an inline `style.transform` directly onto each
+    element returned by its own `document.querySelectorAll(...)` call. A
+    running CSS animation that also sets `transform` on that SAME element
+    wins the cascade over the inline style (per CSS's normal
+    inline-vs-animation precedence for animated properties), silently
+    clobbering the FLIP translate every animation frame -- the row then
+    teleports to its new slot instead of sliding. This reads the selector
+    list straight out of the page source so it can never drift from the
+    real FLIP target set."""
+    source = _read_index()
+    match = re.search(
+        r"function animateLeaderboardReorder\([^)]*\)\s*\{\s*"
+        r'const items = document\.querySelectorAll\("([^"]+)"\)',
+        source,
+    )
+    assert match, "could not find animateLeaderboardReorder's querySelectorAll(...)"
+    return [part.strip() for part in match.group(1).split(",")]
+
+
+def _selector_targets_element_itself(selector_part: str, base_selector: str) -> bool:
+    """True when `selector_part` (one comma-branch of a CSS rule) targets
+    the FLIP element itself -- the same base class, optionally with more
+    chained classes/pseudo-classes -- rather than a pseudo-element
+    (::before/::after) or a descendant/combinator selector, which the
+    inline `style.transform` write never reaches through."""
+    selector_part = selector_part.strip()
+    if "::" in selector_part:
+        return False
+    if re.search(r"\s|[>+~]", selector_part):
+        return False
+    return selector_part == base_selector or selector_part.startswith(
+        (base_selector + ".", base_selector + ":")
+    )
+
+
+def test_no_flip_target_element_has_its_own_infinite_transform_animation():
+    """None of the elements `animateLeaderboardReorder` writes an inline
+    `style.transform` onto may themselves carry a CSS rule with an
+    infinite animation whose keyframes set `transform` -- that CSS
+    animation would win over the one-frame inline transform every single
+    animation frame, so the FLIP slide would never actually show (the row
+    would just snap/teleport to its new position). An infinite transform
+    animation belongs on a pseudo-element (::before/::after) instead,
+    which the FLIP write never touches."""
+    flip_selectors = _extract_flip_target_selectors()
+    rules = _collect_infinite_rules()
+
+    violations = []
+    for selector, keyframe_name, props in rules:
+        if "transform" not in props:
+            continue
+        for part in selector.split(","):
+            part = part.strip()
+            for base_selector in flip_selectors:
+                if _selector_targets_element_itself(part, base_selector):
+                    violations.append((part, keyframe_name, base_selector))
+
+    assert not violations, (
+        "these FLIP-animated elements carry their own infinite transform "
+        f"animation, which clobbers the reorder slide every frame: {violations}"
+    )
+
+
 def test_a_comment_mentioning_box_shadow_cannot_satisfy_this_suite():
     """Guards against the classic assertion trap: a keyframe body that
     contains ONLY a comment saying "box-shadow" (with the real property

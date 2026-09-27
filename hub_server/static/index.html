@@ -417,23 +417,40 @@
     }
 
     /* Compositor-only by requirement (see the long comment on
-       .progress-fill::after below): this row's border-color/box-shadow
-       intensity now sits at a fixed, bright static value -- what used to
-       animate between two box-shadow states -- and only a gentle
-       transform scale animates, so the shimmer keeps reading as "alive"
-       without ever forcing a repaint. */
+       .progress-fill::after below), AND must never animate `transform`
+       on this element itself: animateLeaderboardReorder() writes a
+       one-frame inline `style.transform` on every `.leaderboard-item`
+       for its FLIP reorder slide, and a running CSS animation that also
+       sets `transform` on that same element wins the cascade every
+       frame, silently clobbering the slide (the row would teleport
+       instead of sliding). So the outward glow is now a fixed static
+       box-shadow (own box-shadow, unclipped by this element's own
+       overflow: hidden), and the pulse lives on a ::before overlay
+       INSIDE the card instead -- a separate element the FLIP write never
+       touches -- carrying only a static INSET glow (inset shadows are
+       never clipped by an ancestor's overflow: hidden, since they never
+       extend past the box) whose opacity animates. */
     .leaderboard-item.champion-final {
       border-color: #ffffff;
-      box-shadow: 0 0 32px rgba(226, 255, 59, 0.36), inset 0 0 15px rgba(226, 255, 59, 0.14);
+      box-shadow: 0 0 32px rgba(226, 255, 59, 0.36);
+    }
+
+    .leaderboard-item.champion-final::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      pointer-events: none;
+      box-shadow: inset 0 0 20px rgba(226, 255, 59, 0.18);
       animation: championShimmer 2.5s ease-in-out infinite alternate;
     }
 
     @keyframes championShimmer {
       0% {
-        transform: scale(1);
+        opacity: 0.5;
       }
       100% {
-        transform: scale(1.012);
+        opacity: 1;
       }
     }
 
@@ -543,16 +560,26 @@
       pointer-events: none;
     }
 
-    /* Compositor-only: box-shadow intensity is now a fixed static value
-       (was animated between two box-shadow states) with only transform
-       scale animating -- see the .progress-fill::after comment below for
-       why infinite animations on this page must stay off paint-triggering
-       properties. */
+    /* Compositor-only, and (for consistency with .leaderboard-item.
+       champion-final above) never animates `transform` or box-shadow on
+       this element itself: box-shadow intensity is now a fixed static
+       value, and the pulse lives on a ::before overlay instead (::after
+       is already taken by the decorative radial highlight above) with a
+       static inset glow whose opacity animates. */
     .podium-card.place-1 {
       min-height: 126px;
       border-color: var(--volt-yellow);
       background: linear-gradient(180deg, rgba(226, 255, 59, 0.16), rgba(0, 0, 0, 0.28));
       box-shadow: 0 0 32px rgba(226, 255, 59, 0.24);
+    }
+
+    .podium-card.place-1::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      pointer-events: none;
+      box-shadow: inset 0 0 18px rgba(226, 255, 59, 0.16);
       animation: championGlow 1.8s ease-in-out infinite alternate;
     }
 
@@ -1382,8 +1409,8 @@
     }
 
     @keyframes championGlow {
-      from { transform: scale(1); }
-      to { transform: scale(1.012); }
+      from { opacity: 0.5; }
+      to { opacity: 1; }
     }
 
     .celebration-overlay {
@@ -1565,19 +1592,36 @@
       margin: 0 calc(-1 * 0.75rem + 0.02rem);
     }
 
-    /* Compositor-only: box-shadow intensity is now the fixed value below
-       (was animated between two box-shadow states); only a subtle
-       transform scale animates. */
+    /* Compositor-only, and must never animate `transform` on either
+       element itself: animateLeaderboardReorder() writes an inline
+       `style.transform` on both `.leaderboard-item` and
+       `.sprint-board-card` for its FLIP reorder slide (see the
+       .leaderboard-item.champion-final comment above for why a CSS
+       transform animation on the same element would clobber that every
+       frame). Box-shadow intensity is now the fixed value below, and the
+       pulse lives on a ::before overlay (a separate element the FLIP
+       write never touches) carrying a static inset glow whose opacity
+       animates. */
     .leaderboard-item.fastest-pace-highlight,
     .sprint-board-card.fastest-pace-highlight {
       border-color: var(--pace-blazing);
-      box-shadow: 0 0 24px rgba(244, 63, 94, 0.4), inset 0 0 14px rgba(244, 63, 94, 0.14);
+      box-shadow: 0 0 24px rgba(244, 63, 94, 0.4);
+    }
+
+    .leaderboard-item.fastest-pace-highlight::before,
+    .sprint-board-card.fastest-pace-highlight::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      pointer-events: none;
+      box-shadow: inset 0 0 14px rgba(244, 63, 94, 0.14);
       animation: fastestPaceCardPulse 1.5s ease-in-out infinite;
     }
 
     @keyframes fastestPaceCardPulse {
-      0%, 100% { transform: scale(1); }
-      50% { transform: scale(1.01); }
+      0%, 100% { opacity: 0.5; }
+      50% { opacity: 1; }
     }
 
     /* Sized to read clearly from projector distance, not just up close:
@@ -1666,6 +1710,10 @@
       .progress-fill::before,
       .progress-fill::after,
       .podium-card.place-1,
+      .podium-card.place-1::before,
+      .leaderboard-item.champion-final::before,
+      .leaderboard-item.fastest-pace-highlight::before,
+      .sprint-board-card.fastest-pace-highlight::before,
       .celebration-flash,
       .confetti-piece,
       .metric-val,
