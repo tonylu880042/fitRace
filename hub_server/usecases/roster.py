@@ -58,7 +58,13 @@ def parse_roster_csv(text: str) -> tuple[list[dict[str, Any]], list[dict[str, An
             break
 
     if header_row_index is None:
-        return [], [{"row": 1, "message": "CSV has no header row"}]
+        return [], [
+            {
+                "row": 1,
+                "message": "CSV has no header row",
+                "code": "missing_header_row",
+            }
+        ]
 
     header_map: dict[int, str] = {}
     for col_idx, cell in enumerate(rows[header_row_index]):
@@ -75,6 +81,7 @@ def parse_roster_csv(text: str) -> tuple[list[dict[str, Any]], list[dict[str, An
             {
                 "row": header_row_index + 1,
                 "message": "Missing required column: name",
+                "code": "missing_header_name",
             }
         ]
 
@@ -95,13 +102,17 @@ def parse_roster_csv(text: str) -> tuple[list[dict[str, Any]], list[dict[str, An
 
         name = (raw.get("name") or "").strip()
         if not name:
-            errors.append({"row": line_no, "message": "Missing name"})
+            errors.append(
+                {"row": line_no, "message": "Missing name", "code": "missing_name"}
+            )
             continue
         if len(name) > MAX_NAME_LENGTH:
             errors.append(
                 {
                     "row": line_no,
                     "message": f"Name too long (max {MAX_NAME_LENGTH} characters)",
+                    "code": "name_too_long",
+                    "value": name,
                 }
             )
             continue
@@ -117,7 +128,12 @@ def parse_roster_csv(text: str) -> tuple[list[dict[str, Any]], list[dict[str, An
                 division = "women"
             else:
                 errors.append(
-                    {"row": line_no, "message": f"Invalid division: {division_cell}"}
+                    {
+                        "row": line_no,
+                        "message": f"Invalid division: {division_cell}",
+                        "code": "invalid_division",
+                        "value": division_cell,
+                    }
                 )
                 continue
 
@@ -127,6 +143,8 @@ def parse_roster_csv(text: str) -> tuple[list[dict[str, Any]], list[dict[str, An
                 {
                     "row": line_no,
                     "message": f"Team name too long (max {MAX_TEAM_LENGTH} characters)",
+                    "code": "team_too_long",
+                    "value": team_cell,
                 }
             )
             continue

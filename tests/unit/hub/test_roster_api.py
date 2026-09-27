@@ -60,7 +60,14 @@ def test_import_roster_row_error_returns_422_with_errors():
         "/api/roster/import", json={"csv": "name,division\nAlice,bogus\n"}
     )
     assert res.status_code == 422
-    assert res.json()["detail"] == [{"row": 2, "message": "Invalid division: bogus"}]
+    assert res.json()["detail"] == [
+        {
+            "row": 2,
+            "message": "Invalid division: bogus",
+            "code": "invalid_division",
+            "value": "bogus",
+        }
+    ]
     assert client.get("/api/roster").json()["entries"] == []
 
 
@@ -91,7 +98,14 @@ def test_import_roster_dry_run_reports_errors_with_200_and_saves_nothing():
     assert res.status_code == 200
     body = res.json()
     assert body["entries"] == []
-    assert body["errors"] == [{"row": 2, "message": "Invalid division: bogus"}]
+    assert body["errors"] == [
+        {
+            "row": 2,
+            "message": "Invalid division: bogus",
+            "code": "invalid_division",
+            "value": "bogus",
+        }
+    ]
     assert [e["name"] for e in client.get("/api/roster").json()["entries"]] == ["Alice"]
 
 

@@ -32,7 +32,14 @@ def test_import_preview_individual_reports_entries_and_existing_count():
 def test_import_preview_reports_row_errors_without_raising():
     preview = build_import_preview("name,division\nAlice,bogus\n", existing_count=0)
     assert preview["entries"] == []
-    assert preview["errors"] == [{"row": 2, "message": "Invalid division: bogus"}]
+    assert preview["errors"] == [
+        {
+            "row": 2,
+            "message": "Invalid division: bogus",
+            "code": "invalid_division",
+            "value": "bogus",
+        }
+    ]
 
 
 def test_import_preview_relay_flags_teams_with_wrong_member_count():
@@ -198,28 +205,71 @@ def test_parse_csv_invalid_division_is_a_row_error_with_line_number():
     text = "name,division\nAlice,men\nBob,unknown\n"
     entries, errors = parse_roster_csv(text)
     assert entries == []
-    assert errors == [{"row": 3, "message": "Invalid division: unknown"}]
+    assert errors == [
+        {
+            "row": 3,
+            "message": "Invalid division: unknown",
+            "code": "invalid_division",
+            "value": "unknown",
+        }
+    ]
 
 
 def test_parse_csv_missing_name_is_a_row_error():
     text = "name,division\n,men\n"
     entries, errors = parse_roster_csv(text)
     assert entries == []
-    assert errors == [{"row": 2, "message": "Missing name"}]
+    assert errors == [{"row": 2, "message": "Missing name", "code": "missing_name"}]
 
 
 def test_parse_csv_name_too_long_is_a_row_error():
     text = "name\n" + ("x" * 81) + "\n"
     entries, errors = parse_roster_csv(text)
     assert entries == []
-    assert errors == [{"row": 2, "message": "Name too long (max 80 characters)"}]
+    assert errors == [
+        {
+            "row": 2,
+            "message": "Name too long (max 80 characters)",
+            "code": "name_too_long",
+            "value": "x" * 81,
+        }
+    ]
 
 
 def test_parse_csv_missing_name_column_is_an_error():
     text = "division,team\nmen,Red\n"
     entries, errors = parse_roster_csv(text)
     assert entries == []
-    assert errors == [{"row": 1, "message": "Missing required column: name"}]
+    assert errors == [
+        {
+            "row": 1,
+            "message": "Missing required column: name",
+            "code": "missing_header_name",
+        }
+    ]
+
+
+def test_parse_csv_no_header_row_is_an_error():
+    text = "\n\n"
+    entries, errors = parse_roster_csv(text)
+    assert entries == []
+    assert errors == [
+        {"row": 1, "message": "CSV has no header row", "code": "missing_header_row"}
+    ]
+
+
+def test_parse_csv_team_too_long_is_a_row_error():
+    text = "name,team\nAlice," + ("y" * 81) + "\n"
+    entries, errors = parse_roster_csv(text)
+    assert entries == []
+    assert errors == [
+        {
+            "row": 2,
+            "message": "Team name too long (max 80 characters)",
+            "code": "team_too_long",
+            "value": "y" * 81,
+        }
+    ]
 
 
 def test_parse_csv_any_row_error_rejects_whole_import_collecting_all_errors():
@@ -227,8 +277,13 @@ def test_parse_csv_any_row_error_rejects_whole_import_collecting_all_errors():
     entries, errors = parse_roster_csv(text)
     assert entries == []
     assert errors == [
-        {"row": 2, "message": "Missing name"},
-        {"row": 3, "message": "Invalid division: bogus"},
+        {"row": 2, "message": "Missing name", "code": "missing_name"},
+        {
+            "row": 3,
+            "message": "Invalid division: bogus",
+            "code": "invalid_division",
+            "value": "bogus",
+        },
     ]
 
 
@@ -257,7 +312,14 @@ def test_import_row_error_leaves_existing_roster_intact(tmp_path):
     manager.import_csv("name\nAlice\n")
 
     errors = manager.import_csv("name,division\nBob,bogus\n")
-    assert errors == [{"row": 2, "message": "Invalid division: bogus"}]
+    assert errors == [
+        {
+            "row": 2,
+            "message": "Invalid division: bogus",
+            "code": "invalid_division",
+            "value": "bogus",
+        }
+    ]
     assert [e["name"] for e in manager.entries()] == ["Alice"]
 
 
