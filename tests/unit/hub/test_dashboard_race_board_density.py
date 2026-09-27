@@ -147,6 +147,8 @@ _CLASSIC_FN_NAMES = [
     "buildLeaderboardCardSignature",
     "captureLeaderboardCardRefs",
     "setSmoothedCardText",
+    "clampPercent",
+    "setProgressVar",
     "updateLeaderboardCardValues",
     "raceBoardDensityTier",
     "renderLeaderboard",
@@ -197,8 +199,8 @@ function parseContainerRows(html) {
     const end = i + 1 < opens.length ? opens[i + 1].start : html.length;
     const segment = html.slice(o.start, end);
     const metricVals = [...segment.matchAll(/<div class="metric-val[^"]*">([^<]*)<\/div>/g)].map((mm) => mm[1]);
-    const fillMatch = segment.match(/<div class="progress-fill" style="width: ([^%]+)%">/);
-    return { nodeId: o.nodeId, metricVals, fillWidth: fillMatch ? fillMatch[1] : null };
+    const fillMatch = segment.match(/<div class="progress-fill" style="--p: ([^"]+)">/);
+    return { nodeId: o.nodeId, metricVals, fillP: fillMatch ? fillMatch[1] : null };
   });
 }
 
@@ -211,12 +213,11 @@ function makeFakeRow(parsed) {
     });
   });
   let fillEl = null;
-  if (parsed.fillWidth !== null) {
-    fillEl = { style: { _width: parsed.fillWidth + "%" } };
-    Object.defineProperty(fillEl.style, "width", {
-      get() { return fillEl.style._width; },
-      set(v) { fillEl.style._width = v; },
-    });
+  if (parsed.fillP !== null) {
+    const style = { _p: parsed.fillP };
+    style.setProperty = function (name, value) { if (name === "--p") style._p = String(value); };
+    style.getPropertyValue = function (name) { return name === "--p" ? style._p : ""; };
+    fillEl = { style };
   }
   return {
     dataset: { nodeId: parsed.nodeId },
@@ -398,6 +399,7 @@ _BOARD_FN_NAMES = [
     "formatResultScore",
     "sortLeaderboardNodes",
     "getRankedIndividualRows",
+    "clampPercent",
 ]
 
 

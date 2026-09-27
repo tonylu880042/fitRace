@@ -97,6 +97,8 @@ _FN_NAMES = [
     "buildLeaderboardCardSignature",
     "captureLeaderboardCardRefs",
     "setSmoothedCardText",
+    "clampPercent",
+    "setProgressVar",
     "updateLeaderboardCardValues",
     # renderLeaderboard's classic branch applies a row-count density tier
     # (see test_dashboard_race_board_density.py) via raceBoardDensityTier --
@@ -148,7 +150,10 @@ def _fake_dom() -> str:
     renderLeaderboard's classic branch and the card-cache helpers use:
     innerHTML get/set on the container, querySelectorAll(".leaderboard-item"),
     row.querySelectorAll(".metric-val"), row.querySelector(".progress-fill"),
-    and a getBoundingClientRect() call counter."""
+    and a getBoundingClientRect() call counter. The fill element's style
+    supports setProperty/getPropertyValue for the compositor-only `--p`
+    custom property -- updateLeaderboardCardValues now writes the
+    progress value there instead of onto `.style.width`."""
     return r"""
 let innerHTMLSetCount = 0;
 let getBoundingClientRectCallCount = 0;
@@ -164,8 +169,8 @@ function parseContainerRows(html) {
     const end = i + 1 < opens.length ? opens[i + 1].start : html.length;
     const segment = html.slice(o.start, end);
     const metricVals = [...segment.matchAll(/<div class="metric-val[^"]*">([^<]*)<\/div>/g)].map((mm) => mm[1]);
-    const fillMatch = segment.match(/<div class="progress-fill" style="width: ([^%]+)%">/);
-    return { nodeId: o.nodeId, metricVals, fillWidth: fillMatch ? fillMatch[1] : null };
+    const fillMatch = segment.match(/<div class="progress-fill" style="--p: ([^"]+)">/);
+    return { nodeId: o.nodeId, metricVals, fillP: fillMatch ? fillMatch[1] : null };
   });
 }
 
@@ -178,12 +183,11 @@ function makeFakeRow(parsed) {
     });
   });
   let fillEl = null;
-  if (parsed.fillWidth !== null) {
-    fillEl = { style: { _width: parsed.fillWidth + "%" } };
-    Object.defineProperty(fillEl.style, "width", {
-      get() { return fillEl.style._width; },
-      set(v) { fillEl.style._width = v; },
-    });
+  if (parsed.fillP !== null) {
+    const style = { _p: parsed.fillP };
+    style.setProperty = function (name, value) { if (name === "--p") style._p = String(value); };
+    style.getPropertyValue = function (name) { return name === "--p" ? style._p : ""; };
+    fillEl = { style };
   }
   return {
     dataset: { nodeId: parsed.nodeId },
@@ -221,9 +225,10 @@ const document = {
 function readCard(nodeId) {
   const row = leaderboardContainer.querySelectorAll(".leaderboard-item").find((r) => r.dataset.nodeId === nodeId);
   if (!row) return null;
+  const fill = row.querySelector(".progress-fill");
   return {
     metricVals: row.querySelectorAll(".metric-val").map((el) => el.textContent),
-    fillWidth: (row.querySelector(".progress-fill") || {}).style && row.querySelector(".progress-fill").style.width,
+    fillP: fill && fill.style && fill.style.getPropertyValue("--p"),
   };
 }
 """
@@ -321,8 +326,8 @@ console.log(JSON.stringify({{ before, after }}));
     # (distance) race type -- see updateLeaderboardCardValues.
     assert result["before"]["metricVals"] == ["20.0", "500", "50.0%"]
     assert result["after"]["metricVals"] == ["22.0", "520", "55.0%"]
-    assert result["before"]["fillWidth"] == "50%"
-    assert result["after"]["fillWidth"] == "55%"
+    assert result["before"]["fillP"] == "50"
+    assert result["after"]["fillP"] == "55"
 
 
 def test_new_station_joining_triggers_a_full_rebuild():

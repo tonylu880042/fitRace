@@ -285,6 +285,8 @@ def _run_build_class_board_html(session_data_js: str, clock_js: str) -> str:
     fn = (
         _strip_js_comments(_extract_function(source, "equipmentIconSvg"))
         + "\n"
+        + _strip_js_comments(_extract_function(source, "clampPercent"))
+        + "\n"
         + _strip_js_comments(_extract_function(source, "buildClassBoardHtml"))
     )
     script = (
@@ -734,6 +736,8 @@ def _run_render_class_board(data_js: str) -> dict:
     build_class_board_html_fn = _strip_js_comments(
         _extract_function(source, "equipmentIconSvg")
         + "\n"
+        + _extract_function(source, "clampPercent")
+        + "\n"
         + _extract_function(source, "buildClassBoardHtml")
     )
 
@@ -891,6 +895,8 @@ def _run_ws_onmessage_untyped_telemetry(
     )
     build_class_board_html_fn = _strip_js_comments(
         _extract_function(source, "equipmentIconSvg")
+        + "\n"
+        + _extract_function(source, "clampPercent")
         + "\n"
         + _extract_function(source, "buildClassBoardHtml")
     )
@@ -1155,6 +1161,8 @@ def test_build_class_board_html_formats_metric_numbers_with_real_intl_for_de_ch(
     format_pace_fn = _strip_js_comments(_extract_function(source, "formatPacePerKm"))
     fn = (
         _strip_js_comments(_extract_function(source, "equipmentIconSvg"))
+        + "\n"
+        + _strip_js_comments(_extract_function(source, "clampPercent"))
         + "\n"
         + _strip_js_comments(_extract_function(source, "buildClassBoardHtml"))
     )

@@ -100,6 +100,8 @@ _FN_NAMES = [
     "buildClassBoardHtml",
     "classClockAt",
     "formatClock",
+    "clampPercent",
+    "setProgressVar",
 ]
 
 
@@ -143,13 +145,13 @@ function parseCards(html) {
     const power = segment.match(/class="class-metric-power">([^<]*)</);
     const speed = segment.match(/class="class-metric-speed" style="[^"]*">([^<]*)</);
     const distance = segment.match(/class="class-metric-distance" style="[^"]*">([^<]*)</);
-    const effort = segment.match(/class="class-effort-fill" style="height:100%;width:([^%]+)%/);
+    const effort = segment.match(/class="class-effort-fill" style="height:100%;background:var\(--volt-yellow\);--p:([^;]+);/);
     return {
       nodeId: o.nodeId,
       power: power ? power[1] : null,
       speed: speed ? speed[1] : null,
       distance: distance ? distance[1] : null,
-      effortWidth: effort ? effort[1] : null,
+      effortP: effort ? effort[1] : null,
     };
   });
 }
@@ -163,13 +165,15 @@ function makeMutableText(initial) {
   return box;
 }
 
-function makeMutableWidth(initialPercent) {
-  const box = { style: { _width: initialPercent === null ? null : initialPercent + "%" } };
-  Object.defineProperty(box.style, "width", {
-    get() { return box.style._width; },
-    set(v) { box.style._width = v; },
-  });
-  return box;
+// Fake style object for the compositor-only `--p` custom property:
+// applyClassBoardIncrementalUpdate now calls setProgressVar(el, value),
+// which writes via el.style.setProperty("--p", ...) rather than
+// el.style.width = ... .
+function makeMutablePropertyStyle(initialP) {
+  const style = { _p: initialP };
+  style.setProperty = function (name, value) { if (name === "--p") style._p = String(value); };
+  style.getPropertyValue = function (name) { return name === "--p" ? style._p : ""; };
+  return { style };
 }
 
 function makeContainer() {
@@ -199,7 +203,7 @@ function makeContainer() {
         const powerEl = c.power === null ? null : makeMutableText(c.power);
         const speedEl = c.speed === null ? null : makeMutableText(c.speed);
         const distanceEl = c.distance === null ? null : makeMutableText(c.distance);
-        const effortEl = c.effortWidth === null ? null : makeMutableWidth(c.effortWidth);
+        const effortEl = c.effortP === null ? null : makeMutablePropertyStyle(c.effortP);
         return {
           dataset: { nodeId: c.nodeId },
           querySelector(sel) {
@@ -215,8 +219,8 @@ function makeContainer() {
       countdownEl = countdownMatch ? makeMutableText(countdownMatch[1]) : null;
       const totalRemainingMatch = value.match(/class="class-hero-total-remaining" style="[^"]*">([^<]*)</);
       totalRemainingEl = totalRemainingMatch ? makeMutableText(totalRemainingMatch[1]) : null;
-      const progressFillMatch = value.match(/class="class-progress-fill" style="height:100%;width:([^%]+)%/);
-      progressFillEl = progressFillMatch ? makeMutableWidth(progressFillMatch[1]) : null;
+      const progressFillMatch = value.match(/class="class-progress-fill" style="height:100%;background:var\(--volt-yellow\);--p:([^;]+);/);
+      progressFillEl = progressFillMatch ? makeMutablePropertyStyle(progressFillMatch[1]) : null;
     },
   });
 
@@ -235,11 +239,11 @@ function readBoard() {
       power: card.querySelector(".class-metric-power") && card.querySelector(".class-metric-power").textContent,
       speed: card.querySelector(".class-metric-speed") && card.querySelector(".class-metric-speed").textContent,
       distance: card.querySelector(".class-metric-distance") && card.querySelector(".class-metric-distance").textContent,
-      effortWidth: card.querySelector(".class-effort-fill") && card.querySelector(".class-effort-fill").style.width,
+      effortP: card.querySelector(".class-effort-fill") && card.querySelector(".class-effort-fill").style.getPropertyValue("--p"),
     })),
     countdown: leaderboardContainer.querySelector(".class-hero-countdown") && leaderboardContainer.querySelector(".class-hero-countdown").textContent,
     totalRemaining: leaderboardContainer.querySelector(".class-hero-total-remaining") && leaderboardContainer.querySelector(".class-hero-total-remaining").textContent,
-    progressWidth: leaderboardContainer.querySelector(".class-progress-fill") && leaderboardContainer.querySelector(".class-progress-fill").style.width,
+    progressP: leaderboardContainer.querySelector(".class-progress-fill") && leaderboardContainer.querySelector(".class-progress-fill").style.getPropertyValue("--p"),
   };
 }
 """
@@ -309,8 +313,8 @@ console.log(JSON.stringify({{ before, after }}));
     assert result["after"]["cards"][0]["speed"] == "24 kph"
     assert result["before"]["cards"][0]["distance"] == "500 m"
     assert result["after"]["cards"][0]["distance"] == "540 m"
-    assert result["before"]["cards"][0]["effortWidth"] == "20%"
-    assert result["after"]["cards"][0]["effortWidth"] == "30%"
+    assert result["before"]["cards"][0]["effortP"] == "20"
+    assert result["after"]["cards"][0]["effortP"] == "30"
 
 
 def test_countdown_and_total_remaining_tick_without_a_rebuild():

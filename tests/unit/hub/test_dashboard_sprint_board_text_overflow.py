@@ -93,6 +93,7 @@ _FN_NAMES = [
     "formatResultScore",
     "sortLeaderboardNodes",
     "getRankedIndividualRows",
+    "clampPercent",
     "renderSprintBoardLeaderboard",
 ]
 

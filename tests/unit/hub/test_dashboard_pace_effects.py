@@ -330,6 +330,8 @@ _CLASSIC_FN_NAMES = [
     "buildLeaderboardCardSignature",
     "captureLeaderboardCardRefs",
     "setSmoothedCardText",
+    "clampPercent",
+    "setProgressVar",
     "updateLeaderboardCardValues",
     "raceBoardDensityTier",
     "renderLeaderboard",
@@ -402,13 +404,13 @@ function parseContainerRows(html) {
     const segment = html.slice(o.start, end);
     const metricMatches = [...segment.matchAll(/<div class="(metric-val[^"]*)">([^<]*)<\/div>/g)];
     const metricVals = metricMatches.map((mm) => ({ className: mm[1], text: mm[2] }));
-    const fillMatch = segment.match(/<div class="progress-fill" style="width: ([^%]+)%">/);
+    const fillMatch = segment.match(/<div class="progress-fill" style="--p: ([^"]+)">/);
     const badgeMatch = segment.match(/<span class="(fastest-pace-badge[^"]*)" aria-hidden="true">/);
     return {
       nodeId: o.nodeId,
       className: o.className,
       metricVals,
-      fillWidth: fillMatch ? fillMatch[1] : null,
+      fillP: fillMatch ? fillMatch[1] : null,
       badgeClass: badgeMatch ? badgeMatch[1] : null,
     };
   });
@@ -426,12 +428,11 @@ function makeFakeRow(parsed) {
     return el;
   });
   let fillEl = null;
-  if (parsed.fillWidth !== null) {
-    fillEl = { style: { _width: parsed.fillWidth + "%" } };
-    Object.defineProperty(fillEl.style, "width", {
-      get() { return fillEl.style._width; },
-      set(v) { fillEl.style._width = v; },
-    });
+  if (parsed.fillP !== null) {
+    const style = { _p: parsed.fillP };
+    style.setProperty = function (name, value) { if (name === "--p") style._p = String(value); };
+    style.getPropertyValue = function (name) { return name === "--p" ? style._p : ""; };
+    fillEl = { style };
   }
   const badgeEl = parsed.badgeClass !== null ? makeClassBox(parsed.badgeClass) : null;
   rowBox.dataset = { nodeId: parsed.nodeId };
@@ -698,6 +699,7 @@ _BOARD_FN_NAMES = [
     "formatResultScore",
     "sortLeaderboardNodes",
     "getRankedIndividualRows",
+    "clampPercent",
 ]
 
 
@@ -846,9 +848,9 @@ def test_race_track_marker_carries_a_trail_class_per_band():
 
     def marker_class(node_id):
         segment = _segment_for_node(segments, node_id)
-        match = re.search(r'<div class="race-track-marker([^"]*)"', segment)
+        match = re.search(r'<div class="race-track-marker( pace-[^"]*)?"', segment)
         assert match, f"no race-track-marker element for {node_id}"
-        return match.group(1)
+        return match.group(1) or ""
 
     assert "pace-blazing" in marker_class("n1")
     assert "pace-fast" in marker_class("n2")
@@ -861,9 +863,9 @@ def test_race_track_bike_marker_never_gets_a_trail_class():
     html = _run_board("renderRaceTrackLeaderboard", nodes)
     segments = _row_segments(html, '<div class="race-track-item')
     segment = _segment_for_node(segments, "n1")
-    match = re.search(r'<div class="race-track-marker([^"]*)"', segment)
+    match = re.search(r'<div class="race-track-marker( pace-[^"]*)?"', segment)
     assert match
-    assert match.group(1).strip() == ""
+    assert (match.group(1) or "").strip() == ""
 
 
 def test_race_track_no_trail_when_race_is_not_running():
@@ -871,9 +873,9 @@ def test_race_track_no_trail_when_race_is_not_running():
     html = _run_board("renderRaceTrackLeaderboard", nodes, current_state="STOPPED")
     segments = _row_segments(html, '<div class="race-track-item')
     segment = _segment_for_node(segments, "n1")
-    match = re.search(r'<div class="race-track-marker([^"]*)"', segment)
+    match = re.search(r'<div class="race-track-marker( pace-[^"]*)?"', segment)
     assert match
-    assert match.group(1).strip() == ""
+    assert (match.group(1) or "").strip() == ""
 
 
 # ---------------------------------------------------------------------------

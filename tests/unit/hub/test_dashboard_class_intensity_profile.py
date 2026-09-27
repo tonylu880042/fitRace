@@ -224,6 +224,8 @@ def _run_build_class_board_html(session_data_js: str, clock_js: str) -> str:
         + _intl_number_format_stub()
         + _format_clock_stub()
         + "const currentLocale = 'en-US';\n"
+        + _strip_js_comments(_extract_function(source, "clampPercent"))
+        + "\n"
         + fn
         + "\n"
         + f"const sessionData = {session_data_js};\n"

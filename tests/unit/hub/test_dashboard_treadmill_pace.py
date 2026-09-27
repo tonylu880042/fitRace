@@ -181,6 +181,8 @@ _CLASSIC_FN_NAMES = [
     "buildLeaderboardCardSignature",
     "captureLeaderboardCardRefs",
     "setSmoothedCardText",
+    "clampPercent",
+    "setProgressVar",
     "updateLeaderboardCardValues",
     # renderLeaderboard's classic branch applies a row-count density tier
     # (see test_dashboard_race_board_density.py) via raceBoardDensityTier --
@@ -245,8 +247,8 @@ function parseContainerRows(html) {
     const end = i + 1 < opens.length ? opens[i + 1].start : html.length;
     const segment = html.slice(o.start, end);
     const metricVals = [...segment.matchAll(/<div class="metric-val[^"]*">([^<]*)<\/div>/g)].map((mm) => mm[1]);
-    const fillMatch = segment.match(/<div class="progress-fill" style="width: ([^%]+)%">/);
-    return { nodeId: o.nodeId, metricVals, fillWidth: fillMatch ? fillMatch[1] : null };
+    const fillMatch = segment.match(/<div class="progress-fill" style="--p: ([^"]+)">/);
+    return { nodeId: o.nodeId, metricVals, fillP: fillMatch ? fillMatch[1] : null };
   });
 }
 
@@ -259,12 +261,11 @@ function makeFakeRow(parsed) {
     });
   });
   let fillEl = null;
-  if (parsed.fillWidth !== null) {
-    fillEl = { style: { _width: parsed.fillWidth + "%" } };
-    Object.defineProperty(fillEl.style, "width", {
-      get() { return fillEl.style._width; },
-      set(v) { fillEl.style._width = v; },
-    });
+  if (parsed.fillP !== null) {
+    const style = { _p: parsed.fillP };
+    style.setProperty = function (name, value) { if (name === "--p") style._p = String(value); };
+    style.getPropertyValue = function (name) { return name === "--p" ? style._p : ""; };
+    fillEl = { style };
   }
   return {
     dataset: { nodeId: parsed.nodeId },
@@ -478,6 +479,8 @@ _CLASS_FN_NAMES = [
     "buildClassBoardHtml",
     "classClockAt",
     "formatClock",
+    "clampPercent",
+    "setProgressVar",
 ]
 
 
@@ -518,12 +521,10 @@ function makeMutableText(initial) {
 }
 
 function makeMutableWidth(initialPercent) {
-  const box = { style: { _width: initialPercent === null ? null : initialPercent + "%" } };
-  Object.defineProperty(box.style, "width", {
-    get() { return box.style._width; },
-    set(v) { box.style._width = v; },
-  });
-  return box;
+  const style = { _p: initialPercent };
+  style.setProperty = function (name, value) { if (name === "--p") style._p = String(value); };
+  style.getPropertyValue = function (name) { return name === "--p" ? style._p : ""; };
+  return { style };
 }
 
 function parseCards(html) {

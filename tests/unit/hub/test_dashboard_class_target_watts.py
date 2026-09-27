@@ -207,6 +207,8 @@ def _run_build_class_board_html(session_data_js: str, clock_js: str) -> str:
     fn = (
         _strip_js_comments(_extract_function(source, "equipmentIconSvg"))
         + "\n"
+        + _strip_js_comments(_extract_function(source, "clampPercent"))
+        + "\n"
         + _strip_js_comments(_extract_function(source, "buildClassBoardHtml"))
     )
     script = (
@@ -525,6 +527,8 @@ def _run_render_class_board(data_js: str) -> dict:
     format_pace_fn = _strip_js_comments(_extract_function(source, "formatPacePerKm"))
     build_class_board_html_fn = _strip_js_comments(
         _extract_function(source, "equipmentIconSvg")
+        + "\n"
+        + _extract_function(source, "clampPercent")
         + "\n"
         + _extract_function(source, "buildClassBoardHtml")
     )

@@ -105,6 +105,8 @@ def _board_html(stations):
         + "\n"
         + _extract_function(source, "equipmentIconSvg")
         + "\n"
+        + _extract_function(source, "clampPercent")
+        + "\n"
         + _extract_function(source, "buildClassBoardHtml")
         + "\nconst sessionData = "
         + json.dumps(

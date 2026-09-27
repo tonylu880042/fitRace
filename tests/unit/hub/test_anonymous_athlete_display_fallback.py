@@ -182,6 +182,8 @@ def _run_build_class_board_html(session_data_js: str, clock_js: str) -> str:
     fn = (
         _strip_js_comments(_extract_function(source, "equipmentIconSvg"))
         + "\n"
+        + _strip_js_comments(_extract_function(source, "clampPercent"))
+        + "\n"
         + _strip_js_comments(_extract_function(source, "buildClassBoardHtml"))
     )
     script = (
@@ -283,6 +285,7 @@ def _run_classic_leaderboard_row(nodes_js: str, race_type: str = "distance") -> 
     is_running = _strip_js_comments(_extract_function(source, "isRunningEquipment"))
     format_pace = _strip_js_comments(_extract_function(source, "formatPacePerKm"))
     pace_band = _strip_js_comments(_extract_function(source, "paceBand"))
+    clamp_percent = _strip_js_comments(_extract_function(source, "clampPercent"))
     script = (
         _real_t_from_messages(_en_us_messages())
         + _metric_number_stub()
@@ -295,6 +298,8 @@ def _run_classic_leaderboard_row(nodes_js: str, race_type: str = "distance") -> 
         + format_pace
         + "\n"
         + pace_band
+        + "\n"
+        + clamp_percent
         + "\n"
         + "let currentState = 'IDLE';\n"
         + "let fastestId = null;\n"

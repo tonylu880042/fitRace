@@ -211,6 +211,8 @@ def _run_build_class_board_html(session_data_js: str, clock_js: str) -> str:
         + _intl_number_format_stub()
         + _format_clock_stub()
         + "const currentLocale = 'en-US';\n"
+        + _strip_js_comments(_extract_function(source, "clampPercent"))
+        + "\n"
         + fn
         + "\n"
         + f"const sessionData = {session_data_js};\n"
@@ -221,7 +223,13 @@ def _run_build_class_board_html(session_data_js: str, clock_js: str) -> str:
 
 
 def _progress_fill_width(html: str) -> float:
-    match = re.search(r'class="class-progress-fill" style="[^"]*width:([0-9.]+)%', html)
+    # The fill is compositor-only: its position is driven by the `--p`
+    # custom property (a transform: translateX() in CSS) rather than a
+    # `width:` declaration -- see hub_server/static/index.html's
+    # .class-progress-fill rule and the perf/dashboard-progress-scalex
+    # conversion. This asserts the SAME numeric value (the elapsed
+    # fraction), just through the new mechanism.
+    match = re.search(r'class="class-progress-fill" style="[^"]*--p:([0-9.]+)', html)
     assert match, html
     return float(match.group(1))
 

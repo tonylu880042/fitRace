@@ -107,6 +107,7 @@ _FN_NAMES = [
     "sortLeaderboardNodes",
     "getRankedIndividualRows",
     "raceBoardDensityTier",
+    "clampPercent",
     "renderRaceTrackLeaderboard",
 ]
 

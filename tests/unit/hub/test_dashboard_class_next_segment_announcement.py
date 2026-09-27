@@ -270,6 +270,8 @@ def _run_build_class_board_html(session_data_js: str, clock_js: str) -> str:
     fn = (
         _strip_js_comments(_extract_function(source, "equipmentIconSvg"))
         + "\n"
+        + _strip_js_comments(_extract_function(source, "clampPercent"))
+        + "\n"
         + _strip_js_comments(_extract_function(source, "buildClassBoardHtml"))
     )
     script = (
@@ -450,6 +452,17 @@ function makeMutableStyleProp(initial, propName) {
   return box;
 }
 
+// Fake style object for the compositor-only `--p` custom property:
+// applyClassBoardIncrementalUpdate now calls setProgressVar(el, value),
+// which writes via el.style.setProperty("--p", ...) rather than
+// el.style.width = ... .
+function makeMutablePropertyStyle(initial) {
+  const style = { _p: initial };
+  style.setProperty = function (name, value) { if (name === "--p") style._p = String(value); };
+  style.getPropertyValue = function (name) { return name === "--p" ? style._p : ""; };
+  return { style };
+}
+
 function makeContainer() {
   let html = "";
   let cardEls = [];
@@ -490,8 +503,8 @@ function makeContainer() {
       countdownEl = countdownMatch ? makeMutableText(countdownMatch[1]) : null;
       const totalRemainingMatch = value.match(/class="class-hero-total-remaining" style="[^"]*">([^<]*)</);
       totalRemainingEl = totalRemainingMatch ? makeMutableText(totalRemainingMatch[1]) : null;
-      const progressFillMatch = value.match(/class="class-progress-fill" style="height:100%;width:([^%]+)%/);
-      progressFillEl = progressFillMatch ? makeMutableStyleProp(progressFillMatch[1] + "%", "width") : null;
+      const progressFillMatch = value.match(/class="class-progress-fill" style="height:100%;background:var\(--volt-yellow\);--p:([^;]+);/);
+      progressFillEl = progressFillMatch ? makeMutablePropertyStyle(progressFillMatch[1]) : null;
       const announcementDisplayMatch = value.match(/class="class-next-announcement" style="display:([^;]+);/);
       announcementContainerEl = announcementDisplayMatch ? makeMutableStyleProp(announcementDisplayMatch[1], "display") : null;
       const announcementKindMatch = value.match(/class="class-next-announcement-kind" style="[^"]*">([^<]*)</);
@@ -535,6 +548,8 @@ _PIPELINE_FN_NAMES = [
     "buildClassBoardHtml",
     "classClockAt",
     "formatClock",
+    "clampPercent",
+    "setProgressVar",
 ]
 
 

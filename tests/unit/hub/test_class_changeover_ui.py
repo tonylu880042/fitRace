@@ -265,6 +265,8 @@ def _run_build_class_board_html(session_data_js: str, clock_js: str) -> str:
     fn = (
         _strip_js_comments(_extract_function(source, "equipmentIconSvg"))
         + "\n"
+        + _strip_js_comments(_extract_function(source, "clampPercent"))
+        + "\n"
         + _strip_js_comments(_extract_function(source, "buildClassBoardHtml"))
     )
     script = (
