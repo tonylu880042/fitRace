@@ -283,49 +283,13 @@ global.fetch = async (url, options) => {{
     assert result["messageKind"] == "error"
 
 
-def test_handle_roster_file_selected_confirms_before_replacing_existing_roster():
-    source = _strip_js_comments(_read())
-    handle_fn = _extract_function(source, "handleRosterFileSelected")
-    assert "confirm" in handle_fn  # sanity: real source, not a stub
-
-    harness = f"""
-{_DOM_STUB}
-function t(key) {{ return key; }}
-
-class FakeFileReader {{
-  readAsArrayBuffer(file) {{
-    this.result = file.text;
-    if (this.onload) this.onload();
-  }}
-}}
-global.FileReader = FakeFileReader;
-function decodeRosterFileBytes(raw) {{ return raw; }}
-
-let confirmCalled = false;
-let confirmReturns = true;
-global.window = {{ confirm: () => {{ confirmCalled = true; return confirmReturns; }} }};
-
-let importedWith = null;
-function importRosterCsv(text) {{ importedWith = text; }}
-
-let state = {{ roster: {{ entries: [{{ id: "x" }}] }} }};
-
-{handle_fn}
-
-const event = {{ target: {{ files: [{{ text: "name\\nAlice\\n" }}], value: "stub.csv" }} }};
-handleRosterFileSelected(event);
-
-console.log(JSON.stringify({{
-  confirmCalled,
-  importedWith,
-  inputCleared: event.target.value === "",
-}}));
-"""
-    output = _run_node(harness)
-    result = json.loads(output)
-    assert result["confirmCalled"] is True
-    assert result["importedWith"] == "name\nAlice\n"
-    assert result["inputCleared"] is True
+# Superseded design: handleRosterFileSelected() used to window.confirm()
+# before replacing an existing roster, then import directly. It now always
+# dry-runs the selected file through previewRosterImport() and shows a
+# preview modal instead -- there is no window.confirm() left to test. Full
+# coverage of the new flow (no-confirm preview, dry-run POST, modal
+# rendering, and the real confirm/cancel actions) lives in
+# tests/unit/hub/test_game_admin_roster_import_preview.py.
 
 
 def test_load_next_heat_retries_with_force_only_after_confirm_returns_true():
@@ -664,36 +628,7 @@ global.fetch = async (url, options) => {{
     assert result["callCount"] == 1
 
 
-def test_handle_roster_file_selected_skips_import_when_confirm_declined():
-    source = _strip_js_comments(_read())
-    handle_fn = _extract_function(source, "handleRosterFileSelected")
-
-    harness = f"""
-{_DOM_STUB}
-function t(key) {{ return key; }}
-
-class FakeFileReader {{
-  readAsText(file) {{
-    this.result = file.text;
-    if (this.onload) this.onload();
-  }}
-}}
-global.FileReader = FakeFileReader;
-
-global.window = {{ confirm: () => false }};
-
-let importCalled = false;
-function importRosterCsv(text) {{ importCalled = true; }}
-
-let state = {{ roster: {{ entries: [{{ id: "x" }}] }} }};
-
-{handle_fn}
-
-const event = {{ target: {{ files: [{{ text: "name\\nAlice\\n" }}], value: "stub.csv" }} }};
-handleRosterFileSelected(event);
-
-console.log(JSON.stringify({{ importCalled }}));
-"""
-    output = _run_node(harness)
-    result = json.loads(output)
-    assert result["importCalled"] is False
+# Superseded design: see the note above
+# test_handle_roster_file_selected_confirms_before_replacing_existing_roster
+# used to sit -- window.confirm() is gone from handleRosterFileSelected(),
+# so there is nothing left here to decline.

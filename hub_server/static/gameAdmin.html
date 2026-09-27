@@ -1350,6 +1350,20 @@
     </div>
   </div>
 
+  <div class="login" id="roster-import-preview-modal" role="dialog" aria-modal="true" aria-labelledby="roster-import-preview-title">
+    <div class="login-box">
+      <h2 id="roster-import-preview-title" data-i18n="roster_import_preview.title">Preview Roster Import</h2>
+      <p id="roster-import-preview-replace-note" class="status-text"></p>
+      <div class="list" id="roster-import-preview-table"></div>
+      <div class="list" id="roster-import-preview-warnings"></div>
+      <div class="button-row">
+        <button type="button" id="btn-roster-import-preview-cancel" onclick="closeRosterImportPreviewModal()" data-i18n="button.cancel">Cancel</button>
+        <button type="button" class="primary" id="btn-roster-import-preview-confirm" onclick="confirmRosterImport()" data-i18n="button.confirm_import">Confirm Import</button>
+      </div>
+      <div class="status-text" id="roster-import-preview-message"></div>
+    </div>
+  </div>
+
   <script>
     const state = {
       race: null,
@@ -1685,7 +1699,11 @@
         "text.postrace_hint_roster_done": "Heat results saved. Everyone on the roster has raced.",
         "text.postrace_hint_saved": "Heat results saved.",
         "button.download_roster_template": "Download Roster Template",
-        "message.roster_template_download_failed": "Template download failed: {error}"
+        "message.roster_template_download_failed": "Template download failed: {error}",
+        "roster_import_preview.title": "Preview Roster Import",
+        "button.confirm_import": "Confirm Import",
+        "roster_import_preview.replace_note": "This will replace the current {count} entr(y/ies).",
+        "roster_import_preview.team_size_warning": "{count} member(s), expected {expected}."
       }
     };
 
@@ -1958,6 +1976,10 @@
       "text.postrace_hint_saved": "本組成績已保存。",
       "button.download_roster_template": "下載名單範本",
       "message.roster_template_download_failed": "範本下載失敗：{error}",
+      "roster_import_preview.title": "預覽匯入名單",
+      "button.confirm_import": "確認匯入",
+      "roster_import_preview.replace_note": "將取代目前 {count} 筆名單",
+      "roster_import_preview.team_size_warning": "共 {count} 人，預期 {expected} 人",
       "label.overall_standings_event": "總排名活動範圍",
       "button.start_new_event": "開始新活動",
       "text.event_start_none": "目前計入全部歷史紀錄。",
@@ -2983,11 +3005,8 @@
       const file = input.files && input.files[0];
       input.value = "";
       if (!file) return;
-      if ((state.roster?.entries || []).length > 0) {
-        if (!window.confirm(t("confirm.replace_roster"))) return;
-      }
       const reader = new FileReader();
-      reader.onload = () => importRosterCsv(decodeRosterFileBytes(reader.result));
+      reader.onload = () => previewRosterImport(decodeRosterFileBytes(reader.result));
       reader.onerror = () => setMessage("roster-import-message", t("message.roster_import_failed", { error: reader.error }), "error");
       reader.readAsArrayBuffer(file);
     }
@@ -3016,6 +3035,105 @@
       } catch (error) {
         setMessage("roster-import-message", t("message.roster_import_failed", { error: error.message }), "error");
       }
+    }
+
+    // Dry-runs a selected roster file (POST /api/roster/import with
+    // dry_run: true) and opens the preview modal with the result --
+    // replaces the old window.confirm(confirm.replace_roster) step.
+    // Nothing is saved until confirmRosterImport() sends the real import.
+    async function previewRosterImport(text) {
+      try {
+        const response = await fetch("/api/roster/import", {
+          method: "POST",
+          headers: adminHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({ csv: text, dry_run: true }),
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          setMessage("roster-import-message", payload.detail || response.statusText, "error");
+          return;
+        }
+        state.rosterImportPreview = { text, ...payload };
+        renderRosterImportPreviewModal();
+        $("roster-import-preview-modal").classList.add("show");
+      } catch (error) {
+        setMessage("roster-import-message", t("message.roster_import_failed", { error: error.message }), "error");
+      }
+    }
+
+    function renderRosterImportPreviewModal() {
+      const preview = state.rosterImportPreview || {};
+      const entries = preview.entries || [];
+      const errors = preview.errors || [];
+      const existingCount = preview.existing_count || 0;
+
+      $("roster-import-preview-replace-note").textContent = existingCount > 0
+        ? t("roster_import_preview.replace_note", { count: existingCount })
+        : "";
+
+      const errorRows = errors.map((error) => `
+        <div class="row-card row-error">
+          <div class="row-main">
+            <div>
+              <div class="row-name">${escapeHtml(t("text.row_error_label", { row: error.row }))}</div>
+              <div class="row-meta">${escapeHtml(error.message)}</div>
+            </div>
+          </div>
+        </div>
+      `).join("");
+      const entryRows = entries.map((entry) => {
+        const division = divisionLabel(entry.division);
+        const meta = [division, entry.team].filter(Boolean).map(escapeHtml).join(" · ");
+        return `
+          <div class="row-card">
+            <div class="row-main">
+              <div>
+                <div class="row-name">${escapeHtml(entry.name)}</div>
+                <div class="row-meta">${meta}</div>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join("");
+      $("roster-import-preview-table").innerHTML = errorRows + entryRows;
+
+      const teamWarnings = preview.team_warnings || [];
+      $("roster-import-preview-warnings").innerHTML = teamWarnings.map((warning) => `
+        <div class="row-card row-warning">
+          <div class="row-main">
+            <div>
+              <div class="row-name">${escapeHtml(warning.team)}</div>
+              <div class="row-meta">${escapeHtml(t("roster_import_preview.team_size_warning", { count: warning.count, expected: warning.expected }))}</div>
+            </div>
+          </div>
+        </div>
+      `).join("");
+
+      $("btn-roster-import-preview-confirm").disabled = errors.length > 0;
+      $("roster-import-preview-message").textContent = "";
+    }
+
+    function closeRosterImportPreviewModal() {
+      $("roster-import-preview-modal").classList.remove("show");
+      $("roster-import-preview-message").textContent = "";
+    }
+
+    async function confirmRosterImport() {
+      const preview = state.rosterImportPreview;
+      if (!preview) return;
+      const confirmBtn = $("btn-roster-import-preview-confirm");
+      if (confirmBtn.disabled) return;
+      confirmBtn.disabled = true;
+      try {
+        await importRosterCsv(preview.text);
+        closeRosterImportPreviewModal();
+      } finally {
+        confirmBtn.disabled = false;
+      }
+    }
+
+    function handleRosterImportPreviewBackdropClick(event) {
+      if (event.target.id === "roster-import-preview-modal") closeRosterImportPreviewModal();
     }
 
     // Pulls the filename out of a Content-Disposition header value like
@@ -3821,6 +3939,7 @@
     $("clear-results-modal").addEventListener("click", handleClearResultsBackdropClick);
     $("clear-roster-modal").addEventListener("click", handleClearRosterBackdropClick);
     $("cancel-heat-modal").addEventListener("click", handleCancelHeatBackdropClick);
+    $("roster-import-preview-modal").addEventListener("click", handleRosterImportPreviewBackdropClick);
     // Live toggle for the mixed-race lock (target field vs. group editor,
     // competition-mode lock) as the operator changes #race-type -- see
     // syncMixedRaceFields() for why this is a separate listener rather than
