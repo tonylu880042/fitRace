@@ -2966,6 +2966,18 @@
       `).join("");
     }
 
+    // Decodes a roster CSV file's raw bytes as UTF-8, falling back to Big5
+    // when that fails -- a zh-TW Excel export of a plain .csv is typically
+    // Big5, not UTF-8, and reading it as UTF-8 mangles every Chinese
+    // character instead of throwing.
+    function decodeRosterFileBytes(arrayBuffer) {
+      try {
+        return new TextDecoder("utf-8", { fatal: true }).decode(arrayBuffer);
+      } catch (_) {
+        return new TextDecoder("big5").decode(arrayBuffer);
+      }
+    }
+
     function handleRosterFileSelected(event) {
       const input = event.target;
       const file = input.files && input.files[0];
@@ -2975,9 +2987,9 @@
         if (!window.confirm(t("confirm.replace_roster"))) return;
       }
       const reader = new FileReader();
-      reader.onload = () => importRosterCsv(String(reader.result || ""));
+      reader.onload = () => importRosterCsv(decodeRosterFileBytes(reader.result));
       reader.onerror = () => setMessage("roster-import-message", t("message.roster_import_failed", { error: reader.error }), "error");
-      reader.readAsText(file);
+      reader.readAsArrayBuffer(file);
     }
 
     async function importRosterCsv(text) {

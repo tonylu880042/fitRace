@@ -293,12 +293,13 @@ def test_handle_roster_file_selected_confirms_before_replacing_existing_roster()
 function t(key) {{ return key; }}
 
 class FakeFileReader {{
-  readAsText(file) {{
+  readAsArrayBuffer(file) {{
     this.result = file.text;
     if (this.onload) this.onload();
   }}
 }}
 global.FileReader = FakeFileReader;
+function decodeRosterFileBytes(raw) {{ return raw; }}
 
 let confirmCalled = false;
 let confirmReturns = true;
