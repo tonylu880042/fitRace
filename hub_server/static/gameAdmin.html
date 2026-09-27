@@ -1166,11 +1166,11 @@
           <div class="countdown-banner" id="countdown-status" aria-live="polite" data-i18n="banner.countdown_active">Countdown active on Dashboard. Race starts on Go.</div>
           <div class="action-bar">
             <div class="button-group">
-              <button type="button" class="danger" id="btn-stop" onclick="stopRace()" data-i18n="button.stop_race">Stop Race</button>
-              <button type="button" class="danger" id="btn-reset" onclick="resetRace()" data-i18n="button.reset_race">Reset Race</button>
+              <button type="button" class="danger" id="btn-stop" onclick="stopRace()" data-i18n="button.stop_race">End Heat (Save Results)</button>
+              <button type="button" class="danger" id="btn-reset" onclick="resetRace()" data-i18n="button.reset_race">Clear Stations (Results Kept)</button>
             </div>
             <div class="button-group">
-              <button type="button" class="primary" id="btn-save-race" onclick="saveRaceConfig()" data-i18n="button.save_race">Save Race</button>
+              <button type="button" class="primary" id="btn-save-race" onclick="saveRaceConfig()" data-i18n="button.save_race">Save Race Settings</button>
               <button type="button" class="primary" id="btn-start-race" onclick="startRaceAction()" data-i18n="button.start_race">Start Race</button>
             </div>
           </div>
@@ -1184,7 +1184,7 @@
               <label for="roster-file-input" data-i18n="button.import_roster">Import Roster</label>
               <input type="file" id="roster-file-input" accept=".csv,text/csv" onchange="handleRosterFileSelected(event)">
               <button type="button" id="btn-download-results-csv" onclick="downloadResultsCsv()" data-i18n="button.download_results_csv">Download Results (CSV)</button>
-              <button type="button" class="danger" id="btn-clear-results" onclick="openClearResultsModal()" data-i18n="button.clear_results">Clear Results</button>
+              <button type="button" class="danger" id="btn-clear-results" onclick="openClearResultsModal()" data-i18n="button.clear_results">Clear All Past Results</button>
               <button type="button" class="danger" id="btn-clear-roster" onclick="openClearRosterModal()" data-i18n="button.clear_roster">Clear Roster</button>
             </div>
           </div>
@@ -1203,7 +1203,7 @@
           <div class="control-block">
             <div class="control-block-header">
               <h3 class="control-block-title" data-i18n="panel.current_heat">Current Heat</h3>
-              <button type="button" id="btn-cancel-current-heat" onclick="openCancelHeatModal()" data-i18n="button.cancel_current_heat" hidden>Cancel Current Heat</button>
+              <button type="button" id="btn-cancel-current-heat" onclick="openCancelHeatModal()" data-i18n="button.cancel_current_heat" hidden>Return Heat to Queue</button>
             </div>
             <div class="list" id="roster-current-heat"></div>
           </div>
@@ -1214,7 +1214,7 @@
           </div>
 
           <div class="action-bar">
-            <button type="button" class="primary" id="btn-load-next-heat" style="min-height: 44px; width: 100%;" onclick="loadNextHeat()" data-i18n="button.load_next_heat">Load Next Heat</button>
+            <button type="button" class="primary" id="btn-load-next-heat" style="min-height: 44px; width: 100%;" onclick="loadNextHeat()" data-i18n="button.load_next_heat">Next Heat Up →</button>
           </div>
           <div class="status-text" id="roster-heat-message"></div>
 
@@ -1295,7 +1295,7 @@
   <div class="login" id="clear-results-modal" role="dialog" aria-modal="true" aria-labelledby="clear-results-title">
     <div class="login-box">
       <div id="clear-results-step-1">
-        <h2 id="clear-results-title" data-i18n="clear_results.title">Clear Race Results</h2>
+        <h2 id="clear-results-title" data-i18n="clear_results.title">Clear All Past Results</h2>
         <p id="clear-results-step1-body"></p>
         <div class="button-row">
           <button type="button" id="btn-clear-results-cancel-1" onclick="closeClearResultsModal()" data-i18n="button.cancel">Cancel</button>
@@ -1338,7 +1338,7 @@
 
   <div class="login" id="cancel-heat-modal" role="dialog" aria-modal="true" aria-labelledby="cancel-heat-title">
     <div class="login-box">
-      <h2 id="cancel-heat-title" data-i18n="cancel_heat.title">Cancel Current Heat</h2>
+      <h2 id="cancel-heat-title" data-i18n="cancel_heat.title">Return Heat to Queue</h2>
       <p id="cancel-heat-body"></p>
       <div class="button-row">
         <button type="button" id="btn-cancel-heat-cancel" onclick="closeCancelHeatModal()" data-i18n="button.cancel">Cancel</button>
@@ -1467,10 +1467,10 @@
         "guidance.leaderboard_preview": "Leaderboard Preview",
         "guidance.start_flow": "Start Flow",
         "banner.countdown_active": "Countdown active on Dashboard. Race starts on Go.",
-        "button.save_race": "Save Race",
+        "button.save_race": "Save Race Settings",
         "button.start_race": "Start Race",
-        "button.stop_race": "Stop Race",
-        "button.reset_race": "Reset Race",
+        "button.stop_race": "End Heat (Save Results)",
+        "button.reset_race": "Clear Stations (Results Kept)",
         "button.refresh": "Refresh",
         "button.save": "Save",
         "button.cancel": "Cancel",
@@ -1517,7 +1517,7 @@
         "text.sound_status_muted": "muted for this start",
         "text.start_flow_detail": "Start Race sends a 3, 2, 1, Go countdown to the Dashboard. Sound is {soundStatus}; the race timer begins on Go.",
         "text.start_flow_default": "Start Race sends the countdown to the Dashboard. The race timer begins on Go.",
-        "confirm.reset_race": "Reset race and clear current athlete registrations?",
+        "confirm.reset_race": "Clear stations? Current athlete registrations and race settings will be cleared; results are kept. You will need to Save Race Settings again.",
         "message.race_started": "Race started after Dashboard countdown.",
         "message.race_stopped": "Race stopped.",
         "message.race_reset": "Race reset.",
@@ -1608,7 +1608,7 @@
         "panel.next_heat": "Next Heat",
         "panel.walk_in": "Walk-in Registration",
         "button.import_roster": "Import Roster",
-        "button.load_next_heat": "Load Next Heat",
+        "button.load_next_heat": "Next Heat Up \u2192",
         "button.requeue": "Requeue",
         "button.add_walk_in": "Add",
         "label.pending": "Pending",
@@ -1645,10 +1645,10 @@
         "button.download_results_csv": "Download Results (CSV)",
         "message.results_downloaded": "Results downloaded.",
         "message.results_download_failed": "Download failed: {error}",
-        "button.clear_results": "Clear Results",
+        "button.clear_results": "Clear All Past Results",
         "button.clear_results_next": "Next",
         "button.clear_results_confirm": "Clear Results",
-        "clear_results.title": "Clear Race Results",
+        "clear_results.title": "Clear All Past Results",
         "clear_results.step1_body": "{count} stored race result(s) will be cleared. Download the CSV first if you need a copy. The original file is kept as a .bak backup on the hub, but the dashboard's overall standings will become empty.",
         "clear_results.step1_body_empty": "There are no stored race results to clear.",
         "clear_results.step2_title": "Confirm Clear",
@@ -1670,9 +1670,9 @@
         "message.roster_cleared": "Roster cleared.",
         "message.clear_roster_race_running": "Race is running -- cannot clear the roster.",
         "message.clear_roster_failed": "Failed to clear roster: {error}",
-        "button.cancel_current_heat": "Cancel Current Heat",
+        "button.cancel_current_heat": "Return Heat to Queue",
         "button.cancel_heat_confirm": "Cancel Heat",
-        "cancel_heat.title": "Cancel Current Heat",
+        "cancel_heat.title": "Return Heat to Queue",
         "cancel_heat.body": "Cancel the current heat ({names})? They will return to the front of the pending queue.",
         "message.heat_cancelled": "Current heat cancelled.",
         "message.cancel_heat_race_running": "Race is running -- cannot cancel the heat.",
@@ -1742,10 +1742,10 @@
       "guidance.leaderboard_preview": "排行榜預覽",
       "guidance.start_flow": "啟動流程",
       "banner.countdown_active": "儀表板上倒計時進行中。比賽將在 Go 開始。",
-      "button.save_race": "儲存比賽",
+      "button.save_race": "儲存比賽設定",
       "button.start_race": "開始比賽",
-      "button.stop_race": "停止比賽",
-      "button.reset_race": "重設比賽",
+      "button.stop_race": "結束本組（保存成績）",
+      "button.reset_race": "清空賽道（成績保留）",
       "button.refresh": "重新整理",
       "button.save": "儲存",
       "button.cancel": "取消",
@@ -1792,7 +1792,7 @@
       "text.sound_status_muted": "本次啟動靜音",
       "text.start_flow_detail": "開始比賽會在儀表板播放 3, 2, 1, Go 倒數計時。聲音{soundStatus};比賽計時將在 Go 時開始。",
       "text.start_flow_default": "開始比賽會將倒數計時傳送到儀表板。比賽計時將在 Go 時開始。",
-      "confirm.reset_race": "確定重設比賽並清除目前的運動員報名?",
+      "confirm.reset_race": "確定清空賽道嗎？各站目前的選手登記與比賽設定會被清除，成績會保留；之後需要重新「儲存比賽設定」。",
       "message.race_started": "比賽已在儀表板倒數後開始。",
       "message.race_stopped": "比賽已停止。",
       "message.race_reset": "比賽已重設。",
@@ -1875,7 +1875,7 @@
       "panel.next_heat": "下一組",
       "panel.walk_in": "現場報名",
       "button.import_roster": "匯入名單",
-      "button.load_next_heat": "載入下一組",
+      "button.load_next_heat": "下一組上場 →",
       "button.requeue": "重新排入",
       "button.add_walk_in": "新增",
       "label.pending": "待比賽",
@@ -1912,10 +1912,10 @@
       "button.download_results_csv": "下載成績 (CSV)",
       "message.results_downloaded": "成績已下載",
       "message.results_download_failed": "下載失敗：{error}",
-      "button.clear_results": "清除成績",
+      "button.clear_results": "清除全部歷史成績",
       "button.clear_results_next": "下一步",
       "button.clear_results_confirm": "確定清除",
-      "clear_results.title": "清除比賽成績",
+      "clear_results.title": "清除全部歷史成績",
       "clear_results.step1_body": "目前已儲存 {count} 場比賽成績,清除後無法復原。建議先下載 CSV 備份;原始檔案會在主機上保留為 .bak 備份,但大螢幕的總排名將會變成空白。",
       "clear_results.step1_body_empty": "目前沒有已儲存的比賽成績,無需清除。",
       "clear_results.step2_title": "再次確認",
@@ -1937,9 +1937,9 @@
       "message.roster_cleared": "名單已清除。",
       "message.clear_roster_race_running": "比賽進行中，無法清除名單",
       "message.clear_roster_failed": "清除名單失敗：{error}",
-      "button.cancel_current_heat": "取消目前這組",
+      "button.cancel_current_heat": "退回這組（重新排隊）",
       "button.cancel_heat_confirm": "確定取消",
-      "cancel_heat.title": "取消目前這組",
+      "cancel_heat.title": "退回這組（重新排隊）",
       "cancel_heat.body": "確定要取消目前這組（{names}）嗎？他們將回到待比賽名單最前面。",
       "message.heat_cancelled": "已取消目前這組。",
       "message.cancel_heat_race_running": "比賽進行中，無法取消",

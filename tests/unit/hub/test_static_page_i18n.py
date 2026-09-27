@@ -220,8 +220,8 @@ def test_game_admin_uses_two_separate_buttons_for_save_and_start_steps():
     assert 'onclick="startRaceAction()"' in source
     assert 'data-i18n="button.save_race"' in source
     assert 'data-i18n="button.start_race"' in source
-    assert '"button.save_race": "Save Race"' in source
-    assert '"button.save_race": "儲存比賽"' in source
+    assert '"button.save_race": "Save Race Settings"' in source
+    assert '"button.save_race": "儲存比賽設定"' in source
     assert '"button.start_race": "Start Race"' in source
     assert '"button.start_race": "開始比賽"' in source
     assert "button.save_and_start_race" not in source
