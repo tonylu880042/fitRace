@@ -96,6 +96,7 @@ _DOM_STUB = """
 const elements = {};
 function el(id) {
   if (!elements[id]) {
+    const classes = new Set();
     elements[id] = {
       id,
       disabled: false,
@@ -103,7 +104,15 @@ function el(id) {
       textContent: "",
       innerHTML: "",
       value: "",
-      classList: { toggle() {}, contains() { return false; } },
+      classList: {
+        add(name) { classes.add(name); },
+        remove(name) { classes.delete(name); },
+        toggle(name, force) {
+          const shouldHave = force === undefined ? !classes.has(name) : Boolean(force);
+          if (shouldHave) classes.add(name); else classes.delete(name);
+        },
+        contains(name) { return classes.has(name); },
+      },
     };
   }
   return elements[id];
@@ -144,6 +153,7 @@ renderRoster();
 console.log(JSON.stringify({{
   hidden: el("post-race-hint").hidden,
   text: el("post-race-hint").textContent,
+  hasCalloutClass: el("post-race-hint").classList.contains("postrace-callout"),
 }}));
 """
     output = _run_node(harness)
@@ -176,6 +186,7 @@ def test_postrace_hint_shown_when_stopped_with_pending_entries():
     )
     assert result["hidden"] is False
     assert "Next Heat Up" in result["text"]
+    assert result["hasCalloutClass"] is True
 
 
 def test_postrace_hint_shown_when_stopped_with_roster_fully_raced():
@@ -193,6 +204,7 @@ def test_postrace_hint_shown_when_stopped_with_roster_fully_raced():
     )
     assert result["hidden"] is False
     assert "Everyone on the roster has raced" in result["text"]
+    assert result["hasCalloutClass"] is True
 
 
 def test_postrace_hint_shown_when_stopped_with_no_roster():
@@ -210,6 +222,7 @@ def test_postrace_hint_shown_when_stopped_with_no_roster():
     )
     assert result["hidden"] is False
     assert result["text"] == "Heat results saved."
+    assert result["hasCalloutClass"] is True
 
 
 def test_postrace_hint_hidden_when_not_stopped():
@@ -227,3 +240,4 @@ def test_postrace_hint_hidden_when_not_stopped():
     )
     assert result["hidden"] is True
     assert result["text"] == ""
+    assert result["hasCalloutClass"] is False

@@ -321,6 +321,18 @@
     .status-text.warn { color: var(--warn); }
     .status-text.error { color: var(--danger); }
 
+    .postrace-callout {
+      border: 1px solid var(--accent);
+      background: rgba(226, 255, 59, 0.12);
+      border-radius: 6px;
+      padding: 14px 16px;
+      margin-top: 10px;
+      color: var(--text);
+      font-size: 16px;
+      font-weight: 800;
+      line-height: 1.35;
+    }
+
     .guidance-grid {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2928,7 +2940,9 @@
       $("btn-clear-roster").disabled = raceState === "RUNNING";
 
       const hintEl = $("post-race-hint");
-      if (raceState !== "STOPPED") {
+      const showHint = raceState === "STOPPED";
+      hintEl.classList.toggle("postrace-callout", showHint);
+      if (!showHint) {
         hintEl.hidden = true;
         hintEl.textContent = "";
       } else if ((counts.pending || 0) > 0) {
