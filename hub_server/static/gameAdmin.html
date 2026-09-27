@@ -1181,6 +1181,7 @@
           <div class="panel-header">
             <h2 class="panel-title" id="roster-title" data-i18n="panel.roster_heats">Roster &amp; Heats</h2>
             <div class="button-group">
+              <button type="button" id="btn-download-roster-template" onclick="downloadRosterTemplate()" data-i18n="button.download_roster_template">Download Roster Template</button>
               <label for="roster-file-input" data-i18n="button.import_roster">Import Roster</label>
               <input type="file" id="roster-file-input" accept=".csv,text/csv" onchange="handleRosterFileSelected(event)">
               <button type="button" id="btn-download-results-csv" onclick="downloadResultsCsv()" data-i18n="button.download_results_csv">Download Results (CSV)</button>
@@ -1682,7 +1683,9 @@
         "message.cancel_heat_failed": "Failed to cancel the heat: {error}",
         "text.postrace_hint_next_heat": "Heat results saved. Next: press Next Heat Up.",
         "text.postrace_hint_roster_done": "Heat results saved. Everyone on the roster has raced.",
-        "text.postrace_hint_saved": "Heat results saved."
+        "text.postrace_hint_saved": "Heat results saved.",
+        "button.download_roster_template": "Download Roster Template",
+        "message.roster_template_download_failed": "Template download failed: {error}"
       }
     };
 
@@ -1953,6 +1956,8 @@
       "text.postrace_hint_next_heat": "本組成績已保存。下一步：按「下一組上場」。",
       "text.postrace_hint_roster_done": "本組成績已保存。名單已全部比完。",
       "text.postrace_hint_saved": "本組成績已保存。",
+      "button.download_roster_template": "下載名單範本",
+      "message.roster_template_download_failed": "範本下載失敗：{error}",
       "label.overall_standings_event": "總排名活動範圍",
       "button.start_new_event": "開始新活動",
       "text.event_start_none": "目前計入全部歷史紀錄。",
@@ -3058,6 +3063,40 @@
         setMessage("results-export-message", t("message.results_downloaded"), "ok");
       } catch (error) {
         setMessage("results-export-message", t("message.results_download_failed", { error: error.message }), "error");
+      }
+    }
+
+    // Downloads the roster CSV template (GET /api/roster/template.csv),
+    // picking mode/legs from the CURRENT race config (relay when
+    // competition_mode is "relay", using its relay_legs) and mapping the
+    // page's currentLocale ("zh-TW"/"en-US") to the "zh-TW"/"en" the
+    // backend understands.
+    async function downloadRosterTemplate() {
+      const config = state.race?.config || {};
+      const isRelay = config.competition_mode === "relay";
+      const lang = currentLocale === "zh-TW" ? "zh-TW" : "en";
+      const params = new URLSearchParams({ mode: isRelay ? "relay" : "individual", lang });
+      if (isRelay && config.relay_legs) params.set("legs", String(config.relay_legs));
+      try {
+        const response = await fetch(`/api/roster/template.csv?${params.toString()}`, {
+          headers: adminHeaders(),
+        });
+        if (!response.ok) {
+          throw new Error(response.statusText || String(response.status));
+        }
+        const blob = await response.blob();
+        const disposition = response.headers.get("Content-Disposition") || "";
+        const filename = parseAttachmentFilename(disposition) || "roster-template.csv";
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = filename;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        URL.revokeObjectURL(url);
+      } catch (error) {
+        setMessage("roster-import-message", t("message.roster_template_download_failed", { error: error.message }), "error");
       }
     }
 

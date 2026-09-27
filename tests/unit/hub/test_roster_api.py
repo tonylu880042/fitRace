@@ -879,3 +879,47 @@ def test_delete_roster_with_no_loaded_heat_does_not_touch_stations():
     assert res.status_code == 200
 
     assert client.get("/api/stations").json() == stations_before
+
+
+# ---------------------------------------------------------------------------
+# GET /api/roster/template.csv -- downloadable CSV template that round-trips
+# through parse_roster_csv with zero errors.
+# ---------------------------------------------------------------------------
+
+
+def test_template_csv_individual_round_trips_through_import():
+    res = client.get("/api/roster/template.csv?mode=individual&lang=zh-TW")
+    assert res.status_code == 200
+    assert res.headers["content-type"].startswith("text/csv")
+
+    import_res = client.post(
+        "/api/roster/import", json={"csv": res.content.decode("utf-8")}
+    )
+    assert import_res.status_code == 200
+    assert len(import_res.json()["entries"]) == 3
+
+
+def test_template_csv_relay_round_trips_with_requested_legs():
+    res = client.get("/api/roster/template.csv?mode=relay&legs=3&lang=en")
+    assert res.status_code == 200
+
+    import_res = client.post(
+        "/api/roster/import", json={"csv": res.content.decode("utf-8")}
+    )
+    assert import_res.status_code == 200
+    entries = import_res.json()["entries"]
+    teams: dict[str, int] = {}
+    for entry in entries:
+        teams[entry["team"]] = teams.get(entry["team"], 0) + 1
+    assert len(teams) == 2
+    assert all(count == 3 for count in teams.values())
+
+
+def test_template_csv_requires_admin_token_when_configured(monkeypatch):
+    monkeypatch.setenv("FITRACE_ADMIN_TOKEN", "admin-secret")
+    res = client.get("/api/roster/template.csv?mode=individual")
+    assert res.status_code == 401
+
+    ok_headers = {"X-FitRace-Admin-Token": "admin-secret"}
+    res = client.get("/api/roster/template.csv?mode=individual", headers=ok_headers)
+    assert res.status_code == 200

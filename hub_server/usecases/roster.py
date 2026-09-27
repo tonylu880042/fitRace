@@ -11,6 +11,7 @@ station numbers currently available as a plain argument.
 """
 
 import csv
+import io
 import uuid
 from typing import Any, Optional
 
@@ -147,6 +148,59 @@ def parse_roster_csv(text: str) -> tuple[list[dict[str, Any]], list[dict[str, An
     if errors:
         return [], errors
     return entries, []
+
+
+_TEMPLATE_HEADERS = {
+    "zh-TW": ("姓名", "組別", "隊伍"),
+    "en": ("name", "division", "team"),
+}
+
+_TEMPLATE_INDIVIDUAL_ROWS = {
+    "zh-TW": [
+        ("王小明", "男", ""),
+        ("林小華", "女", ""),
+        ("陳大同", "", "熊隊"),
+    ],
+    "en": [
+        ("Alex Chen", "men", ""),
+        ("Bea Lin", "women", ""),
+        ("Sam Wu", "", "Bears"),
+    ],
+}
+
+_TEMPLATE_RELAY_TEAM_NAMES = {
+    "zh-TW": ("熊隊", "虎隊"),
+    "en": ("Bears", "Tigers"),
+}
+
+
+def build_roster_template_csv(mode: str, lang: str, legs: int = 2) -> str:
+    """Build a downloadable roster CSV template (UTF-8 with a leading BOM,
+    CRLF line endings) that round-trips through `parse_roster_csv` with zero
+    errors -- see GET /api/roster/template.csv. `mode` is "individual" or
+    "relay"; for relay, two example teams are generated, each with exactly
+    `legs` members sharing a team name.
+    """
+    header = _TEMPLATE_HEADERS.get(lang, _TEMPLATE_HEADERS["en"])
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(header)
+
+    if mode == "relay":
+        team_names = _TEMPLATE_RELAY_TEAM_NAMES.get(
+            lang, _TEMPLATE_RELAY_TEAM_NAMES["en"]
+        )
+        for team_index, team_name in enumerate(team_names):
+            for member_index in range(legs):
+                name = f"{team_name}-{member_index + 1}"
+                writer.writerow([name, "", team_name])
+    else:
+        for name, division, team in _TEMPLATE_INDIVIDUAL_ROWS.get(
+            lang, _TEMPLATE_INDIVIDUAL_ROWS["en"]
+        ):
+            writer.writerow([name, division, team])
+
+    return _BOM + buffer.getvalue()
 
 
 class RosterManager:

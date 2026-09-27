@@ -7,7 +7,58 @@ the HTTP surface."""
 import pytest
 
 from hub_server.usecases.race_settings_store import RaceSettingsStore
-from hub_server.usecases.roster import RosterManager, parse_roster_csv
+from hub_server.usecases.roster import (
+    RosterManager,
+    build_roster_template_csv,
+    parse_roster_csv,
+)
+
+# ---------------------------------------------------------------------------
+# CSV template generation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("lang", ["zh-TW", "en"])
+def test_individual_template_round_trips_with_no_errors(lang):
+    csv_text = build_roster_template_csv(mode="individual", lang=lang)
+    assert csv_text.startswith("﻿")
+    assert "\r\n" in csv_text
+    entries, errors = parse_roster_csv(csv_text)
+    assert errors == []
+    assert len(entries) == 3
+    assert any(e["team"] for e in entries)
+
+
+@pytest.mark.parametrize("lang", ["zh-TW", "en"])
+def test_relay_template_round_trips_with_no_errors_and_matches_legs(lang):
+    csv_text = build_roster_template_csv(mode="relay", lang=lang, legs=3)
+    entries, errors = parse_roster_csv(csv_text)
+    assert errors == []
+    teams: dict[str, list] = {}
+    for entry in entries:
+        teams.setdefault(entry["team"], []).append(entry)
+    assert len(teams) == 2
+    for members in teams.values():
+        assert len(members) == 3
+
+
+def test_individual_template_header_is_localized():
+    zh_csv = build_roster_template_csv(mode="individual", lang="zh-TW")
+    en_csv = build_roster_template_csv(mode="individual", lang="en")
+    zh_header = zh_csv.lstrip("﻿").splitlines()[0]
+    en_header = en_csv.lstrip("﻿").splitlines()[0]
+    assert zh_header == "姓名,組別,隊伍"
+    assert en_header == "name,division,team"
+
+
+def test_relay_template_defaults_legs_to_two():
+    csv_text = build_roster_template_csv(mode="relay", lang="en")
+    entries, _ = parse_roster_csv(csv_text)
+    teams: dict[str, int] = {}
+    for entry in entries:
+        teams[entry["team"]] = teams.get(entry["team"], 0) + 1
+    assert all(count == 2 for count in teams.values())
+
 
 # ---------------------------------------------------------------------------
 # CSV parsing

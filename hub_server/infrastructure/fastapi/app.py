@@ -34,6 +34,7 @@ from hub_server.usecases.roster import (
     MAX_NAME_LENGTH,
     MAX_TEAM_LENGTH,
     RosterManager,
+    build_roster_template_csv,
 )
 from hub_server.adapters.websocket_manager import WebSocketManager
 from hub_server.infrastructure.build_fingerprint import compute_build_fingerprint
@@ -1631,6 +1632,34 @@ def roster_summary_response() -> dict:
     )
     summary["mode"] = "relay" if is_relay else "individual"
     return summary
+
+
+@app.get("/api/roster/template.csv")
+def download_roster_template_csv(
+    request: Request,
+    mode: str = "individual",
+    legs: Optional[int] = None,
+    lang: Optional[str] = None,
+):
+    require_admin(request)
+    resolved_lang = "zh-TW" if lang != "en" else "en"
+    resolved_mode = "relay" if mode == "relay" else "individual"
+    if legs is not None:
+        resolved_legs = legs
+    else:
+        config = race_manager.get_config()
+        resolved_legs = (
+            config.relay_legs if config and config.relay_legs else None
+        ) or 2
+    csv_text = build_roster_template_csv(
+        mode=resolved_mode, lang=resolved_lang, legs=resolved_legs
+    )
+    filename = "roster-template.csv"
+    return Response(
+        content=csv_text,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @app.get("/api/roster")
