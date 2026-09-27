@@ -48,6 +48,38 @@ def test_import_preview_relay_no_warnings_when_all_teams_match_legs():
     assert preview["team_warnings"] == []
 
 
+def test_import_preview_relay_flags_teams_with_too_many_members():
+    # A team with MORE members than relay_legs is just as invalid as one
+    # with too few -- load_next_heat_teams() rejects both. A mutation that
+    # weakens "!= relay_legs" to "< relay_legs" would silently let this
+    # oversized-team case through un-flagged.
+    csv_text = "name,team\nA,Red\nB,Red\nC,Red\n"
+    preview = build_import_preview(csv_text, existing_count=0, relay_legs=2)
+    assert preview["team_member_counts"] == {"Red": 3}
+    assert preview["team_warnings"] == [{"team": "Red", "count": 3, "expected": 2}]
+
+
+def test_import_preview_relay_reports_teamless_entries_separately():
+    # Rows with no team must NOT be silently grouped under a "" team --
+    # relay mode requires every pending entry to have a team
+    # (load_next_heat_teams() rejects teamless entries outright), so this
+    # needs to surface as its own count, not a "" entry inside
+    # team_member_counts/team_warnings.
+    csv_text = "name,team\nA,Red\nB,Red\nC,\nD,\n"
+    preview = build_import_preview(csv_text, existing_count=0, relay_legs=2)
+    assert preview["teamless_count"] == 2
+    assert preview["team_member_counts"] == {"Red": 2}
+    assert "" not in preview["team_member_counts"]
+    assert all(w["team"] != "" for w in preview["team_warnings"])
+    assert preview["team_warnings"] == []
+
+
+def test_import_preview_relay_teamless_count_is_zero_when_all_have_teams():
+    csv_text = "name,team\nA,Red\nB,Red\n"
+    preview = build_import_preview(csv_text, existing_count=0, relay_legs=2)
+    assert preview["teamless_count"] == 0
+
+
 # ---------------------------------------------------------------------------
 # CSV template generation
 # ---------------------------------------------------------------------------

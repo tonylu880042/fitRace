@@ -115,6 +115,48 @@ def test_import_roster_dry_run_relay_mode_flags_team_size_warnings():
     assert client.get("/api/roster").json()["entries"] == []
 
 
+def test_import_roster_dry_run_relay_mode_flags_oversized_team():
+    client.post(
+        "/api/race/configure",
+        json={
+            "race_type": "distance",
+            "target_value": 500,
+            "competition_mode": "relay",
+            "relay_legs": 2,
+        },
+    )
+    res = client.post(
+        "/api/roster/import",
+        json={"csv": "name,team\nA,Red\nB,Red\nC,Red\n", "dry_run": True},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["team_warnings"] == [{"team": "Red", "count": 3, "expected": 2}]
+    assert client.get("/api/roster").json()["entries"] == []
+
+
+def test_import_roster_dry_run_relay_mode_reports_teamless_entries_separately():
+    client.post(
+        "/api/race/configure",
+        json={
+            "race_type": "distance",
+            "target_value": 500,
+            "competition_mode": "relay",
+            "relay_legs": 2,
+        },
+    )
+    res = client.post(
+        "/api/roster/import",
+        json={"csv": "name,team\nA,Red\nB,Red\nC,\nD,\n", "dry_run": True},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["teamless_count"] == 2
+    assert "" not in body["team_member_counts"]
+    assert all(w["team"] != "" for w in body["team_warnings"])
+    assert client.get("/api/roster").json()["entries"] == []
+
+
 def test_walk_in_and_absent_and_requeue():
     client.post("/api/roster/import", json={"csv": "name\nAlice\nBob\n"})
     res = client.post(

@@ -223,10 +223,20 @@ def build_import_preview(
     }
     if relay_legs is not None:
         team_counts: dict[str, int] = {}
+        teamless_count = 0
         for entry in entries:
-            team = entry.get("team") or ""
+            team = entry.get("team")
+            if not team:
+                # Relay mode requires every pending entry to have a team --
+                # load_next_heat_teams() rejects a teamless pending entry
+                # outright. Counting it here as a "" team would silently
+                # bury that under team_member_counts/team_warnings instead
+                # of surfacing it as its own clear warning.
+                teamless_count += 1
+                continue
             team_counts[team] = team_counts.get(team, 0) + 1
         preview["team_member_counts"] = team_counts
+        preview["teamless_count"] = teamless_count
         preview["team_warnings"] = [
             {"team": team, "count": count, "expected": relay_legs}
             for team, count in team_counts.items()
