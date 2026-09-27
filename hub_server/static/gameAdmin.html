@@ -1213,6 +1213,7 @@
             <div class="list" id="roster-next-heat"></div>
           </div>
 
+          <div class="status-text" id="post-race-hint" hidden></div>
           <div class="action-bar">
             <button type="button" class="primary" id="btn-load-next-heat" style="min-height: 44px; width: 100%;" onclick="loadNextHeat()" data-i18n="button.load_next_heat">Next Heat Up →</button>
           </div>
@@ -1678,7 +1679,10 @@
         "message.cancel_heat_race_running": "Race is running -- cannot cancel the heat.",
         "message.cancel_heat_already_raced": "This heat has already raced -- use Load Next Heat instead.",
         "message.cancel_heat_no_current_heat": "There is no current heat loaded.",
-        "message.cancel_heat_failed": "Failed to cancel the heat: {error}"
+        "message.cancel_heat_failed": "Failed to cancel the heat: {error}",
+        "text.postrace_hint_next_heat": "Heat results saved. Next: press Next Heat Up.",
+        "text.postrace_hint_roster_done": "Heat results saved. Everyone on the roster has raced.",
+        "text.postrace_hint_saved": "Heat results saved."
       }
     };
 
@@ -1946,6 +1950,9 @@
       "message.cancel_heat_already_raced": "這組已經比過，請用載入下一組",
       "message.cancel_heat_no_current_heat": "目前沒有已載入的分組",
       "message.cancel_heat_failed": "取消失敗：{error}",
+      "text.postrace_hint_next_heat": "本組成績已保存。下一步：按「下一組上場」。",
+      "text.postrace_hint_roster_done": "本組成績已保存。名單已全部比完。",
+      "text.postrace_hint_saved": "本組成績已保存。",
       "label.overall_standings_event": "總排名活動範圍",
       "button.start_new_event": "開始新活動",
       "text.event_start_none": "目前計入全部歷史紀錄。",
@@ -2892,6 +2899,21 @@
       const raceState = state.race?.state || "IDLE";
       $("btn-load-next-heat").disabled = raceState === "RUNNING";
       $("btn-clear-roster").disabled = raceState === "RUNNING";
+
+      const hintEl = $("post-race-hint");
+      if (raceState !== "STOPPED") {
+        hintEl.hidden = true;
+        hintEl.textContent = "";
+      } else if ((counts.pending || 0) > 0) {
+        hintEl.hidden = false;
+        hintEl.textContent = t("text.postrace_hint_next_heat");
+      } else if ((roster.entries || []).length > 0) {
+        hintEl.hidden = false;
+        hintEl.textContent = t("text.postrace_hint_roster_done");
+      } else {
+        hintEl.hidden = false;
+        hintEl.textContent = t("text.postrace_hint_saved");
+      }
 
       const hasCurrentHeat = (counts.loaded || 0) > 0;
       $("btn-cancel-current-heat").hidden = !hasCurrentHeat;
