@@ -203,6 +203,38 @@ def build_roster_template_csv(mode: str, lang: str, legs: int = 2) -> str:
     return _BOM + buffer.getvalue()
 
 
+def build_import_preview(
+    csv_text: str,
+    existing_count: int,
+    relay_legs: Optional[int] = None,
+) -> dict[str, Any]:
+    """Parse `csv_text` WITHOUT saving anything -- the dry-run preview shown
+    before an operator confirms a roster import (POST /api/roster/import
+    with dry_run=true). Always returns entries/errors/existing_count; when
+    `relay_legs` is given (relay mode), also reports each team's member
+    count and flags (non-blocking -- load_next_heat_teams() already
+    enforces the real size check) any whose count doesn't match legs.
+    """
+    entries, errors = parse_roster_csv(csv_text)
+    preview: dict[str, Any] = {
+        "entries": entries,
+        "errors": errors,
+        "existing_count": existing_count,
+    }
+    if relay_legs is not None:
+        team_counts: dict[str, int] = {}
+        for entry in entries:
+            team = entry.get("team") or ""
+            team_counts[team] = team_counts.get(team, 0) + 1
+        preview["team_member_counts"] = team_counts
+        preview["team_warnings"] = [
+            {"team": team, "count": count, "expected": relay_legs}
+            for team, count in team_counts.items()
+            if count != relay_legs
+        ]
+    return preview
+
+
 class RosterManager:
     """In-memory roster queue backed by an injected atomic JSON store."""
 

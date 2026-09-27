@@ -64,6 +64,57 @@ def test_import_roster_row_error_returns_422_with_errors():
     assert client.get("/api/roster").json()["entries"] == []
 
 
+def test_import_roster_dry_run_does_not_save_and_reports_existing_count():
+    client.post("/api/roster/import", json={"csv": "name\nAlice\n"})
+
+    res = client.post(
+        "/api/roster/import",
+        json={"csv": "name,division\nBob,men\nCara,women\n", "dry_run": True},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert [e["name"] for e in body["entries"]] == ["Bob", "Cara"]
+    assert body["errors"] == []
+    assert body["existing_count"] == 1
+
+    # Nothing was saved -- the roster is untouched.
+    assert [e["name"] for e in client.get("/api/roster").json()["entries"]] == ["Alice"]
+
+
+def test_import_roster_dry_run_reports_errors_with_200_and_saves_nothing():
+    client.post("/api/roster/import", json={"csv": "name\nAlice\n"})
+
+    res = client.post(
+        "/api/roster/import",
+        json={"csv": "name,division\nBob,bogus\n", "dry_run": True},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["entries"] == []
+    assert body["errors"] == [{"row": 2, "message": "Invalid division: bogus"}]
+    assert [e["name"] for e in client.get("/api/roster").json()["entries"]] == ["Alice"]
+
+
+def test_import_roster_dry_run_relay_mode_flags_team_size_warnings():
+    client.post(
+        "/api/race/configure",
+        json={
+            "race_type": "distance",
+            "target_value": 500,
+            "competition_mode": "relay",
+            "relay_legs": 2,
+        },
+    )
+    res = client.post(
+        "/api/roster/import",
+        json={"csv": "name,team\nA,Red\nB,Red\nC,Blue\n", "dry_run": True},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["team_warnings"] == [{"team": "Blue", "count": 1, "expected": 2}]
+    assert client.get("/api/roster").json()["entries"] == []
+
+
 def test_walk_in_and_absent_and_requeue():
     client.post("/api/roster/import", json={"csv": "name\nAlice\nBob\n"})
     res = client.post(

@@ -9,9 +9,44 @@ import pytest
 from hub_server.usecases.race_settings_store import RaceSettingsStore
 from hub_server.usecases.roster import (
     RosterManager,
+    build_import_preview,
     build_roster_template_csv,
     parse_roster_csv,
 )
+
+# ---------------------------------------------------------------------------
+# Import preview (dry-run)
+# ---------------------------------------------------------------------------
+
+
+def test_import_preview_individual_reports_entries_and_existing_count():
+    preview = build_import_preview(
+        "name,division\nAlice,men\nBob,women\n", existing_count=5
+    )
+    assert [e["name"] for e in preview["entries"]] == ["Alice", "Bob"]
+    assert preview["errors"] == []
+    assert preview["existing_count"] == 5
+    assert "team_warnings" not in preview
+
+
+def test_import_preview_reports_row_errors_without_raising():
+    preview = build_import_preview("name,division\nAlice,bogus\n", existing_count=0)
+    assert preview["entries"] == []
+    assert preview["errors"] == [{"row": 2, "message": "Invalid division: bogus"}]
+
+
+def test_import_preview_relay_flags_teams_with_wrong_member_count():
+    csv_text = "name,team\nA,Red\nB,Red\nC,Blue\n"
+    preview = build_import_preview(csv_text, existing_count=0, relay_legs=2)
+    assert preview["team_member_counts"] == {"Red": 2, "Blue": 1}
+    assert preview["team_warnings"] == [{"team": "Blue", "count": 1, "expected": 2}]
+
+
+def test_import_preview_relay_no_warnings_when_all_teams_match_legs():
+    csv_text = "name,team\nA,Red\nB,Red\nC,Blue\nD,Blue\n"
+    preview = build_import_preview(csv_text, existing_count=0, relay_legs=2)
+    assert preview["team_warnings"] == []
+
 
 # ---------------------------------------------------------------------------
 # CSV template generation
