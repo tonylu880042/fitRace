@@ -249,6 +249,7 @@ def test_import_roster_csv_renders_row_errors_on_422():
     source = _strip_js_comments(_read())
     import_fn = _extract_function(source, "importRosterCsv")
     render_errors = _extract_function(source, "renderRosterImportErrors")
+    error_text_fn = _extract_function(source, "rosterErrorText")
 
     harness = f"""
 {_DOM_STUB}
@@ -257,6 +258,7 @@ function renderRoster() {{}}
 let lastMessage = null;
 function setMessage(id, text, kind) {{ lastMessage = {{ id, text, kind }}; }}
 
+{error_text_fn}
 {render_errors}
 
 global.fetch = async (url, options) => {{

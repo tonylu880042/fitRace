@@ -252,12 +252,16 @@ console.log(JSON.stringify({
 
 def test_render_preview_modal_disables_confirm_and_highlights_errors():
     source = _strip_js_comments(_read())
-    render_fn, division_label = _extract(
-        source, "renderRosterImportPreviewModal", "divisionLabel"
+    render_fn, division_label, error_text_fn = _extract(
+        source,
+        "renderRosterImportPreviewModal",
+        "divisionLabel",
+        "rosterErrorText",
     )
 
     harness = _harness(
         division_label,
+        error_text_fn,
         render_fn,
         extra="""
 state.rosterImportPreview = {

@@ -630,6 +630,16 @@
       line-height: 1.35;
     }
 
+    .row-card.row-error {
+      border-color: var(--danger);
+      background: rgba(244, 63, 94, 0.12);
+    }
+
+    .row-card.row-warning {
+      border-color: var(--warn);
+      background: rgba(245, 158, 11, 0.12);
+    }
+
     .readiness {
       display: grid;
       gap: 8px;
@@ -1715,7 +1725,13 @@
         "roster_import_preview.title": "Preview Roster Import",
         "button.confirm_import": "Confirm Import",
         "roster_import_preview.replace_note": "This will replace the current {count} entr(y/ies).",
-        "roster_import_preview.team_size_warning": "{count} member(s), expected {expected}."
+        "roster_import_preview.team_size_warning": "{count} member(s), expected {expected}.",
+        "roster_error.missing_header_row": "CSV has no header row",
+        "roster_error.missing_header_name": "Missing required column: name",
+        "roster_error.missing_name": "Missing name",
+        "roster_error.name_too_long": "Name too long (max 80 characters): {value}",
+        "roster_error.invalid_division": "Invalid division: {value}",
+        "roster_error.team_too_long": "Team name too long (max 80 characters): {value}"
       }
     };
 
@@ -1992,6 +2008,12 @@
       "button.confirm_import": "確認匯入",
       "roster_import_preview.replace_note": "將取代目前 {count} 筆名單",
       "roster_import_preview.team_size_warning": "共 {count} 人，預期 {expected} 人",
+      "roster_error.missing_header_row": "CSV 沒有標題列",
+      "roster_error.missing_header_name": "缺少必要欄位：姓名",
+      "roster_error.missing_name": "缺少姓名",
+      "roster_error.name_too_long": "姓名過長（最多 80 字）：{value}",
+      "roster_error.invalid_division": "組別不正確：{value}",
+      "roster_error.team_too_long": "隊伍名稱過長（最多 80 字）：{value}",
       "label.overall_standings_event": "總排名活動範圍",
       "button.start_new_event": "開始新活動",
       "text.event_start_none": "目前計入全部歷史紀錄。",
@@ -2989,13 +3011,34 @@
       );
     }
 
+    // Roster CSV parse errors carry a stable `code` (see parse_roster_csv()
+    // in hub_server/usecases/roster.py) so this page can show a localized
+    // message instead of the backend's English-only `message` -- e.g. zh-TW
+    // gets "組別不正確：{value}" instead of "Invalid division: mixed". A
+    // code this page doesn't recognize (an older backend, or a future one)
+    // falls back to the raw `message` rather than showing a raw i18n key.
+    function rosterErrorText(error) {
+      const knownCodes = [
+        "missing_header_row",
+        "missing_header_name",
+        "missing_name",
+        "name_too_long",
+        "invalid_division",
+        "team_too_long",
+      ];
+      if (error.code && knownCodes.includes(error.code)) {
+        return t(`roster_error.${error.code}`, { value: error.value ?? "" });
+      }
+      return error.message;
+    }
+
     function renderRosterImportErrors(errors) {
       $("roster-import-errors").innerHTML = (errors || []).map((error) => `
-        <div class="row-card">
+        <div class="row-card row-error">
           <div class="row-main">
             <div>
               <div class="row-name">${escapeHtml(t("text.row_error_label", { row: error.row }))}</div>
-              <div class="row-meta">${escapeHtml(error.message)}</div>
+              <div class="row-meta">${escapeHtml(rosterErrorText(error))}</div>
             </div>
           </div>
         </div>
@@ -3090,7 +3133,7 @@
           <div class="row-main">
             <div>
               <div class="row-name">${escapeHtml(t("text.row_error_label", { row: error.row }))}</div>
-              <div class="row-meta">${escapeHtml(error.message)}</div>
+              <div class="row-meta">${escapeHtml(rosterErrorText(error))}</div>
             </div>
           </div>
         </div>
