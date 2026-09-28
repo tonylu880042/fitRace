@@ -76,6 +76,55 @@
       white-space: nowrap;
     }
 
+    /* Visually hides #roster-file-input without display:none, so its
+       <label for="roster-file-input"> still triggers a click on it and it
+       stays keyboard/screen-reader reachable (the standard "visually
+       hidden" pattern, not display:none which removes it from both the
+       accessibility tree and the tab order). */
+    .visually-hidden-input {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    .file-input-label {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 42px;
+      border: 1px solid var(--border-strong);
+      border-radius: 4px;
+      background: var(--surface-2);
+      color: var(--text);
+      cursor: pointer;
+      font-family: "Oswald", sans-serif;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 0 14px;
+      white-space: nowrap;
+    }
+
+    .file-input-label:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    #roster-toolbar {
+      flex-wrap: wrap;
+    }
+
+    #roster-toolbar button,
+    #roster-toolbar label {
+      white-space: nowrap;
+    }
+
     .primary {
       background: var(--accent);
       border-color: var(--accent);
@@ -1202,10 +1251,10 @@
         <section class="panel" aria-labelledby="roster-title">
           <div class="panel-header">
             <h2 class="panel-title" id="roster-title" data-i18n="panel.roster_heats">Roster &amp; Heats</h2>
-            <div class="button-group">
+            <div class="button-group" id="roster-toolbar">
               <button type="button" id="btn-download-roster-template" onclick="downloadRosterTemplate()" data-i18n="button.download_roster_template">Download Roster Template</button>
-              <label for="roster-file-input" data-i18n="button.import_roster">Import Roster</label>
-              <input type="file" id="roster-file-input" accept=".csv,text/csv" onchange="handleRosterFileSelected(event)">
+              <label for="roster-file-input" class="file-input-label" data-i18n="button.import_roster">Import Roster</label>
+              <input type="file" id="roster-file-input" class="visually-hidden-input" accept=".csv,text/csv" onchange="handleRosterFileSelected(event)">
               <button type="button" id="btn-download-results-csv" onclick="downloadResultsCsv()" data-i18n="button.download_results_csv">Download Results (CSV)</button>
               <button type="button" class="danger" id="btn-clear-results" onclick="openClearResultsModal()" data-i18n="button.clear_results">Clear All Past Results</button>
               <button type="button" class="danger" id="btn-clear-roster" onclick="openClearRosterModal()" data-i18n="button.clear_roster">Clear Roster</button>
