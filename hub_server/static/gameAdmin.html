@@ -3176,7 +3176,6 @@
 
     function renderRosterImportPreviewModal() {
       const preview = state.rosterImportPreview || {};
-      const entries = preview.entries || [];
       const errors = preview.errors || [];
       const existingCount = preview.existing_count || 0;
 
@@ -3184,31 +3183,37 @@
         ? t("roster_import_preview.replace_note", { count: existingCount })
         : "";
 
-      const errorRows = errors.map((error) => `
-        <div class="row-card row-error">
-          <div class="row-main">
-            <div>
-              <div class="row-name">${escapeHtml(t("text.row_error_label", { row: error.row }))}</div>
-              <div class="row-meta">${escapeHtml(rosterErrorText(error))}</div>
+      // Render every parsed data row in FILE ORDER (not errors first, then
+      // valid rows) -- a mixed file must show the operator the good rows
+      // alongside the bad ones, not just its errors.
+      const rows = preview.rows || [];
+      const rowsHtml = rows.map((row) => {
+        if (row.error) {
+          return `
+            <div class="row-card row-error">
+              <div class="row-main">
+                <div>
+                  <div class="row-name">${escapeHtml(t("text.row_error_label", { row: row.row }))}</div>
+                  <div class="row-meta">${escapeHtml(rosterErrorText(row.error))}</div>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-      `).join("");
-      const entryRows = entries.map((entry) => {
-        const division = divisionLabel(entry.division);
-        const meta = [division, entry.team].filter(Boolean).map(escapeHtml).join(" · ");
+          `;
+        }
+        const division = divisionLabel(row.division);
+        const meta = [division, row.team].filter(Boolean).map(escapeHtml).join(" · ");
         return `
           <div class="row-card">
             <div class="row-main">
               <div>
-                <div class="row-name">${escapeHtml(entry.name)}</div>
+                <div class="row-name">${escapeHtml(row.name)}</div>
                 <div class="row-meta">${meta}</div>
               </div>
             </div>
           </div>
         `;
       }).join("");
-      $("roster-import-preview-table").innerHTML = errorRows + entryRows;
+      $("roster-import-preview-table").innerHTML = rowsHtml;
 
       const teamWarnings = preview.team_warnings || [];
       const teamWarningsHtml = teamWarnings.map((warning) => `

@@ -233,6 +233,7 @@ state.rosterImportPreview = {
   entries: [{ name: "<img src=x>", division: "men", team: "Red" }],
   errors: [],
   existing_count: 3,
+  rows: [{ row: 2, name: "<img src=x>", division: "men", team: "Red" }],
 };
 renderRosterImportPreviewModal();
 console.log(JSON.stringify({
@@ -269,6 +270,10 @@ state.rosterImportPreview = {
   entries: [],
   errors: [{ row: 2, message: "Invalid division: bogus" }],
   existing_count: 0,
+  rows: [{
+    row: 2, name: "Bob", division: null, team: null,
+    error: { row: 2, message: "Invalid division: bogus" },
+  }],
 };
 renderRosterImportPreviewModal();
 console.log(JSON.stringify({
@@ -280,6 +285,52 @@ console.log(JSON.stringify({
     output = _run_node(harness)
     result = json.loads(output)
     assert "Invalid division: bogus" in result["table"]
+    assert "row-error" in result["table"]
+    assert result["confirmDisabled"] is True
+
+
+def test_render_preview_modal_shows_rows_in_file_order_valid_and_error_mixed():
+    source = _strip_js_comments(_read())
+    render_fn, division_label, error_text_fn = _extract(
+        source,
+        "renderRosterImportPreviewModal",
+        "divisionLabel",
+        "rosterErrorText",
+    )
+
+    harness = _harness(
+        division_label,
+        error_text_fn,
+        render_fn,
+        extra="""
+state.rosterImportPreview = {
+  text: "irrelevant",
+  entries: [],
+  errors: [{ row: 3, message: "Invalid division: bogus", code: "invalid_division", value: "bogus" }],
+  existing_count: 0,
+  rows: [
+    { row: 2, name: "Alice", division: "men", team: null },
+    { row: 3, name: "Bob", division: null, team: null, error: { row: 3, message: "Invalid division: bogus", code: "invalid_division", value: "bogus" } },
+    { row: 4, name: "Cara", division: "women", team: null },
+  ],
+};
+renderRosterImportPreviewModal();
+console.log(JSON.stringify({
+  table: el("roster-import-preview-table").innerHTML,
+  confirmDisabled: el("btn-roster-import-preview-confirm").disabled,
+}));
+""",
+    )
+    output = _run_node(harness)
+    result = json.loads(output)
+    table = result["table"]
+
+    # File order preserved: Alice (row 2) before the error row (row 3)
+    # before Cara (row 4) -- errors are not hoisted to the top.
+    assert table.index("Alice") < table.index("bogus") < table.index("Cara")
+    # The error row is localized and marked -- not just the raw message
+    # sitting next to two untouched valid rows.
+    assert "row-error" in table
     assert result["confirmDisabled"] is True
 
 
