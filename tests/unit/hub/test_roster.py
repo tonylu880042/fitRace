@@ -29,6 +29,50 @@ def test_import_preview_individual_reports_entries_and_existing_count():
     assert "team_warnings" not in preview
 
 
+def test_import_preview_rows_reports_every_data_row_in_file_order_valid_only():
+    preview = build_import_preview(
+        "name,division\nAlice,men\nBob,women\n", existing_count=0
+    )
+    assert [r["row"] for r in preview["rows"]] == [2, 3]
+    assert [r["name"] for r in preview["rows"]] == ["Alice", "Bob"]
+    assert all("error" not in r for r in preview["rows"])
+
+
+def test_import_preview_rows_marks_only_the_offending_row_on_a_mixed_file():
+    csv_text = "name,division\nAlice,men\nBob,bogus\nCara,women\n"
+    preview = build_import_preview(csv_text, existing_count=0)
+
+    # Whole-import all-or-nothing semantics are unchanged: any row error
+    # means entries is empty and errors lists it -- exactly like
+    # parse_roster_csv().
+    assert preview["entries"] == []
+    assert len(preview["errors"]) == 1
+    assert preview["errors"][0]["code"] == "invalid_division"
+
+    # But the new `rows` list still shows EVERY data row, in file order,
+    # so the preview modal isn't reduced to "only the errors".
+    rows = preview["rows"]
+    assert [r["row"] for r in rows] == [2, 3, 4]
+    assert [r["name"] for r in rows] == ["Alice", "Bob", "Cara"]
+    assert "error" not in rows[0]
+    assert rows[1]["error"]["code"] == "invalid_division"
+    assert rows[1]["error"]["value"] == "bogus"
+    assert "error" not in rows[2]
+
+
+def test_import_preview_rows_skips_blank_rows_and_keeps_line_numbers():
+    csv_text = "name,division\nAlice,men\n\nBob,women\n"
+    preview = build_import_preview(csv_text, existing_count=0)
+    assert [r["row"] for r in preview["rows"]] == [2, 4]
+    assert [r["name"] for r in preview["rows"]] == ["Alice", "Bob"]
+
+
+def test_import_preview_rows_empty_when_header_is_missing():
+    preview = build_import_preview("\n\n", existing_count=0)
+    assert preview["rows"] == []
+    assert preview["errors"][0]["code"] == "missing_header_row"
+
+
 def test_import_preview_reports_row_errors_without_raising():
     preview = build_import_preview("name,division\nAlice,bogus\n", existing_count=0)
     assert preview["entries"] == []
