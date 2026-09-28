@@ -60,7 +60,114 @@ def test_import_roster_row_error_returns_422_with_errors():
         "/api/roster/import", json={"csv": "name,division\nAlice,bogus\n"}
     )
     assert res.status_code == 422
-    assert res.json()["detail"] == [{"row": 2, "message": "Invalid division: bogus"}]
+    assert res.json()["detail"] == [
+        {
+            "row": 2,
+            "message": "Invalid division: bogus",
+            "code": "invalid_division",
+            "value": "bogus",
+        }
+    ]
+    assert client.get("/api/roster").json()["entries"] == []
+
+
+def test_import_roster_dry_run_does_not_save_and_reports_existing_count():
+    client.post("/api/roster/import", json={"csv": "name\nAlice\n"})
+
+    res = client.post(
+        "/api/roster/import",
+        json={"csv": "name,division\nBob,men\nCara,women\n", "dry_run": True},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert [e["name"] for e in body["entries"]] == ["Bob", "Cara"]
+    assert body["errors"] == []
+    assert body["existing_count"] == 1
+
+    # Nothing was saved -- the roster is untouched.
+    assert [e["name"] for e in client.get("/api/roster").json()["entries"]] == ["Alice"]
+
+
+def test_import_roster_dry_run_reports_errors_with_200_and_saves_nothing():
+    client.post("/api/roster/import", json={"csv": "name\nAlice\n"})
+
+    res = client.post(
+        "/api/roster/import",
+        json={"csv": "name,division\nBob,bogus\n", "dry_run": True},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["entries"] == []
+    assert body["errors"] == [
+        {
+            "row": 2,
+            "message": "Invalid division: bogus",
+            "code": "invalid_division",
+            "value": "bogus",
+        }
+    ]
+    assert [e["name"] for e in client.get("/api/roster").json()["entries"]] == ["Alice"]
+
+
+def test_import_roster_dry_run_relay_mode_flags_team_size_warnings():
+    client.post(
+        "/api/race/configure",
+        json={
+            "race_type": "distance",
+            "target_value": 500,
+            "competition_mode": "relay",
+            "relay_legs": 2,
+        },
+    )
+    res = client.post(
+        "/api/roster/import",
+        json={"csv": "name,team\nA,Red\nB,Red\nC,Blue\n", "dry_run": True},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["team_warnings"] == [{"team": "Blue", "count": 1, "expected": 2}]
+    assert client.get("/api/roster").json()["entries"] == []
+
+
+def test_import_roster_dry_run_relay_mode_flags_oversized_team():
+    client.post(
+        "/api/race/configure",
+        json={
+            "race_type": "distance",
+            "target_value": 500,
+            "competition_mode": "relay",
+            "relay_legs": 2,
+        },
+    )
+    res = client.post(
+        "/api/roster/import",
+        json={"csv": "name,team\nA,Red\nB,Red\nC,Red\n", "dry_run": True},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["team_warnings"] == [{"team": "Red", "count": 3, "expected": 2}]
+    assert client.get("/api/roster").json()["entries"] == []
+
+
+def test_import_roster_dry_run_relay_mode_reports_teamless_entries_separately():
+    client.post(
+        "/api/race/configure",
+        json={
+            "race_type": "distance",
+            "target_value": 500,
+            "competition_mode": "relay",
+            "relay_legs": 2,
+        },
+    )
+    res = client.post(
+        "/api/roster/import",
+        json={"csv": "name,team\nA,Red\nB,Red\nC,\nD,\n", "dry_run": True},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["teamless_count"] == 2
+    assert "" not in body["team_member_counts"]
+    assert all(w["team"] != "" for w in body["team_warnings"])
     assert client.get("/api/roster").json()["entries"] == []
 
 
@@ -879,3 +986,47 @@ def test_delete_roster_with_no_loaded_heat_does_not_touch_stations():
     assert res.status_code == 200
 
     assert client.get("/api/stations").json() == stations_before
+
+
+# ---------------------------------------------------------------------------
+# GET /api/roster/template.csv -- downloadable CSV template that round-trips
+# through parse_roster_csv with zero errors.
+# ---------------------------------------------------------------------------
+
+
+def test_template_csv_individual_round_trips_through_import():
+    res = client.get("/api/roster/template.csv?mode=individual&lang=zh-TW")
+    assert res.status_code == 200
+    assert res.headers["content-type"].startswith("text/csv")
+
+    import_res = client.post(
+        "/api/roster/import", json={"csv": res.content.decode("utf-8")}
+    )
+    assert import_res.status_code == 200
+    assert len(import_res.json()["entries"]) == 3
+
+
+def test_template_csv_relay_round_trips_with_requested_legs():
+    res = client.get("/api/roster/template.csv?mode=relay&legs=3&lang=en")
+    assert res.status_code == 200
+
+    import_res = client.post(
+        "/api/roster/import", json={"csv": res.content.decode("utf-8")}
+    )
+    assert import_res.status_code == 200
+    entries = import_res.json()["entries"]
+    teams: dict[str, int] = {}
+    for entry in entries:
+        teams[entry["team"]] = teams.get(entry["team"], 0) + 1
+    assert len(teams) == 2
+    assert all(count == 3 for count in teams.values())
+
+
+def test_template_csv_requires_admin_token_when_configured(monkeypatch):
+    monkeypatch.setenv("FITRACE_ADMIN_TOKEN", "admin-secret")
+    res = client.get("/api/roster/template.csv?mode=individual")
+    assert res.status_code == 401
+
+    ok_headers = {"X-FitRace-Admin-Token": "admin-secret"}
+    res = client.get("/api/roster/template.csv?mode=individual", headers=ok_headers)
+    assert res.status_code == 200

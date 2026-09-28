@@ -7,7 +7,176 @@ the HTTP surface."""
 import pytest
 
 from hub_server.usecases.race_settings_store import RaceSettingsStore
-from hub_server.usecases.roster import RosterManager, parse_roster_csv
+from hub_server.usecases.roster import (
+    RosterManager,
+    build_import_preview,
+    build_roster_template_csv,
+    parse_roster_csv,
+)
+
+# ---------------------------------------------------------------------------
+# Import preview (dry-run)
+# ---------------------------------------------------------------------------
+
+
+def test_import_preview_individual_reports_entries_and_existing_count():
+    preview = build_import_preview(
+        "name,division\nAlice,men\nBob,women\n", existing_count=5
+    )
+    assert [e["name"] for e in preview["entries"]] == ["Alice", "Bob"]
+    assert preview["errors"] == []
+    assert preview["existing_count"] == 5
+    assert "team_warnings" not in preview
+
+
+def test_import_preview_rows_reports_every_data_row_in_file_order_valid_only():
+    preview = build_import_preview(
+        "name,division\nAlice,men\nBob,women\n", existing_count=0
+    )
+    assert [r["row"] for r in preview["rows"]] == [2, 3]
+    assert [r["name"] for r in preview["rows"]] == ["Alice", "Bob"]
+    assert all("error" not in r for r in preview["rows"])
+
+
+def test_import_preview_rows_marks_only_the_offending_row_on_a_mixed_file():
+    csv_text = "name,division\nAlice,men\nBob,bogus\nCara,women\n"
+    preview = build_import_preview(csv_text, existing_count=0)
+
+    # Whole-import all-or-nothing semantics are unchanged: any row error
+    # means entries is empty and errors lists it -- exactly like
+    # parse_roster_csv().
+    assert preview["entries"] == []
+    assert len(preview["errors"]) == 1
+    assert preview["errors"][0]["code"] == "invalid_division"
+
+    # But the new `rows` list still shows EVERY data row, in file order,
+    # so the preview modal isn't reduced to "only the errors".
+    rows = preview["rows"]
+    assert [r["row"] for r in rows] == [2, 3, 4]
+    assert [r["name"] for r in rows] == ["Alice", "Bob", "Cara"]
+    assert "error" not in rows[0]
+    assert rows[1]["error"]["code"] == "invalid_division"
+    assert rows[1]["error"]["value"] == "bogus"
+    assert "error" not in rows[2]
+
+
+def test_import_preview_rows_skips_blank_rows_and_keeps_line_numbers():
+    csv_text = "name,division\nAlice,men\n\nBob,women\n"
+    preview = build_import_preview(csv_text, existing_count=0)
+    assert [r["row"] for r in preview["rows"]] == [2, 4]
+    assert [r["name"] for r in preview["rows"]] == ["Alice", "Bob"]
+
+
+def test_import_preview_rows_empty_when_header_is_missing():
+    preview = build_import_preview("\n\n", existing_count=0)
+    assert preview["rows"] == []
+    assert preview["errors"][0]["code"] == "missing_header_row"
+
+
+def test_import_preview_reports_row_errors_without_raising():
+    preview = build_import_preview("name,division\nAlice,bogus\n", existing_count=0)
+    assert preview["entries"] == []
+    assert preview["errors"] == [
+        {
+            "row": 2,
+            "message": "Invalid division: bogus",
+            "code": "invalid_division",
+            "value": "bogus",
+        }
+    ]
+
+
+def test_import_preview_relay_flags_teams_with_wrong_member_count():
+    csv_text = "name,team\nA,Red\nB,Red\nC,Blue\n"
+    preview = build_import_preview(csv_text, existing_count=0, relay_legs=2)
+    assert preview["team_member_counts"] == {"Red": 2, "Blue": 1}
+    assert preview["team_warnings"] == [{"team": "Blue", "count": 1, "expected": 2}]
+
+
+def test_import_preview_relay_no_warnings_when_all_teams_match_legs():
+    csv_text = "name,team\nA,Red\nB,Red\nC,Blue\nD,Blue\n"
+    preview = build_import_preview(csv_text, existing_count=0, relay_legs=2)
+    assert preview["team_warnings"] == []
+
+
+def test_import_preview_relay_flags_teams_with_too_many_members():
+    # A team with MORE members than relay_legs is just as invalid as one
+    # with too few -- load_next_heat_teams() rejects both. A mutation that
+    # weakens "!= relay_legs" to "< relay_legs" would silently let this
+    # oversized-team case through un-flagged.
+    csv_text = "name,team\nA,Red\nB,Red\nC,Red\n"
+    preview = build_import_preview(csv_text, existing_count=0, relay_legs=2)
+    assert preview["team_member_counts"] == {"Red": 3}
+    assert preview["team_warnings"] == [{"team": "Red", "count": 3, "expected": 2}]
+
+
+def test_import_preview_relay_reports_teamless_entries_separately():
+    # Rows with no team must NOT be silently grouped under a "" team --
+    # relay mode requires every pending entry to have a team
+    # (load_next_heat_teams() rejects teamless entries outright), so this
+    # needs to surface as its own count, not a "" entry inside
+    # team_member_counts/team_warnings.
+    csv_text = "name,team\nA,Red\nB,Red\nC,\nD,\n"
+    preview = build_import_preview(csv_text, existing_count=0, relay_legs=2)
+    assert preview["teamless_count"] == 2
+    assert preview["team_member_counts"] == {"Red": 2}
+    assert "" not in preview["team_member_counts"]
+    assert all(w["team"] != "" for w in preview["team_warnings"])
+    assert preview["team_warnings"] == []
+
+
+def test_import_preview_relay_teamless_count_is_zero_when_all_have_teams():
+    csv_text = "name,team\nA,Red\nB,Red\n"
+    preview = build_import_preview(csv_text, existing_count=0, relay_legs=2)
+    assert preview["teamless_count"] == 0
+
+
+# ---------------------------------------------------------------------------
+# CSV template generation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("lang", ["zh-TW", "en"])
+def test_individual_template_round_trips_with_no_errors(lang):
+    csv_text = build_roster_template_csv(mode="individual", lang=lang)
+    assert csv_text.startswith("﻿")
+    assert "\r\n" in csv_text
+    entries, errors = parse_roster_csv(csv_text)
+    assert errors == []
+    assert len(entries) == 3
+    assert any(e["team"] for e in entries)
+
+
+@pytest.mark.parametrize("lang", ["zh-TW", "en"])
+def test_relay_template_round_trips_with_no_errors_and_matches_legs(lang):
+    csv_text = build_roster_template_csv(mode="relay", lang=lang, legs=3)
+    entries, errors = parse_roster_csv(csv_text)
+    assert errors == []
+    teams: dict[str, list] = {}
+    for entry in entries:
+        teams.setdefault(entry["team"], []).append(entry)
+    assert len(teams) == 2
+    for members in teams.values():
+        assert len(members) == 3
+
+
+def test_individual_template_header_is_localized():
+    zh_csv = build_roster_template_csv(mode="individual", lang="zh-TW")
+    en_csv = build_roster_template_csv(mode="individual", lang="en")
+    zh_header = zh_csv.lstrip("﻿").splitlines()[0]
+    en_header = en_csv.lstrip("﻿").splitlines()[0]
+    assert zh_header == "姓名,組別,隊伍"
+    assert en_header == "name,division,team"
+
+
+def test_relay_template_defaults_legs_to_two():
+    csv_text = build_roster_template_csv(mode="relay", lang="en")
+    entries, _ = parse_roster_csv(csv_text)
+    teams: dict[str, int] = {}
+    for entry in entries:
+        teams[entry["team"]] = teams.get(entry["team"], 0) + 1
+    assert all(count == 2 for count in teams.values())
+
 
 # ---------------------------------------------------------------------------
 # CSV parsing
@@ -80,28 +249,71 @@ def test_parse_csv_invalid_division_is_a_row_error_with_line_number():
     text = "name,division\nAlice,men\nBob,unknown\n"
     entries, errors = parse_roster_csv(text)
     assert entries == []
-    assert errors == [{"row": 3, "message": "Invalid division: unknown"}]
+    assert errors == [
+        {
+            "row": 3,
+            "message": "Invalid division: unknown",
+            "code": "invalid_division",
+            "value": "unknown",
+        }
+    ]
 
 
 def test_parse_csv_missing_name_is_a_row_error():
     text = "name,division\n,men\n"
     entries, errors = parse_roster_csv(text)
     assert entries == []
-    assert errors == [{"row": 2, "message": "Missing name"}]
+    assert errors == [{"row": 2, "message": "Missing name", "code": "missing_name"}]
 
 
 def test_parse_csv_name_too_long_is_a_row_error():
     text = "name\n" + ("x" * 81) + "\n"
     entries, errors = parse_roster_csv(text)
     assert entries == []
-    assert errors == [{"row": 2, "message": "Name too long (max 80 characters)"}]
+    assert errors == [
+        {
+            "row": 2,
+            "message": "Name too long (max 80 characters)",
+            "code": "name_too_long",
+            "value": "x" * 81,
+        }
+    ]
 
 
 def test_parse_csv_missing_name_column_is_an_error():
     text = "division,team\nmen,Red\n"
     entries, errors = parse_roster_csv(text)
     assert entries == []
-    assert errors == [{"row": 1, "message": "Missing required column: name"}]
+    assert errors == [
+        {
+            "row": 1,
+            "message": "Missing required column: name",
+            "code": "missing_header_name",
+        }
+    ]
+
+
+def test_parse_csv_no_header_row_is_an_error():
+    text = "\n\n"
+    entries, errors = parse_roster_csv(text)
+    assert entries == []
+    assert errors == [
+        {"row": 1, "message": "CSV has no header row", "code": "missing_header_row"}
+    ]
+
+
+def test_parse_csv_team_too_long_is_a_row_error():
+    text = "name,team\nAlice," + ("y" * 81) + "\n"
+    entries, errors = parse_roster_csv(text)
+    assert entries == []
+    assert errors == [
+        {
+            "row": 2,
+            "message": "Team name too long (max 80 characters)",
+            "code": "team_too_long",
+            "value": "y" * 81,
+        }
+    ]
 
 
 def test_parse_csv_any_row_error_rejects_whole_import_collecting_all_errors():
@@ -109,8 +321,13 @@ def test_parse_csv_any_row_error_rejects_whole_import_collecting_all_errors():
     entries, errors = parse_roster_csv(text)
     assert entries == []
     assert errors == [
-        {"row": 2, "message": "Missing name"},
-        {"row": 3, "message": "Invalid division: bogus"},
+        {"row": 2, "message": "Missing name", "code": "missing_name"},
+        {
+            "row": 3,
+            "message": "Invalid division: bogus",
+            "code": "invalid_division",
+            "value": "bogus",
+        },
     ]
 
 
@@ -139,7 +356,14 @@ def test_import_row_error_leaves_existing_roster_intact(tmp_path):
     manager.import_csv("name\nAlice\n")
 
     errors = manager.import_csv("name,division\nBob,bogus\n")
-    assert errors == [{"row": 2, "message": "Invalid division: bogus"}]
+    assert errors == [
+        {
+            "row": 2,
+            "message": "Invalid division: bogus",
+            "code": "invalid_division",
+            "value": "bogus",
+        }
+    ]
     assert [e["name"] for e in manager.entries()] == ["Alice"]
 
 

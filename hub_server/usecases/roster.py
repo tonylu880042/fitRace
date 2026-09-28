@@ -11,6 +11,7 @@ station numbers currently available as a plain argument.
 """
 
 import csv
+import io
 import uuid
 from typing import Any, Optional
 
@@ -37,14 +38,15 @@ def _row_is_blank(row: list[str]) -> bool:
     return not any(cell.strip() for cell in row)
 
 
-def parse_roster_csv(text: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Parse roster CSV text.
-
-    Returns (entries, errors). On any row error, entries is [] and errors
-    lists every offending row as {"row": <1-based line number>, "message":
-    str}. On success, entries are all "pending", ordered by file order
-    (0-based `order`).
-    """
+def _parse_header(
+    text: str,
+) -> tuple[
+    Optional[dict[str, Any]], Optional[dict[int, str]], list[tuple[int, list[str]]]
+]:
+    """Split `text` into (header_error, header_map, data_rows). data_rows is
+    every row after the header, as (1-based line number, raw row) pairs --
+    including blank ones, so a caller that needs to skip them decides that
+    itself. On a header error, header_map and data_rows are None/[]."""
     if text.startswith(_BOM):
         text = text[len(_BOM) :]
 
@@ -57,7 +59,15 @@ def parse_roster_csv(text: str) -> tuple[list[dict[str, Any]], list[dict[str, An
             break
 
     if header_row_index is None:
-        return [], [{"row": 1, "message": "CSV has no header row"}]
+        return (
+            {
+                "row": 1,
+                "message": "CSV has no header row",
+                "code": "missing_header_row",
+            },
+            None,
+            [],
+        )
 
     header_map: dict[int, str] = {}
     for col_idx, cell in enumerate(rows[header_row_index]):
@@ -70,73 +80,112 @@ def parse_roster_csv(text: str) -> tuple[list[dict[str, Any]], list[dict[str, An
             header_map[col_idx] = "team"
 
     if "name" not in header_map.values():
-        return [], [
+        return (
             {
                 "row": header_row_index + 1,
                 "message": "Missing required column: name",
-            }
-        ]
+                "code": "missing_header_name",
+            },
+            None,
+            [],
+        )
 
-    errors: list[dict[str, Any]] = []
-    entries: list[dict[str, Any]] = []
+    data_rows = [(i + 1, rows[i]) for i in range(header_row_index + 1, len(rows))]
+    return None, header_map, data_rows
 
-    for i in range(header_row_index + 1, len(rows)):
-        row = rows[i]
-        line_no = i + 1
-        if _row_is_blank(row):
-            continue
 
-        raw: dict[str, str] = {}
-        for col_idx, cell in enumerate(row):
-            field = header_map.get(col_idx)
-            if field:
-                raw[field] = cell
+def _evaluate_row(
+    header_map: dict[int, str], row: list[str], line_no: int
+) -> dict[str, Any]:
+    """Validate one data row against `header_map`, in the SAME precedence
+    parse_roster_csv has always used (name -> division -> team, first
+    violation wins). Returns {"name", "division", "team", "error"}: on
+    success "error" is None and "division"/"team" are the normalized values
+    an entry would get; on failure, whichever fields were evaluated before
+    the violation are still filled in, "error" holds the same {"row",
+    "message", "code"[, "value"]} shape parse_roster_csv's errors list has
+    always used."""
+    raw: dict[str, str] = {}
+    for col_idx, cell in enumerate(row):
+        field = header_map.get(col_idx)
+        if field:
+            raw[field] = cell
 
-        name = (raw.get("name") or "").strip()
-        if not name:
-            errors.append({"row": line_no, "message": "Missing name"})
-            continue
-        if len(name) > MAX_NAME_LENGTH:
-            errors.append(
-                {
-                    "row": line_no,
-                    "message": f"Name too long (max {MAX_NAME_LENGTH} characters)",
-                }
-            )
-            continue
+    name = (raw.get("name") or "").strip()
+    division: Optional[str] = None
+    team: Optional[str] = None
+    error: Optional[dict[str, Any]] = None
 
+    if not name:
+        error = {"row": line_no, "message": "Missing name", "code": "missing_name"}
+    elif len(name) > MAX_NAME_LENGTH:
+        error = {
+            "row": line_no,
+            "message": f"Name too long (max {MAX_NAME_LENGTH} characters)",
+            "code": "name_too_long",
+            "value": name,
+        }
+    else:
         division_cell = (raw.get("division") or "").strip()
-        if not division_cell:
-            division = None
-        else:
+        if division_cell:
             key = division_cell.lower()
             if key in _MEN_VALUES:
                 division = "men"
             elif key in _WOMEN_VALUES:
                 division = "women"
             else:
-                errors.append(
-                    {"row": line_no, "message": f"Invalid division: {division_cell}"}
-                )
-                continue
+                error = {
+                    "row": line_no,
+                    "message": f"Invalid division: {division_cell}",
+                    "code": "invalid_division",
+                    "value": division_cell,
+                }
 
-        team_cell = (raw.get("team") or "").strip()
-        if len(team_cell) > MAX_TEAM_LENGTH:
-            errors.append(
-                {
+        if error is None:
+            team_cell = (raw.get("team") or "").strip()
+            if len(team_cell) > MAX_TEAM_LENGTH:
+                error = {
                     "row": line_no,
                     "message": f"Team name too long (max {MAX_TEAM_LENGTH} characters)",
+                    "code": "team_too_long",
+                    "value": team_cell,
                 }
-            )
+            else:
+                team = team_cell or None
+
+    return {"name": name, "division": division, "team": team, "error": error}
+
+
+def parse_roster_csv(text: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Parse roster CSV text.
+
+    Returns (entries, errors). On any row error, entries is [] and errors
+    lists every offending row as {"row": <1-based line number>, "message":
+    str}. On success, entries are all "pending", ordered by file order
+    (0-based `order`).
+    """
+    header_error, header_map, data_rows = _parse_header(text)
+    if header_error:
+        return [], [header_error]
+
+    errors: list[dict[str, Any]] = []
+    entries: list[dict[str, Any]] = []
+
+    for line_no, row in data_rows:
+        if _row_is_blank(row):
             continue
-        team = team_cell or None
+
+        result = _evaluate_row(header_map, row, line_no)
+        if result["error"]:
+            errors.append(result["error"])
+            continue
 
         entries.append(
             {
                 "id": _new_id(),
-                "name": name,
-                "division": division,
-                "team": team,
+                "name": result["name"],
+                "division": result["division"],
+                "team": result["team"],
                 "status": "pending",
                 "order": len(entries),
                 "station_number": None,
@@ -147,6 +196,148 @@ def parse_roster_csv(text: str) -> tuple[list[dict[str, Any]], list[dict[str, An
     if errors:
         return [], errors
     return entries, []
+
+
+_TEMPLATE_HEADERS = {
+    "zh-TW": ("姓名", "組別", "隊伍"),
+    "en": ("name", "division", "team"),
+}
+
+_TEMPLATE_INDIVIDUAL_ROWS = {
+    "zh-TW": [
+        ("王小明", "男", ""),
+        ("林小華", "女", ""),
+        ("陳大同", "", "熊隊"),
+    ],
+    "en": [
+        ("Alex Chen", "men", ""),
+        ("Bea Lin", "women", ""),
+        ("Sam Wu", "", "Bears"),
+    ],
+}
+
+_TEMPLATE_RELAY_TEAM_NAMES = {
+    "zh-TW": ("熊隊", "虎隊"),
+    "en": ("Bears", "Tigers"),
+}
+
+
+def build_roster_template_csv(mode: str, lang: str, legs: int = 2) -> str:
+    """Build a downloadable roster CSV template (UTF-8 with a leading BOM,
+    CRLF line endings) that round-trips through `parse_roster_csv` with zero
+    errors -- see GET /api/roster/template.csv. `mode` is "individual" or
+    "relay"; for relay, two example teams are generated, each with exactly
+    `legs` members sharing a team name.
+    """
+    header = _TEMPLATE_HEADERS.get(lang, _TEMPLATE_HEADERS["en"])
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(header)
+
+    if mode == "relay":
+        team_names = _TEMPLATE_RELAY_TEAM_NAMES.get(
+            lang, _TEMPLATE_RELAY_TEAM_NAMES["en"]
+        )
+        for team_index, team_name in enumerate(team_names):
+            for member_index in range(legs):
+                name = f"{team_name}-{member_index + 1}"
+                writer.writerow([name, "", team_name])
+    else:
+        for name, division, team in _TEMPLATE_INDIVIDUAL_ROWS.get(
+            lang, _TEMPLATE_INDIVIDUAL_ROWS["en"]
+        ):
+            writer.writerow([name, division, team])
+
+    return _BOM + buffer.getvalue()
+
+
+def build_import_preview(
+    csv_text: str,
+    existing_count: int,
+    relay_legs: Optional[int] = None,
+) -> dict[str, Any]:
+    """Parse `csv_text` WITHOUT saving anything -- the dry-run preview shown
+    before an operator confirms a roster import (POST /api/roster/import
+    with dry_run=true). Always returns entries/errors/existing_count; when
+    `relay_legs` is given (relay mode), also reports each team's member
+    count and flags (non-blocking -- load_next_heat_teams() already
+    enforces the real size check) any whose count doesn't match legs.
+    """
+    header_error, header_map, data_rows = _parse_header(csv_text)
+    if header_error:
+        return {
+            "entries": [],
+            "errors": [header_error],
+            "existing_count": existing_count,
+            "rows": [],
+        }
+
+    rows_preview: list[dict[str, Any]] = []
+    errors: list[dict[str, Any]] = []
+    entries: list[dict[str, Any]] = []
+
+    for line_no, row in data_rows:
+        if _row_is_blank(row):
+            continue
+
+        result = _evaluate_row(header_map, row, line_no)
+        row_preview: dict[str, Any] = {
+            "row": line_no,
+            "name": result["name"],
+            "division": result["division"],
+            "team": result["team"],
+        }
+        if result["error"]:
+            row_preview["error"] = result["error"]
+            errors.append(result["error"])
+        else:
+            entries.append(
+                {
+                    "id": _new_id(),
+                    "name": result["name"],
+                    "division": result["division"],
+                    "team": result["team"],
+                    "status": "pending",
+                    "order": len(entries),
+                    "station_number": None,
+                    "started": False,
+                }
+            )
+        rows_preview.append(row_preview)
+
+    # Whole-import all-or-nothing semantics, same as parse_roster_csv(): any
+    # row error means NO entries would actually be saved.
+    if errors:
+        entries = []
+
+    preview: dict[str, Any] = {
+        "entries": entries,
+        "errors": errors,
+        "existing_count": existing_count,
+        "rows": rows_preview,
+    }
+    if relay_legs is not None:
+        team_counts: dict[str, int] = {}
+        teamless_count = 0
+        for entry in entries:
+            team = entry.get("team")
+            if not team:
+                # Relay mode requires every pending entry to have a team --
+                # load_next_heat_teams() rejects a teamless pending entry
+                # outright. Counting it here as a "" team would silently
+                # bury that under team_member_counts/team_warnings instead
+                # of surfacing it as its own clear warning.
+                teamless_count += 1
+                continue
+            team_counts[team] = team_counts.get(team, 0) + 1
+        preview["team_member_counts"] = team_counts
+        preview["teamless_count"] = teamless_count
+        preview["team_warnings"] = [
+            {"team": team, "count": count, "expected": relay_legs}
+            for team, count in team_counts.items()
+            if count != relay_legs
+        ]
+    return preview
 
 
 class RosterManager:

@@ -76,6 +76,55 @@
       white-space: nowrap;
     }
 
+    /* Visually hides #roster-file-input without display:none, so its
+       <label for="roster-file-input"> still triggers a click on it and it
+       stays keyboard/screen-reader reachable (the standard "visually
+       hidden" pattern, not display:none which removes it from both the
+       accessibility tree and the tab order). */
+    .visually-hidden-input {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    .file-input-label {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 42px;
+      border: 1px solid var(--border-strong);
+      border-radius: 4px;
+      background: var(--surface-2);
+      color: var(--text);
+      cursor: pointer;
+      font-family: "Oswald", sans-serif;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 0 14px;
+      white-space: nowrap;
+    }
+
+    .file-input-label:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    #roster-toolbar {
+      flex-wrap: wrap;
+    }
+
+    #roster-toolbar button,
+    #roster-toolbar label {
+      white-space: nowrap;
+    }
+
     .primary {
       background: var(--accent);
       border-color: var(--accent);
@@ -320,6 +369,18 @@
     .status-text.ok { color: var(--ok); }
     .status-text.warn { color: var(--warn); }
     .status-text.error { color: var(--danger); }
+
+    .postrace-callout {
+      border: 1px solid var(--accent);
+      background: rgba(226, 255, 59, 0.12);
+      border-radius: 6px;
+      padding: 14px 16px;
+      margin-top: 10px;
+      color: var(--text);
+      font-size: 16px;
+      font-weight: 800;
+      line-height: 1.35;
+    }
 
     .guidance-grid {
       display: grid;
@@ -616,6 +677,16 @@
       color: var(--muted);
       font-size: 13px;
       line-height: 1.35;
+    }
+
+    .row-card.row-error {
+      border-color: var(--danger);
+      background: rgba(244, 63, 94, 0.12);
+    }
+
+    .row-card.row-warning {
+      border-color: var(--warn);
+      background: rgba(245, 158, 11, 0.12);
     }
 
     .readiness {
@@ -1166,11 +1237,11 @@
           <div class="countdown-banner" id="countdown-status" aria-live="polite" data-i18n="banner.countdown_active">Countdown active on Dashboard. Race starts on Go.</div>
           <div class="action-bar">
             <div class="button-group">
-              <button type="button" class="danger" id="btn-stop" onclick="stopRace()" data-i18n="button.stop_race">Stop Race</button>
-              <button type="button" class="danger" id="btn-reset" onclick="resetRace()" data-i18n="button.reset_race">Reset Race</button>
+              <button type="button" class="danger" id="btn-stop" onclick="stopRace()" data-i18n="button.stop_race">End Heat (Save Results)</button>
+              <button type="button" class="danger" id="btn-reset" onclick="resetRace()" data-i18n="button.reset_race">Clear Stations (Results Kept)</button>
             </div>
             <div class="button-group">
-              <button type="button" class="primary" id="btn-save-race" onclick="saveRaceConfig()" data-i18n="button.save_race">Save Race</button>
+              <button type="button" class="primary" id="btn-save-race" onclick="saveRaceConfig()" data-i18n="button.save_race">Save Race Settings</button>
               <button type="button" class="primary" id="btn-start-race" onclick="startRaceAction()" data-i18n="button.start_race">Start Race</button>
             </div>
           </div>
@@ -1180,11 +1251,12 @@
         <section class="panel" aria-labelledby="roster-title">
           <div class="panel-header">
             <h2 class="panel-title" id="roster-title" data-i18n="panel.roster_heats">Roster &amp; Heats</h2>
-            <div class="button-group">
-              <label for="roster-file-input" data-i18n="button.import_roster">Import Roster</label>
-              <input type="file" id="roster-file-input" accept=".csv,text/csv" onchange="handleRosterFileSelected(event)">
+            <div class="button-group" id="roster-toolbar">
+              <button type="button" id="btn-download-roster-template" onclick="downloadRosterTemplate()" data-i18n="button.download_roster_template">Download Roster Template</button>
+              <label for="roster-file-input" class="file-input-label" data-i18n="button.import_roster">Import Roster</label>
+              <input type="file" id="roster-file-input" class="visually-hidden-input" accept=".csv,text/csv" onchange="handleRosterFileSelected(event)">
               <button type="button" id="btn-download-results-csv" onclick="downloadResultsCsv()" data-i18n="button.download_results_csv">Download Results (CSV)</button>
-              <button type="button" class="danger" id="btn-clear-results" onclick="openClearResultsModal()" data-i18n="button.clear_results">Clear Results</button>
+              <button type="button" class="danger" id="btn-clear-results" onclick="openClearResultsModal()" data-i18n="button.clear_results">Clear All Past Results</button>
               <button type="button" class="danger" id="btn-clear-roster" onclick="openClearRosterModal()" data-i18n="button.clear_roster">Clear Roster</button>
             </div>
           </div>
@@ -1202,8 +1274,8 @@
 
           <div class="control-block">
             <div class="control-block-header">
-              <h3 class="control-block-title" data-i18n="panel.current_heat">Current Heat</h3>
-              <button type="button" id="btn-cancel-current-heat" onclick="openCancelHeatModal()" data-i18n="button.cancel_current_heat" hidden>Cancel Current Heat</button>
+              <h3 class="control-block-title" id="current-heat-title" data-i18n="panel.current_heat">Current Heat</h3>
+              <button type="button" id="btn-cancel-current-heat" onclick="openCancelHeatModal()" data-i18n="button.cancel_current_heat" hidden>Return Heat to Queue</button>
             </div>
             <div class="list" id="roster-current-heat"></div>
           </div>
@@ -1213,8 +1285,9 @@
             <div class="list" id="roster-next-heat"></div>
           </div>
 
+          <div class="status-text" id="post-race-hint" hidden></div>
           <div class="action-bar">
-            <button type="button" class="primary" id="btn-load-next-heat" style="min-height: 44px; width: 100%;" onclick="loadNextHeat()" data-i18n="button.load_next_heat">Load Next Heat</button>
+            <button type="button" class="primary" id="btn-load-next-heat" style="min-height: 44px; width: 100%;" onclick="loadNextHeat()" data-i18n="button.load_next_heat">Next Heat Up →</button>
           </div>
           <div class="status-text" id="roster-heat-message"></div>
 
@@ -1295,7 +1368,7 @@
   <div class="login" id="clear-results-modal" role="dialog" aria-modal="true" aria-labelledby="clear-results-title">
     <div class="login-box">
       <div id="clear-results-step-1">
-        <h2 id="clear-results-title" data-i18n="clear_results.title">Clear Race Results</h2>
+        <h2 id="clear-results-title" data-i18n="clear_results.title">Clear All Past Results</h2>
         <p id="clear-results-step1-body"></p>
         <div class="button-row">
           <button type="button" id="btn-clear-results-cancel-1" onclick="closeClearResultsModal()" data-i18n="button.cancel">Cancel</button>
@@ -1338,13 +1411,27 @@
 
   <div class="login" id="cancel-heat-modal" role="dialog" aria-modal="true" aria-labelledby="cancel-heat-title">
     <div class="login-box">
-      <h2 id="cancel-heat-title" data-i18n="cancel_heat.title">Cancel Current Heat</h2>
+      <h2 id="cancel-heat-title" data-i18n="cancel_heat.title">Return Heat to Queue</h2>
       <p id="cancel-heat-body"></p>
       <div class="button-row">
         <button type="button" id="btn-cancel-heat-cancel" onclick="closeCancelHeatModal()" data-i18n="button.cancel">Cancel</button>
         <button type="button" class="danger" id="btn-cancel-heat-confirm" onclick="confirmCancelHeat()" data-i18n="button.cancel_heat_confirm">Cancel Heat</button>
       </div>
       <div class="status-text" id="cancel-heat-modal-message"></div>
+    </div>
+  </div>
+
+  <div class="login" id="roster-import-preview-modal" role="dialog" aria-modal="true" aria-labelledby="roster-import-preview-title">
+    <div class="login-box">
+      <h2 id="roster-import-preview-title" data-i18n="roster_import_preview.title">Preview Roster Import</h2>
+      <p id="roster-import-preview-replace-note" class="status-text"></p>
+      <div class="list" id="roster-import-preview-table"></div>
+      <div class="list" id="roster-import-preview-warnings"></div>
+      <div class="button-row">
+        <button type="button" id="btn-roster-import-preview-cancel" onclick="closeRosterImportPreviewModal()" data-i18n="button.cancel">Cancel</button>
+        <button type="button" class="primary" id="btn-roster-import-preview-confirm" onclick="confirmRosterImport()" data-i18n="button.confirm_import">Confirm Import</button>
+      </div>
+      <div class="status-text" id="roster-import-preview-message"></div>
     </div>
   </div>
 
@@ -1467,10 +1554,10 @@
         "guidance.leaderboard_preview": "Leaderboard Preview",
         "guidance.start_flow": "Start Flow",
         "banner.countdown_active": "Countdown active on Dashboard. Race starts on Go.",
-        "button.save_race": "Save Race",
+        "button.save_race": "Save Race Settings",
         "button.start_race": "Start Race",
-        "button.stop_race": "Stop Race",
-        "button.reset_race": "Reset Race",
+        "button.stop_race": "End Heat (Save Results)",
+        "button.reset_race": "Clear Stations (Results Kept)",
         "button.refresh": "Refresh",
         "button.save": "Save",
         "button.cancel": "Cancel",
@@ -1517,7 +1604,7 @@
         "text.sound_status_muted": "muted for this start",
         "text.start_flow_detail": "Start Race sends a 3, 2, 1, Go countdown to the Dashboard. Sound is {soundStatus}; the race timer begins on Go.",
         "text.start_flow_default": "Start Race sends the countdown to the Dashboard. The race timer begins on Go.",
-        "confirm.reset_race": "Reset race and clear current athlete registrations?",
+        "confirm.reset_race": "Clear stations? Current athlete registrations and race settings will be cleared; results are kept. You will need to Save Race Settings again.",
         "message.race_started": "Race started after Dashboard countdown.",
         "message.race_stopped": "Race stopped.",
         "message.race_reset": "Race reset.",
@@ -1605,10 +1692,11 @@
         "message.new_event_failed": "Failed to start new event: {error}",
         "panel.roster_heats": "Roster & Heats",
         "panel.current_heat": "Current Heat",
+        "panel.current_heat_raced": "Just Raced",
         "panel.next_heat": "Next Heat",
         "panel.walk_in": "Walk-in Registration",
         "button.import_roster": "Import Roster",
-        "button.load_next_heat": "Load Next Heat",
+        "button.load_next_heat": "Next Heat Up \u2192",
         "button.requeue": "Requeue",
         "button.add_walk_in": "Add",
         "label.pending": "Pending",
@@ -1645,10 +1733,10 @@
         "button.download_results_csv": "Download Results (CSV)",
         "message.results_downloaded": "Results downloaded.",
         "message.results_download_failed": "Download failed: {error}",
-        "button.clear_results": "Clear Results",
+        "button.clear_results": "Clear All Past Results",
         "button.clear_results_next": "Next",
         "button.clear_results_confirm": "Clear Results",
-        "clear_results.title": "Clear Race Results",
+        "clear_results.title": "Clear All Past Results",
         "clear_results.step1_body": "{count} stored race result(s) will be cleared. Download the CSV first if you need a copy. The original file is kept as a .bak backup on the hub, but the dashboard's overall standings will become empty.",
         "clear_results.step1_body_empty": "There are no stored race results to clear.",
         "clear_results.step2_title": "Confirm Clear",
@@ -1670,15 +1758,31 @@
         "message.roster_cleared": "Roster cleared.",
         "message.clear_roster_race_running": "Race is running -- cannot clear the roster.",
         "message.clear_roster_failed": "Failed to clear roster: {error}",
-        "button.cancel_current_heat": "Cancel Current Heat",
+        "button.cancel_current_heat": "Return Heat to Queue",
         "button.cancel_heat_confirm": "Cancel Heat",
-        "cancel_heat.title": "Cancel Current Heat",
+        "cancel_heat.title": "Return Heat to Queue",
         "cancel_heat.body": "Cancel the current heat ({names})? They will return to the front of the pending queue.",
         "message.heat_cancelled": "Current heat cancelled.",
         "message.cancel_heat_race_running": "Race is running -- cannot cancel the heat.",
         "message.cancel_heat_already_raced": "This heat has already raced -- use Load Next Heat instead.",
         "message.cancel_heat_no_current_heat": "There is no current heat loaded.",
-        "message.cancel_heat_failed": "Failed to cancel the heat: {error}"
+        "message.cancel_heat_failed": "Failed to cancel the heat: {error}",
+        "text.postrace_hint_next_heat": "Heat results saved. Next: press Next Heat Up.",
+        "text.postrace_hint_roster_done": "Heat results saved. Everyone on the roster has raced.",
+        "text.postrace_hint_saved": "Heat results saved.",
+        "button.download_roster_template": "Download Roster Template",
+        "message.roster_template_download_failed": "Template download failed: {error}",
+        "roster_import_preview.title": "Preview Roster Import",
+        "button.confirm_import": "Confirm Import",
+        "roster_import_preview.replace_note": "This will replace the current {count} entr(y/ies).",
+        "roster_import_preview.team_size_warning": "{count} member(s), expected {expected}.",
+        "roster_import_preview.teamless_warning": "{count} athletes have no team (required for relay)",
+        "roster_error.missing_header_row": "CSV has no header row",
+        "roster_error.missing_header_name": "Missing required column: name",
+        "roster_error.missing_name": "Missing name",
+        "roster_error.name_too_long": "Name too long (max 80 characters): {value}",
+        "roster_error.invalid_division": "Invalid division: {value}",
+        "roster_error.team_too_long": "Team name too long (max 80 characters): {value}"
       }
     };
 
@@ -1742,10 +1846,10 @@
       "guidance.leaderboard_preview": "排行榜預覽",
       "guidance.start_flow": "啟動流程",
       "banner.countdown_active": "儀表板上倒計時進行中。比賽將在 Go 開始。",
-      "button.save_race": "儲存比賽",
+      "button.save_race": "儲存比賽設定",
       "button.start_race": "開始比賽",
-      "button.stop_race": "停止比賽",
-      "button.reset_race": "重設比賽",
+      "button.stop_race": "結束本組（保存成績）",
+      "button.reset_race": "清空賽道（成績保留）",
       "button.refresh": "重新整理",
       "button.save": "儲存",
       "button.cancel": "取消",
@@ -1792,7 +1896,7 @@
       "text.sound_status_muted": "本次啟動靜音",
       "text.start_flow_detail": "開始比賽會在儀表板播放 3, 2, 1, Go 倒數計時。聲音{soundStatus};比賽計時將在 Go 時開始。",
       "text.start_flow_default": "開始比賽會將倒數計時傳送到儀表板。比賽計時將在 Go 時開始。",
-      "confirm.reset_race": "確定重設比賽並清除目前的運動員報名?",
+      "confirm.reset_race": "確定清空賽道嗎？各站目前的選手登記與比賽設定會被清除，成績會保留；之後需要重新「儲存比賽設定」。",
       "message.race_started": "比賽已在儀表板倒數後開始。",
       "message.race_stopped": "比賽已停止。",
       "message.race_reset": "比賽已重設。",
@@ -1872,10 +1976,11 @@
       "message.mode_switched_to_race": "投影已切換為賽事模式。",
       "panel.roster_heats": "名單與分組",
       "panel.current_heat": "目前這組",
+      "panel.current_heat_raced": "剛比完的這組",
       "panel.next_heat": "下一組",
       "panel.walk_in": "現場報名",
       "button.import_roster": "匯入名單",
-      "button.load_next_heat": "載入下一組",
+      "button.load_next_heat": "下一組上場 →",
       "button.requeue": "重新排入",
       "button.add_walk_in": "新增",
       "label.pending": "待比賽",
@@ -1912,10 +2017,10 @@
       "button.download_results_csv": "下載成績 (CSV)",
       "message.results_downloaded": "成績已下載",
       "message.results_download_failed": "下載失敗：{error}",
-      "button.clear_results": "清除成績",
+      "button.clear_results": "清除全部歷史成績",
       "button.clear_results_next": "下一步",
       "button.clear_results_confirm": "確定清除",
-      "clear_results.title": "清除比賽成績",
+      "clear_results.title": "清除全部歷史成績",
       "clear_results.step1_body": "目前已儲存 {count} 場比賽成績,清除後無法復原。建議先下載 CSV 備份;原始檔案會在主機上保留為 .bak 備份,但大螢幕的總排名將會變成空白。",
       "clear_results.step1_body_empty": "目前沒有已儲存的比賽成績,無需清除。",
       "clear_results.step2_title": "再次確認",
@@ -1937,15 +2042,31 @@
       "message.roster_cleared": "名單已清除。",
       "message.clear_roster_race_running": "比賽進行中，無法清除名單",
       "message.clear_roster_failed": "清除名單失敗：{error}",
-      "button.cancel_current_heat": "取消目前這組",
+      "button.cancel_current_heat": "退回這組（重新排隊）",
       "button.cancel_heat_confirm": "確定取消",
-      "cancel_heat.title": "取消目前這組",
+      "cancel_heat.title": "退回這組（重新排隊）",
       "cancel_heat.body": "確定要取消目前這組（{names}）嗎？他們將回到待比賽名單最前面。",
       "message.heat_cancelled": "已取消目前這組。",
       "message.cancel_heat_race_running": "比賽進行中，無法取消",
       "message.cancel_heat_already_raced": "這組已經比過，請用載入下一組",
       "message.cancel_heat_no_current_heat": "目前沒有已載入的分組",
       "message.cancel_heat_failed": "取消失敗：{error}",
+      "text.postrace_hint_next_heat": "本組成績已保存。下一步：按「下一組上場」。",
+      "text.postrace_hint_roster_done": "本組成績已保存。名單已全部比完。",
+      "text.postrace_hint_saved": "本組成績已保存。",
+      "button.download_roster_template": "下載名單範本",
+      "message.roster_template_download_failed": "範本下載失敗：{error}",
+      "roster_import_preview.title": "預覽匯入名單",
+      "button.confirm_import": "確認匯入",
+      "roster_import_preview.replace_note": "將取代目前 {count} 筆名單",
+      "roster_import_preview.team_size_warning": "共 {count} 人，預期 {expected} 人",
+      "roster_import_preview.teamless_warning": "{count} 位選手未填隊伍（接力賽必填）",
+      "roster_error.missing_header_row": "CSV 沒有標題列",
+      "roster_error.missing_header_name": "缺少必要欄位：姓名",
+      "roster_error.missing_name": "缺少姓名",
+      "roster_error.name_too_long": "姓名過長（最多 80 字）：{value}",
+      "roster_error.invalid_division": "組別不正確：{value}",
+      "roster_error.team_too_long": "隊伍名稱過長（最多 80 字）：{value}",
       "label.overall_standings_event": "總排名活動範圍",
       "button.start_new_event": "開始新活動",
       "text.event_start_none": "目前計入全部歷史紀錄。",
@@ -2893,8 +3014,28 @@
       $("btn-load-next-heat").disabled = raceState === "RUNNING";
       $("btn-clear-roster").disabled = raceState === "RUNNING";
 
+      const hintEl = $("post-race-hint");
+      const showHint = raceState === "STOPPED";
+      hintEl.classList.toggle("postrace-callout", showHint);
+      if (!showHint) {
+        hintEl.hidden = true;
+        hintEl.textContent = "";
+      } else if ((counts.pending || 0) > 0) {
+        hintEl.hidden = false;
+        hintEl.textContent = t("text.postrace_hint_next_heat");
+      } else if ((roster.entries || []).length > 0) {
+        hintEl.hidden = false;
+        hintEl.textContent = t("text.postrace_hint_roster_done");
+      } else {
+        hintEl.hidden = false;
+        hintEl.textContent = t("text.postrace_hint_saved");
+      }
+
       const hasCurrentHeat = (counts.loaded || 0) > 0;
-      $("btn-cancel-current-heat").hidden = !hasCurrentHeat;
+      const loadedEntries = (roster.entries || []).filter((entry) => entry.status === "loaded");
+      const currentHeatRaced = hasCurrentHeat && loadedEntries.some((entry) => entry.started);
+      $("current-heat-title").textContent = currentHeatRaced ? t("panel.current_heat_raced") : t("panel.current_heat");
+      $("btn-cancel-current-heat").hidden = !hasCurrentHeat || currentHeatRaced;
       $("btn-cancel-current-heat").disabled = raceState === "RUNNING";
 
       if (roster.mode === "relay") {
@@ -2926,17 +3067,50 @@
       );
     }
 
+    // Roster CSV parse errors carry a stable `code` (see parse_roster_csv()
+    // in hub_server/usecases/roster.py) so this page can show a localized
+    // message instead of the backend's English-only `message` -- e.g. zh-TW
+    // gets "組別不正確：{value}" instead of "Invalid division: mixed". A
+    // code this page doesn't recognize (an older backend, or a future one)
+    // falls back to the raw `message` rather than showing a raw i18n key.
+    function rosterErrorText(error) {
+      const knownCodes = [
+        "missing_header_row",
+        "missing_header_name",
+        "missing_name",
+        "name_too_long",
+        "invalid_division",
+        "team_too_long",
+      ];
+      if (error.code && knownCodes.includes(error.code)) {
+        return t(`roster_error.${error.code}`, { value: error.value ?? "" });
+      }
+      return error.message;
+    }
+
     function renderRosterImportErrors(errors) {
       $("roster-import-errors").innerHTML = (errors || []).map((error) => `
-        <div class="row-card">
+        <div class="row-card row-error">
           <div class="row-main">
             <div>
               <div class="row-name">${escapeHtml(t("text.row_error_label", { row: error.row }))}</div>
-              <div class="row-meta">${escapeHtml(error.message)}</div>
+              <div class="row-meta">${escapeHtml(rosterErrorText(error))}</div>
             </div>
           </div>
         </div>
       `).join("");
+    }
+
+    // Decodes a roster CSV file's raw bytes as UTF-8, falling back to Big5
+    // when that fails -- a zh-TW Excel export of a plain .csv is typically
+    // Big5, not UTF-8, and reading it as UTF-8 mangles every Chinese
+    // character instead of throwing.
+    function decodeRosterFileBytes(arrayBuffer) {
+      try {
+        return new TextDecoder("utf-8", { fatal: true }).decode(arrayBuffer);
+      } catch (_) {
+        return new TextDecoder("big5").decode(arrayBuffer);
+      }
     }
 
     function handleRosterFileSelected(event) {
@@ -2944,13 +3118,10 @@
       const file = input.files && input.files[0];
       input.value = "";
       if (!file) return;
-      if ((state.roster?.entries || []).length > 0) {
-        if (!window.confirm(t("confirm.replace_roster"))) return;
-      }
       const reader = new FileReader();
-      reader.onload = () => importRosterCsv(String(reader.result || ""));
+      reader.onload = () => previewRosterImport(decodeRosterFileBytes(reader.result));
       reader.onerror = () => setMessage("roster-import-message", t("message.roster_import_failed", { error: reader.error }), "error");
-      reader.readAsText(file);
+      reader.readAsArrayBuffer(file);
     }
 
     async function importRosterCsv(text) {
@@ -2977,6 +3148,144 @@
       } catch (error) {
         setMessage("roster-import-message", t("message.roster_import_failed", { error: error.message }), "error");
       }
+    }
+
+    // Dry-runs a selected roster file (POST /api/roster/import with
+    // dry_run: true) and opens the preview modal with the result --
+    // replaces the old window.confirm(confirm.replace_roster) step.
+    // Nothing is saved until confirmRosterImport() sends the real import.
+    async function previewRosterImport(text) {
+      try {
+        const response = await fetch("/api/roster/import", {
+          method: "POST",
+          headers: adminHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({ csv: text, dry_run: true }),
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          setMessage("roster-import-message", payload.detail || response.statusText, "error");
+          return;
+        }
+        state.rosterImportPreview = { text, ...payload };
+        renderRosterImportPreviewModal();
+        $("roster-import-preview-modal").classList.add("show");
+      } catch (error) {
+        setMessage("roster-import-message", t("message.roster_import_failed", { error: error.message }), "error");
+      }
+    }
+
+    function renderRosterImportPreviewModal() {
+      const preview = state.rosterImportPreview || {};
+      const errors = preview.errors || [];
+      const existingCount = preview.existing_count || 0;
+
+      $("roster-import-preview-replace-note").textContent = existingCount > 0
+        ? t("roster_import_preview.replace_note", { count: existingCount })
+        : "";
+
+      // Render every parsed data row in FILE ORDER (not errors first, then
+      // valid rows) -- a mixed file must show the operator the good rows
+      // alongside the bad ones, not just its errors.
+      const rows = preview.rows || [];
+      const rowsHtml = rows.map((row) => {
+        if (row.error) {
+          return `
+            <div class="row-card row-error">
+              <div class="row-main">
+                <div>
+                  <div class="row-name">${escapeHtml(t("text.row_error_label", { row: row.row }))}</div>
+                  <div class="row-meta">${escapeHtml(rosterErrorText(row.error))}</div>
+                </div>
+              </div>
+            </div>
+          `;
+        }
+        const division = divisionLabel(row.division);
+        const meta = [division, row.team].filter(Boolean).map(escapeHtml).join(" · ");
+        return `
+          <div class="row-card">
+            <div class="row-main">
+              <div>
+                <div class="row-name">${escapeHtml(row.name)}</div>
+                <div class="row-meta">${meta}</div>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      // A header-level error (missing_header_row / missing_header_name --
+      // e.g. no 姓名 column at all) has NO row in `rows` carrying it:
+      // build_import_preview() returns rows: [] for these. Render any such
+      // "unattached" error (not already shown inside a row above) as its
+      // own card so the operator isn't left with a blank table and a
+      // disabled Confirm with no explanation.
+      const unattachedErrors = errors.filter(
+        (error) => !rows.some((row) => row.error && row.row === error.row)
+      );
+      const unattachedErrorsHtml = unattachedErrors.map((error) => `
+        <div class="row-card row-error">
+          <div class="row-main">
+            <div>
+              <div class="row-name">${escapeHtml(t("text.row_error_label", { row: error.row }))}</div>
+              <div class="row-meta">${escapeHtml(rosterErrorText(error))}</div>
+            </div>
+          </div>
+        </div>
+      `).join("");
+
+      $("roster-import-preview-table").innerHTML = unattachedErrorsHtml + rowsHtml;
+
+      const teamWarnings = preview.team_warnings || [];
+      const teamWarningsHtml = teamWarnings.map((warning) => `
+        <div class="row-card row-warning">
+          <div class="row-main">
+            <div>
+              <div class="row-name">${escapeHtml(warning.team)}</div>
+              <div class="row-meta">${escapeHtml(t("roster_import_preview.team_size_warning", { count: warning.count, expected: warning.expected }))}</div>
+            </div>
+          </div>
+        </div>
+      `).join("");
+
+      const teamlessCount = preview.teamless_count || 0;
+      const teamlessWarningHtml = teamlessCount > 0 ? `
+        <div class="row-card row-warning">
+          <div class="row-main">
+            <div>
+              <div class="row-meta">${escapeHtml(t("roster_import_preview.teamless_warning", { count: teamlessCount }))}</div>
+            </div>
+          </div>
+        </div>
+      ` : "";
+
+      $("roster-import-preview-warnings").innerHTML = teamWarningsHtml + teamlessWarningHtml;
+
+      $("btn-roster-import-preview-confirm").disabled = errors.length > 0;
+      $("roster-import-preview-message").textContent = "";
+    }
+
+    function closeRosterImportPreviewModal() {
+      $("roster-import-preview-modal").classList.remove("show");
+      $("roster-import-preview-message").textContent = "";
+    }
+
+    async function confirmRosterImport() {
+      const preview = state.rosterImportPreview;
+      if (!preview) return;
+      const confirmBtn = $("btn-roster-import-preview-confirm");
+      if (confirmBtn.disabled) return;
+      confirmBtn.disabled = true;
+      try {
+        await importRosterCsv(preview.text);
+        closeRosterImportPreviewModal();
+      } finally {
+        confirmBtn.disabled = false;
+      }
+    }
+
+    function handleRosterImportPreviewBackdropClick(event) {
+      if (event.target.id === "roster-import-preview-modal") closeRosterImportPreviewModal();
     }
 
     // Pulls the filename out of a Content-Disposition header value like
@@ -3036,6 +3345,40 @@
         setMessage("results-export-message", t("message.results_downloaded"), "ok");
       } catch (error) {
         setMessage("results-export-message", t("message.results_download_failed", { error: error.message }), "error");
+      }
+    }
+
+    // Downloads the roster CSV template (GET /api/roster/template.csv),
+    // picking mode/legs from the CURRENT race config (relay when
+    // competition_mode is "relay", using its relay_legs) and mapping the
+    // page's currentLocale ("zh-TW"/"en-US") to the "zh-TW"/"en" the
+    // backend understands.
+    async function downloadRosterTemplate() {
+      const config = state.race?.config || {};
+      const isRelay = config.competition_mode === "relay";
+      const lang = currentLocale === "zh-TW" ? "zh-TW" : "en";
+      const params = new URLSearchParams({ mode: isRelay ? "relay" : "individual", lang });
+      if (isRelay && config.relay_legs) params.set("legs", String(config.relay_legs));
+      try {
+        const response = await fetch(`/api/roster/template.csv?${params.toString()}`, {
+          headers: adminHeaders(),
+        });
+        if (!response.ok) {
+          throw new Error(response.statusText || String(response.status));
+        }
+        const blob = await response.blob();
+        const disposition = response.headers.get("Content-Disposition") || "";
+        const filename = parseAttachmentFilename(disposition) || "roster-template.csv";
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = filename;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        URL.revokeObjectURL(url);
+      } catch (error) {
+        setMessage("roster-import-message", t("message.roster_template_download_failed", { error: error.message }), "error");
       }
     }
 
@@ -3748,6 +4091,7 @@
     $("clear-results-modal").addEventListener("click", handleClearResultsBackdropClick);
     $("clear-roster-modal").addEventListener("click", handleClearRosterBackdropClick);
     $("cancel-heat-modal").addEventListener("click", handleCancelHeatBackdropClick);
+    $("roster-import-preview-modal").addEventListener("click", handleRosterImportPreviewBackdropClick);
     // Live toggle for the mixed-race lock (target field vs. group editor,
     // competition-mode lock) as the operator changes #race-type -- see
     // syncMixedRaceFields() for why this is a separate listener rather than

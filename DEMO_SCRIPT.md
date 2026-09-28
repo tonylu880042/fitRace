@@ -85,7 +85,7 @@ Updated: 2026-08-07 · 版本對應 v0.2.0
   3. `Competition` → **Individual Race**
   4. `Leaderboard View` → **Classic**（順手帶過 Race Track / Team Battle / Sprint Board）
   5. `Start Sound` → **Play 3, 2, 1, Go**
-  6. 按 `Save Race`，`Unsaved Changes` 標記消失
+  6. 按 `Save Race Settings`，`Unsaved Changes` 標記消失
 - **字幕**：`教練只管比賽，不碰技術設定`
 - **旁白**：「教練這一頁只做一件事：決定怎麼比。賽制、目標、個人或團體、排行榜長什麼樣，還有起跑音效。」
 

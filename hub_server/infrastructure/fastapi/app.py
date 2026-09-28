@@ -34,6 +34,8 @@ from hub_server.usecases.roster import (
     MAX_NAME_LENGTH,
     MAX_TEAM_LENGTH,
     RosterManager,
+    build_import_preview,
+    build_roster_template_csv,
 )
 from hub_server.adapters.websocket_manager import WebSocketManager
 from hub_server.infrastructure.build_fingerprint import compute_build_fingerprint
@@ -288,6 +290,7 @@ class RegisterAthletePayload(BaseModel):
 
 class RosterImportPayload(BaseModel):
     csv: str
+    dry_run: bool = False
 
 
 class RosterWalkInPayload(BaseModel):
@@ -1633,6 +1636,34 @@ def roster_summary_response() -> dict:
     return summary
 
 
+@app.get("/api/roster/template.csv")
+def download_roster_template_csv(
+    request: Request,
+    mode: str = "individual",
+    legs: Optional[int] = None,
+    lang: Optional[str] = None,
+):
+    require_admin(request)
+    resolved_lang = "zh-TW" if lang != "en" else "en"
+    resolved_mode = "relay" if mode == "relay" else "individual"
+    if legs is not None:
+        resolved_legs = legs
+    else:
+        config = race_manager.get_config()
+        resolved_legs = (
+            config.relay_legs if config and config.relay_legs else None
+        ) or 2
+    csv_text = build_roster_template_csv(
+        mode=resolved_mode, lang=resolved_lang, legs=resolved_legs
+    )
+    filename = "roster-template.csv"
+    return Response(
+        content=csv_text,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @app.get("/api/roster")
 async def get_roster(request: Request):
     require_admin(request)
@@ -1642,6 +1673,16 @@ async def get_roster(request: Request):
 @app.post("/api/roster/import")
 async def import_roster(payload: RosterImportPayload, request: Request):
     require_admin(request)
+    if payload.dry_run:
+        config = race_manager.get_config()
+        relay_legs = (
+            config.relay_legs if config and config.competition_mode == "relay" else None
+        )
+        return build_import_preview(
+            payload.csv,
+            existing_count=len(roster_manager.entries()),
+            relay_legs=relay_legs,
+        )
     if race_manager.get_state() == RaceState.RUNNING:
         raise HTTPException(status_code=409, detail="Race is running")
     errors = roster_manager.import_csv(payload.csv)
