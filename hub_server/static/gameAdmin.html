@@ -1225,7 +1225,7 @@
 
           <div class="control-block">
             <div class="control-block-header">
-              <h3 class="control-block-title" data-i18n="panel.current_heat">Current Heat</h3>
+              <h3 class="control-block-title" id="current-heat-title" data-i18n="panel.current_heat">Current Heat</h3>
               <button type="button" id="btn-cancel-current-heat" onclick="openCancelHeatModal()" data-i18n="button.cancel_current_heat" hidden>Return Heat to Queue</button>
             </div>
             <div class="list" id="roster-current-heat"></div>
@@ -1643,6 +1643,7 @@
         "message.new_event_failed": "Failed to start new event: {error}",
         "panel.roster_heats": "Roster & Heats",
         "panel.current_heat": "Current Heat",
+        "panel.current_heat_raced": "Just Raced",
         "panel.next_heat": "Next Heat",
         "panel.walk_in": "Walk-in Registration",
         "button.import_roster": "Import Roster",
@@ -1926,6 +1927,7 @@
       "message.mode_switched_to_race": "投影已切換為賽事模式。",
       "panel.roster_heats": "名單與分組",
       "panel.current_heat": "目前這組",
+      "panel.current_heat_raced": "剛比完的這組",
       "panel.next_heat": "下一組",
       "panel.walk_in": "現場報名",
       "button.import_roster": "匯入名單",
@@ -2981,7 +2983,10 @@
       }
 
       const hasCurrentHeat = (counts.loaded || 0) > 0;
-      $("btn-cancel-current-heat").hidden = !hasCurrentHeat;
+      const loadedEntries = (roster.entries || []).filter((entry) => entry.status === "loaded");
+      const currentHeatRaced = hasCurrentHeat && loadedEntries.some((entry) => entry.started);
+      $("current-heat-title").textContent = currentHeatRaced ? t("panel.current_heat_raced") : t("panel.current_heat");
+      $("btn-cancel-current-heat").hidden = !hasCurrentHeat || currentHeatRaced;
       $("btn-cancel-current-heat").disabled = raceState === "RUNNING";
 
       if (roster.mode === "relay") {
