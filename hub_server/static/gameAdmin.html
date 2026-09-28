@@ -3213,7 +3213,28 @@
           </div>
         `;
       }).join("");
-      $("roster-import-preview-table").innerHTML = rowsHtml;
+
+      // A header-level error (missing_header_row / missing_header_name --
+      // e.g. no 姓名 column at all) has NO row in `rows` carrying it:
+      // build_import_preview() returns rows: [] for these. Render any such
+      // "unattached" error (not already shown inside a row above) as its
+      // own card so the operator isn't left with a blank table and a
+      // disabled Confirm with no explanation.
+      const unattachedErrors = errors.filter(
+        (error) => !rows.some((row) => row.error && row.row === error.row)
+      );
+      const unattachedErrorsHtml = unattachedErrors.map((error) => `
+        <div class="row-card row-error">
+          <div class="row-main">
+            <div>
+              <div class="row-name">${escapeHtml(t("text.row_error_label", { row: error.row }))}</div>
+              <div class="row-meta">${escapeHtml(rosterErrorText(error))}</div>
+            </div>
+          </div>
+        </div>
+      `).join("");
+
+      $("roster-import-preview-table").innerHTML = unattachedErrorsHtml + rowsHtml;
 
       const teamWarnings = preview.team_warnings || [];
       const teamWarningsHtml = teamWarnings.map((warning) => `

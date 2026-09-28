@@ -84,6 +84,28 @@ def _extract_function(source: str, name: str) -> str:
     return source[start : brace_end + 1]
 
 
+def _extract_dictionaries_js(source: str) -> str:
+    const_start = source.index("const dictionaries = {")
+    const_open = source.index("{", const_start)
+    const_close = _matching_brace_end(source, const_open)
+
+    zh_marker = 'dictionaries["zh-TW"] = {'
+    zh_start = source.index(zh_marker, const_close)
+    zh_open = source.index("{", zh_start)
+    zh_close = _matching_brace_end(source, zh_open)
+
+    return source[const_start : zh_close + 1] + ";"
+
+
+def _extract_t_function(source: str) -> str:
+    t_start = source.index("function t(")
+    paren_open = source.index("(", t_start)
+    paren_end = _matching_paren_end(source, paren_open)
+    t_open = source.index("{", paren_end)
+    t_end = _matching_brace_end(source, t_open)
+    return source[t_start : t_end + 1]
+
+
 def _run_node(script: str) -> str:
     result = subprocess.run(
         ["node", "-e", script], capture_output=True, text=True, timeout=5
@@ -332,6 +354,91 @@ console.log(JSON.stringify({
     # sitting next to two untouched valid rows.
     assert "row-error" in table
     assert result["confirmDisabled"] is True
+
+
+def test_render_preview_modal_shows_header_level_error_with_no_rows():
+    # A header-level error (missing_header_name / missing_header_row) has
+    # NO row in `rows` carrying it -- build_import_preview() returns
+    # rows: [] for these. Before this fix, rendering only `rows` left the
+    # table empty and Confirm disabled with no explanation at all. This
+    # uses the REAL `dictionaries`/`t()` (not this file's simplified stub)
+    # so it actually proves the zh-TW localized text renders, not just
+    # some key echoed back.
+    source = _strip_js_comments(_read())
+    dict_js = _extract_dictionaries_js(source)
+    t_fn = _extract_t_function(source)
+    render_fn, division_label, error_text_fn = _extract(
+        source,
+        "renderRosterImportPreviewModal",
+        "divisionLabel",
+        "rosterErrorText",
+    )
+
+    harness = f"""
+{_DOM_STUB}
+{dict_js}
+let currentLocale = "zh-TW";
+{t_fn}
+{division_label}
+{error_text_fn}
+{render_fn}
+let state = {{ roster: {{ entries: [] }}, race: {{ config: {{}} }} }};
+state.rosterImportPreview = {{
+  text: "irrelevant",
+  entries: [],
+  errors: [{{ row: 1, message: "Missing required column: name", code: "missing_header_name" }}],
+  existing_count: 0,
+  rows: [],
+}};
+renderRosterImportPreviewModal();
+console.log(JSON.stringify({{
+  table: el("roster-import-preview-table").innerHTML,
+  confirmDisabled: el("btn-roster-import-preview-confirm").disabled,
+}}));
+"""
+    output = _run_node(harness)
+    result = json.loads(output)
+    table = result["table"]
+    assert "row-error" in table
+    assert "缺少必要欄位" in table
+    assert result["confirmDisabled"] is True
+
+
+def test_render_preview_modal_does_not_duplicate_row_level_errors():
+    # A row-level error already renders once inside `rows` -- the
+    # header-error fallback must not render it a second time.
+    source = _strip_js_comments(_read())
+    render_fn, division_label, error_text_fn = _extract(
+        source,
+        "renderRosterImportPreviewModal",
+        "divisionLabel",
+        "rosterErrorText",
+    )
+
+    harness = _harness(
+        division_label,
+        error_text_fn,
+        render_fn,
+        extra="""
+state.rosterImportPreview = {
+  text: "irrelevant",
+  entries: [],
+  errors: [{ row: 3, message: "Invalid division: bogus", code: "invalid_division", value: "bogus" }],
+  existing_count: 0,
+  rows: [
+    { row: 2, name: "Alice", division: "men", team: null },
+    { row: 3, name: "Bob", division: null, team: null, error: { row: 3, message: "Invalid division: bogus", code: "invalid_division", value: "bogus" } },
+  ],
+};
+renderRosterImportPreviewModal();
+console.log(JSON.stringify({
+  errorCardCount: (el("roster-import-preview-table").innerHTML.match(/row-error/g) || []).length,
+}));
+""",
+    )
+    output = _run_node(harness)
+    result = json.loads(output)
+    assert result["errorCardCount"] == 1
 
 
 def test_render_preview_modal_shows_relay_team_size_warnings():
