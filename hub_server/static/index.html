@@ -3835,11 +3835,14 @@
     }
 
     // Returns escaped HTML for the dashboard's read-only "why can't the
-    // race start" notice, or null when nothing should render (ready, or
-    // the race is already RUNNING) -- callers must fall back to the
-    // banner's normal sub-text in that case.
+    // race start" notice, or null when nothing should render (ready, the
+    // race is already RUNNING, or it has STOPPED -- readiness.ready only
+    // says whether a NEW race could start right now, which is irrelevant
+    // once one has already run) -- callers must fall back to the banner's
+    // normal sub-text in that case.
     function readinessNoticeHtml(readiness, raceState) {
-      if (!readiness || readiness.ready !== false || raceState === "RUNNING") return null;
+      if (!readiness || readiness.ready !== false) return null;
+      if (raceState === "RUNNING" || raceState === "STOPPED") return null;
       const reasons = readinessBlockingReasons(readiness);
       if (!reasons.length) return null;
       const parts = [escapeHtml(t("readiness.blocked_title"))].concat(
