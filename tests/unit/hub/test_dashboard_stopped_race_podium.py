@@ -310,3 +310,60 @@ def test_overlay_renders_nothing_when_no_one_finished():
         node_rows=node_rows,
     )
     assert html is None
+
+
+def test_overlay_excludes_unfinished_team_in_team_mode():
+    # Team-mode branch of the same overlay filter: an unfinished team must
+    # not appear even though it is ranked ahead in teamLeaderboardRows.
+    team_rows = [
+        {
+            "team_name": "Alpha",
+            "team_finished": True,
+            "score_value": 100,
+            "score_label": "distance_m",
+        },
+        {
+            "team_name": "Beta",
+            "team_finished": False,
+            "score_value": 80,
+            "score_label": "distance_m",
+        },
+        {
+            "team_name": "Gamma",
+            "team_finished": True,
+            "score_value": 60,
+            "score_label": "distance_m",
+        },
+    ]
+    html = _show_podium_overlay(
+        current_config={"race_type": "distance", "competition_mode": "team"},
+        team_rows=team_rows,
+        node_rows=[],
+    )
+    assert html.count("podium-overlay-card") == 2
+    assert 'podium-overlay-name">Alpha' in html
+    assert 'podium-overlay-name">Gamma' in html
+    assert 'podium-overlay-name">Beta' not in html
+
+
+def test_overlay_renders_nothing_when_no_team_finished():
+    team_rows = [
+        {
+            "team_name": "Alpha",
+            "team_finished": False,
+            "score_value": 100,
+            "score_label": "distance_m",
+        },
+        {
+            "team_name": "Beta",
+            "team_finished": False,
+            "score_value": 80,
+            "score_label": "distance_m",
+        },
+    ]
+    html = _show_podium_overlay(
+        current_config={"race_type": "distance", "competition_mode": "team"},
+        team_rows=team_rows,
+        node_rows=[],
+    )
+    assert html is None
