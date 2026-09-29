@@ -3,23 +3,28 @@
   "product": "fitracestudio",
   "release_version": "0.4.0",
   "channel": "stable",
-  "published_at": "2026-09-17T09:21:18Z",
+  "published_at": "2026-09-29T04:42:15Z",
   "minimum_hub_version": "0.1.0",
   "minimum_edge_version": "0.1.0",
   "components": {
     "hub": {
       "version": "0.4.0",
       "artifact_url": "https://dd9tnec1hh2ts.cloudfront.net/releases/0.4.0/fitrace-hub-0.4.0.tar.zst",
-      "sha256": "ab559ba91c8ea8ba1a4f44752469bcf72d256c979ddf19da2ad9f36a46496c2b",
+      "sha256": "28cd679b049162e1fab42510c2683e8f164c2cf86189aed71f1b53dc78afd6b9",
       "requires_reboot": false,
-      "systemd_units": ["fitracestudio-hub.service"]
+      "systemd_units": [
+        "fitracestudio-hub.service"
+      ]
     },
     "edge": {
       "version": "0.4.0",
       "artifact_url": "https://dd9tnec1hh2ts.cloudfront.net/releases/0.4.0/fitrace-edge-0.4.0.tar.zst",
-      "sha256": "6b3fac070ac35c8cb3c28b02b6120552ff1bb3caa5aa0ad74186b64e03909271",
+      "sha256": "959dd67696f136fe0e43293ee906ae07d8fab1108efa4afea06e100cd5966a3a",
       "requires_reboot": false,
-      "systemd_units": ["fitracestudio-edge.service", "fitracestudio-edge-web.service"]
+      "systemd_units": [
+        "fitracestudio-edge.service",
+        "fitracestudio-edge-web.service"
+      ]
     }
   },
   "compatibility": {
@@ -31,5 +36,5 @@
     "install_mode": "manual",
     "allow_during_race": false
   },
-  "notes": "Multi-equipment race groups, cross-heat overall standings, Game Admin clear results / clear roster / cancel current heat with confirmations, dashboard QR visibility toggles, thicker classic progress bar, and one-click hub update. No new Python dependencies since 0.3.0 (still requires segno and websockets)."
+  "notes": "Multi-equipment race groups, cross-heat overall standings, Game Admin clear results / clear roster / cancel current heat with confirmations, dashboard QR visibility toggles, thicker classic progress bar, one-click hub update, roster CSV template + Big5 import + dry-run preview, clearer post-race Game Admin labels, idle live telemetry on the dashboard, per-event overall standings (Start new event), and edge clock-skew correction. No new Python dependencies since 0.3.0 (still requires segno and websockets)."
 }
