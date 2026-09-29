@@ -7727,8 +7727,12 @@
           stopwatchInterval = null;
         }
         
-        // Show exact final completed time if distance/calories
-        if (currentConfig && (currentConfig.race_type === "distance" || currentConfig.race_type === "calories")) {
+        // Show exact final completed time if distance/calories -- but only
+        // once every competitor has actually finished. If the race was
+        // STOPPED early with runners still on the floor, the interpolated
+        // last-finisher time is earlier than the real stop time and would
+        // hide how long the race actually ran.
+        if (allFinished && currentConfig && (currentConfig.race_type === "distance" || currentConfig.race_type === "calories")) {
           const maxFinishTime = Math.max(...nodes.map(node => node.finished_time_ms || 0));
           if (maxFinishTime > 0) {
             elapsed = maxFinishTime;
