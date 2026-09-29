@@ -256,6 +256,21 @@ def test_running_state_renders_no_notice_even_if_not_ready():
     assert _render(readiness, race_state="RUNNING") is None
 
 
+def test_stopped_state_renders_no_notice_even_if_not_ready():
+    """Regression: a race that finished/stopped with saved settings should
+    show its normal STOPPED banner sub-text (e.g. results locked), not the
+    "cannot start" readiness notice -- readiness.ready reflects whether a
+    NEW race could start right now, which is irrelevant once one has
+    already run and stopped."""
+    readiness = {
+        "ready": False,
+        "checks": _base_checks(stations=_block_check()),
+        "station_health": [{"station_number": 2, "health": "missing"}],
+        "blocking_issues": ["Assign at least one station before starting."],
+    }
+    assert _render(readiness, race_state="STOPPED") is None
+
+
 def test_english_blocking_issue_sentence_never_leaks_into_output():
     leaked_sentence = "Assign at least one station before starting."
     readiness = {

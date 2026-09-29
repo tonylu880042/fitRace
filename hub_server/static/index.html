@@ -3835,11 +3835,14 @@
     }
 
     // Returns escaped HTML for the dashboard's read-only "why can't the
-    // race start" notice, or null when nothing should render (ready, or
-    // the race is already RUNNING) -- callers must fall back to the
-    // banner's normal sub-text in that case.
+    // race start" notice, or null when nothing should render (ready, the
+    // race is already RUNNING, or it has STOPPED -- readiness.ready only
+    // says whether a NEW race could start right now, which is irrelevant
+    // once one has already run) -- callers must fall back to the banner's
+    // normal sub-text in that case.
     function readinessNoticeHtml(readiness, raceState) {
-      if (!readiness || readiness.ready !== false || raceState === "RUNNING") return null;
+      if (!readiness || readiness.ready !== false) return null;
+      if (raceState === "RUNNING" || raceState === "STOPPED") return null;
       const reasons = readinessBlockingReasons(readiness);
       if (!reasons.length) return null;
       const parts = [escapeHtml(t("readiness.blocked_title"))].concat(
@@ -4759,7 +4762,15 @@
     }
 
     function renderPodium(nodes, raceType) {
-      const topThree = nodes.slice(0, 3);
+      // Target races (distance/calories) can be stopped early -- only
+      // competitors who actually finished are podium-eligible there.
+      // Time/max_power/watts races always have a score for everyone, so
+      // they are left unfiltered.
+      const isTargetRace = raceType === "distance" || raceType === "calories";
+      const eligible = isTargetRace
+        ? nodes.filter((node) => node.finished_time_ms != null)
+        : nodes;
+      const topThree = eligible.slice(0, 3);
       if (topThree.length === 0) return "";
 
       const podiumOrder = topThree.length >= 3 ? [1, 0, 2] : topThree.map((_, index) => index);
@@ -4825,7 +4836,13 @@
     }
 
     function renderTeamPodium(teams, raceType) {
-      const topThree = teams.slice(0, 3);
+      // See renderPodium() above -- target races only make finished teams
+      // podium-eligible; time/max_power/watts races are unfiltered.
+      const isTargetRace = raceType === "distance" || raceType === "calories";
+      const eligible = isTargetRace
+        ? teams.filter((team) => Boolean(team.team_finished))
+        : teams;
+      const topThree = eligible.slice(0, 3);
       if (topThree.length === 0) return "";
 
       const podiumOrder = topThree.length >= 3 ? [1, 0, 2] : topThree.map((_, index) => index);
@@ -5201,7 +5218,16 @@
       const isTeamMode = Boolean(currentConfig && currentConfig.competition_mode === "team");
       const raceType = (currentConfig && currentConfig.race_type) || "distance";
       const source = isTeamMode ? teamLeaderboardRows : leaderboardNodes;
-      const topThree = (source || []).slice(0, 3);
+      // See renderPodium() -- target races only make finished
+      // competitors/teams podium-eligible; time/max_power/watts races are
+      // unfiltered.
+      const isTargetRace = raceType === "distance" || raceType === "calories";
+      const eligibleSource = isTargetRace
+        ? (source || []).filter((entry) =>
+            isTeamMode ? Boolean(entry.team_finished) : entry.finished_time_ms != null
+          )
+        : (source || []);
+      const topThree = eligibleSource.slice(0, 3);
       if (topThree.length === 0) return;
 
       const cardsHtml = topThree.map((entry, index) => {
@@ -7727,8 +7753,12 @@
           stopwatchInterval = null;
         }
         
-        // Show exact final completed time if distance/calories
-        if (currentConfig && (currentConfig.race_type === "distance" || currentConfig.race_type === "calories")) {
+        // Show exact final completed time if distance/calories -- but only
+        // once every competitor has actually finished. If the race was
+        // STOPPED early with runners still on the floor, the interpolated
+        // last-finisher time is earlier than the real stop time and would
+        // hide how long the race actually ran.
+        if (allFinished && currentConfig && (currentConfig.race_type === "distance" || currentConfig.race_type === "calories")) {
           const maxFinishTime = Math.max(...nodes.map(node => node.finished_time_ms || 0));
           if (maxFinishTime > 0) {
             elapsed = maxFinishTime;

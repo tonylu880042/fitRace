@@ -182,13 +182,17 @@ def _run_render_podium(nodes_js: str) -> str:
 
 
 def test_podium_shows_station_label_for_anonymous_finisher():
-    html = _run_render_podium('[{station_number: 3, node_id: "n1"}]')
+    # finished_time_ms marks this node as an actual finisher -- distance
+    # races only make finished competitors podium-eligible.
+    html = _run_render_podium(
+        '[{station_number: 3, node_id: "n1", finished_time_ms: 12345}]'
+    )
     assert "Station 3" in html
     _assert_never_null_undefined(html)
 
 
 def test_podium_falls_back_to_athlete_label_with_no_station():
-    html = _run_render_podium('[{node_id: "n1"}]')
+    html = _run_render_podium('[{node_id: "n1", finished_time_ms: 12345}]')
     assert "Athlete" in html
     assert "Station" not in html
     _assert_never_null_undefined(html)
@@ -196,7 +200,7 @@ def test_podium_falls_back_to_athlete_label_with_no_station():
 
 def test_podium_uses_real_name_when_present():
     html = _run_render_podium(
-        '[{station_number: 3, athlete_name: "Marcus", node_id: "n1"}]'
+        '[{station_number: 3, athlete_name: "Marcus", node_id: "n1", finished_time_ms: 12345}]'
     )
     assert "Marcus" in html
     assert "Station" not in html
