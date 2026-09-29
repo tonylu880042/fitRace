@@ -4759,7 +4759,15 @@
     }
 
     function renderPodium(nodes, raceType) {
-      const topThree = nodes.slice(0, 3);
+      // Target races (distance/calories) can be stopped early -- only
+      // competitors who actually finished are podium-eligible there.
+      // Time/max_power/watts races always have a score for everyone, so
+      // they are left unfiltered.
+      const isTargetRace = raceType === "distance" || raceType === "calories";
+      const eligible = isTargetRace
+        ? nodes.filter((node) => node.finished_time_ms != null)
+        : nodes;
+      const topThree = eligible.slice(0, 3);
       if (topThree.length === 0) return "";
 
       const podiumOrder = topThree.length >= 3 ? [1, 0, 2] : topThree.map((_, index) => index);
@@ -4825,7 +4833,13 @@
     }
 
     function renderTeamPodium(teams, raceType) {
-      const topThree = teams.slice(0, 3);
+      // See renderPodium() above -- target races only make finished teams
+      // podium-eligible; time/max_power/watts races are unfiltered.
+      const isTargetRace = raceType === "distance" || raceType === "calories";
+      const eligible = isTargetRace
+        ? teams.filter((team) => Boolean(team.team_finished))
+        : teams;
+      const topThree = eligible.slice(0, 3);
       if (topThree.length === 0) return "";
 
       const podiumOrder = topThree.length >= 3 ? [1, 0, 2] : topThree.map((_, index) => index);
@@ -5201,7 +5215,16 @@
       const isTeamMode = Boolean(currentConfig && currentConfig.competition_mode === "team");
       const raceType = (currentConfig && currentConfig.race_type) || "distance";
       const source = isTeamMode ? teamLeaderboardRows : leaderboardNodes;
-      const topThree = (source || []).slice(0, 3);
+      // See renderPodium() -- target races only make finished
+      // competitors/teams podium-eligible; time/max_power/watts races are
+      // unfiltered.
+      const isTargetRace = raceType === "distance" || raceType === "calories";
+      const eligibleSource = isTargetRace
+        ? (source || []).filter((entry) =>
+            isTeamMode ? Boolean(entry.team_finished) : entry.finished_time_ms != null
+          )
+        : (source || []);
+      const topThree = eligibleSource.slice(0, 3);
       if (topThree.length === 0) return;
 
       const cardsHtml = topThree.map((entry, index) => {
