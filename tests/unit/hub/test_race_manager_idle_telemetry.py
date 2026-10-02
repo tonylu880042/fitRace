@@ -352,3 +352,85 @@ def test_idle_snapshot_ignores_unbound_active_nodes():
     # as a card -- decision 3 restricts cards to bound stations only.
     manager.ingest_telemetry(_treadmill_payload("treadmill-99"))
     assert manager.get_idle_telemetry_snapshot()["stations"] == []
+
+
+def test_zero_speed_for_over_10s_goes_stale_even_though_samples_keep_arriving():
+    clock = {"now": 0}
+    manager = RaceManager(now_ms=lambda: clock["now"])
+    manager.assign_station(1, "bike-01")
+    moving = _treadmill_payload("bike-01", equipment_type="fan_bike", distance_m=321.0)
+    manager.ingest_telemetry(moving)
+
+    for second in range(1, 11):
+        clock["now"] = second * 1_000
+        manager.ingest_telemetry(
+            _treadmill_payload(
+                "bike-01",
+                equipment_type="fan_bike",
+                instantaneous_speed_kph=0.0,
+                distance_m=321.0,
+            )
+        )
+
+    station = manager.get_idle_telemetry_snapshot()["stations"][0]
+    assert clock["now"] == 10_000
+    assert station["is_stale"] is False
+    assert station["distance_m"] == 321.0
+
+    clock["now"] = 10_001
+    manager.ingest_telemetry(
+        _treadmill_payload(
+            "bike-01",
+            equipment_type="fan_bike",
+            instantaneous_speed_kph=0.0,
+            distance_m=321.0,
+        )
+    )  # the last sample is 0 ms old, yet the station stopped moving 10.001s ago
+    station = manager.get_idle_telemetry_snapshot()["stations"][0]
+    assert station["is_stale"] is True
+    assert station["distance_m"] is None
+    assert station["instantaneous_speed_kph"] is None
+    assert station["power_watts"] is None
+
+
+def test_resumed_movement_makes_a_zero_speed_stale_station_fresh_again():
+    clock = {"now": 0}
+    manager = RaceManager(now_ms=lambda: clock["now"])
+    manager.assign_station(1, "bike-01")
+    manager.ingest_telemetry(_treadmill_payload("bike-01", equipment_type="fan_bike"))
+    clock["now"] = 20_000
+    manager.ingest_telemetry(
+        _treadmill_payload(
+            "bike-01", equipment_type="fan_bike", instantaneous_speed_kph=0.0
+        )
+    )
+    assert manager.get_idle_telemetry_snapshot()["stations"][0]["is_stale"] is True
+
+    clock["now"] = 20_500
+    manager.ingest_telemetry(
+        _treadmill_payload(
+            "bike-01",
+            equipment_type="fan_bike",
+            instantaneous_speed_kph=6.0,
+            distance_m=50.0,
+        )
+    )
+
+    station = manager.get_idle_telemetry_snapshot()["stations"][0]
+    assert station["is_stale"] is False
+    assert station["distance_m"] == 50.0
+
+
+def test_node_that_never_moved_shows_the_waiting_card():
+    clock = {"now": 0}
+    manager = RaceManager(now_ms=lambda: clock["now"])
+    manager.assign_station(1, "bike-01")
+    manager.ingest_telemetry(
+        _treadmill_payload(
+            "bike-01", equipment_type="fan_bike", instantaneous_speed_kph=0.0
+        )
+    )
+
+    station = manager.get_idle_telemetry_snapshot()["stations"][0]
+    assert station["is_stale"] is True
+    assert station["distance_m"] is None

@@ -54,6 +54,15 @@ class IdleTelemetryTracker:
             received_epoch_ms = self._now_ms()
         sample = dict(metrics)
         sample["received_epoch_ms"] = received_epoch_ms
+        # When the device last reported speed > 0: a machine that keeps
+        # sending zero-speed telemetry is idle, not live. Carried over from
+        # the previous sample while stationary; None if it never moved.
+        speed = metrics.get("instantaneous_speed_kph")
+        if speed is not None and speed > 0:
+            sample["last_moving_epoch_ms"] = received_epoch_ms
+        else:
+            previous = self._samples.get(node_id) or {}
+            sample["last_moving_epoch_ms"] = previous.get("last_moving_epoch_ms")
         self._samples[node_id] = sample
         self._update_best(node_id, metrics)
 

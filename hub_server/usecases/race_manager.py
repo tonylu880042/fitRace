@@ -345,8 +345,14 @@ class RaceManager:
         stations = []
         for station_number, node_id in sorted(self._stations.items()):
             sample = self._idle_telemetry.get_sample(node_id)
-            is_stale = sample is None or (
-                now_ms - sample["received_epoch_ms"] > self.IDLE_STALE_MS
+            # Stale = no data for > IDLE_STALE_MS, OR the device keeps
+            # sending but has not moved (speed > 0) for > IDLE_STALE_MS
+            # (a never-moved device is stale too).
+            is_stale = (
+                sample is None
+                or now_ms - sample["received_epoch_ms"] > self.IDLE_STALE_MS
+                or sample.get("last_moving_epoch_ms") is None
+                or now_ms - sample["last_moving_epoch_ms"] > self.IDLE_STALE_MS
             )
             stations.append(
                 {
