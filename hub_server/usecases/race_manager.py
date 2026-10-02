@@ -21,7 +21,7 @@ class RaceManager:
 
     # A station's idle sample older than this looks "waiting" rather than
     # showing frozen numbers -- see get_idle_telemetry_snapshot().
-    IDLE_STALE_MS = 5_000
+    IDLE_STALE_MS = 10_000
 
     def __init__(
         self,
@@ -332,6 +332,7 @@ class RaceManager:
             "power_watts": payload.get("power_watts", 0),
             "cadence_rpm": payload.get("cadence_rpm", 0),
             "heart_rate_bpm": payload.get("heart_rate_bpm", 0),
+            "distance_m": payload.get("distance_m", 0.0),
             "equipment_type": equipment_type,
         }
         self._idle_telemetry.record_sample(node_id, metrics)
@@ -344,8 +345,14 @@ class RaceManager:
         stations = []
         for station_number, node_id in sorted(self._stations.items()):
             sample = self._idle_telemetry.get_sample(node_id)
-            is_stale = sample is None or (
-                now_ms - sample["received_epoch_ms"] > self.IDLE_STALE_MS
+            # Stale = no data for > IDLE_STALE_MS, OR the device keeps
+            # sending but has not moved (speed > 0) for > IDLE_STALE_MS
+            # (a never-moved device is stale too).
+            is_stale = (
+                sample is None
+                or now_ms - sample["received_epoch_ms"] > self.IDLE_STALE_MS
+                or sample.get("last_moving_epoch_ms") is None
+                or now_ms - sample["last_moving_epoch_ms"] > self.IDLE_STALE_MS
             )
             stations.append(
                 {
@@ -367,6 +374,7 @@ class RaceManager:
                     "heart_rate_bpm": (
                         None if is_stale else sample.get("heart_rate_bpm")
                     ),
+                    "distance_m": None if is_stale else sample.get("distance_m"),
                 }
             )
 

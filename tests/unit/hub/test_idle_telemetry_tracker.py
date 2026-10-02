@@ -162,3 +162,40 @@ def test_heart_rate_never_appears_in_best_at_all():
     tracker = IdleTelemetryTracker()
     tracker.record_sample("n1", {"heart_rate_bpm": 190, "equipment_type": "fan_bike"})
     assert "heart_rate_bpm" not in tracker.get_best()
+
+
+def test_last_moving_epoch_ms_tracks_the_latest_sample_with_speed_above_zero():
+    clock = {"now": 1_000}
+    tracker = IdleTelemetryTracker(now_ms=lambda: clock["now"])
+
+    tracker.record_sample("node-1", {"instantaneous_speed_kph": 8.0})
+    assert tracker.get_sample("node-1")["last_moving_epoch_ms"] == 1_000
+
+    clock["now"] = 2_000
+    tracker.record_sample("node-1", {"instantaneous_speed_kph": 0.0})
+    assert tracker.get_sample("node-1")["last_moving_epoch_ms"] == 1_000
+
+    clock["now"] = 3_000
+    tracker.record_sample("node-1", {"instantaneous_speed_kph": 5.0})
+    assert tracker.get_sample("node-1")["last_moving_epoch_ms"] == 3_000
+
+
+def test_last_moving_epoch_ms_is_none_for_a_node_that_never_moved():
+    tracker = IdleTelemetryTracker(now_ms=lambda: 1_000)
+
+    tracker.record_sample("node-1", {"instantaneous_speed_kph": 0.0})
+    tracker.record_sample("node-1", {})
+
+    assert tracker.get_sample("node-1")["last_moving_epoch_ms"] is None
+
+
+def test_last_moving_epoch_ms_is_per_node_and_cleared_by_reset():
+    tracker = IdleTelemetryTracker(now_ms=lambda: 1_000)
+    tracker.record_sample("node-1", {"instantaneous_speed_kph": 8.0})
+    tracker.record_sample("node-2", {"instantaneous_speed_kph": 0.0})
+
+    assert tracker.get_sample("node-2")["last_moving_epoch_ms"] is None
+
+    tracker.reset()
+    tracker.record_sample("node-1", {"instantaneous_speed_kph": 0.0})
+    assert tracker.get_sample("node-1")["last_moving_epoch_ms"] is None

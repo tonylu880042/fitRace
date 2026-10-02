@@ -332,6 +332,7 @@
   "idle.metric.heart_rate": "Puls",
   "idle.best_title": "Sessionens bästa",
   "idle.metric.pace": "Tempo",
+  "idle.metric.distance": "Distans",
   "equipment_type.bike": "Cykel",
   "equipment_type.indoor_bike": "Inomhuscykel",
   "equipment_type.rower": "Roddmaskin",

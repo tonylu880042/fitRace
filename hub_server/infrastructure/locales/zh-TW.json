@@ -332,6 +332,7 @@
   "idle.metric.heart_rate": "心率",
   "idle.best_title": "本節最佳",
   "idle.metric.pace": "配速",
+  "idle.metric.distance": "距離",
   "equipment_type.bike": "健身車",
   "equipment_type.indoor_bike": "室內健身車",
   "equipment_type.rower": "划船機",

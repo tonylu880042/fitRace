@@ -2066,6 +2066,12 @@
       grid-column: 1 / -1;
     }
 
+    /* Non-treadmill cards have 5 tiles; the distance tile spans the full
+       row so the 2-column grid has no lone half-empty last row. */
+    .idle-metric-wide {
+      grid-column: 1 / -1;
+    }
+
     .idle-metric-value-primary {
       font-size: clamp(2.2rem, 4.4vw, 3.2rem);
       color: var(--volt-yellow);
@@ -4206,6 +4212,10 @@
                 <div class="idle-metric-value">${formatIdleMetricValue(station.heart_rate_bpm, "")}</div>
                 <div class="idle-metric-label">${t("idle.metric.heart_rate")}</div>
               </div>
+              <div>
+                <div class="idle-metric-value">${formatIdleMetricValue(station.distance_m, " m", 0)}</div>
+                <div class="idle-metric-label">${t("idle.metric.distance")}</div>
+              </div>
             </div>
           </div>`;
       }
@@ -4231,6 +4241,10 @@
             <div>
               <div class="idle-metric-value">${formatIdleMetricValue(station.heart_rate_bpm, "")}</div>
               <div class="idle-metric-label">${t("idle.metric.heart_rate")}</div>
+            </div>
+            <div class="idle-metric-wide">
+              <div class="idle-metric-value">${formatIdleMetricValue(station.distance_m, " m", 0)}</div>
+              <div class="idle-metric-label">${t("idle.metric.distance")}</div>
             </div>
           </div>
         </div>`;
@@ -4306,7 +4320,7 @@
       exitIdleRecordWall();
     }
 
-    const IDLE_TELEMETRY_STALE_WATCHDOG_MS = 5000;
+    const IDLE_TELEMETRY_STALE_WATCHDOG_MS = 10000;
     const IDLE_TELEMETRY_WATCHDOG_INTERVAL_MS = 1000;
 
     // Entry point for every "idle_telemetry" WS message: records when it

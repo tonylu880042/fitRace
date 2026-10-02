@@ -215,6 +215,42 @@ def test_fan_bike_card_shows_speed_and_power_no_pace():
     assert "/km" not in html
 
 
+def test_treadmill_card_shows_distance_tile():
+    html = _run_render_station_card(
+        '{"station_number": 1, "equipment_type": "treadmill", '
+        '"instantaneous_speed_kph": 12.0, "cadence_rpm": 160, '
+        '"heart_rate_bpm": 140, "distance_m": 1234.4, "is_stale": false}'
+    )
+    assert '1234<span class="idle-metric-unit"> m</span>' in html
+    assert html.count("idle-metric-label") == 5  # pace + 4 small tiles
+
+
+def test_non_treadmill_card_shows_distance_tile_spanning_full_row():
+    html = _run_render_station_card(
+        '{"station_number": 2, "equipment_type": "rower", '
+        '"instantaneous_speed_kph": 12.0, "power_watts": 180, '
+        '"cadence_rpm": 28, "heart_rate_bpm": 150, "distance_m": 2000.0, '
+        '"is_stale": false}'
+    )
+    assert '2000<span class="idle-metric-unit"> m</span>' in html
+    assert 'class="idle-metric-wide"' in html
+    assert html.count("idle-metric-label") == 5
+
+
+def test_stale_card_shows_no_distance():
+    html = _run_render_station_card(
+        '{"station_number": 2, "equipment_type": "rower", '
+        '"distance_m": null, "is_stale": true}'
+    )
+    assert "idle-station-waiting-label" in html
+    assert "idle-metric-unit" not in html
+
+
+def test_wide_metric_class_spans_the_full_grid_row():
+    source = _read_index()
+    assert re.search(r"\.idle-metric-wide\s*\{[^}]*grid-column:\s*1\s*/\s*-1", source)
+
+
 # ---------------------------------------------------------------------------
 # 3. renderIdleBestRow -- the treadmill-only "fastest pace" mini-leaderboard
 #    row.
