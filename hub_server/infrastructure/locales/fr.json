@@ -332,6 +332,7 @@
   "idle.metric.heart_rate": "Fréquence cardiaque",
   "idle.best_title": "Meilleur de la session",
   "idle.metric.pace": "Allure",
+  "idle.metric.distance": "Distance",
   "equipment_type.bike": "Vélo",
   "equipment_type.indoor_bike": "Vélo d'intérieur",
   "equipment_type.rower": "Rameur",

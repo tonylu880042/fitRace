@@ -6,7 +6,7 @@ kept showing the last live-looking numbers forever. `is_stale` is only
 computed at broadcast time on the hub, so the hub itself has no way to tell
 the dashboard "this went stale" without a new sample to attach that flag to.
 
-Fix: a dashboard-side watchdog. If more than ~5s pass since the last
+Fix: a dashboard-side watchdog. If more than ~10s pass since the last
 idle_telemetry message while the panel is showing, every station card is
 forced into the waiting state in place -- the panel stays up (per the
 review's "don't hide the panel" requirement), only the numbers stop looking
@@ -114,14 +114,22 @@ def test_does_not_force_stale_before_the_threshold():
     assert _run_should_force(1000, 1000 + 4000, True) is False
 
 
+def test_does_not_force_stale_just_under_ten_seconds():
+    assert _run_should_force(1000, 1000 + 9900, True) is False
+
+
+def test_does_not_force_stale_at_exactly_ten_seconds():
+    assert _run_should_force(1000, 1000 + 10_000, True) is False
+
+
 def test_forces_stale_after_the_threshold():
-    assert _run_should_force(1000, 1000 + 6000, True) is True
+    assert _run_should_force(1000, 1000 + 10_001, True) is True
 
 
 def test_does_not_force_stale_when_panel_not_shown():
     # Nothing to freeze if the panel isn't up -- e.g. RUNNING, toggle off,
     # or simply no idle telemetry to show at all.
-    assert _run_should_force(1000, 1000 + 6000, False) is False
+    assert _run_should_force(1000, 1000 + 11_000, False) is False
 
 
 def test_does_not_force_stale_before_any_message_has_ever_arrived():
@@ -182,7 +190,7 @@ def _run_watchdog_check(
 def test_watchdog_forces_all_known_stations_stale_after_silence():
     result = _run_watchdog_check(
         last_received_at_ms=1000,
-        now_offset_ms=6000,
+        now_offset_ms=10_001,
         panel_has_show_class=True,
         last_stations_js=(
             '[{"station_number": 1, '
@@ -210,7 +218,7 @@ def test_watchdog_does_not_touch_grid_before_the_threshold():
 def test_watchdog_does_not_act_when_panel_is_not_shown():
     result = _run_watchdog_check(
         last_received_at_ms=1000,
-        now_offset_ms=6000,
+        now_offset_ms=10_001,
         panel_has_show_class=False,
         last_stations_js=(
             '[{"station_number": 1, '
@@ -304,7 +312,7 @@ def _run_full_message_path_watchdog():
         + "const gridAfterFirstMessage = gridEl.innerHTML;\n"
         # Step 2: time passes well beyond the stale threshold, and no
         # second message ever arrives.
-        + "nowMs += 6000;\n"
+        + "nowMs += 10001;\n"
         # Step 3: fire whatever callback window.setInterval was actually
         # given -- if ensureIdleTelemetryWatchdog never called
         # window.setInterval, setIntervalCalls is empty and this throws,
