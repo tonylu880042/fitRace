@@ -3,7 +3,8 @@
 A tiny page + one API route. Attendees scan the projector QR on their own
 phone (mobile data), enter a name and optional photo, and the claim is queued
 in Upstash Redis. The hub pulls claims with an outbound HTTPS request; the
-cloud never calls the hub and holds no signing secret.
+cloud never calls the hub. It shares the hub's signing secret only to verify
+QR tokens (expiry + one-time use) before queueing a claim.
 
 ```
 cloud_signup/
