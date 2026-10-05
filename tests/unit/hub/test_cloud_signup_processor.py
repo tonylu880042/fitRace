@@ -204,3 +204,31 @@ def test_any_pulled_claim_triggers_token_rotation_even_if_it_is_invalid():
     assert h.pulled == [True]
     h.tick(_claim("good"))
     assert h.pulled == [True, True]
+
+
+def _late_claim(received_at, exp=NOW + 5, cid="late"):
+    claim = _claim(cid, token=make_signup_token(SECRET, VENUE, 1, exp, cid))
+    claim["received_at"] = received_at
+    return claim
+
+
+def test_claim_accepted_by_the_cloud_before_expiry_is_honoured_after_it():
+    h = Harness()
+    h.now = NOW + 10  # hub pulls after the token's exp ...
+    h.tick(_late_claim(received_at=NOW + 4))  # ... but the cloud took it in time
+    assert [r[1] for r in h.registered] == ["Amy"]
+
+
+def test_claim_received_after_expiry_is_still_rejected():
+    h = Harness()
+    h.now = NOW + 10
+    h.tick(_late_claim(received_at=NOW + 6))
+    assert h.registered == []
+
+
+def test_received_at_in_the_future_or_malformed_falls_back_to_hub_time():
+    for bad in (NOW + 999, "soon", None, True, 1.5):
+        h = Harness()
+        h.now = NOW + 10
+        h.tick(_late_claim(received_at=bad, cid=f"x{bad}"))
+        assert h.registered == [], bad

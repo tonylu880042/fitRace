@@ -106,6 +106,18 @@ class CloudSignupProcessor:
         while len(seen) > _SEEN_IDS_LIMIT:
             seen.pop(next(iter(seen)))
 
+    def _expiry_reference_s(self, claim: dict) -> float:
+        """The instant to judge token expiry at: when the cloud accepted the
+        claim (received_at), so the ~1.5 s pull delay cannot expire a claim
+        the visitor was already told succeeded. Falls back to hub time if
+        received_at is not an int or claims to be from the future."""
+        now = self._now_s()
+        received = claim.get("received_at")
+        if isinstance(received, int) and not isinstance(received, bool):
+            if received <= now:
+                return received
+        return now
+
     def _reject_reason(self, claim: dict) -> Optional[str]:
         station = claim.get("station")
         name = claim.get("name")
@@ -116,7 +128,11 @@ class CloudSignupProcessor:
         if station not in set(self._assigned_stations()):
             return "station not assigned"
         if not verify_signup_token(
-            self._secret, self._venue, station, claim.get("token"), self._now_s()
+            self._secret,
+            self._venue,
+            station,
+            claim.get("token"),
+            self._expiry_reference_s(claim),
         ):
             return "invalid or expired token"
         if claim["token"] in self._used_tokens:
