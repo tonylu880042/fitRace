@@ -176,6 +176,13 @@ Hub 只做 outbound HTTPS 拉取，不開任何對外 port。
 - 區網報名頁在 STOPPED 時送出，挑戰模式下同樣進佇列並觸發上述流程（目前 STOPPED 會拒絕報名，需處理）。
 - 大螢幕在挑戰模式下不得啟動前端自動重置倒數（後端已負責）。
 
+### R4 成績畫面至少停留 10 秒（2026-10-06 客戶決策）
+- 有人排隊時，R3 會在比賽結束後 0.5 秒內重置，前一位看不到成績與頒獎畫面。
+- 新設定 `challenge_min_result_sec: int = 10`（持久化，範圍 0–120），Game Admin 挑戰模式區塊加一個數字欄位（字串走 Game Admin 既有 i18n 字典）。
+- `next_challenge_action` 多收 `now_epoch_ms`、`end_time_epoch_ms`、`min_result_ms`：STOPPED 且有待報名者，
+  但 `now < end + min_result_ms` → 不動作；時間到才 "reset"。沒有待報名者時行為不變（一直停在成績畫面）。
+- 時間一律用 Hub 時鐘（注入），測試不得 sleep。
+
 ## 5. 驗收
 
 1. `pytest` 全綠；所有編輯過的 page JS 抽出後 `node --check` 通過；
