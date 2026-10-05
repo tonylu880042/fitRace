@@ -1,0 +1,8 @@
+{
+  "name": "fitrace-cloud-signup",
+  "private": true,
+  "description": "Vercel sign-up page + claim API (zero dependencies)",
+  "scripts": {
+    "test": "node --test"
+  }
+}

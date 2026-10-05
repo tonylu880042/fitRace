@@ -1,0 +1,21 @@
+{
+  "page_title": "FitRace Sign-up",
+  "heading": "Quick sign-up",
+  "name_label": "Your name",
+  "name_placeholder": "Enter a name (up to 20 characters)",
+  "photo_label": "Photo (optional)",
+  "photo_choose": "Take or choose a photo",
+  "photo_processing": "Processing photo...",
+  "photo_ready": "Photo ready",
+  "photo_failed": "This photo can't be used. You can sign up without one.",
+  "photo_remove": "Remove photo",
+  "confirm": "Confirm",
+  "submitting": "Sending...",
+  "success_title": "You're in!",
+  "success_body": "Watch the big screen",
+  "error_link": "This sign-up link is not valid. Please scan the QR code on the big screen again.",
+  "error_name": "Please enter a name of 1 to 20 characters",
+  "error_photo": "That photo isn't accepted. Try another or skip it.",
+  "error_network": "Network error. Please try again.",
+  "error_server": "The server is busy. Please try again shortly."
+}

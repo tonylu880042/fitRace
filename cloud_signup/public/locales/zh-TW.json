@@ -1,0 +1,21 @@
+{
+  "page_title": "FitRace 報名",
+  "heading": "快速報名",
+  "name_label": "你的名稱",
+  "name_placeholder": "輸入名稱（最多 20 字）",
+  "photo_label": "照片（選填）",
+  "photo_choose": "拍照或選擇照片",
+  "photo_processing": "照片處理中…",
+  "photo_ready": "照片已準備好",
+  "photo_failed": "照片無法使用，可略過照片直接報名",
+  "photo_remove": "移除照片",
+  "confirm": "確認報名",
+  "submitting": "送出中…",
+  "success_title": "已報名",
+  "success_body": "請看大螢幕",
+  "error_link": "報名連結無效，請重新掃描大螢幕上的 QR code",
+  "error_name": "請輸入 1 到 20 個字的名稱",
+  "error_photo": "照片格式不正確，請換一張或略過",
+  "error_network": "網路連線失敗，請稍後再試",
+  "error_server": "伺服器忙碌中，請稍後再試"
+}
