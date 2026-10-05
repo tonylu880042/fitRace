@@ -407,3 +407,22 @@ def test_countdown_endpoint_still_works_and_shares_the_countdown(client):
 
     assert res.status_code == 200
     assert res.json()["state"] == "RUNNING"
+
+
+def test_configured_minimum_result_time_reaches_the_scheduler(client):
+    client.post(
+        "/api/race/challenge",
+        json={"enabled": True, "duration_sec": 120, "min_result_sec": 30},
+    )
+    _assign_and_register(client)
+    asyncio.run(hub_app.challenge_tick())
+    assert hub_app.race_manager.get_state() == RaceState.RUNNING
+    hub_app.race_manager.stop_race()
+    end = hub_app.race_manager.get_end_time_epoch_ms()
+    client.post(
+        "/api/race/register", json={"station_number": 1, "athlete_name": "Next"}
+    )
+
+    assert asyncio.run(hub_app.challenge_tick(lambda: end + 29_999)) is None
+    assert hub_app.race_manager.get_state() == RaceState.STOPPED
+    assert asyncio.run(hub_app.challenge_tick(lambda: end + 30_000)) == "reset"
