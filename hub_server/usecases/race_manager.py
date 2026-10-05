@@ -47,6 +47,12 @@ class RaceManager:
         # -- see hub_server/usecases/idle_telemetry_tracker.py. Default ON,
         # persisted like the QR visibility toggles above.
         self._idle_live_telemetry_visible: bool = True
+        # Challenge mode (single-treadmill timed challenge, see
+        # usecases/challenge_mode.py): off by default; a settings file
+        # written before this feature leaves these defaults untouched.
+        self._challenge_mode_enabled: bool = False
+        self._challenge_duration_sec: int = 180
+        self._challenge_reset_delay_sec: int = 15
         self._idle_telemetry = IdleTelemetryTracker(now_ms=self._now_ms)
         self._settings_store = settings_store
         # Injected callable, never the registry itself (Clean Architecture:
@@ -135,6 +141,16 @@ class RaceManager:
             self._admin_qr_visible = data["admin_qr_visible"]
         if isinstance(data.get("idle_live_telemetry_visible"), bool):
             self._idle_live_telemetry_visible = data["idle_live_telemetry_visible"]
+        if isinstance(data.get("challenge_mode_enabled"), bool):
+            self._challenge_mode_enabled = data["challenge_mode_enabled"]
+        for key, attr, low, high in (
+            ("challenge_duration_sec", "_challenge_duration_sec", 10, 3600),
+            ("challenge_reset_delay_sec", "_challenge_reset_delay_sec", 0, 600),
+        ):
+            value = data.get(key)
+            if isinstance(value, int) and not isinstance(value, bool):
+                if low <= value <= high:
+                    setattr(self, attr, value)
         config = data.get("config")
         if isinstance(config, dict):
             try:
@@ -184,6 +200,9 @@ class RaceManager:
                 "signup_qr_visible": self._signup_qr_visible,
                 "admin_qr_visible": self._admin_qr_visible,
                 "idle_live_telemetry_visible": self._idle_live_telemetry_visible,
+                "challenge_mode_enabled": self._challenge_mode_enabled,
+                "challenge_duration_sec": self._challenge_duration_sec,
+                "challenge_reset_delay_sec": self._challenge_reset_delay_sec,
                 "config": self._config.model_dump() if self._config else None,
                 "session_mode": self._session_mode,
                 "class_plan": (
@@ -314,6 +333,28 @@ class RaceManager:
         self._idle_live_telemetry_visible = bool(visible)
         self._persist_settings()
         return self._idle_live_telemetry_visible
+
+    def get_challenge_settings(self) -> Dict[str, Any]:
+        return {
+            "challenge_mode_enabled": self._challenge_mode_enabled,
+            "challenge_duration_sec": self._challenge_duration_sec,
+            "challenge_reset_delay_sec": self._challenge_reset_delay_sec,
+        }
+
+    def set_challenge_settings(
+        self, enabled: bool, duration_sec: int, reset_delay_sec: int
+    ) -> Dict[str, Any]:
+        if self._state == RaceState.RUNNING:
+            raise ValueError("Cannot change challenge mode while a race is RUNNING")
+        if not 10 <= duration_sec <= 3600:
+            raise ValueError("challenge duration must be 10-3600 seconds")
+        if not 0 <= reset_delay_sec <= 600:
+            raise ValueError("challenge reset delay must be 0-600 seconds")
+        self._challenge_mode_enabled = bool(enabled)
+        self._challenge_duration_sec = duration_sec
+        self._challenge_reset_delay_sec = reset_delay_sec
+        self._persist_settings()
+        return self.get_challenge_settings()
 
     # -- idle live telemetry (venue-visitor display) ---------------------
     # Totally separate from race progress/results/records -- see
@@ -489,6 +530,7 @@ class RaceManager:
             "signup_qr_visible": self.get_signup_qr_visible(),
             "admin_qr_visible": self.get_admin_qr_visible(),
             "idle_live_telemetry_visible": self.get_idle_live_telemetry_visible(),
+            **self.get_challenge_settings(),
             "event_start_epoch_ms": self.get_event_start_epoch_ms(),
             "leaderboard": self.get_leaderboard_progress(),
             "team_leaderboard": team_leaderboard,

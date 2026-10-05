@@ -26,6 +26,7 @@ from pydantic import BaseModel, Field, field_validator
 from hub_server.domain.models import RaceState, RaceConfig
 from hub_server.domain.class_models import ClassPlan
 from hub_server.usecases.avatar_store import AvatarStore
+from hub_server.usecases.challenge_mode import next_challenge_action
 from hub_server.usecases.race_manager import RaceManager
 from hub_server.usecases.node_registry import NodeRegistry
 from hub_server.usecases.node_display_names import (
@@ -122,6 +123,7 @@ async def time_deadline_loop():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     deadline_task = asyncio.create_task(time_deadline_loop())
+    challenge_task = asyncio.create_task(challenge_loop())
     if (
         os.getenv("FITRACE_UPDATE_AUTO_CHECK", "1") != "0"
         and update_checker.manifest_url
@@ -131,6 +133,7 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         deadline_task.cancel()
+        challenge_task.cancel()
 
 
 app = FastAPI(title="FitRaceStudio Central Hub", lifespan=lifespan)
@@ -258,6 +261,12 @@ class DashboardQrVisibilityPayload(BaseModel):
 
 class IdleLiveTelemetryVisibilityPayload(BaseModel):
     visible: bool
+
+
+class ChallengeModePayload(BaseModel):
+    enabled: bool
+    duration_sec: int = Field(180, ge=10, le=3600)
+    reset_delay_sec: int = Field(15, ge=0, le=600)
 
 
 class AssignStationPayload(BaseModel):
@@ -1582,6 +1591,27 @@ async def start_race(request: Request):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+async def run_countdown_and_start() -> dict:
+    """The 3-2-1-Go countdown followed by start_race(). Shared by the
+    countdown-start endpoint and the challenge-mode scheduler. Callers have
+    already checked READY + readiness; raises ValueError if start fails."""
+    async with race_start_countdown_lock:
+        await ws_manager.broadcast(
+            {
+                "type": "race_countdown",
+                "audio_url": RACE_START_COUNTDOWN_AUDIO_URL,
+                "duration_ms": RACE_START_COUNTDOWN_DURATION_MS,
+                "play_sound": race_manager.get_start_countdown_sound_enabled(),
+                "message": "Starting in 3, 2, 1, Go",
+            }
+        )
+        await asyncio.sleep(RACE_START_COUNTDOWN_DURATION_MS / 1000)
+        race_manager.start_race()
+        roster_manager.mark_current_heat_started()
+        race_event_engine.reset()
+        return await broadcast_race_state()
+
+
 @app.post("/api/race/countdown-start")
 async def countdown_start_race(request: Request):
     require_admin(request)
@@ -1594,24 +1624,80 @@ async def countdown_start_race(request: Request):
         )
     enforce_race_readiness()
 
-    async with race_start_countdown_lock:
-        await ws_manager.broadcast(
-            {
-                "type": "race_countdown",
-                "audio_url": RACE_START_COUNTDOWN_AUDIO_URL,
-                "duration_ms": RACE_START_COUNTDOWN_DURATION_MS,
-                "play_sound": race_manager.get_start_countdown_sound_enabled(),
-                "message": "Starting in 3, 2, 1, Go",
-            }
+    try:
+        return await run_countdown_and_start()
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+def apply_challenge_config() -> None:
+    settings = race_manager.get_challenge_settings()
+    apply_race_config(
+        RaceConfig(race_type="time", duration_sec=settings["challenge_duration_sec"])
+    )
+
+
+@app.post("/api/race/challenge")
+async def set_challenge_mode(payload: ChallengeModePayload, request: Request):
+    require_admin(request)
+    try:
+        race_manager.set_challenge_settings(
+            payload.enabled, payload.duration_sec, payload.reset_delay_sec
         )
-        await asyncio.sleep(RACE_START_COUNTDOWN_DURATION_MS / 1000)
+        if payload.enabled:
+            apply_challenge_config()
+        return await broadcast_race_state()
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+CHALLENGE_TICK_INTERVAL_SEC = 0.5
+
+
+async def challenge_tick(now_ms_fn=lambda: int(time.time() * 1000)) -> Optional[str]:
+    """One challenge-mode scheduling pass; the decision itself is the pure
+    usecase next_challenge_action(). Returns the action taken, if any."""
+    settings = race_manager.get_challenge_settings()
+    stations = race_manager.get_stations_status()["stations"]
+    action = next_challenge_action(
+        enabled=settings["challenge_mode_enabled"],
+        state=race_manager.get_state(),
+        session_mode=race_manager.get_session_mode(),
+        assigned_stations=[
+            int(sn) for sn, station in stations.items() if station.get("node_id")
+        ],
+        registered_stations=[
+            int(sn) for sn, station in stations.items() if station.get("registered")
+        ],
+        countdown_active=race_start_countdown_lock.locked(),
+        end_time_epoch_ms=race_manager.get_end_time_epoch_ms(),
+        reset_delay_sec=settings["challenge_reset_delay_sec"],
+        now_ms=now_ms_fn(),
+    )
+    if action == "start":
         try:
-            race_manager.start_race()
-            roster_manager.mark_current_heat_started()
-            race_event_engine.reset()
-            return await broadcast_race_state()
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
+            enforce_race_readiness()
+            await run_countdown_and_start()
+        except (HTTPException, ValueError) as e:
+            logger.info("Challenge auto-start waiting: %s", getattr(e, "detail", e))
+            return None
+    elif action == "reset":
+        reset_race_state()
+        apply_challenge_config()
+        await broadcast_race_state()
+    elif action == "configure":
+        apply_challenge_config()
+        await broadcast_race_state()
+    return action
+
+
+async def challenge_loop():
+    while True:
+        try:
+            await challenge_tick()
+        except Exception:
+            logger.exception("Challenge tick failed")
+        await asyncio.sleep(CHALLENGE_TICK_INTERVAL_SEC)
 
 
 @app.post("/api/race/stop")
