@@ -1,6 +1,6 @@
 import hashlib
 import itertools
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from hub_server.usecases.race_result_store import RaceResultStore
 
@@ -37,7 +37,14 @@ def _format_number(value: float) -> str:
 class RaceResultsQuery:
     """Read-only query layer over the append-only race results jsonl store."""
 
-    def __init__(self, store: RaceResultStore):
+    def __init__(
+        self,
+        store: RaceResultStore,
+        avatar_exists: Optional[Callable[[str], bool]] = None,
+    ):
+        # Optional so every existing caller is unchanged; when given, a
+        # standings row never carries an avatar_url whose file was pruned.
+        self._avatar_exists = avatar_exists
         self._store = store
 
     def list_races(self, limit: int = 20) -> list[dict[str, Any]]:
@@ -220,7 +227,7 @@ class RaceResultsQuery:
                     "station_number": row.get("station_number"),
                     "relay_members": row.get("relay_members"),
                     "race_start_epoch_ms": row.get("race_start_epoch_ms"),
-                    "avatar_url": row.get("avatar_url"),
+                    "avatar_url": self._live_avatar_url(row.get("avatar_url")),
                 }
             )
 
@@ -243,6 +250,11 @@ class RaceResultsQuery:
             "race_count": race_count,
             "sections": sections,
         }
+
+    def _live_avatar_url(self, avatar_url: Any) -> Any:
+        if not avatar_url or self._avatar_exists is None:
+            return avatar_url or None
+        return avatar_url if self._avatar_exists(avatar_url) else None
 
     def get_athlete_result(self, token: str) -> Optional[dict[str, Any]]:
         for summary, ranked_rows, _ in self._iter_races():

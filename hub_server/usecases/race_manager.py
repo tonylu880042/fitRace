@@ -466,6 +466,9 @@ class RaceManager:
             "finished_time_ms": None,
         }
 
+    def get_registered_avatar_ids(self) -> set[str]:
+        return {i for i in self._station_avatar_ids.values() if i}
+
     def _avatar_url(self, station_number: int) -> Optional[str]:
         # Stable per registration: the id changes only when someone new
         # registers, so browsers cache it and history can reuse it.

@@ -31,6 +31,7 @@ from hub_server.infrastructure.cloud_signup_config import (
     CloudSignupConfig,
     load_cloud_signup_config,
 )
+from hub_server.usecases.avatar_retention import avatar_id_from_url, partition_avatars
 from hub_server.usecases.avatar_store import AvatarStore
 from hub_server.usecases.cloud_signup import CloudSignupProcessor, build_signup_fields
 from hub_server.usecases.signup_token import SignupTokenIssuer
@@ -184,7 +185,12 @@ ws_manager = WebSocketManager()
 race_event_engine = RaceEventEngine()
 _race_results_path = os.getenv("FITRACE_RACE_RESULTS_PATH", "data/race_results.jsonl")
 race_result_store = RaceResultStore(_race_results_path)
-race_results_query = RaceResultsQuery(race_result_store)
+race_results_query = RaceResultsQuery(
+    race_result_store,
+    # Looked up at call time so a swapped-in store (tests) is honoured.
+    avatar_exists=lambda url: avatar_store.path_for(avatar_id_from_url(url))
+    is not None,
+)
 # Registration photos live beside the race results (the data directory),
 # never inside the program directory.
 avatar_store = AvatarStore(
@@ -668,9 +674,45 @@ def summarize_class_record(record: Any) -> Optional[dict]:
     }
 
 
+AVATAR_KEEP_TOP_N = 10
+_avatar_prune_needed = False
+
+
+def prune_unneeded_avatars() -> int:
+    """Delete every stored photo that is neither (a) on a row of the current
+    event's top-10 standings, (b) registered for the current/next run, nor
+    (c) waiting in the challenge sign-up queue. Returns how many were removed.
+    """
+    keep: set[str] = set()
+    standings = race_results_query.get_standings(
+        race_manager.get_event_start_epoch_ms(), limit=AVATAR_KEEP_TOP_N
+    )
+    for section in standings.get("sections", []):
+        for row in section.get("rows", []):
+            avatar_id = avatar_id_from_url(row.get("avatar_url"))
+            if avatar_id:
+                keep.add(avatar_id)
+    keep |= race_manager.get_registered_avatar_ids()
+    keep |= {
+        item["avatar_id"]
+        for item in challenge_pending_registrations
+        if item.get("avatar_id")
+    }
+    _, doomed = partition_avatars(avatar_store.list_ids(), keep)
+    return sum(1 for avatar_id in doomed if avatar_store.delete(avatar_id))
+
+
 async def broadcast_race_state():
+    global _avatar_prune_needed
     state_data = await get_race_state_data()
-    race_result_store.save_finished_snapshot(state_data)
+    if race_result_store.save_finished_snapshot(state_data):
+        _avatar_prune_needed = True
+    if _avatar_prune_needed and state_data.get("state") != "RUNNING":
+        _avatar_prune_needed = False
+        try:
+            prune_unneeded_avatars()
+        except Exception:
+            logger.exception("Avatar pruning failed")
     class_result_store.save_finished_snapshot(state_data)
     ws_data = dict(state_data)
     ws_data["type"] = "state_change"
@@ -1545,8 +1587,10 @@ def apply_race_config(config: RaceConfig) -> None:
 
 def reset_race_state() -> None:
     """Shared by POST /api/race/reset and the roster next-heat turnover."""
+    global _avatar_prune_needed
     race_manager.reset_race()
     race_event_engine.reset()
+    _avatar_prune_needed = True
 
 
 @app.post("/api/race/configure")

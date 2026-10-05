@@ -158,8 +158,6 @@ def test_new_registration_on_same_station_gets_a_different_avatar_url():
     client.post("/api/race/reset")
 
     assert first != second
-    # The earlier athlete's photo is still served (history keeps working).
-    assert client.get(first).status_code == 200
 
 
 def test_avatar_endpoint_rejects_non_hex_and_unknown_ids():

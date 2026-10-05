@@ -32,3 +32,19 @@ class AvatarStore:
             return None
         path = self._dir / f"{avatar_id}.webp"
         return path if path.is_file() else None
+
+    def list_ids(self) -> list[str]:
+        if not self._dir.is_dir():
+            return []
+        return [
+            path.stem
+            for path in self._dir.glob("*.webp")
+            if is_valid_avatar_id(path.stem)
+        ]
+
+    def delete(self, avatar_id: object) -> bool:
+        path = self.path_for(avatar_id)
+        if path is None:
+            return False
+        path.unlink()
+        return True
