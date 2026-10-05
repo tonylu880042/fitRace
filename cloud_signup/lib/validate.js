@@ -5,7 +5,7 @@ const PHOTO_MAX_CHARS = 200 * 1024;
 const PHOTO_PREFIX = 'data:image/webp;base64,';
 
 const VENUE_RE = /^[A-Za-z0-9_-]{1,40}$/;
-const TOKEN_RE = /^[0-9]{1,12}\.[0-9a-f]{16}$/;
+const TOKEN_RE = /^[0-9]{1,12}\.[0-9a-f]{2,32}\.[0-9a-f]{16}$/;
 const PHOTO_BODY_RE = /^[A-Za-z0-9+/]+={0,2}$/;
 
 function parseStation(value) {

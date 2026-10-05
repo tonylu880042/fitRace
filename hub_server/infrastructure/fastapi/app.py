@@ -33,6 +33,7 @@ from hub_server.infrastructure.cloud_signup_config import (
 )
 from hub_server.usecases.avatar_store import AvatarStore
 from hub_server.usecases.cloud_signup import CloudSignupProcessor, build_signup_fields
+from hub_server.usecases.signup_token import SignupTokenIssuer
 from hub_server.usecases.challenge_mode import next_challenge_action
 from hub_server.usecases.race_manager import RaceManager
 from hub_server.usecases.node_registry import NodeRegistry
@@ -554,6 +555,7 @@ def decode_avatar_webp(avatar_base64: str) -> bytes:
     return img_data
 
 
+signup_token_issuer = SignupTokenIssuer()
 LAN_IP_CACHE_SEC = 30
 _lan_ip_cache: Optional[tuple[float, Optional[str]]] = None
 
@@ -575,6 +577,8 @@ def lan_signup_url() -> Optional[str]:
 def current_signup_fields(now_s: Optional[float] = None) -> dict:
     stations = race_manager.get_stations_status()["stations"]
     config = cloud_signup_config
+    now = time.time() if now_s is None else now_s
+    exp, nonce = signup_token_issuer.current(now)
     return build_signup_fields(
         cloud_base_url=config.base_url if config else None,
         secret=config.secret if config else None,
@@ -582,7 +586,10 @@ def current_signup_fields(now_s: Optional[float] = None) -> dict:
         last_success_epoch_s=(
             cloud_claim_source.last_success_epoch_s if cloud_claim_source else None
         ),
-        now_s=time.time() if now_s is None else now_s,
+        now_s=now,
+        token_exp_epoch_s=exp,
+        token_nonce=nonce,
+        issue_tokens=race_manager.get_challenge_settings()["challenge_mode_enabled"],
         assigned=[int(sn) for sn, st in stations.items() if st.get("node_id")],
         registered=[int(sn) for sn, st in stations.items() if st.get("registered")],
         lan_url=lan_signup_url(),
@@ -2179,6 +2186,7 @@ def build_cloud_signup_processor(
         ],
         station_open=station_is_open,
         now_s=time.time,
+        on_claims_pulled=signup_token_issuer.rotate,
     )
 
 

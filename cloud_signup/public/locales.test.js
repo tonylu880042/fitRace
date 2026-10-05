@@ -42,3 +42,12 @@ test('the page picks a locale from navigator.language and defaults to zh-TW', ()
   assert.match(html, /navigator\.language/);
   assert.match(html, /zh-TW/);
 });
+
+test('every error_* key referenced by the page exists in both locales', () => {
+  const keys = [...html.matchAll(/'(error_[a-z_]+)'/g)].map((m) => m[1]);
+  assert.ok(keys.includes('error_used') && keys.includes('error_expired'));
+  for (const key of new Set(keys)) {
+    assert.ok(key in zh, `zh-TW missing ${key}`);
+    assert.ok(key in en, `en missing ${key}`);
+  }
+});

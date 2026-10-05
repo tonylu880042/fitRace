@@ -8,8 +8,6 @@ from hub_server.usecases.signup_token import make_signup_token, verify_signup_to
 logger = logging.getLogger("hub_server.cloud_signup")
 
 MAX_CLOUD_NAME_LENGTH = 20
-TOKEN_VALIDITY_SEC = 600
-TOKEN_ROTATE_SEC = 60
 _SEEN_IDS_LIMIT = 1000
 
 
@@ -25,13 +23,7 @@ def choose_signup_station(
     return next((sn for sn in ordered if sn not in taken), ordered[0])
 
 
-def build_cloud_signup_url(
-    base_url: str, secret: str, venue: str, station: int, now_epoch_s: float
-) -> str:
-    """Token expiry is quantised to the minute so the URL (and the QR drawn
-    from it) only changes once per TOKEN_ROTATE_SEC."""
-    window_start = int(now_epoch_s) // TOKEN_ROTATE_SEC * TOKEN_ROTATE_SEC
-    token = make_signup_token(secret, venue, station, window_start + TOKEN_VALIDITY_SEC)
+def build_cloud_signup_url(base_url: str, venue: str, station: int, token: str) -> str:
     query = urlencode({"v": venue, "s": station, "t": token})
     separator = "&" if "?" in base_url else "?"
     return f"{base_url}{separator}{query}"
@@ -54,6 +46,7 @@ class CloudSignupProcessor:
         assigned_stations: Callable[[], Iterable[int]],
         station_open: Callable[[int], bool],
         now_s: Callable[[], float],
+        on_claims_pulled: Callable[[], None] = lambda: None,
     ):
         self._secret = secret
         self._venue = venue
@@ -62,6 +55,8 @@ class CloudSignupProcessor:
         self._assigned_stations = assigned_stations
         self._station_open = station_open
         self._now_s = now_s
+        self._on_claims_pulled = on_claims_pulled
+        self._used_tokens: dict[str, None] = {}
         self._queue: deque[dict[str, Any]] = deque()
         self._seen_ids: dict[str, None] = {}
 
@@ -71,7 +66,11 @@ class CloudSignupProcessor:
 
     async def tick(self) -> int:
         """One pull + drain pass. Returns how many athletes were registered."""
-        for claim in await self._fetch_claims():
+        claims = await self._fetch_claims()
+        if claims:
+            # A claim was used (valid or not): the QR on screen is spent.
+            self._on_claims_pulled()
+        for claim in claims:
             self._ingest(claim)
         return await self._drain()
 
@@ -90,9 +89,8 @@ class CloudSignupProcessor:
         if reason:
             logger.warning("Dropping cloud claim %s: %s", claim_id, reason)
             return
-        self._seen_ids[claim_id] = None
-        while len(self._seen_ids) > _SEEN_IDS_LIMIT:
-            self._seen_ids.pop(next(iter(self._seen_ids)))
+        self._remember(self._seen_ids, claim_id)
+        self._remember(self._used_tokens, claim["token"])
         self._queue.append(
             {
                 "id": claim_id,
@@ -101,6 +99,12 @@ class CloudSignupProcessor:
                 "avatar_base64": claim.get("avatar_base64") or None,
             }
         )
+
+    @staticmethod
+    def _remember(seen: dict, key: str) -> None:
+        seen[key] = None
+        while len(seen) > _SEEN_IDS_LIMIT:
+            seen.pop(next(iter(seen)))
 
     def _reject_reason(self, claim: dict) -> Optional[str]:
         station = claim.get("station")
@@ -115,6 +119,8 @@ class CloudSignupProcessor:
             self._secret, self._venue, station, claim.get("token"), self._now_s()
         ):
             return "invalid or expired token"
+        if claim["token"] in self._used_tokens:
+            return "token already used"
         if not isinstance(name, str) or not 1 <= len(name.strip()) <= (
             MAX_CLOUD_NAME_LENGTH
         ):
@@ -154,6 +160,9 @@ def build_signup_fields(
     venue: Optional[str],
     last_success_epoch_s: Optional[float],
     now_s: float,
+    token_exp_epoch_s: int,
+    token_nonce: str,
+    issue_tokens: bool,
     assigned: Iterable[int],
     registered: Iterable[int],
     lan_url: Optional[str],
@@ -161,8 +170,9 @@ def build_signup_fields(
 ) -> dict[str, Any]:
     """The three race-state fields the projector's sign-up QR is driven by.
 
-    Cloud URL only while the cloud was reachable within ONLINE_WINDOW_SEC and
-    there is a station to point at; otherwise the LAN sign-up page, so a venue
+    Cloud URL only while the cloud was reachable within ONLINE_WINDOW_SEC,
+    tokens are being issued (challenge mode on) and there is a station to
+    point at; otherwise the LAN sign-up page, so a venue
     that loses internet keeps working. cloud_base_url None = feature off.
     """
     online = (
@@ -171,9 +181,12 @@ def build_signup_fields(
         and now_s - last_success_epoch_s <= ONLINE_WINDOW_SEC
     )
     station = choose_signup_station(assigned, registered)
-    if online and station is not None and secret and venue:
+    if online and issue_tokens and station is not None and secret and venue:
+        token = make_signup_token(
+            secret, venue, station, token_exp_epoch_s, token_nonce
+        )
         url: Optional[str] = build_cloud_signup_url(
-            cloud_base_url, secret, venue, station, now_s
+            cloud_base_url, venue, station, token
         )
     else:
         url = lan_url

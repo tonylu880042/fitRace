@@ -16,7 +16,7 @@ PHOTO = "data:image/webp;base64,UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4H"
 
 def _claim(cid, station=1, name="Amy", venue=VENUE, token=None, avatar=PHOTO):
     if token is None:
-        token = make_signup_token(SECRET, venue, station, NOW + 500)
+        token = make_signup_token(SECRET, venue, station, NOW + 500, cid)
     return {
         "id": cid,
         "venue": venue,
@@ -35,6 +35,7 @@ class Harness:
         self.assigned = set(assigned)
         self.open = set(self.assigned if open_stations is None else open_stations)
         self.fail_for = set()
+        self.pulled = []
         self.now = NOW
         self.processor = CloudSignupProcessor(
             secret=SECRET,
@@ -44,6 +45,7 @@ class Harness:
             assigned_stations=lambda: set(self.assigned),
             station_open=lambda sn: sn in self.open,
             now_s=lambda: self.now,
+            on_claims_pulled=lambda: self.pulled.append(True),
         )
 
     async def _fetch(self):
@@ -83,7 +85,7 @@ def test_invalid_claims_are_dropped_and_logged_without_the_photo(caplog):
         _claim("bad-token", token="1.deadbeefdeadbeef", avatar=secret_photo),
         _claim(
             "expired",
-            token=make_signup_token(SECRET, VENUE, 1, NOW - 1),
+            token=make_signup_token(SECRET, VENUE, 1, NOW - 1, "n0"),
             avatar=secret_photo,
         ),
         _claim("empty-name", name="   ", avatar=secret_photo),
@@ -174,24 +176,31 @@ def test_choose_signup_station_prefers_first_unregistered_assigned():
     assert choose_signup_station([], registered=[]) is None
 
 
-def test_build_cloud_signup_url_carries_venue_station_and_valid_token():
+def test_build_cloud_signup_url_carries_venue_station_and_token():
     from urllib.parse import parse_qs, urlparse
 
-    from hub_server.usecases.signup_token import verify_signup_token
-
-    url = build_cloud_signup_url("https://signup.example.app/", SECRET, "gym a", 2, NOW)
-    parsed = urlparse(url)
-    q = parse_qs(parsed.query)
+    token = make_signup_token(SECRET, "gym a", 2, NOW + 300, "n1")
+    url = build_cloud_signup_url("https://signup.example.app/", "gym a", 2, token)
+    q = parse_qs(urlparse(url).query)
     assert url.startswith("https://signup.example.app/?")
-    assert q["v"] == ["gym a"] and q["s"] == ["2"]
-    assert verify_signup_token(SECRET, "gym a", 2, q["t"][0], NOW) is True
-    # still valid ~9 minutes later (600s validity window)
-    assert verify_signup_token(SECRET, "gym a", 2, q["t"][0], NOW + 540) is True
+    assert q["v"] == ["gym a"] and q["s"] == ["2"] and q["t"] == [token]
 
 
-def test_signup_url_is_stable_within_a_minute_and_rotates_after():
-    a = build_cloud_signup_url("https://x.app", SECRET, VENUE, 1, NOW)
-    b = build_cloud_signup_url("https://x.app", SECRET, VENUE, 1, NOW + 30)
-    c = build_cloud_signup_url("https://x.app", SECRET, VENUE, 1, NOW + 61)
-    assert a == b
-    assert a != c
+def test_a_token_is_accepted_for_only_the_first_claim():
+    h = Harness(assigned=(1, 2))
+    shared = make_signup_token(SECRET, VENUE, 1, NOW + 500, "n1")
+    h.tick(_claim("c1", name="First", token=shared))
+    h.open.add(1)
+    h.tick(_claim("c2", name="Second", token=shared))
+    assert [r[1] for r in h.registered] == ["First"]
+    assert h.processor.queue_length == 0
+
+
+def test_any_pulled_claim_triggers_token_rotation_even_if_it_is_invalid():
+    h = Harness()
+    h.tick()
+    assert h.pulled == []
+    h.tick(_claim("bad", venue="other"))
+    assert h.pulled == [True]
+    h.tick(_claim("good"))
+    assert h.pulled == [True, True]

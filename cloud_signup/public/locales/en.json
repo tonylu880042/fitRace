@@ -17,5 +17,7 @@
   "error_name": "Please enter a name of 1 to 20 characters",
   "error_photo": "That photo isn't accepted. Try another or skip it.",
   "error_network": "Network error. Please try again.",
-  "error_server": "The server is busy. Please try again shortly."
+  "error_server": "The server is busy. Please try again shortly.",
+  "error_used": "This QR code was already used. Please scan the QR code on the big screen again.",
+  "error_expired": "This QR code has expired. Please scan the QR code on the big screen again."
 }

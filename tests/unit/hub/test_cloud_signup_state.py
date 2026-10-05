@@ -27,6 +27,9 @@ def _fields(**overrides):
         venue=VENUE,
         last_success_epoch_s=NOW - 5,
         now_s=NOW,
+        token_exp_epoch_s=NOW + 300,
+        token_nonce="n1",
+        issue_tokens=True,
         assigned=[1],
         registered=[],
         lan_url=LAN,
@@ -47,6 +50,13 @@ def test_online_cloud_uses_the_cloud_url_with_a_valid_token():
     assert fields["signup_url"].startswith(CLOUD + "?")
     assert q["v"] == [VENUE] and q["s"] == ["1"]
     assert verify_signup_token(SECRET, VENUE, 1, q["t"][0], NOW)
+    assert q["t"][0] == make_signup_token(SECRET, VENUE, 1, NOW + 300, "n1")
+
+
+def test_no_token_is_issued_while_challenge_mode_is_off():
+    fields = _fields(issue_tokens=False)
+    assert fields["signup_url"] == LAN
+    assert fields["cloud_signup_online"] is True
 
 
 def test_stale_pull_falls_back_to_the_lan_url():
@@ -70,7 +80,9 @@ def test_no_assigned_station_falls_back_to_the_lan_url():
 
 
 def test_disabled_feature_is_just_the_lan_url():
-    fields = _fields(cloud_base_url=None, secret=None, venue=None, queue_length=0)
+    fields = _fields(
+        cloud_base_url=None, secret=None, venue=None, queue_length=0, issue_tokens=False
+    )
     assert fields == {
         "signup_url": LAN,
         "cloud_signup_online": False,
@@ -147,18 +159,43 @@ def test_state_has_lan_signup_url_when_cloud_is_not_configured(client, monkeypat
     assert state["cloud_signup_queue_length"] == 0
 
 
-def test_state_uses_cloud_url_when_online(client, monkeypatch):
+def test_state_uses_cloud_url_when_online_and_challenge_mode_is_on(client, monkeypatch):
     cfg = load_cloud_signup_config(ENV)
     source = FakeSource(last_success=hub_app.time.time())
     monkeypatch.setattr(hub_app, "cloud_signup_config", cfg)
     monkeypatch.setattr(hub_app, "cloud_claim_source", source)
     monkeypatch.setattr(hub_app, "cloud_signup_processor", None)
     client.post("/api/stations/assign", json={"station_number": 1, "node_id": "cs-1"})
-
-    state = client.get("/api/race/state").json()
+    hub_app.race_manager.set_challenge_settings(True, 180)
+    try:
+        state = client.get("/api/race/state").json()
+        hub_app.race_manager.set_challenge_settings(False, 180)
+        challenge_off = client.get("/api/race/state").json()
+    finally:
+        hub_app.race_manager.set_challenge_settings(False, 180)
 
     assert state["cloud_signup_online"] is True
     assert state["signup_url"].startswith(CLOUD + "?v=")
+    assert challenge_off["signup_url"] == LAN
+
+
+def test_pulling_a_claim_rotates_the_qr_token(client, monkeypatch):
+    client.post("/api/stations/assign", json={"station_number": 1, "node_id": "cs-1"})
+    client.post("/api/race/configure", json={"race_type": "time", "duration_sec": 60})
+    hub_app.race_manager.set_challenge_settings(True, 180)
+    try:
+        _enable_cloud(monkeypatch, [])
+        before = client.get("/api/race/state").json()["signup_url"]
+        assert client.get("/api/race/state").json()["signup_url"] == before
+
+        hub_app.cloud_claim_source.claims = [_valid_claim()]
+        asyncio.run(hub_app.cloud_signup_tick())
+        after = client.get("/api/race/state").json()["signup_url"]
+    finally:
+        hub_app.race_manager.set_challenge_settings(False, 180)
+
+    assert before.startswith(CLOUD) and after.startswith(CLOUD)
+    assert before != after
 
 
 def _enable_cloud(monkeypatch, claims):
@@ -175,12 +212,12 @@ def _enable_cloud(monkeypatch, claims):
 
 
 def _valid_claim(cid="c1", station=1, name="Amy", avatar=PHOTO):
-    exp = int(hub_app.time.time()) + 500
+    exp = int(hub_app.time.time()) + 250
     return {
         "id": cid,
         "venue": VENUE,
         "station": station,
-        "token": make_signup_token(SECRET, VENUE, station, exp),
+        "token": make_signup_token(SECRET, VENUE, station, exp, "n0"),
         "name": name,
         "avatar_base64": avatar,
         "received_at": 1,

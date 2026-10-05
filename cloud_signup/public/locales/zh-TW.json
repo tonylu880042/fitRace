@@ -17,5 +17,7 @@
   "error_name": "請輸入 1 到 20 個字的名稱",
   "error_photo": "照片格式不正確，請換一張或略過",
   "error_network": "網路連線失敗，請稍後再試",
-  "error_server": "伺服器忙碌中，請稍後再試"
+  "error_server": "伺服器忙碌中，請稍後再試",
+  "error_used": "此 QR 已使用，請重新掃描大螢幕上的 QR",
+  "error_expired": "此 QR 已過期，請重新掃描大螢幕上的 QR"
 }

@@ -204,7 +204,7 @@
           return;
         }
         const data = await res.json().catch(() => ({}));
-        const errorKeys = { name: 'error_name', photo: 'error_photo', venue: 'error_link', station: 'error_link', token: 'error_link' };
+        const errorKeys = { name: 'error_name', photo: 'error_photo', venue: 'error_link', station: 'error_link', token: 'error_link', used: 'error_used', expired: 'error_expired' };
         showError(errorKeys[data.error] || 'error_server');
       } catch (err) {
         showError('error_network');

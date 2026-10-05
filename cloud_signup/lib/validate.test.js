@@ -8,7 +8,7 @@ const {
   PHOTO_MAX_CHARS,
 } = require('./validate');
 
-const TOKEN = '1800000600.0123456789abcdef';
+const TOKEN = '1800000300.0a1b2c3d.0123456789abcdef';
 const PHOTO = 'data:image/webp;base64,UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4H';
 
 function good(overrides = {}) {
@@ -47,8 +47,8 @@ test('station must be a positive integer', () => {
   }
 });
 
-test('token must look like <exp>.<16 hex>', () => {
-  for (const token of ['', 'abc', '123.abc', '123.0123456789ABCDEF', '.0123456789abcdef', '1.2.3', 5, null]) {
+test('token must look like <exp>.<nonce>.<16 hex>', () => {
+  for (const token of ['', 'abc', '123.abc', '123.0a1b2c3d.0123456789ABCDEF', '.0a1b2c3d.0123456789abcdef', '1.2.3', '123.0123456789abcdef', 5, null]) {
     assert.deepEqual(validateClaimInput(good({ token })), { ok: false, error: 'token' });
   }
 });
