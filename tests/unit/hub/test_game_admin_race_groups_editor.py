@@ -489,6 +489,7 @@ function updateControlGuidance() {{}}
 function renderReadinessPanel() {{}}
 function syncSessionModeControl() {{}}
 function renderRoster() {{}}
+function renderChallengeMode() {{}}
 
 const state = {{
   race: null,
