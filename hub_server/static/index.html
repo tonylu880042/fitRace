@@ -2747,7 +2747,7 @@
 
     .standings-row {
       display: grid;
-      grid-template-columns: auto 1fr auto;
+      grid-template-columns: auto auto 1fr auto;
       align-items: center;
       gap: 0.5rem;
       padding: 0.3rem 0.55rem;
@@ -2769,6 +2769,25 @@
     .standings-row.rank-1 .standings-rank { color: var(--volt-yellow); }
     .standings-row.rank-2 .standings-rank,
     .standings-row.rank-3 .standings-rank { color: rgba(226, 255, 59, 0.75); }
+
+    .standings-avatar {
+      width: clamp(1.6rem, 2.4vw, 2.4rem);
+      height: clamp(1.6rem, 2.4vw, 2.4rem);
+      border-radius: 50%;
+      border: 2px solid var(--steel-border);
+      object-fit: cover;
+      flex-shrink: 0;
+    }
+    .standings-avatar-fallback {
+      background-color: #3f3f46;
+      color: #fff;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-family: 'Oswald', sans-serif;
+      font-weight: 800;
+      font-size: clamp(0.8rem, 1.2vw, 1.2rem);
+    }
 
     .standings-name {
       font-weight: 700;
@@ -5440,11 +5459,17 @@
         const teamHtml = row.team_name && row.team_name !== row.athlete_name
           ? `<div class="standings-team">${escapeHtml(row.team_name)}</div>`
           : "";
+        const displayName = row.athlete_name || (row.station_number ? `${t("stations.station")} ${row.station_number}` : t("stations.athlete"));
+        const initial = (Array.from(String(displayName))[0] || "?").toUpperCase();
+        const avatarHtml = row.avatar_url
+          ? `<img class="standings-avatar" src="${escapeHtml(row.avatar_url)}" alt="">`
+          : `<div class="standings-avatar standings-avatar-fallback">${escapeHtml(initial)}</div>`;
         return `
           <div class="standings-row${rankClass}">
             <div class="standings-rank">#${rank}</div>
+            ${avatarHtml}
             <div>
-              <div class="standings-name">${escapeHtml(row.athlete_name || (row.station_number ? `${t("stations.station")} ${row.station_number}` : t("stations.athlete")))}</div>
+              <div class="standings-name">${escapeHtml(displayName)}</div>
               ${teamHtml}
             </div>
             <div class="standings-value">${formatRecordWallEntryValue(raceType, row)}</div>
@@ -5531,7 +5556,7 @@
         const [recordsRes, racesRes, standingsRes] = await Promise.all([
           fetch(`/api/results/records?t=${Date.now()}`),
           fetch(`/api/results/races?limit=1&t=${Date.now()}`),
-          fetch(`/api/results/standings?t=${Date.now()}`),
+          fetch(`/api/results/standings?limit=10&t=${Date.now()}`),
         ]);
         const recordsData = recordsRes.ok ? await recordsRes.json() : { records: [] };
         const racesData = racesRes.ok ? await racesRes.json() : { races: [] };
