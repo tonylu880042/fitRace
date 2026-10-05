@@ -177,3 +177,62 @@ def test_registered_photo_survives_until_the_run_is_reset(client):
 
     client.post("/api/race/reset")
     assert client.get(url).status_code == 404  # never ranked, run over
+
+
+def _store_race(store, rows, start, race_type="time", **config):
+    cfg = {
+        "race_type": race_type,
+        "competition_mode": "individual",
+        "team_scoring_policy": None,
+        "target_value": config.get("target_value", 0),
+        "duration_sec": config.get("duration_sec", 180),
+        "relay_legs": None,
+    }
+    store.save_finished_snapshot(
+        {
+            "state": "STOPPED",
+            "config": cfg,
+            "start_time_epoch_ms": start,
+            "end_time_epoch_ms": start + 1000,
+            "leaderboard": {r["node_id"]: r for r in rows},
+            "team_leaderboard": None,
+        }
+    )
+
+
+def test_other_category_race_does_not_make_challenge_photos_disposable(
+    client, tmp_path, monkeypatch
+):
+    store = hub_app.avatar_store
+    result_store = RaceResultStore(tmp_path / "multi.jsonl")
+    challenge = [store.save(WEBP) for _ in range(12)]
+    _store_race(
+        result_store,
+        [
+            _row(i + 1, f"C{i + 1}", 1000 - i, f"/api/avatars/{challenge[i]}.webp")
+            for i in range(12)
+        ],
+        start=1000,
+    )
+    other = store.save(WEBP)
+    _store_race(
+        result_store,
+        [
+            {
+                **_row(1, "Tester", 500, f"/api/avatars/{other}.webp"),
+                "finished_time_ms": 60000,
+            }
+        ],
+        start=5000,
+        race_type="distance",
+        target_value=500,
+        duration_sec=0,
+    )
+    monkeypatch.setattr(hub_app, "race_results_query", RaceResultsQuery(result_store))
+
+    hub_app.prune_unneeded_avatars()
+
+    kept = set(store.list_ids())
+    assert set(challenge[:10]) <= kept  # challenge top 10 survive
+    assert other in kept  # so does the other category's winner
+    assert challenge[10] not in kept and challenge[11] not in kept  # 11th/12th still go

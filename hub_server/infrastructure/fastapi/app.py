@@ -679,19 +679,17 @@ _avatar_prune_needed = False
 
 
 def prune_unneeded_avatars() -> int:
-    """Delete every stored photo that is neither (a) on a row of the current
-    event's top-10 standings, (b) registered for the current/next run, nor
+    """Delete every stored photo that is neither (a) on a top-10 row of any category
+    in the current event, (b) registered for the current/next run, nor
     (c) waiting in the challenge sign-up queue. Returns how many were removed.
     """
     keep: set[str] = set()
-    standings = race_results_query.get_standings(
-        race_manager.get_event_start_epoch_ms(), limit=AVATAR_KEEP_TOP_N
-    )
-    for section in standings.get("sections", []):
-        for row in section.get("rows", []):
-            avatar_id = avatar_id_from_url(row.get("avatar_url"))
-            if avatar_id:
-                keep.add(avatar_id)
+    for row in race_results_query.get_top_rows_all_categories(
+        race_manager.get_event_start_epoch_ms(), AVATAR_KEEP_TOP_N
+    ):
+        avatar_id = avatar_id_from_url(row.get("avatar_url"))
+        if avatar_id:
+            keep.add(avatar_id)
     keep |= race_manager.get_registered_avatar_ids()
     keep |= {
         item["avatar_id"]

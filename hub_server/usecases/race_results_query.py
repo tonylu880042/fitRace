@@ -184,6 +184,42 @@ class RaceResultsQuery:
         scope = self._latest_standings_scope(records)
         if scope is None:
             return empty
+        return self._standings_in_scope(records, scope, limit)
+
+    def get_top_rows_all_categories(
+        self, event_start_epoch_ms: Optional[float] = None, limit: int = 10
+    ) -> list[dict[str, Any]]:
+        """Top `limit` rows of EVERY category stored in the current event
+        (union of one standings ranking per distinct scope), not just the
+        most recent one. Used to decide which registration photos are still
+        worth keeping, where a stray test race of another category must not
+        make the real ranking look disposable."""
+        records = self._records_since(event_start_epoch_ms)
+        scopes: list[tuple[Any, str, Any]] = []
+        for record in records:
+            config = self._record_config(record)
+            if config is None or config.get("race_type") == "mixed":
+                continue
+            label = self._category_label(config.get("race_type"), config)
+            if label is None:
+                continue
+            scope = (config.get("race_type"), label, config.get("relay_legs"))
+            if scope not in scopes:
+                scopes.append(scope)
+        rows: list[dict[str, Any]] = []
+        for scope in scopes:
+            standings = self._standings_in_scope(records, scope, limit)
+            for section in standings["sections"]:
+                rows.extend(section["rows"])
+        return rows
+
+    def _standings_in_scope(
+        self,
+        records: list[Any],
+        scope: tuple[Any, str, Any],
+        limit: Optional[int],
+    ) -> dict[str, Any]:
+        empty: dict[str, Any] = {"race_type": None, "sections": [], "race_count": 0}
         race_type, label, relay_legs = scope
 
         combined_rows: list[dict[str, Any]] = []
