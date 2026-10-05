@@ -88,14 +88,41 @@ async def periodic_update_check():
         await asyncio.sleep(UPDATE_AUTO_CHECK_INTERVAL_SEC)
 
 
+DEADLINE_TICK_INTERVAL_SEC = 0.25
+
+
+async def enforce_time_deadline_tick(
+    now_ms_fn=lambda: int(time.time() * 1000),
+) -> bool:
+    """One deadline check. The clock is injected so tests never sleep; a
+    stop goes through broadcast_race_state() so the result is persisted."""
+    if race_manager.enforce_time_deadline(now_ms_fn()):
+        await broadcast_race_state()
+        return True
+    return False
+
+
+async def time_deadline_loop():
+    while True:
+        try:
+            await enforce_time_deadline_tick()
+        except Exception:
+            logger.exception("Time deadline tick failed")
+        await asyncio.sleep(DEADLINE_TICK_INTERVAL_SEC)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    deadline_task = asyncio.create_task(time_deadline_loop())
     if (
         os.getenv("FITRACE_UPDATE_AUTO_CHECK", "1") != "0"
         and update_checker.manifest_url
     ):
         app.state.update_check_task = asyncio.create_task(periodic_update_check())
-    yield
+    try:
+        yield
+    finally:
+        deadline_task.cancel()
 
 
 app = FastAPI(title="FitRaceStudio Central Hub", lifespan=lifespan)

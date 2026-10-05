@@ -1161,6 +1161,32 @@ class RaceManager:
 
         self._end_time_epoch_ms = int(time.time() * 1000)
 
+    def enforce_time_deadline(self, now_epoch_ms: int) -> bool:
+        """Hub-side backstop for timed races: stop at start + duration on
+        the HUB's clock, regardless of what the equipment reports. Returns
+        True only on the call that performs the RUNNING -> STOPPED
+        transition. Distances are left at their last pre-deadline value;
+        only elapsed time and progress are capped."""
+        if self._state != RaceState.RUNNING or self._session_mode != "race":
+            return False
+        config = self._config
+        if (
+            config is None
+            or config.race_type not in ("time", "max_power", "watts")
+            or self._start_time_epoch_ms is None
+        ):
+            return False
+        duration_ms = config.duration_sec * 1000
+        deadline_ms = self._start_time_epoch_ms + duration_ms
+        if now_epoch_ms < deadline_ms:
+            return False
+        for row in self._progress.values():
+            row["elapsed_time_ms"] = min(row.get("elapsed_time_ms", 0), duration_ms)
+            row["progress_percent"] = min(100.0, row.get("progress_percent", 0.0))
+        self._end_time_epoch_ms = deadline_ms
+        self._state = RaceState.STOPPED
+        return True
+
     def close_race(self):
         self.stop_race()
 
@@ -1321,9 +1347,13 @@ class RaceManager:
                 effective_config.race_type in ("time", "max_power", "watts")
                 and effective_config.duration_sec > 0
             ):
-                progress_percent = (
-                    elapsed_time_ms / (effective_config.duration_sec * 1000.0)
-                ) * 100.0
+                # Equipment-reported elapsed can run past the duration
+                # (its own clock is ahead of the hub's): never show >100%.
+                progress_percent = min(
+                    100.0,
+                    (elapsed_time_ms / (effective_config.duration_sec * 1000.0))
+                    * 100.0,
+                )
 
         # A class has no finish line -- finished_time_ms must stay None for
         # every participant, even once progress_percent reads 100.
