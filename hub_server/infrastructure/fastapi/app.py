@@ -12,7 +12,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, Literal, Optional
 import segno
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request
+from fastapi import (
+    FastAPI,
+    WebSocket,
+    WebSocketDisconnect,
+    HTTPException,
+    Query,
+    Request,
+)
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse, Response
 from pydantic import BaseModel, Field, field_validator
@@ -1095,8 +1102,10 @@ def get_race_records():
 
 
 @app.get("/api/results/standings")
-def get_race_standings():
-    return race_results_query.get_standings(race_manager.get_event_start_epoch_ms())
+def get_race_standings(limit: Optional[int] = Query(None, ge=1)):
+    return race_results_query.get_standings(
+        race_manager.get_event_start_epoch_ms(), limit=limit
+    )
 
 
 @app.get("/api/results/races/{result_id}")

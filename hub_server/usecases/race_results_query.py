@@ -139,7 +139,9 @@ class RaceResultsQuery:
         return {"records": records}
 
     def get_standings(
-        self, event_start_epoch_ms: Optional[float] = None
+        self,
+        event_start_epoch_ms: Optional[float] = None,
+        limit: Optional[int] = None,
     ) -> dict[str, Any]:
         """One combined ranking across every heat of the current event.
 
@@ -165,6 +167,9 @@ class RaceResultsQuery:
         label, relay_legs) as today's heats never becomes the scope, and
         never contributes rows either. None (the default) keeps counting
         the entire history, unchanged from before this parameter existed.
+
+        `limit` (None = no truncation, the original behaviour) keeps only the
+        top N rows of each division section, for the projector's top-10 view.
         """
         empty: dict[str, Any] = {"race_type": None, "sections": [], "race_count": 0}
 
@@ -215,6 +220,7 @@ class RaceResultsQuery:
                     "station_number": row.get("station_number"),
                     "relay_members": row.get("relay_members"),
                     "race_start_epoch_ms": row.get("race_start_epoch_ms"),
+                    "avatar_url": row.get("avatar_url"),
                 }
             )
 
@@ -223,6 +229,8 @@ class RaceResultsQuery:
             sections_by_division.keys(), key=self._division_sort_key
         ):
             entries = sections_by_division[division]
+            if limit is not None:
+                entries = entries[: max(0, limit)]
             ranked_rows = [
                 {"rank": index, **entry} for index, entry in enumerate(entries, 1)
             ]
