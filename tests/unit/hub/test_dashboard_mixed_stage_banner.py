@@ -78,7 +78,7 @@ def _extract_function(source: str, name: str) -> str:
 
 
 def _t_stub() -> str:
-    return "const t = (key) => `T[${key}]`;\n"
+    return "const messages = {};\nconst t = (key) => `T[${key}]`;\n"
 
 
 def _metric_number_stub() -> str:
@@ -118,6 +118,7 @@ def _stage_target_helpers() -> str:
             "formatMixedGroupTargetLabel",
             "buildMixedRaceTargetSummary",
             "competitionStageLabel",
+            "raceTypeLabel",
             "getRaceStageDetails",
         )
     )

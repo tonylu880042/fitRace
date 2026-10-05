@@ -3738,6 +3738,13 @@
       return config && config.competition_mode === "team" ? t("stage.team") : t("stage.individual");
     }
 
+    // Translated race_type.* label; an unknown type falls back to readable raw
+    // text instead of leaking the "race_type.x" key onto the projector.
+    function raceTypeLabel(raceType) {
+      const translated = messages[`race_type.${raceType}`];
+      return translated || String(raceType).replace("_", " ");
+    }
+
     function getRaceStageDetails(stage = currentState) {
       if (currentSessionMode === "class") {
         return getClassStageDetails(stage);
@@ -3766,7 +3773,7 @@
         return {
           className: "running",
           kicker: t("stage.live_race"),
-          main: currentConfig ? t("stage.running_main", { competition, raceType: raceType.replace("_", " ") }) : t("stage.race_in_progress"),
+          main: currentConfig ? t("stage.running_main", { competition, raceType: raceTypeLabel(raceType) }) : t("stage.race_in_progress"),
           sub: target ? t("stage.running_sub_target", { target }) : t("stage.running_sub_no_target"),
           timer: document.getElementById("stopwatch-lbl")?.innerText || "00:00.0",
         };
