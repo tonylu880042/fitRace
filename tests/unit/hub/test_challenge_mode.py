@@ -26,6 +26,9 @@ def _decide(**overrides):
         registered_stations=[1],
         countdown_active=False,
         pending_signups=0,
+        now_epoch_ms=1_000_000,
+        end_time_epoch_ms=0,
+        min_result_ms=10_000,
     )
     inputs.update(overrides)
     return next_challenge_action(**inputs)
@@ -59,8 +62,36 @@ def test_stopped_keeps_the_result_screen_until_someone_signs_up():
     assert _decide(state=RaceState.STOPPED, pending_signups=0) is None
 
 
-def test_stopped_resets_as_soon_as_a_new_signup_is_waiting():
+def test_stopped_resets_once_a_signup_is_waiting_and_the_result_was_shown_long_enough():
     assert _decide(state=RaceState.STOPPED, pending_signups=1) == "reset"
+
+
+def test_waiting_signup_does_not_reset_before_the_minimum_result_time():
+    end = 1_000_000
+    kwargs = dict(state=RaceState.STOPPED, pending_signups=2, end_time_epoch_ms=end)
+    assert _decide(now_epoch_ms=end, **kwargs) is None
+    assert _decide(now_epoch_ms=end + 9_999, **kwargs) is None
+    assert _decide(now_epoch_ms=end + 10_000, **kwargs) == "reset"
+
+
+def test_zero_minimum_resets_immediately():
+    assert (
+        _decide(
+            state=RaceState.STOPPED,
+            pending_signups=1,
+            end_time_epoch_ms=5,
+            now_epoch_ms=5,
+            min_result_ms=0,
+        )
+        == "reset"
+    )
+
+
+def test_stopped_without_an_end_time_resets_on_signup():
+    assert (
+        _decide(state=RaceState.STOPPED, pending_signups=1, end_time_epoch_ms=None)
+        == "reset"
+    )
 
 
 def test_idle_reapplies_the_challenge_config():
@@ -84,19 +115,21 @@ def test_challenge_settings_default_off_180():
     assert manager.get_challenge_settings() == {
         "challenge_mode_enabled": False,
         "challenge_duration_sec": 180,
+        "challenge_min_result_sec": 10,
     }
 
 
 def test_challenge_settings_persist_across_restart(tmp_path):
     path = tmp_path / "settings.json"
     manager = RaceManager(settings_store=RaceSettingsStore(path))
-    manager.set_challenge_settings(True, 120)
+    manager.set_challenge_settings(True, 120, 25)
 
     restored = RaceManager(settings_store=RaceSettingsStore(path))
 
     assert restored.get_challenge_settings() == {
         "challenge_mode_enabled": True,
         "challenge_duration_sec": 120,
+        "challenge_min_result_sec": 25,
     }
 
 
@@ -116,6 +149,14 @@ def test_challenge_settings_cannot_change_while_running():
     manager.start_race()
     with pytest.raises(ValueError):
         manager.set_challenge_settings(True, 180)
+
+
+@pytest.mark.parametrize("min_result", [-1, 121])
+def test_challenge_min_result_is_limited_to_0_120(min_result):
+    with pytest.raises(ValueError):
+        RaceManager().set_challenge_settings(True, 180, min_result)
+    RaceManager().set_challenge_settings(True, 180, 0)
+    RaceManager().set_challenge_settings(True, 180, 120)
 
 
 @pytest.mark.parametrize("duration", [0, -1, 9, 99999])
@@ -251,6 +292,7 @@ def test_result_screen_stays_until_a_new_signup_arrives(client):
 
 def test_lan_signup_during_stopped_resets_registers_and_starts_next_run(client):
     _finish_a_challenge_race(client)
+    end = hub_app.race_manager.get_end_time_epoch_ms()
 
     res = client.post(
         "/api/race/register", json={"station_number": 1, "athlete_name": "Next"}
@@ -258,7 +300,10 @@ def test_lan_signup_during_stopped_resets_registers_and_starts_next_run(client):
     assert res.status_code == 200
     assert hub_app.race_manager.get_state() == RaceState.STOPPED  # queued only
 
-    assert asyncio.run(hub_app.challenge_tick()) == "reset"
+    # Result screen is held for the minimum time even though someone waits.
+    assert asyncio.run(hub_app.challenge_tick(lambda: end + 9_999)) is None
+    assert hub_app.race_manager.get_state() == RaceState.STOPPED
+    assert asyncio.run(hub_app.challenge_tick(lambda: end + 10_000)) == "reset"
     manager = hub_app.race_manager
     assert manager.get_state() == RaceState.READY
     assert manager.get_config().race_type == "time"
@@ -267,7 +312,7 @@ def test_lan_signup_during_stopped_resets_registers_and_starts_next_run(client):
     assert status["node_id"] == "ch-1"
     assert status["athlete_name"] == "Next" and status["registered"] is True
 
-    assert asyncio.run(hub_app.challenge_tick()) == "start"
+    assert asyncio.run(hub_app.challenge_tick(lambda: end + 10_000)) == "start"
     assert manager.get_state() == RaceState.RUNNING
 
 
@@ -279,8 +324,23 @@ def test_cloud_signup_waiting_in_queue_triggers_the_reset(client, monkeypatch):
         hub_app, "cloud_signup_processor", SimpleNamespace(queue_length=1)
     )
 
-    assert asyncio.run(hub_app.challenge_tick()) == "reset"
+    end = hub_app.race_manager.get_end_time_epoch_ms()
+    assert asyncio.run(hub_app.challenge_tick(lambda: end + 1)) is None
+    assert asyncio.run(hub_app.challenge_tick(lambda: end + 10_000)) == "reset"
     assert hub_app.race_manager.get_state() == RaceState.READY
+
+
+def test_endpoint_stores_the_minimum_result_time(client):
+    res = client.post(
+        "/api/race/challenge",
+        json={"enabled": True, "duration_sec": 120, "min_result_sec": 30},
+    )
+    assert res.json()["challenge_min_result_sec"] == 30
+    bad = client.post(
+        "/api/race/challenge",
+        json={"enabled": True, "duration_sec": 120, "min_result_sec": 121},
+    )
+    assert bad.status_code == 422
 
 
 def test_stopped_registration_is_still_rejected_without_challenge_mode(client):

@@ -1194,6 +1194,10 @@
                     <input id="challenge-duration" type="number" min="10" max="3600" value="180">
                   </div>
                   <div class="field">
+                    <label for="challenge-min-result" data-i18n="label.challenge_min_result">Minimum Result Display (s)</label>
+                    <input id="challenge-min-result" type="number" min="0" max="120" value="10">
+                  </div>
+                  <div class="field">
                     <button type="button" id="btn-save-challenge" onclick="saveChallengeMode()" data-i18n="button.save_challenge">Save Challenge Mode</button>
                     <p class="field-note show" data-i18n="text.challenge_note">When on, the race starts automatically once every station has signed up.</p>
                   </div>
@@ -1541,6 +1545,7 @@
         "label.idle_live_telemetry_visible": "Show Live Data While Idle",
         "label.challenge_mode": "Challenge Mode",
         "label.challenge_duration": "Challenge Duration (s)",
+        "label.challenge_min_result": "Minimum Result Display (s)",
         "option.challenge_off": "Off",
         "option.challenge_on": "On",
         "button.save_challenge": "Save Challenge Mode",
@@ -1840,6 +1845,7 @@
       "label.idle_live_telemetry_visible": "待機時顯示即時數據",
       "label.challenge_mode": "挑戰模式",
       "label.challenge_duration": "挑戰時間 (s)",
+      "label.challenge_min_result": "成績畫面最短停留 (s)",
       "option.challenge_off": "關閉",
       "option.challenge_on": "開啟",
       "button.save_challenge": "儲存挑戰模式",
@@ -3921,6 +3927,9 @@
       const race = state.race || {};
       $("challenge-mode-enabled").value = race.challenge_mode_enabled ? "true" : "false";
       $("challenge-duration").value = String(race.challenge_duration_sec || 180);
+      $("challenge-min-result").value = String(
+        Number.isInteger(race.challenge_min_result_sec) ? race.challenge_min_result_sec : 10
+      );
       $("btn-save-challenge").disabled = race.state === "RUNNING";
     }
 
@@ -3932,6 +3941,7 @@
           body: JSON.stringify({
             enabled: $("challenge-mode-enabled").value === "true",
             duration_sec: parseInt($("challenge-duration").value, 10),
+            min_result_sec: parseInt($("challenge-min-result").value, 10),
           }),
         });
         renderRace();

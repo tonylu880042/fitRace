@@ -76,6 +76,7 @@ def test_save_posts_enabled_and_duration_with_admin_headers():
     result = _run("""
 $("challenge-mode-enabled").value = "true";
 $("challenge-duration").value = "90";
+$("challenge-min-result").value = "25";
 await saveChallengeMode();
 console.log(JSON.stringify({ url: calls[0].url, method: calls[0].options.method,
   body: JSON.parse(calls[0].options.body),
@@ -85,6 +86,7 @@ console.log(JSON.stringify({ url: calls[0].url, method: calls[0].options.method,
     assert result["method"] == "POST"
     assert result["body"]["enabled"] is True
     assert result["body"]["duration_sec"] == 90
+    assert result["body"]["min_result_sec"] == 25
     assert result["token"] == "secret"
     assert result["race"]["challenge_duration_sec"] == 90
 
@@ -115,16 +117,21 @@ console.log(JSON.stringify({ kind: $("race-message").kind, race: state.race }));
 
 def test_render_fills_controls_from_state_and_locks_them_while_running():
     result = _run("""
-state.race = { state: "RUNNING", challenge_mode_enabled: true, challenge_duration_sec: 120 };
+state.race = { state: "RUNNING", challenge_mode_enabled: true, challenge_duration_sec: 120, challenge_min_result_sec: 40 };
 renderChallengeMode();
-const running = { enabled: $("challenge-mode-enabled").value, duration: $("challenge-duration").value,
+const running = { enabled: $("challenge-mode-enabled").value, duration: $("challenge-duration").value, minResult: $("challenge-min-result").value,
   locked: $("btn-save-challenge").disabled };
 state.race = { state: "READY", challenge_mode_enabled: false, challenge_duration_sec: 180 };
 renderChallengeMode();
 console.log(JSON.stringify({ running, ready: { enabled: $("challenge-mode-enabled").value,
   locked: $("btn-save-challenge").disabled } }));
 """)
-    assert result["running"] == {"enabled": "true", "duration": "120", "locked": True}
+    assert result["running"] == {
+        "enabled": "true",
+        "duration": "120",
+        "minResult": "40",
+        "locked": True,
+    }
     assert result["ready"] == {"enabled": "false", "locked": False}
 
 

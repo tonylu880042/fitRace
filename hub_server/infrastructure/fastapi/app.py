@@ -285,6 +285,7 @@ class IdleLiveTelemetryVisibilityPayload(BaseModel):
 class ChallengeModePayload(BaseModel):
     enabled: bool
     duration_sec: int = Field(180, ge=10, le=3600)
+    min_result_sec: int = Field(10, ge=0, le=120)
 
 
 class AssignStationPayload(BaseModel):
@@ -1738,7 +1739,9 @@ def apply_challenge_config() -> None:
 async def set_challenge_mode(payload: ChallengeModePayload, request: Request):
     require_admin(request)
     try:
-        race_manager.set_challenge_settings(payload.enabled, payload.duration_sec)
+        race_manager.set_challenge_settings(
+            payload.enabled, payload.duration_sec, payload.min_result_sec
+        )
         if not payload.enabled:
             challenge_pending_registrations.clear()
         if payload.enabled:
@@ -1779,7 +1782,9 @@ def drain_challenge_pending() -> int:
     return registered
 
 
-async def challenge_tick() -> Optional[str]:
+async def challenge_tick(
+    now_ms_fn=lambda: int(time.time() * 1000),
+) -> Optional[str]:
     """One challenge-mode scheduling pass; the decision itself is the pure
     usecase next_challenge_action(). Returns the action taken, if any."""
     settings = race_manager.get_challenge_settings()
@@ -1799,6 +1804,9 @@ async def challenge_tick() -> Optional[str]:
         countdown_active=race_start_countdown_lock.locked(),
         pending_signups=len(challenge_pending_registrations)
         + (cloud_signup_processor.queue_length if cloud_signup_processor else 0),
+        now_epoch_ms=now_ms_fn(),
+        end_time_epoch_ms=race_manager.get_end_time_epoch_ms(),
+        min_result_ms=settings["challenge_min_result_sec"] * 1000,
     )
     if action == "start":
         try:

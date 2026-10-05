@@ -52,6 +52,7 @@ class RaceManager:
         # written before this feature leaves these defaults untouched.
         self._challenge_mode_enabled: bool = False
         self._challenge_duration_sec: int = 180
+        self._challenge_min_result_sec: int = 10
         self._idle_telemetry = IdleTelemetryTracker(now_ms=self._now_ms)
         self._settings_store = settings_store
         # Injected callable, never the registry itself (Clean Architecture:
@@ -146,6 +147,10 @@ class RaceManager:
         if isinstance(duration, int) and not isinstance(duration, bool):
             if 10 <= duration <= 3600:
                 self._challenge_duration_sec = duration
+        min_result = data.get("challenge_min_result_sec")
+        if isinstance(min_result, int) and not isinstance(min_result, bool):
+            if 0 <= min_result <= 120:
+                self._challenge_min_result_sec = min_result
         config = data.get("config")
         if isinstance(config, dict):
             try:
@@ -197,6 +202,7 @@ class RaceManager:
                 "idle_live_telemetry_visible": self._idle_live_telemetry_visible,
                 "challenge_mode_enabled": self._challenge_mode_enabled,
                 "challenge_duration_sec": self._challenge_duration_sec,
+                "challenge_min_result_sec": self._challenge_min_result_sec,
                 "config": self._config.model_dump() if self._config else None,
                 "session_mode": self._session_mode,
                 "class_plan": (
@@ -332,17 +338,21 @@ class RaceManager:
         return {
             "challenge_mode_enabled": self._challenge_mode_enabled,
             "challenge_duration_sec": self._challenge_duration_sec,
+            "challenge_min_result_sec": self._challenge_min_result_sec,
         }
 
     def set_challenge_settings(
-        self, enabled: bool, duration_sec: int
+        self, enabled: bool, duration_sec: int, min_result_sec: int = 10
     ) -> Dict[str, Any]:
         if self._state == RaceState.RUNNING:
             raise ValueError("Cannot change challenge mode while a race is RUNNING")
         if not 10 <= duration_sec <= 3600:
             raise ValueError("challenge duration must be 10-3600 seconds")
+        if not 0 <= min_result_sec <= 120:
+            raise ValueError("challenge minimum result time must be 0-120 seconds")
         self._challenge_mode_enabled = bool(enabled)
         self._challenge_duration_sec = duration_sec
+        self._challenge_min_result_sec = min_result_sec
         self._persist_settings()
         return self.get_challenge_settings()
 
