@@ -11,6 +11,15 @@
 原則：雲端只負責「收報名資料」。倒數、計時、排名、成績保存全部留在 Hub（區網）。
 Hub 只做 outbound HTTPS 拉取，不開任何對外 port。
 
+## 1.1 客戶決策（2026-10-06，覆蓋下文舊內容）
+
+- 活動為 Nike 台灣新鞋發表會，民眾體驗 **3 天**。排行榜為 **3 天累計**（同一個活動，不每天清空），只顯示前 10 名。
+- 報名連結 **一次性**：成功送出一次後該連結作廢，要再報名必須重新掃碼。活動結束後所有連結作廢。→ 見 R1。
+- 限時賽以 Hub 時間為準（A1 維持）。
+- 照片只用報名當下那張；**比賽後若進前 10 名才保留，否則刪除**；被擠出前 10 名的照片也刪除。→ 見 R2。
+- 單人完賽顯示「金牌」**沒有問題** → **C1 取消**。
+- 挑戰模式的自動重置改為：**偵測到有新報名者時才重置**（結果畫面一直保留到下一位報名）。→ 見 R3。
+
 ## 2. 範圍
 
 | # | 項目 | 層 |
@@ -139,6 +148,33 @@ Hub 只做 outbound HTTPS 拉取，不開任何對外 port。
 - C4：`{raceType}` 傳入翻譯後的 `race_type.*` 字串。
 - C5：Game Admin 加挑戰模式區塊（開關、秒數、重置延遲），字串全部經 locales（zh-TW、en）。
   System Admin / Dashboard 不得出現這些控制。
+
+## 4.1 修訂項目（依 1.1 客戶決策）
+
+### R1 一次性、會過期的報名連結
+- Vercel 也持有 `FITRACE_CLOUD_SIGNUP_SECRET`，`POST /api/claim` **自己驗 token 簽章與到期**
+  （與 Hub 的 `make/verify_signup_token` 同演算法；`cloud_signup/lib/` 實作，`node --test` 覆蓋，
+  並加一個跨語言測試向量：Python 產生的 token 由 JS 驗證通過，反之亦然，向量寫死在兩邊測試裡）。
+- 單次使用：驗證通過後以 Redis `SET fitrace:used:<token> 1 NX EX 900` 佔用；已被用過 →
+  回 409，頁面顯示「此 QR 已使用，請重新掃描大螢幕上的 QR」（字串走 cloud_signup locales）。
+- Token 有效期改為 **300 秒**；大螢幕 QR 改成「被使用後立即換新」：Hub 拉到任何 claim
+  （不論是否合格）就換發新 token，另外每 60 秒也換一次。實作：token 帶 nonce
+  （`<exp>.<nonce>.<sig>`，sig 涵蓋 venue/station/exp/nonce），state 的 `signup_url` 隨之更新。
+- 活動結束：Hub 未啟用挑戰模式或雲端停用時不再發 token；所有舊連結最多 300 秒後自然作廢。
+- Hub 端驗證保留（縱深防禦），且同一 token 只接受第一筆 claim。
+
+### R2 照片只保留前 10 名
+- 成績存檔後執行清理（usecases，純邏輯可測）：保留集合 = 目前活動總排名前 10 名列的
+  `avatar_url` ∪ 目前已報名／佇列中尚未比賽者的頭像；其他頭像檔刪除。
+- standings 的列若頭像已被刪除，`avatar_url` 回 null（不得回傳 404 的網址）。
+
+### R3 挑戰模式改為「有新報名才重置」
+- 移除 `challenge_reset_delay_sec` 設定與其 UI/locale 字串。
+- 挑戰模式啟用且 state 為 STOPPED 時：佇列中有合格報名（雲端或區網報名）→
+  後端 reset → 重新套用 time/`challenge_duration_sec` 賽制 → 登記該報名者 → 自動倒數開跑。
+  沒有新報名時結果畫面保持不動。
+- 區網報名頁在 STOPPED 時送出，挑戰模式下同樣進佇列並觸發上述流程（目前 STOPPED 會拒絕報名，需處理）。
+- 大螢幕在挑戰模式下不得啟動前端自動重置倒數（後端已負責）。
 
 ## 5. 驗收
 
