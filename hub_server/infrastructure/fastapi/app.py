@@ -25,7 +25,13 @@ from fastapi.responses import FileResponse, RedirectResponse, Response
 from pydantic import BaseModel, Field, field_validator
 from hub_server.domain.models import RaceState, RaceConfig
 from hub_server.domain.class_models import ClassPlan
+from hub_server.adapters.upstash_claim_source import UpstashClaimSource
+from hub_server.infrastructure.cloud_signup_config import (
+    CloudSignupConfig,
+    load_cloud_signup_config,
+)
 from hub_server.usecases.avatar_store import AvatarStore
+from hub_server.usecases.cloud_signup import CloudSignupProcessor, build_signup_fields
 from hub_server.usecases.challenge_mode import next_challenge_action
 from hub_server.usecases.race_manager import RaceManager
 from hub_server.usecases.node_registry import NodeRegistry
@@ -124,6 +130,9 @@ async def time_deadline_loop():
 async def lifespan(app: FastAPI):
     deadline_task = asyncio.create_task(time_deadline_loop())
     challenge_task = asyncio.create_task(challenge_loop())
+    cloud_task = (
+        asyncio.create_task(cloud_signup_loop()) if cloud_signup_processor else None
+    )
     if (
         os.getenv("FITRACE_UPDATE_AUTO_CHECK", "1") != "0"
         and update_checker.manifest_url
@@ -134,6 +143,8 @@ async def lifespan(app: FastAPI):
     finally:
         deadline_task.cancel()
         challenge_task.cancel()
+        if cloud_task:
+            cloud_task.cancel()
 
 
 app = FastAPI(title="FitRaceStudio Central Hub", lifespan=lifespan)
@@ -543,11 +554,48 @@ def decode_avatar_webp(avatar_base64: str) -> bytes:
     return img_data
 
 
-async def get_race_state_data() -> dict:
-    return enrich_race_state_display_names(
-        race_manager.get_state_snapshot(),
-        node_registry.list_nodes(),
+LAN_IP_CACHE_SEC = 30
+_lan_ip_cache: Optional[tuple[float, Optional[str]]] = None
+
+
+def lan_signup_url() -> Optional[str]:
+    """The venue-LAN sign-up page. get_real_ip() can touch DNS, and the
+    state is rebuilt on every broadcast, so cache the answer briefly."""
+    global _lan_ip_cache
+    now = time.monotonic()
+    if _lan_ip_cache is None or now - _lan_ip_cache[0] > LAN_IP_CACHE_SEC:
+        _lan_ip_cache = (now, get_real_ip())
+    ip = _lan_ip_cache[1]
+    if not ip:
+        return None
+    port = os.getenv("FITRACE_HUB_PORT", "8000")
+    return f"http://{ip}:{port}/static/signup.html"
+
+
+def current_signup_fields(now_s: Optional[float] = None) -> dict:
+    stations = race_manager.get_stations_status()["stations"]
+    config = cloud_signup_config
+    return build_signup_fields(
+        cloud_base_url=config.base_url if config else None,
+        secret=config.secret if config else None,
+        venue=config.venue if config else None,
+        last_success_epoch_s=(
+            cloud_claim_source.last_success_epoch_s if cloud_claim_source else None
+        ),
+        now_s=time.time() if now_s is None else now_s,
+        assigned=[int(sn) for sn, st in stations.items() if st.get("node_id")],
+        registered=[int(sn) for sn, st in stations.items() if st.get("registered")],
+        lan_url=lan_signup_url(),
+        queue_length=(
+            cloud_signup_processor.queue_length if cloud_signup_processor else 0
+        ),
     )
+
+
+async def get_race_state_data() -> dict:
+    snapshot = race_manager.get_state_snapshot()
+    snapshot.update(current_signup_fields())
+    return enrich_race_state_display_names(snapshot, node_registry.list_nodes())
 
 
 def get_stations_status_data() -> dict:
@@ -2053,6 +2101,99 @@ async def load_next_heat(request: Request):
     return roster_summary_response()
 
 
+async def broadcast_registration_success(
+    station_number: int, athlete_name: Optional[str], team_name: Optional[str] = None
+) -> None:
+    equipment_type = race_manager.get_station_equipment_type(station_number)
+    await ws_manager.broadcast(
+        {
+            "type": "registration_success",
+            "athlete_name": athlete_name,
+            "station_number": station_number,
+            "team_name": team_name,
+            "equipment_type": equipment_type,
+        }
+    )
+
+
+# -- cloud sign-up (outbound pull only; every variable must be set) --------
+
+cloud_signup_config: Optional[CloudSignupConfig] = load_cloud_signup_config(os.environ)
+cloud_claim_source: Optional[UpstashClaimSource] = None
+cloud_signup_processor: Optional[CloudSignupProcessor] = None
+
+
+async def register_cloud_claim(
+    station_number: int, name: str, avatar_base64: Optional[str]
+) -> None:
+    avatar_id = None
+    if avatar_base64:
+        avatar_id = avatar_store.save(decode_avatar_webp(avatar_base64))
+    race_manager.register_athlete(station_number, name, avatar_id=avatar_id)
+    await broadcast_registration_success(station_number, name)
+
+
+def build_cloud_signup_processor(
+    config: CloudSignupConfig, source: UpstashClaimSource
+) -> CloudSignupProcessor:
+    def station_open(station_number: int) -> bool:
+        if race_manager.get_state() not in (RaceState.IDLE, RaceState.READY):
+            return False
+        station = race_manager.get_stations_status()["stations"].get(station_number)
+        return bool(station and not station.get("registered"))
+
+    return CloudSignupProcessor(
+        secret=config.secret,
+        venue=config.venue,
+        fetch_claims=source.fetch,
+        register=register_cloud_claim,
+        assigned_stations=lambda: [
+            int(sn)
+            for sn, st in race_manager.get_stations_status()["stations"].items()
+            if st.get("node_id")
+        ],
+        station_open=station_open,
+        now_s=time.time,
+    )
+
+
+if cloud_signup_config:
+    cloud_claim_source = UpstashClaimSource(
+        cloud_signup_config.upstash_url,
+        cloud_signup_config.upstash_token,
+        cloud_signup_config.venue,
+    )
+    cloud_signup_processor = build_cloud_signup_processor(
+        cloud_signup_config, cloud_claim_source
+    )
+
+CLOUD_SIGNUP_TICK_INTERVAL_SEC = 1.5
+_last_broadcast_signup_fields: Optional[dict] = None
+
+
+async def cloud_signup_tick() -> int:
+    """Pull + register once. Rebroadcasts state when someone registered or
+    the QR-driving fields changed (token rotation, online flip, queue)."""
+    global _last_broadcast_signup_fields
+    if cloud_signup_processor is None:
+        return 0
+    registered = await cloud_signup_processor.tick()
+    fields = current_signup_fields()
+    if registered or fields != _last_broadcast_signup_fields:
+        _last_broadcast_signup_fields = fields
+        await broadcast_race_state()
+    return registered
+
+
+async def cloud_signup_loop():
+    while True:
+        try:
+            await cloud_signup_tick()
+        except Exception:
+            logger.exception("Cloud sign-up tick failed")
+        await asyncio.sleep(CLOUD_SIGNUP_TICK_INTERVAL_SEC)
+
+
 @app.post("/api/race/register")
 async def register_athlete(payload: RegisterAthletePayload):
     try:
@@ -2075,16 +2216,8 @@ async def register_athlete(payload: RegisterAthletePayload):
             relay_members=payload.relay_members,
         )
 
-        # Broadcast registration success to the dashboard
-        equipment_type = race_manager.get_station_equipment_type(payload.station_number)
-        await ws_manager.broadcast(
-            {
-                "type": "registration_success",
-                "athlete_name": payload.athlete_name,
-                "station_number": payload.station_number,
-                "team_name": payload.team_name,
-                "equipment_type": equipment_type,
-            }
+        await broadcast_registration_success(
+            payload.station_number, payload.athlete_name, payload.team_name
         )
 
         return get_stations_status_data()
