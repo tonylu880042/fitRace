@@ -1189,25 +1189,30 @@ class RaceManager:
 
         self._end_time_epoch_ms = int(time.time() * 1000)
 
+    def _time_deadline_ms(self) -> Optional[int]:
+        """Hub-clock end of the running timed race, or None when this race
+        has no hub deadline (not RUNNING, class, mixed, target-based)."""
+        config = self._config
+        if (
+            self._state != RaceState.RUNNING
+            or self._session_mode != "race"
+            or config is None
+            or config.race_type not in ("time", "max_power", "watts")
+            or self._start_time_epoch_ms is None
+        ):
+            return None
+        return self._start_time_epoch_ms + config.duration_sec * 1000
+
     def enforce_time_deadline(self, now_epoch_ms: int) -> bool:
         """Hub-side backstop for timed races: stop at start + duration on
         the HUB's clock, regardless of what the equipment reports. Returns
         True only on the call that performs the RUNNING -> STOPPED
         transition. Distances are left at their last pre-deadline value;
         only elapsed time and progress are capped."""
-        if self._state != RaceState.RUNNING or self._session_mode != "race":
+        deadline_ms = self._time_deadline_ms()
+        if deadline_ms is None or now_epoch_ms < deadline_ms:
             return False
-        config = self._config
-        if (
-            config is None
-            or config.race_type not in ("time", "max_power", "watts")
-            or self._start_time_epoch_ms is None
-        ):
-            return False
-        duration_ms = config.duration_sec * 1000
-        deadline_ms = self._start_time_epoch_ms + duration_ms
-        if now_epoch_ms < deadline_ms:
-            return False
+        duration_ms = self._config.duration_sec * 1000
         for row in self._progress.values():
             row["elapsed_time_ms"] = min(row.get("elapsed_time_ms", 0), duration_ms)
             row["progress_percent"] = min(100.0, row.get("progress_percent", 0.0))
@@ -1257,6 +1262,12 @@ class RaceManager:
 
         node_id = payload.get("node_id")
         if not node_id:
+            return self._progress
+
+        # Between the hub deadline and the next deadline tick, results are
+        # already frozen: late samples must not move distance.
+        deadline_ms = self._time_deadline_ms()
+        if deadline_ms is not None and self._now_ms() >= deadline_ms:
             return self._progress
 
         # Auto-discover node and type

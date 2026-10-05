@@ -93,7 +93,9 @@ def test_two_heats_of_the_same_unregistered_station_stay_two_standings_rows(
     tmp_path,
 ):
     store = RaceResultStore(tmp_path / "race_results.jsonl")
-    manager = RaceManager()
+    # The test pins fake start times (1_000 / 3_000); a clock at 0 keeps the
+    # hub deadline from treating them as long expired.
+    manager = RaceManager(now_ms=lambda: 0)
 
     # Heat 1 -- station 1, never registered.
     manager.assign_station(1, "node-01")

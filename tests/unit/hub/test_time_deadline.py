@@ -198,3 +198,55 @@ def test_deadline_tick_stops_broadcasts_and_saves_results(monkeypatch):
         assert saved[0]["snapshot"]["state"] == "STOPPED"
     finally:
         client.post("/api/race/reset")
+
+
+def _fake_clock_race(monkeypatch):
+    clock = {"now": START_MS}
+    monkeypatch.setattr(time, "time", lambda: START_MS / 1000.0)
+    manager = RaceManager(now_ms=lambda: clock["now"])
+    for n in (1, 2):
+        manager.update_active_node(f"node-0{n}", "treadmill")
+        manager.assign_station(n, f"node-0{n}")
+        manager.register_athlete(n, f"Runner {n}")
+    manager.configure(RaceConfig(race_type="time", duration_sec=DURATION_SEC))
+    manager.start_race()
+    return manager, clock
+
+
+def test_samples_after_the_hub_deadline_are_ignored_before_the_next_tick(monkeypatch):
+    """The deadline tick runs every 250 ms; telemetry landing in that gap
+    must not move any result."""
+    manager, clock = _fake_clock_race(monkeypatch)
+    manager.ingest_telemetry(_telemetry("node-01", 400.0, 100_000))
+
+    clock["now"] = DEADLINE_MS  # at the deadline, tick has not run yet
+    manager.ingest_telemetry(_telemetry("node-01", 450.0, 179_000))
+
+    row = manager.get_leaderboard_progress()["node-01"]
+    assert row["distance_m"] == 400.0
+    assert manager.get_state() == RaceState.RUNNING  # the tick still owns the stop
+    assert manager.enforce_time_deadline(clock["now"]) is True
+    assert manager.get_leaderboard_progress()["node-01"]["distance_m"] == 400.0
+
+
+def test_samples_just_before_the_deadline_are_still_accepted(monkeypatch):
+    manager, clock = _fake_clock_race(monkeypatch)
+    clock["now"] = DEADLINE_MS - 1
+
+    manager.ingest_telemetry(_telemetry("node-01", 450.0, 179_900))
+
+    assert manager.get_leaderboard_progress()["node-01"]["distance_m"] == 450.0
+
+
+def test_distance_races_are_not_gated_by_the_clock(monkeypatch):
+    monkeypatch.setattr(time, "time", lambda: START_MS / 1000.0)
+    manager = RaceManager(now_ms=lambda: START_MS + 10**9)
+    manager.update_active_node("node-01", "treadmill")
+    manager.assign_station(1, "node-01")
+    manager.register_athlete(1, "R")
+    manager.configure(RaceConfig(race_type="distance", target_value=1000.0))
+    manager.start_race()
+
+    manager.ingest_telemetry(_telemetry("node-01", 50.0, 1000))
+
+    assert manager.get_leaderboard_progress()["node-01"]["distance_m"] == 50.0
