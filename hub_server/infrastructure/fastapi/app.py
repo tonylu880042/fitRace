@@ -14,10 +14,11 @@ from typing import Dict, Any, Literal, Optional
 import segno
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import RedirectResponse, Response
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from pydantic import BaseModel, Field, field_validator
 from hub_server.domain.models import RaceState, RaceConfig
 from hub_server.domain.class_models import ClassPlan
+from hub_server.usecases.avatar_store import AvatarStore
 from hub_server.usecases.race_manager import RaceManager
 from hub_server.usecases.node_registry import NodeRegistry
 from hub_server.usecases.node_display_names import (
@@ -161,6 +162,11 @@ race_event_engine = RaceEventEngine()
 _race_results_path = os.getenv("FITRACE_RACE_RESULTS_PATH", "data/race_results.jsonl")
 race_result_store = RaceResultStore(_race_results_path)
 race_results_query = RaceResultsQuery(race_result_store)
+# Registration photos live beside the race results (the data directory),
+# never inside the program directory.
+avatar_store = AvatarStore(
+    os.getenv("FITRACE_AVATAR_DIR", str(Path(_race_results_path).parent / "avatars"))
+)
 # A finished class is persisted the same way a race is -- same store class,
 # same append-only jsonl mechanics -- but to its own file and its own env
 # var, so a class record can never mix into race results, the records wall,
@@ -1067,6 +1073,22 @@ def list_class_history(limit: int = 20):
     return {"classes": classes}
 
 
+@app.get("/api/avatars/{avatar_file}")
+def get_avatar(avatar_file: str):
+    avatar_id = (
+        avatar_file.removesuffix(".webp") if avatar_file.endswith(".webp") else ""
+    )
+    path = avatar_store.path_for(avatar_id)
+    if path is None:
+        raise HTTPException(status_code=404, detail="avatar not found")
+    # The URL is per-registration and never rewritten, so it can be cached.
+    return FileResponse(
+        path,
+        media_type="image/webp",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
 @app.get("/api/results/records")
 def get_race_records():
     return race_results_query.get_records()
@@ -1939,46 +1961,21 @@ async def load_next_heat(request: Request):
 @app.post("/api/race/register")
 async def register_athlete(payload: RegisterAthletePayload):
     try:
-        has_avatar = False
+        avatar_id = None
         if payload.avatar_base64:
             try:
                 img_data = decode_avatar_webp(payload.avatar_base64)
-                avatar_dir = os.path.join(
-                    os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-                    "static",
-                    "avatars",
-                )
-                os.makedirs(avatar_dir, exist_ok=True)
-                file_path = os.path.join(
-                    avatar_dir, f"station_{payload.station_number}.webp"
-                )
-                with open(file_path, "wb") as f:
-                    f.write(img_data)
-                has_avatar = True
+                avatar_id = avatar_store.save(img_data)
             except Exception as e:
                 raise HTTPException(
                     status_code=400, detail=f"Invalid avatar image: {str(e)}"
                 )
-        else:
-            avatar_dir = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-                "static",
-                "avatars",
-            )
-            file_path = os.path.join(
-                avatar_dir, f"station_{payload.station_number}.webp"
-            )
-            if os.path.exists(file_path):
-                try:
-                    os.remove(file_path)
-                except Exception:
-                    pass
 
         race_manager.register_athlete(
             payload.station_number,
             payload.athlete_name,
             team_name=payload.team_name,
-            has_avatar=has_avatar,
+            avatar_id=avatar_id,
             division=payload.division,
             relay_members=payload.relay_members,
         )

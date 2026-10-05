@@ -91,9 +91,9 @@ class RaceManager:
         self._station_relay_members: Dict[int, Optional[list]] = (
             {}
         )  # station_number (int) -> list of member names (str) for relay, or None
-        self._station_has_avatar: Dict[int, bool] = (
+        self._station_avatar_ids: Dict[int, Optional[str]] = (
             {}
-        )  # station_number (int) -> has_avatar (bool)
+        )  # station_number (int) -> stored avatar id (str) or None
         self._active_nodes: Dict[str, str] = {}  # node_id (str) -> equipment_type (str)
         # node_id (str) -> BLE name (str), e.g. "Vmax53932". Captured from
         # telemetry's equipment_id and kept even after the edge node (and
@@ -435,6 +435,12 @@ class RaceManager:
             "finished_time_ms": None,
         }
 
+    def _avatar_url(self, station_number: int) -> Optional[str]:
+        # Stable per registration: the id changes only when someone new
+        # registers, so browsers cache it and history can reuse it.
+        avatar_id = self._station_avatar_ids.get(station_number)
+        return f"/api/avatars/{avatar_id}.webp" if avatar_id else None
+
     def _default_participant_name(self, node_id: str) -> str:
         # A class ranks nobody and usually nobody self-registers, so this
         # default is what the coach actually reads on the board -- and both
@@ -508,7 +514,6 @@ class RaceManager:
             return self._progress
 
         progress = {}
-        import time
 
         # 1. Initialize from legacy registered_nodes
         for node_id, athlete_name in self._registered_nodes.items():
@@ -542,12 +547,7 @@ class RaceManager:
             if key not in progress:
                 team_name = self._station_teams.get(station_number)
                 division = self._station_divisions.get(station_number)
-                has_avatar = self._station_has_avatar.get(station_number, False)
-                avatar_url = (
-                    f"/static/avatars/station_{station_number}.webp?t={int(time.time())}"
-                    if has_avatar
-                    else None
-                )
+                avatar_url = self._avatar_url(station_number)
                 relay_fields = self._placeholder_relay_fields(station_number)
                 progress[key] = {
                     "node_id": node_id or key,
@@ -809,7 +809,7 @@ class RaceManager:
             self._station_teams.clear()
             self._station_divisions.clear()
             self._station_relay_members.clear()
-            self._station_has_avatar.clear()
+            self._station_avatar_ids.clear()
             self._active_nodes.clear()
 
         self._config = config
@@ -836,7 +836,7 @@ class RaceManager:
             self._station_teams.clear()
             self._station_divisions.clear()
             self._station_relay_members.clear()
-            self._station_has_avatar.clear()
+            self._station_avatar_ids.clear()
             self._active_nodes.clear()
 
         self._class_plan = plan
@@ -969,8 +969,8 @@ class RaceManager:
                 del self._station_divisions[station_number]
             if station_number in self._station_relay_members:
                 del self._station_relay_members[station_number]
-            if station_number in self._station_has_avatar:
-                del self._station_has_avatar[station_number]
+            if station_number in self._station_avatar_ids:
+                del self._station_avatar_ids[station_number]
             self._persist_settings()
             return
 
@@ -989,7 +989,7 @@ class RaceManager:
         station_number: int,
         athlete_name: Optional[str],
         team_name: Optional[str] = None,
-        has_avatar: bool = False,
+        avatar_id: Optional[str] = None,
         division: Optional[str] = None,
         relay_members: Optional[list] = None,
     ):
@@ -999,7 +999,7 @@ class RaceManager:
         self._station_teams[station_number] = team_name
         self._station_divisions[station_number] = division
         self._station_relay_members[station_number] = relay_members
-        self._station_has_avatar[station_number] = has_avatar
+        self._station_avatar_ids[station_number] = avatar_id
 
     def clear_station_registrations(self):
         """Drop every station's athlete registration -- e.g. so the roster's
@@ -1014,7 +1014,7 @@ class RaceManager:
         self._station_teams.clear()
         self._station_divisions.clear()
         self._station_relay_members.clear()
-        self._station_has_avatar.clear()
+        self._station_avatar_ids.clear()
 
     def get_stations_status(self) -> dict:
         assigned_nodes = set(self._stations.values())
@@ -1038,7 +1038,7 @@ class RaceManager:
                 "team_name": self._station_teams.get(sn),
                 "division": self._station_divisions.get(sn),
                 "relay_members": self._station_relay_members.get(sn),
-                "has_avatar": self._station_has_avatar.get(sn, False),
+                "has_avatar": bool(self._station_avatar_ids.get(sn)),
             }
 
         # Include stations that have athlete registrations but no bound node_id
@@ -1052,7 +1052,7 @@ class RaceManager:
                     "team_name": self._station_teams.get(sn),
                     "division": self._station_divisions.get(sn),
                     "relay_members": self._station_relay_members.get(sn),
-                    "has_avatar": self._station_has_avatar.get(sn, False),
+                    "has_avatar": bool(self._station_avatar_ids.get(sn)),
                 }
 
         return {
@@ -1120,14 +1120,7 @@ class RaceManager:
             if key not in self._progress:
                 team_name = self._station_teams.get(station_number)
                 division = self._station_divisions.get(station_number)
-                has_avatar = self._station_has_avatar.get(station_number, False)
-                import time
-
-                avatar_url = (
-                    f"/static/avatars/station_{station_number}.webp?t={int(time.time())}"
-                    if has_avatar
-                    else None
-                )
+                avatar_url = self._avatar_url(station_number)
                 relay_fields = self._placeholder_relay_fields(station_number)
 
                 self._progress[key] = {
@@ -1210,7 +1203,7 @@ class RaceManager:
         self._station_teams.clear()
         self._station_divisions.clear()
         self._station_relay_members.clear()
-        self._station_has_avatar.clear()
+        self._station_avatar_ids.clear()
         self._active_nodes.clear()
         self.reset_idle_telemetry()
         # Reset must actually stick: without this, race_settings.json still
@@ -1262,14 +1255,7 @@ class RaceManager:
             )
             team_name = self._station_teams.get(station_number)
             division = self._station_divisions.get(station_number)
-            has_avatar = self._station_has_avatar.get(station_number, False)
-            import time
-
-            avatar_url = (
-                f"/static/avatars/station_{station_number}.webp?t={int(time.time())}"
-                if has_avatar
-                else None
-            )
+            avatar_url = self._avatar_url(station_number)
         else:
             is_registered_name = node_id in self._registered_nodes
             athlete_name = self._registered_nodes.get(
