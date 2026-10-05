@@ -5764,6 +5764,27 @@
     // class on document.body instead, paired with the CSS rule below,
     // covers any such block automatically: the browser re-evaluates the
     // CSS rule on every paint, not just when this function last ran.
+    // The sign-up QR follows the backend state's signup_url (cloud page when
+    // online, LAN page as the offline fallback). The browser-derived address
+    // (fromState=false) only fills in until the state has supplied one, so a
+    // later IP poll can never replace a cloud URL.
+    let signupUrlFromState = false;
+
+    function setSignupQrTarget(targetUrl, fromState) {
+      if (!fromState && signupUrlFromState) return;
+      if (fromState) signupUrlFromState = true;
+      const qrUrl = `/api/qr.svg?data=${encodeURIComponent(targetUrl)}`;
+      if (qrUrl === currentSignupQrUrl) return;
+      currentSignupQrUrl = qrUrl;
+      document.querySelectorAll(".signup-qr-img").forEach((img) => {
+        img.src = qrUrl;
+      });
+    }
+
+    function applySignupUrl(data) {
+      if (data && data.signup_url) setSignupQrTarget(data.signup_url, true);
+    }
+
     function applyDashboardQrVisibility(data) {
       const signupVisible = !(data && data.signup_qr_visible === false);
       const adminVisible = !(data && data.admin_qr_visible === false);
@@ -7519,6 +7540,10 @@
         previousRelayLegByNode = new Map();
       }
 
+      // Before the render below, which can rebuild empty-state QR blocks
+      // straight from currentSignupQrUrl.
+      applySignupUrl(data);
+
       // Route to class board or race leaderboard
       if (data.session_mode === "class") {
         // Class mode: store plan and leaderboard for local ticking
@@ -7948,12 +7973,9 @@
       function updateAccessLinks(baseUrl) {
         const generalSignupUrl = `${baseUrl}/static/signup.html`;
         const gameAdminUrl = `${baseUrl}/gameAdmin`;
-        currentSignupQrUrl = qrCodeUrl(generalSignupUrl);
+        setSignupQrTarget(generalSignupUrl, false);
         const gameAdminQrImg = document.getElementById("game-admin-qr-img");
         const gameAdminLink = document.getElementById("game-admin-link");
-        document.querySelectorAll(".signup-qr-img").forEach((img) => {
-          img.src = currentSignupQrUrl;
-        });
         if (gameAdminQrImg) gameAdminQrImg.src = qrCodeUrl(gameAdminUrl);
         if (gameAdminLink) {
           gameAdminLink.href = gameAdminUrl;
