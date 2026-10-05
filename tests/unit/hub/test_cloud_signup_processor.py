@@ -227,8 +227,15 @@ def test_claim_received_after_expiry_is_still_rejected():
 
 
 def test_received_at_in_the_future_or_malformed_falls_back_to_hub_time():
-    for bad in (NOW + 999, "soon", None, True, 1.5):
+    # Token is valid at hub time (exp > now). A bogus received_at must not
+    # change the verdict either way.
+    for i, bad in enumerate((NOW + 999, "soon", None, True, 1.5)):
         h = Harness()
         h.now = NOW + 10
-        h.tick(_late_claim(received_at=bad, cid=f"x{bad}"))
+        h.tick(_late_claim(received_at=bad, exp=NOW + 20, cid=f"ok{i}"))
+        assert len(h.registered) == 1, bad
+    for i, bad in enumerate((NOW + 999, "soon", None)):
+        h = Harness()
+        h.now = NOW + 10
+        h.tick(_late_claim(received_at=bad, exp=NOW + 5, cid=f"exp{i}"))
         assert h.registered == [], bad
