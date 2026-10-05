@@ -52,7 +52,6 @@ class RaceManager:
         # written before this feature leaves these defaults untouched.
         self._challenge_mode_enabled: bool = False
         self._challenge_duration_sec: int = 180
-        self._challenge_reset_delay_sec: int = 15
         self._idle_telemetry = IdleTelemetryTracker(now_ms=self._now_ms)
         self._settings_store = settings_store
         # Injected callable, never the registry itself (Clean Architecture:
@@ -143,14 +142,10 @@ class RaceManager:
             self._idle_live_telemetry_visible = data["idle_live_telemetry_visible"]
         if isinstance(data.get("challenge_mode_enabled"), bool):
             self._challenge_mode_enabled = data["challenge_mode_enabled"]
-        for key, attr, low, high in (
-            ("challenge_duration_sec", "_challenge_duration_sec", 10, 3600),
-            ("challenge_reset_delay_sec", "_challenge_reset_delay_sec", 0, 600),
-        ):
-            value = data.get(key)
-            if isinstance(value, int) and not isinstance(value, bool):
-                if low <= value <= high:
-                    setattr(self, attr, value)
+        duration = data.get("challenge_duration_sec")
+        if isinstance(duration, int) and not isinstance(duration, bool):
+            if 10 <= duration <= 3600:
+                self._challenge_duration_sec = duration
         config = data.get("config")
         if isinstance(config, dict):
             try:
@@ -202,7 +197,6 @@ class RaceManager:
                 "idle_live_telemetry_visible": self._idle_live_telemetry_visible,
                 "challenge_mode_enabled": self._challenge_mode_enabled,
                 "challenge_duration_sec": self._challenge_duration_sec,
-                "challenge_reset_delay_sec": self._challenge_reset_delay_sec,
                 "config": self._config.model_dump() if self._config else None,
                 "session_mode": self._session_mode,
                 "class_plan": (
@@ -338,21 +332,17 @@ class RaceManager:
         return {
             "challenge_mode_enabled": self._challenge_mode_enabled,
             "challenge_duration_sec": self._challenge_duration_sec,
-            "challenge_reset_delay_sec": self._challenge_reset_delay_sec,
         }
 
     def set_challenge_settings(
-        self, enabled: bool, duration_sec: int, reset_delay_sec: int
+        self, enabled: bool, duration_sec: int
     ) -> Dict[str, Any]:
         if self._state == RaceState.RUNNING:
             raise ValueError("Cannot change challenge mode while a race is RUNNING")
         if not 10 <= duration_sec <= 3600:
             raise ValueError("challenge duration must be 10-3600 seconds")
-        if not 0 <= reset_delay_sec <= 600:
-            raise ValueError("challenge reset delay must be 0-600 seconds")
         self._challenge_mode_enabled = bool(enabled)
         self._challenge_duration_sec = duration_sec
-        self._challenge_reset_delay_sec = reset_delay_sec
         self._persist_settings()
         return self.get_challenge_settings()
 

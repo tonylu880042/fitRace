@@ -6,6 +6,7 @@ import io
 import logging
 import subprocess
 import time
+from collections import deque
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from datetime import datetime
@@ -277,7 +278,6 @@ class IdleLiveTelemetryVisibilityPayload(BaseModel):
 class ChallengeModePayload(BaseModel):
     enabled: bool
     duration_sec: int = Field(180, ge=10, le=3600)
-    reset_delay_sec: int = Field(15, ge=0, le=600)
 
 
 class AssignStationPayload(BaseModel):
@@ -1689,9 +1689,9 @@ def apply_challenge_config() -> None:
 async def set_challenge_mode(payload: ChallengeModePayload, request: Request):
     require_admin(request)
     try:
-        race_manager.set_challenge_settings(
-            payload.enabled, payload.duration_sec, payload.reset_delay_sec
-        )
+        race_manager.set_challenge_settings(payload.enabled, payload.duration_sec)
+        if not payload.enabled:
+            challenge_pending_registrations.clear()
         if payload.enabled:
             apply_challenge_config()
         return await broadcast_race_state()
@@ -1702,10 +1702,40 @@ async def set_challenge_mode(payload: ChallengeModePayload, request: Request):
 CHALLENGE_TICK_INTERVAL_SEC = 0.5
 
 
-async def challenge_tick(now_ms_fn=lambda: int(time.time() * 1000)) -> Optional[str]:
+def station_is_open(station_number: int) -> bool:
+    """IDLE/READY and nobody registered on it yet."""
+    if race_manager.get_state() not in (RaceState.IDLE, RaceState.READY):
+        return False
+    station = race_manager.get_stations_status()["stations"].get(station_number)
+    return bool(station and not station.get("registered"))
+
+
+# LAN sign-ups submitted while the previous challenge run's result is still
+# on screen (STOPPED). They are held here -- in submission order -- and
+# registered once the scheduler has reset for them.
+challenge_pending_registrations: deque = deque()
+
+
+def drain_challenge_pending() -> int:
+    registered = 0
+    for item in list(challenge_pending_registrations):
+        if not station_is_open(item["station_number"]):
+            continue
+        challenge_pending_registrations.remove(item)
+        try:
+            race_manager.register_athlete(**item)
+            registered += 1
+        except ValueError as e:
+            logger.info("Dropping queued challenge sign-up: %s", e)
+    return registered
+
+
+async def challenge_tick() -> Optional[str]:
     """One challenge-mode scheduling pass; the decision itself is the pure
     usecase next_challenge_action(). Returns the action taken, if any."""
     settings = race_manager.get_challenge_settings()
+    if settings["challenge_mode_enabled"] and drain_challenge_pending():
+        await broadcast_race_state()
     stations = race_manager.get_stations_status()["stations"]
     action = next_challenge_action(
         enabled=settings["challenge_mode_enabled"],
@@ -1718,9 +1748,8 @@ async def challenge_tick(now_ms_fn=lambda: int(time.time() * 1000)) -> Optional[
             int(sn) for sn, station in stations.items() if station.get("registered")
         ],
         countdown_active=race_start_countdown_lock.locked(),
-        end_time_epoch_ms=race_manager.get_end_time_epoch_ms(),
-        reset_delay_sec=settings["challenge_reset_delay_sec"],
-        now_ms=now_ms_fn(),
+        pending_signups=len(challenge_pending_registrations)
+        + (cloud_signup_processor.queue_length if cloud_signup_processor else 0),
     )
     if action == "start":
         try:
@@ -1732,9 +1761,11 @@ async def challenge_tick(now_ms_fn=lambda: int(time.time() * 1000)) -> Optional[
     elif action == "reset":
         reset_race_state()
         apply_challenge_config()
+        drain_challenge_pending()
         await broadcast_race_state()
     elif action == "configure":
         apply_challenge_config()
+        drain_challenge_pending()
         await broadcast_race_state()
     return action
 
@@ -2136,12 +2167,6 @@ async def register_cloud_claim(
 def build_cloud_signup_processor(
     config: CloudSignupConfig, source: UpstashClaimSource
 ) -> CloudSignupProcessor:
-    def station_open(station_number: int) -> bool:
-        if race_manager.get_state() not in (RaceState.IDLE, RaceState.READY):
-            return False
-        station = race_manager.get_stations_status()["stations"].get(station_number)
-        return bool(station and not station.get("registered"))
-
     return CloudSignupProcessor(
         secret=config.secret,
         venue=config.venue,
@@ -2152,7 +2177,7 @@ def build_cloud_signup_processor(
             for sn, st in race_manager.get_stations_status()["stations"].items()
             if st.get("node_id")
         ],
-        station_open=station_open,
+        station_open=station_is_open,
         now_s=time.time,
     )
 
@@ -2197,6 +2222,11 @@ async def cloud_signup_loop():
 @app.post("/api/race/register")
 async def register_athlete(payload: RegisterAthletePayload):
     try:
+        queue_for_next_run = (
+            race_manager.get_state() == RaceState.STOPPED
+            and race_manager.get_session_mode() == "race"
+            and race_manager.get_challenge_settings()["challenge_mode_enabled"]
+        )
         avatar_id = None
         if payload.avatar_base64:
             try:
@@ -2207,14 +2237,20 @@ async def register_athlete(payload: RegisterAthletePayload):
                     status_code=400, detail=f"Invalid avatar image: {str(e)}"
                 )
 
-        race_manager.register_athlete(
-            payload.station_number,
-            payload.athlete_name,
+        registration = dict(
+            station_number=payload.station_number,
+            athlete_name=payload.athlete_name,
             team_name=payload.team_name,
             avatar_id=avatar_id,
             division=payload.division,
             relay_members=payload.relay_members,
         )
+        if queue_for_next_run:
+            # Challenge mode: the result screen stays up; this sign-up waits
+            # and the scheduler resets for it.
+            challenge_pending_registrations.append(registration)
+            return get_stations_status_data()
+        race_manager.register_athlete(**registration)
 
         await broadcast_registration_success(
             payload.station_number, payload.athlete_name, payload.team_name

@@ -7692,17 +7692,7 @@
       const btnConfigure = document.getElementById("btn-configure");
       const configTip = document.getElementById("config-status-tip");
       if (!btnConfigure || !configTip) {
-        if (currentState === "STOPPED") {
-          if (!autoResetInterval && !autoResetCancelled) {
-            startAutoResetCountdown();
-          }
-        } else {
-          autoResetCancelled = false;
-          if (currentState === "IDLE" || currentState === "READY") {
-            celebrationShownForRaceKey = null;
-          }
-          cancelAutoReset(false);
-        }
+        syncAutoReset(data);
         return;
       }
       if (currentState === "RUNNING") {
@@ -7719,8 +7709,16 @@
         configTip.innerText = `ℹ️ ${t("config.tip.default")}`;
       }
 
+      syncAutoReset(data);
+    }
+
+    // Challenge mode resets on the backend (when the next sign-up arrives),
+    // so the page must never run its own countdown there.
+    function syncAutoReset(data) {
       if (currentState === "STOPPED") {
-        if (!autoResetInterval && !autoResetCancelled) {
+        if (data && data.challenge_mode_enabled) {
+          cancelAutoReset(false);
+        } else if (!autoResetInterval && !autoResetCancelled) {
           startAutoResetCountdown();
         }
       } else {
