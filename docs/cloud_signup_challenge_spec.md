@@ -183,6 +183,30 @@ Hub 只做 outbound HTTPS 拉取，不開任何對外 port。
   但 `now < end + min_result_ms` → 不動作；時間到才 "reset"。沒有待報名者時行為不變（一直停在成績畫面）。
 - 時間一律用 Hub 時鐘（注入），測試不得 sleep。
 
+### R5 報名頁選站位（多台器材，2026-10-06 決策）
+- 現況缺點：大螢幕只有一個 QR，報名頁自動指派「第一個未報名站位」，多台時參加者無從選擇。
+- Token 改為**不綁站位**：簽章內容改為 `venue|exp|nonce`（移除 station），QR 網址只帶 `?v=<venue>&t=<token>`。
+  Python 與 JS 的跨語言測試向量同步更新。部署時 Hub 與 Vercel 一起更新（舊 QR 最多 300 秒失效）。
+- Hub 每次 cloud tick 在站位快照**有變化時**寫入 Upstash：`SET fitrace:stations:<venue> <json> EX 30`，
+  json 為 `[{station, label, equipment_type, available}]`；`label` 用 System Admin 的顯示名稱（無則「站位 N」），
+  `available` = 已指派且未報名、且沒有在 Hub 佇列中等待。快照建構為 usecases 純函式；寫入走 adapter（與拉取同一個 Upstash 憑證）。
+  Hub 每 20 秒至少重寫一次以續期 TTL。
+- Vercel 新增 `GET /api/stations?v=&t=`：先驗 token（簽章、未過期、未被使用），再回傳快照；快照不存在 → 回空清單。
+- 報名頁：先取站位清單，以按鈕顯示 `label + 器材`；不可用的站位顯示為停用並標示「使用中」。
+  **只有一個可用站位時自動選取**（單台跑步機不多一步）。沒有可用站位時仍可選任一已指派站位並送出，排入該站位下一輪。
+  送出 body 帶所選 `station`；所有新字串走 `cloud_signup/public/locales`。
+- Hub 端：claim 的 station 必須是已指派站位，否則丟棄；該站位已有人時**不拒絕**，照現行佇列在該站位下一輪報名（既有 `_drain` 行為）。
+
+### R6 多台時「等 N 秒後一起開跑」（2026-10-06 決策）
+- 新設定 `challenge_start_wait_sec: int = 30`（0–300，持久化；Game Admin 挑戰模式區塊加欄位，即時套用，字串走 Game Admin 既有字典）。
+- Hub 記錄本輪第一位報名時間 `challenge_first_signup_epoch_ms`（reset 時清除）。
+- `next_challenge_action` 的 "start"：READY、至少一位已報名、沒有倒數進行中，且
+  （所有已指派站位都已報名 **或** `now >= first_signup + wait_ms`）。
+- 開跑時**未報名的站位不參賽**：該輪 RUNNING 期間忽略其遙測，不出現在 leaderboard、成績存檔與總排名
+  （目前未報名站位會以「Station N」列入成績，例如測試時的「Station 1 103 m」，挑戰模式下不得再出現）。
+- race state 加 `challenge_start_at_epoch_ms`（等待中才有值）；大螢幕在等待期間顯示「N 秒後開跑，其他站位仍可報名」橫幅（字串走 hub locales）。
+- 單台時行為不變：唯一站位報名即全員到齊，立即倒數。
+
 ## 5. 驗收
 
 1. `pytest` 全綠；所有編輯過的 page JS 抽出後 `node --check` 通過；
