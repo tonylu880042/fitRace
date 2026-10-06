@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FitRace</title>
+  <style>
+    :root { --bg:#09090b; --card:#18181b; --border:#27272a; --accent:#e2ff3b; --text:#fafafa; --muted:#a1a1aa; --danger:#f43f5e; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, -apple-system, "Noto Sans TC", sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; padding: 1.25rem; display: flex; justify-content: center; }
+    main { width: 100%; max-width: 420px; background: var(--card); border: 2px solid var(--border); border-radius: 10px; padding: 1.5rem; align-self: flex-start; }
+    h1 { font-size: 1.4rem; margin-bottom: 1.25rem; }
+    label { display: block; color: var(--muted); font-size: 0.9rem; margin-bottom: 0.4rem; }
+    input[type=text] { width: 100%; padding: 0.8rem; border-radius: 6px; border: 2px solid var(--border); background: var(--bg); color: var(--text); font-size: 1.1rem; margin-bottom: 1.25rem; }
+    .photo-row { display: flex; align-items: center; gap: 0.9rem; margin-bottom: 0.4rem; }
+    #preview { width: 72px; height: 72px; border-radius: 50%; border: 2px solid var(--border); background: var(--bg) center/cover no-repeat; flex-shrink: 0; }
+    button { font: inherit; cursor: pointer; border-radius: 6px; border: 2px solid var(--border); background: transparent; color: var(--text); padding: 0.6rem 0.9rem; }
+    #confirm { width: 100%; margin-top: 1.25rem; background: var(--accent); color: #111; font-weight: 700; font-size: 1.1rem; padding: 0.9rem; border-color: var(--accent); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .note { color: var(--muted); font-size: 0.85rem; min-height: 1.2em; margin-bottom: 0.4rem; }
+    .error { color: var(--danger); font-size: 0.95rem; margin-top: 0.9rem; min-height: 1.2em; }
+    .stations { display: grid; gap: 0.5rem; margin-bottom: 0.4rem; }
+    .station-btn { text-align: left; display: flex; justify-content: space-between; gap: 0.6rem; }
+    .station-btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+    .station-busy { color: var(--muted); font-size: 0.85rem; }
+    .done { text-align: center; padding: 2rem 0; }
+    .done h2 { font-size: 1.8rem; color: var(--accent); margin-bottom: 0.6rem; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <main>
+    <form id="form" novalidate>
+      <h1 data-i18n="heading"></h1>
+      <label for="name" data-i18n="name_label"></label>
+      <input id="name" type="text" maxlength="20" autocomplete="nickname" data-i18n-placeholder="name_placeholder">
+      <label id="station-heading" data-i18n="station_heading"></label>
+      <div class="stations" id="stations"></div>
+      <p class="note" id="station-note"></p>
+      <label data-i18n="photo_label"></label>
+      <div class="photo-row">
+        <div id="preview"></div>
+        <button type="button" id="photo-btn" data-i18n="photo_choose"></button>
+        <button type="button" id="photo-remove" data-i18n="photo_remove" hidden></button>
+      </div>
+      <input id="photo" type="file" accept="image/*" hidden>
+      <p class="note" id="photo-note"></p>
+      <button type="submit" id="confirm" data-i18n="confirm"></button>
+      <p class="error" id="error" role="alert"></p>
+    </form>
+    <section class="done" id="done" hidden>
+      <h2 data-i18n="success_title"></h2>
+      <p data-i18n="success_body"></p>
+    </section>
+  </main>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const claimParams = { venue: params.get('v'), token: params.get('t') };
+    const AVATAR_MAX_SOURCE_BYTES = 8 * 1024 * 1024;
+    const AVATAR_TARGET_SIZE = 96;
+    const AVATAR_MIN_SIZE = 64;
+    const AVATAR_MAX_OUTPUT_BYTES = 32 * 1024;
+    const AVATAR_QUALITY_STEPS = [0.72, 0.64, 0.56, 0.48];
+
+    let messages = {};
+    let avatarBase64 = null;
+    let avatarProcessing = false;
+    let lastErrorKey = null;
+    let lastNoteKey = null;
+
+    function pickLocale() {
+      const lang = (navigator.language || '').toLowerCase();
+      return lang.startsWith('en') ? 'en' : 'zh-TW';
+    }
+
+    function t(key, vars) {
+      let text = messages[key] || '';
+      Object.entries(vars || {}).forEach(([name, value]) => { text = text.split(`{${name}}`).join(String(value)); });
+      return text;
+    }
+
+    let stationList = [];
+    let selectedStation = null;
+
+    function availableStations(list) {
+      return list.filter((entry) => entry.available);
+    }
+
+    // Busy stations are disabled while another is free; when none is free every
+    // assigned station stays pickable (the sign-up queues for the next round).
+    function isSelectable(list, entry) {
+      return availableStations(list).length === 0 ? true : entry.available;
+    }
+
+    // A venue with exactly one station has nothing to choose: no picker.
+    function showPicker(list) {
+      return list.length !== 1;
+    }
+
+    // One station: it is the pick. Otherwise only when exactly one is free.
+    function autoSelection(list) {
+      if (list.length === 1) return list[0].station;
+      const free = availableStations(list);
+      return free.length === 1 ? free[0].station : null;
+    }
+
+    function stationText(entry) {
+      const name = entry.label || t('station_n', { n: entry.station });
+      const equipment = entry.equipment_type ? t(`equipment_${entry.equipment_type}`) || entry.equipment_type : '';
+      return equipment ? `${name} · ${equipment}` : name;
+    }
+
+    function renderStations() {
+      const box = document.getElementById('stations');
+      box.textContent = '';
+      const picker = showPicker(stationList);
+      document.getElementById('station-heading').hidden = !picker;
+      if (!picker) {
+        const only = stationList[0];
+        document.getElementById('station-note').textContent = only.available ? '' : t('station_single_busy');
+        return;
+      }
+      stationList.forEach((entry) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'station-btn';
+        button.setAttribute('aria-pressed', String(entry.station === selectedStation));
+        button.disabled = !isSelectable(stationList, entry);
+        const label = document.createElement('span');
+        label.textContent = stationText(entry);
+        button.appendChild(label);
+        if (!entry.available) {
+          const busy = document.createElement('span');
+          busy.className = 'station-busy';
+          busy.textContent = t('station_busy');
+          button.appendChild(busy);
+        }
+        button.addEventListener('click', () => { selectedStation = entry.station; renderStations(); });
+        box.appendChild(button);
+      });
+      document.getElementById('station-note').textContent =
+        stationList.length && availableStations(stationList).length === 0 ? t('no_station_free') : '';
+    }
+
+    async function loadStations() {
+      if (!claimParams.venue || !claimParams.token) { showError('error_link'); return; }
+      try {
+        const res = await fetch(`/api/stations?v=${encodeURIComponent(claimParams.venue)}&t=${encodeURIComponent(claimParams.token)}`);
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          showError({ used: 'error_used', expired: 'error_expired' }[data.error] || 'error_link');
+          return;
+        }
+        stationList = (await res.json()).stations || [];
+        selectedStation = autoSelection(stationList);
+        renderStations();
+        if (!stationList.length) showError('error_no_stations');
+      } catch (err) {
+        showError('error_network');
+      }
+    }
+
+    function applyMessages() {
+      document.querySelectorAll('[data-i18n]').forEach((el) => { el.textContent = t(el.dataset.i18n); });
+      document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => { el.placeholder = t(el.dataset.i18nPlaceholder); });
+      document.title = t('page_title');
+      document.documentElement.lang = pickLocale();
+      renderStations();
+      showError(lastErrorKey);
+      showNote(lastNoteKey);
+    }
+
+    async function loadMessages() {
+      const locale = pickLocale();
+      try {
+        const res = await fetch(`locales/${locale}.json`);
+        if (!res.ok) throw new Error('locale');
+        messages = await res.json();
+      } catch (err) {
+        messages = {};
+      }
+      applyMessages();
+    }
+
+    function showError(key) {
+      lastErrorKey = key;
+      document.getElementById('error').textContent = key ? t(key) : '';
+    }
+
+    function showNote(key) {
+      lastNoteKey = key;
+      document.getElementById('photo-note').textContent = key ? t(key) : '';
+    }
+
+    function estimateDataUrlBytes(dataUrl) {
+      const base64Data = String(dataUrl).split(',')[1] || '';
+      const padding = base64Data.endsWith('==') ? 2 : base64Data.endsWith('=') ? 1 : 0;
+      return Math.floor((base64Data.length * 3) / 4) - padding;
+    }
+
+    function loadImage(source) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = source;
+      });
+    }
+
+    function renderAvatarWebp(img, size, quality) {
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      const sourceSize = Math.min(img.naturalWidth || img.width, img.naturalHeight || img.height);
+      const sx = ((img.naturalWidth || img.width) - sourceSize) / 2;
+      const sy = ((img.naturalHeight || img.height) - sourceSize) / 2;
+      ctx.drawImage(img, sx, sy, sourceSize, sourceSize, 0, 0, size, size);
+      // iOS Safari cannot encode WebP: its canvas silently returns a PNG.
+      // Fall back to JPEG; never send PNG.
+      const webp = canvas.toDataURL('image/webp', quality);
+      if (webp.startsWith('data:image/webp')) return webp;
+      return canvas.toDataURL('image/jpeg', quality);
+    }
+
+    async function convertAvatarSourceToWebp(source) {
+      const img = await loadImage(source);
+      let smallest = null;
+      for (const size of [AVATAR_TARGET_SIZE, 80, AVATAR_MIN_SIZE]) {
+        for (const quality of AVATAR_QUALITY_STEPS) {
+          const dataUrl = renderAvatarWebp(img, size, quality);
+          const byteSize = estimateDataUrlBytes(dataUrl);
+          if (!smallest || byteSize < smallest.byteSize) smallest = { dataUrl, byteSize };
+          if (byteSize <= AVATAR_MAX_OUTPUT_BYTES) return dataUrl;
+        }
+      }
+      if (smallest && smallest.byteSize <= AVATAR_MAX_OUTPUT_BYTES * 1.25) return smallest.dataUrl;
+      throw new Error('Compressed avatar exceeds output budget');
+    }
+
+    async function convertAvatarFileToWebp(file) {
+      if (file.size > AVATAR_MAX_SOURCE_BYTES) throw new Error('Avatar source image is too large');
+      const objectUrl = URL.createObjectURL(file);
+      try {
+        return await convertAvatarSourceToWebp(objectUrl);
+      } finally {
+        URL.revokeObjectURL(objectUrl);
+      }
+    }
+
+    function setPhoto(dataUrl) {
+      avatarBase64 = dataUrl;
+      document.getElementById('preview').style.backgroundImage = dataUrl ? `url(${dataUrl})` : '';
+      document.getElementById('photo-remove').hidden = !dataUrl;
+    }
+
+    document.getElementById('photo-btn').addEventListener('click', () => document.getElementById('photo').click());
+    document.getElementById('photo-remove').addEventListener('click', () => { setPhoto(null); showNote(null); });
+    document.getElementById('photo').addEventListener('change', async (event) => {
+      const file = event.target.files && event.target.files[0];
+      event.target.value = '';
+      if (!file) return;
+      avatarProcessing = true;
+      document.getElementById('confirm').disabled = true;
+      showNote('photo_processing');
+      try {
+        setPhoto(await convertAvatarFileToWebp(file));
+        showNote('photo_ready');
+      } catch (err) {
+        setPhoto(null);
+        showNote('photo_failed');
+      } finally {
+        avatarProcessing = false;
+        document.getElementById('confirm').disabled = false;
+      }
+    });
+
+    document.getElementById('form').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      showError(null);
+      if (avatarProcessing) return;
+      if (!claimParams.venue || !claimParams.token) { showError('error_link'); return; }
+      if (!selectedStation) { showError('error_station'); return; }
+      const name = document.getElementById('name').value.trim();
+      if (!name) { showError('error_name'); return; }
+
+      const button = document.getElementById('confirm');
+      button.disabled = true;
+      button.textContent = t('submitting');
+      try {
+        const res = await fetch('/api/claim', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...claimParams, station: selectedStation, name, avatar_base64: avatarBase64 }),
+        });
+        if (res.ok) {
+          document.getElementById('form').hidden = true;
+          document.getElementById('done').hidden = false;
+          return;
+        }
+        const data = await res.json().catch(() => ({}));
+        const errorKeys = { name: 'error_name', photo: 'error_photo', venue: 'error_link', station: 'error_link', token: 'error_link', used: 'error_used', expired: 'error_expired' };
+        showError(errorKeys[data.error] || 'error_server');
+      } catch (err) {
+        showError('error_network');
+      }
+      button.disabled = false;
+      button.textContent = t('confirm');
+    });
+
+    loadMessages().then(loadStations);
+  </script>
+</body>
+</html>

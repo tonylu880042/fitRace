@@ -1227,6 +1227,28 @@
                       <option value="false" data-i18n="option.qr_hidden">Hidden</option>
                     </select>
                   </div>
+                  <div class="field">
+                    <label for="challenge-mode-enabled" data-i18n="label.challenge_mode">Challenge Mode</label>
+                    <select id="challenge-mode-enabled" onchange="saveChallengeMode()">
+                      <option value="false" selected data-i18n="option.challenge_off">Off</option>
+                      <option value="true" data-i18n="option.challenge_on">On</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label for="challenge-duration" data-i18n="label.challenge_duration">Challenge Duration (s)</label>
+                    <input id="challenge-duration" type="number" min="10" max="3600" value="180" onchange="saveChallengeMode()">
+                  </div>
+                  <div class="field">
+                    <label for="challenge-min-result" data-i18n="label.challenge_min_result">Minimum Result Display (s)</label>
+                    <input id="challenge-min-result" type="number" min="0" max="120" value="10" onchange="saveChallengeMode()">
+                  </div>
+                  <div class="field">
+                    <label for="challenge-start-wait" data-i18n="label.challenge_start_wait">Start Window with Several Stations (s)</label>
+                    <input id="challenge-start-wait" type="number" min="0" max="300" value="30" onchange="saveChallengeMode()">
+                  </div>
+                  <div class="field">
+                    <p class="field-note show" data-i18n="text.challenge_note">When on, the race starts automatically once every station has signed up.</p>
+                  </div>
                 </div>
               </div>
 
@@ -1574,6 +1596,14 @@
         "label.signup_qr_visible": "Show Sign-up QR on Dashboard",
         "label.admin_qr_visible": "Show Game Admin QR on Dashboard",
         "label.idle_live_telemetry_visible": "Show Live Data While Idle",
+        "label.challenge_mode": "Challenge Mode",
+        "label.challenge_duration": "Challenge Duration (s)",
+        "label.challenge_min_result": "Minimum Result Display (s)",
+        "label.challenge_start_wait": "Start Window with Several Stations (s)",
+        "option.challenge_off": "Off",
+        "option.challenge_on": "On",
+        "text.challenge_note": "When on, the race starts automatically once every station has signed up.",
+        "message.challenge_saved": "Challenge mode saved.",
         "label.access_code": "Access Code",
         "panel.race_control": "Race Control",
         "panel.station_status": "Station Status",
@@ -1865,6 +1895,14 @@
       "label.signup_qr_visible": "大螢幕顯示報名 QR Code",
       "label.admin_qr_visible": "大螢幕顯示 Game Admin QR Code",
       "label.idle_live_telemetry_visible": "待機時顯示即時數據",
+      "label.challenge_mode": "挑戰模式",
+      "label.challenge_duration": "挑戰時間 (s)",
+      "label.challenge_min_result": "成績畫面最短停留 (s)",
+      "label.challenge_start_wait": "多台時等待開跑 (s)",
+      "option.challenge_off": "關閉",
+      "option.challenge_on": "開啟",
+      "text.challenge_note": "開啟後，所有站位報名完成會自動倒數開跑。",
+      "message.challenge_saved": "已儲存挑戰模式。",
       "label.access_code": "存取碼",
       "panel.race_control": "比賽控制",
       "panel.station_status": "站位狀態",
@@ -2756,6 +2794,7 @@
       $("signup-qr-visible").value = race.signup_qr_visible === false ? "false" : "true";
       $("admin-qr-visible").value = race.admin_qr_visible === false ? "false" : "true";
       $("idle-live-telemetry-visible").value = race.idle_live_telemetry_visible === false ? "false" : "true";
+      renderChallengeMode();
       $("event-start-label").textContent = race.event_start_epoch_ms
         ? t("text.event_start_since", {
             time: new Date(race.event_start_epoch_ms).toLocaleTimeString([], {
@@ -3985,6 +4024,44 @@
         setMessage("race-message", visible ? t("message.admin_qr_shown") : t("message.admin_qr_hidden"), "ok");
       } catch (error) {
         $("admin-qr-visible").value = previousValue;
+        setMessage("race-message", error.message, "error");
+      }
+    }
+
+    function renderChallengeMode() {
+      const race = state.race || {};
+      $("challenge-mode-enabled").value = race.challenge_mode_enabled ? "true" : "false";
+      $("challenge-duration").value = String(race.challenge_duration_sec || 180);
+      $("challenge-min-result").value = String(
+        Number.isInteger(race.challenge_min_result_sec) ? race.challenge_min_result_sec : 10
+      );
+      $("challenge-start-wait").value = String(
+        Number.isInteger(race.challenge_start_wait_sec) ? race.challenge_start_wait_sec : 30
+      );
+      const locked = race.state === "RUNNING";
+      $("challenge-start-wait").disabled = locked;
+      $("challenge-mode-enabled").disabled = locked;
+      $("challenge-duration").disabled = locked;
+      $("challenge-min-result").disabled = locked;
+    }
+
+    async function saveChallengeMode() {
+      try {
+        state.race = await fetchJson("/api/race/challenge", {
+          method: "POST",
+          headers: adminHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({
+            enabled: $("challenge-mode-enabled").value === "true",
+            duration_sec: parseInt($("challenge-duration").value, 10),
+            min_result_sec: parseInt($("challenge-min-result").value, 10),
+            start_wait_sec: parseInt($("challenge-start-wait").value, 10),
+          }),
+        });
+        renderRace();
+        setMessage("race-message", t("message.challenge_saved"), "ok");
+      } catch (error) {
+        // Put the controls back to what the hub still has.
+        renderChallengeMode();
         setMessage("race-message", error.message, "error");
       }
     }

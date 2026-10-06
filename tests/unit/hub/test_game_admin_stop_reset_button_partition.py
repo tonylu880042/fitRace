@@ -121,6 +121,7 @@ function updateControlGuidance() {}
 function renderReadinessPanel() {}
 function renderRoster() {}
 function syncVisibility() {}
+function renderChallengeMode() {}
 const state = {};
 """
 

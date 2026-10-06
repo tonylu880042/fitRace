@@ -155,7 +155,8 @@ def test_mixed_race_final_sprint_fires_independently_per_group():
 
 def test_mixed_race_countdown_fires_independently_per_group():
     manager = RaceManager()
-    engine = RaceEventEngine()
+    # Hub clock: 20 s into each group's own 30 s race.
+    engine = RaceEventEngine(now_ms=lambda: manager.get_start_time_epoch_ms() + 20_000)
     config = RaceConfig(
         race_type="mixed",
         groups=[

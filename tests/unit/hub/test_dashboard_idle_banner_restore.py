@@ -126,6 +126,7 @@ def _run_show_then_hide(hide_state: str, hide_data_js: str) -> dict:
         # guard does not itself refuse to show the panel.
         'let currentState = "IDLE";\n'
         'let currentSessionMode = "race";\n'
+        "let currentChallengeShowStandings = false;\n"
         "function t(key) { return key; }\n"
         "function escapeHtml(value) { return String(value); }\n"
         "function enterIdleRecordWall() {}\n"

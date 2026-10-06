@@ -110,6 +110,7 @@
   "stage.countdown": "Countdown",
   "stage.go": "3, 2, 1, Go",
   "stage.countdown_sub": "Die Zeitmessung startet bei Go. Der Ton folgt der Einstellung in Game Admin.",
+  "challenge.start_wait": "Start in {seconds} s — weitere Stationen können sich noch anmelden",
   "stage.timer_go": "LOS",
   "stage.live_race": "Rennen live",
   "stage.running_main": "{competition} — {raceType}-Rennen",

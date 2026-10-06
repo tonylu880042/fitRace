@@ -1,23 +1,54 @@
 import asyncio
 import hmac
+import json
 import os
-import base64
 import io
 import logging
 import subprocess
 import time
+from collections import deque
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, Literal, Optional
 import segno
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request
+from fastapi import (
+    FastAPI,
+    WebSocket,
+    WebSocketDisconnect,
+    HTTPException,
+    Query,
+    Request,
+)
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import RedirectResponse, Response
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from pydantic import BaseModel, Field, field_validator
 from hub_server.domain.models import RaceState, RaceConfig
 from hub_server.domain.class_models import ClassPlan
+from hub_server.adapters.upstash_claim_source import UpstashClaimSource
+from hub_server.infrastructure.cloud_signup_config import (
+    CloudSignupConfig,
+    load_cloud_signup_config,
+)
+from hub_server.usecases.avatar_retention import avatar_id_from_url, partition_avatars
+from hub_server.usecases.avatar_store import (
+    AvatarStore,
+    decode_avatar_image,
+    sniff_image_type,
+)
+from hub_server.usecases.cloud_signup import (
+    CloudSignupProcessor,
+    build_signup_fields,
+    build_station_snapshot,
+    should_publish_snapshot,
+)
+from hub_server.usecases.signup_token import SignupTokenIssuer
+from hub_server.usecases.challenge_mode import (
+    challenge_shows_standings,
+    challenge_start_at,
+    next_challenge_action,
+)
 from hub_server.usecases.race_manager import RaceManager
 from hub_server.usecases.node_registry import NodeRegistry
 from hub_server.usecases.node_display_names import (
@@ -88,14 +119,53 @@ async def periodic_update_check():
         await asyncio.sleep(UPDATE_AUTO_CHECK_INTERVAL_SEC)
 
 
+DEADLINE_TICK_INTERVAL_SEC = 0.25
+
+
+async def enforce_time_deadline_tick(
+    now_ms_fn=lambda: int(time.time() * 1000),
+) -> bool:
+    """One deadline check. The clock is injected so tests never sleep; a
+    stop goes through broadcast_race_state() so the result is persisted."""
+    now_ms = now_ms_fn()
+    # Countdown cues first: the stop below may be the very tick that crosses
+    # the last threshold. Same event shape the telemetry path broadcasts.
+    for event in race_event_engine.evaluate_clock(race_manager, now_ms):
+        await ws_manager.broadcast({"type": "race_event", "event": event})
+    if race_manager.enforce_time_deadline(now_ms):
+        await broadcast_race_state()
+        return True
+    return False
+
+
+async def time_deadline_loop():
+    while True:
+        try:
+            await enforce_time_deadline_tick()
+        except Exception:
+            logger.exception("Time deadline tick failed")
+        await asyncio.sleep(DEADLINE_TICK_INTERVAL_SEC)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    deadline_task = asyncio.create_task(time_deadline_loop())
+    challenge_task = asyncio.create_task(challenge_loop())
+    cloud_task = (
+        asyncio.create_task(cloud_signup_loop()) if cloud_signup_processor else None
+    )
     if (
         os.getenv("FITRACE_UPDATE_AUTO_CHECK", "1") != "0"
         and update_checker.manifest_url
     ):
         app.state.update_check_task = asyncio.create_task(periodic_update_check())
-    yield
+    try:
+        yield
+    finally:
+        deadline_task.cancel()
+        challenge_task.cancel()
+        if cloud_task:
+            cloud_task.cancel()
 
 
 app = FastAPI(title="FitRaceStudio Central Hub", lifespan=lifespan)
@@ -133,7 +203,17 @@ ws_manager = WebSocketManager()
 race_event_engine = RaceEventEngine()
 _race_results_path = os.getenv("FITRACE_RACE_RESULTS_PATH", "data/race_results.jsonl")
 race_result_store = RaceResultStore(_race_results_path)
-race_results_query = RaceResultsQuery(race_result_store)
+race_results_query = RaceResultsQuery(
+    race_result_store,
+    # Looked up at call time so a swapped-in store (tests) is honoured.
+    avatar_exists=lambda url: avatar_store.path_for(avatar_id_from_url(url))
+    is not None,
+)
+# Registration photos live beside the race results (the data directory),
+# never inside the program directory.
+avatar_store = AvatarStore(
+    os.getenv("FITRACE_AVATAR_DIR", str(Path(_race_results_path).parent / "avatars"))
+)
 # A finished class is persisted the same way a race is -- same store class,
 # same append-only jsonl mechanics -- but to its own file and its own env
 # var, so a class record can never mix into race results, the records wall,
@@ -218,6 +298,13 @@ class DashboardQrVisibilityPayload(BaseModel):
 
 class IdleLiveTelemetryVisibilityPayload(BaseModel):
     visible: bool
+
+
+class ChallengeModePayload(BaseModel):
+    enabled: bool
+    duration_sec: int = Field(180, ge=10, le=3600)
+    min_result_sec: int = Field(10, ge=0, le=120)
+    start_wait_sec: int = Field(30, ge=0, le=300)
 
 
 class AssignStationPayload(BaseModel):
@@ -477,28 +564,95 @@ def is_diagnostics_enabled() -> bool:
 
 
 def decode_avatar_webp(avatar_base64: str) -> bytes:
-    if "," in avatar_base64:
-        header, base64_data = avatar_base64.split(",", 1)
-        if header.strip().lower() != "data:image/webp;base64":
-            raise ValueError("Avatar must be a WebP data URL")
-    else:
-        base64_data = avatar_base64
-
-    img_data = base64.b64decode(base64_data, validate=True)
-    if not img_data:
-        raise ValueError("Empty image data")
-    if len(img_data) > MAX_AVATAR_BYTES:
-        raise ValueError("Avatar image is too large")
-    if len(img_data) < 12 or img_data[:4] != b"RIFF" or img_data[8:12] != b"WEBP":
-        raise ValueError("Avatar must be a WebP image")
-    return img_data
+    """Kept under its old name: accepts WebP or JPEG (see decode_avatar_image)."""
+    return decode_avatar_image(avatar_base64, MAX_AVATAR_BYTES)
 
 
-async def get_race_state_data() -> dict:
-    return enrich_race_state_display_names(
-        race_manager.get_state_snapshot(),
-        node_registry.list_nodes(),
+signup_token_issuer = SignupTokenIssuer()
+LAN_IP_CACHE_SEC = 30
+_lan_ip_cache: Optional[tuple[float, Optional[str]]] = None
+
+
+def lan_signup_url() -> Optional[str]:
+    """The venue-LAN sign-up page. get_real_ip() can touch DNS, and the
+    state is rebuilt on every broadcast, so cache the answer briefly."""
+    global _lan_ip_cache
+    now = time.monotonic()
+    if _lan_ip_cache is None or now - _lan_ip_cache[0] > LAN_IP_CACHE_SEC:
+        _lan_ip_cache = (now, get_real_ip())
+    ip = _lan_ip_cache[1]
+    if not ip:
+        return None
+    port = os.getenv("FITRACE_HUB_PORT", "8000")
+    return f"http://{ip}:{port}/static/signup.html"
+
+
+def current_signup_fields(now_s: Optional[float] = None) -> dict:
+    stations = race_manager.get_stations_status()["stations"]
+    config = cloud_signup_config
+    now = time.time() if now_s is None else now_s
+    exp, nonce = signup_token_issuer.current(now)
+    return build_signup_fields(
+        cloud_base_url=config.base_url if config else None,
+        secret=config.secret if config else None,
+        venue=config.venue if config else None,
+        last_success_epoch_s=(
+            cloud_claim_source.last_success_epoch_s if cloud_claim_source else None
+        ),
+        now_s=now,
+        token_exp_epoch_s=exp,
+        token_nonce=nonce,
+        issue_tokens=race_manager.get_challenge_settings()["challenge_mode_enabled"],
+        assigned=[int(sn) for sn, st in stations.items() if st.get("node_id")],
+        lan_url=lan_signup_url(),
+        queue_length=(
+            cloud_signup_processor.queue_length if cloud_signup_processor else 0
+        ),
     )
+
+
+def current_challenge_show_standings(now_ms: Optional[int] = None) -> bool:
+    settings = race_manager.get_challenge_settings()
+    stations = race_manager.get_stations_status()["stations"]
+    return challenge_shows_standings(
+        enabled=(
+            settings["challenge_mode_enabled"]
+            and race_manager.get_session_mode() == "race"
+        ),
+        state=race_manager.get_state(),
+        end_time_epoch_ms=race_manager.get_end_time_epoch_ms(),
+        now_epoch_ms=int(time.time() * 1000) if now_ms is None else now_ms,
+        min_result_ms=settings["challenge_min_result_sec"] * 1000,
+        registered_stations=[
+            int(sn) for sn, st in stations.items() if st.get("registered")
+        ],
+    )
+
+
+def current_challenge_start_at() -> Optional[int]:
+    settings = race_manager.get_challenge_settings()
+    stations = race_manager.get_stations_status()["stations"]
+    return challenge_start_at(
+        enabled=(
+            settings["challenge_mode_enabled"]
+            and race_manager.get_session_mode() == "race"
+        ),
+        state=race_manager.get_state(),
+        assigned_stations=[int(sn) for sn, st in stations.items() if st.get("node_id")],
+        registered_stations=[
+            int(sn) for sn, st in stations.items() if st.get("registered")
+        ],
+        first_signup_epoch_ms=race_manager.get_first_signup_epoch_ms(),
+        start_wait_ms=settings["challenge_start_wait_sec"] * 1000,
+    )
+
+
+async def get_race_state_data(now_ms: Optional[int] = None) -> dict:
+    snapshot = race_manager.get_state_snapshot()
+    snapshot.update(current_signup_fields())
+    snapshot["challenge_show_standings"] = current_challenge_show_standings(now_ms)
+    snapshot["challenge_start_at_epoch_ms"] = current_challenge_start_at()
+    return enrich_race_state_display_names(snapshot, node_registry.list_nodes())
 
 
 def get_stations_status_data() -> dict:
@@ -564,12 +718,57 @@ def summarize_class_record(record: Any) -> Optional[dict]:
     }
 
 
-async def broadcast_race_state():
-    state_data = await get_race_state_data()
-    race_result_store.save_finished_snapshot(state_data)
+AVATAR_KEEP_TOP_N = 10
+_avatar_prune_needed = False
+
+
+def prune_unneeded_avatars() -> int:
+    """Delete every stored photo that is neither (a) on a top-10 row of any category
+    in the current event, (b) registered for the current/next run, nor
+    (c) waiting in the challenge sign-up queue. Returns how many were removed.
+    """
+    keep: set[str] = set()
+    for row in race_results_query.get_top_rows_all_categories(
+        race_manager.get_event_start_epoch_ms(), AVATAR_KEEP_TOP_N
+    ):
+        avatar_id = avatar_id_from_url(row.get("avatar_url"))
+        if avatar_id:
+            keep.add(avatar_id)
+    keep |= race_manager.get_registered_avatar_ids()
+    keep |= {
+        item["avatar_id"]
+        for item in challenge_pending_registrations
+        if item.get("avatar_id")
+    }
+    _, doomed = partition_avatars(avatar_store.list_ids(), keep)
+    return sum(1 for avatar_id in doomed if avatar_store.delete(avatar_id))
+
+
+# (show_standings, start_at) as of the last state broadcast.
+_last_broadcast_challenge_view: Optional[tuple] = None
+
+
+async def broadcast_race_state(now_ms: Optional[int] = None):
+    global _avatar_prune_needed, _last_broadcast_challenge_view
+    state_data = await get_race_state_data(now_ms)
+    _last_broadcast_challenge_view = (
+        state_data["challenge_show_standings"],
+        state_data["challenge_start_at_epoch_ms"],
+    )
+    if race_result_store.save_finished_snapshot(state_data):
+        _avatar_prune_needed = True
+    if _avatar_prune_needed and state_data.get("state") != "RUNNING":
+        _avatar_prune_needed = False
+        try:
+            prune_unneeded_avatars()
+        except Exception:
+            logger.exception("Avatar pruning failed")
     class_result_store.save_finished_snapshot(state_data)
     ws_data = dict(state_data)
     ws_data["type"] = "state_change"
+    # Only on the live push (it changes every call): lets the display count
+    # down against the hub clock rather than its own.
+    ws_data["hub_now_epoch_ms"] = int(time.time() * 1000)
     await ws_manager.broadcast(ws_data)
     return state_data
 
@@ -1040,14 +1239,34 @@ def list_class_history(limit: int = 20):
     return {"classes": classes}
 
 
+@app.get("/api/avatars/{avatar_file}")
+def get_avatar(avatar_file: str):
+    avatar_id = (
+        avatar_file.removesuffix(".webp") if avatar_file.endswith(".webp") else ""
+    )
+    path = avatar_store.path_for(avatar_id)
+    if path is None:
+        raise HTTPException(status_code=404, detail="avatar not found")
+    # The URL is per-registration and never rewritten, so it can be cached.
+    with path.open("rb") as f:
+        media_type = sniff_image_type(f.read(12)) or "image/webp"
+    return FileResponse(
+        path,
+        media_type=media_type,
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
 @app.get("/api/results/records")
 def get_race_records():
     return race_results_query.get_records()
 
 
 @app.get("/api/results/standings")
-def get_race_standings():
-    return race_results_query.get_standings(race_manager.get_event_start_epoch_ms())
+def get_race_standings(limit: Optional[int] = Query(None, ge=1)):
+    return race_results_query.get_standings(
+        race_manager.get_event_start_epoch_ms(), limit=limit
+    )
 
 
 @app.get("/api/results/races/{result_id}")
@@ -1423,8 +1642,10 @@ def apply_race_config(config: RaceConfig) -> None:
 
 def reset_race_state() -> None:
     """Shared by POST /api/race/reset and the roster next-heat turnover."""
+    global _avatar_prune_needed
     race_manager.reset_race()
     race_event_engine.reset()
+    _avatar_prune_needed = True
 
 
 @app.post("/api/race/configure")
@@ -1524,6 +1745,27 @@ async def start_race(request: Request):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+async def run_countdown_and_start() -> dict:
+    """The 3-2-1-Go countdown followed by start_race(). Shared by the
+    countdown-start endpoint and the challenge-mode scheduler. Callers have
+    already checked READY + readiness; raises ValueError if start fails."""
+    async with race_start_countdown_lock:
+        await ws_manager.broadcast(
+            {
+                "type": "race_countdown",
+                "audio_url": RACE_START_COUNTDOWN_AUDIO_URL,
+                "duration_ms": RACE_START_COUNTDOWN_DURATION_MS,
+                "play_sound": race_manager.get_start_countdown_sound_enabled(),
+                "message": "Starting in 3, 2, 1, Go",
+            }
+        )
+        await asyncio.sleep(RACE_START_COUNTDOWN_DURATION_MS / 1000)
+        race_manager.start_race()
+        roster_manager.mark_current_heat_started()
+        race_event_engine.reset()
+        return await broadcast_race_state()
+
+
 @app.post("/api/race/countdown-start")
 async def countdown_start_race(request: Request):
     require_admin(request)
@@ -1536,24 +1778,131 @@ async def countdown_start_race(request: Request):
         )
     enforce_race_readiness()
 
-    async with race_start_countdown_lock:
-        await ws_manager.broadcast(
-            {
-                "type": "race_countdown",
-                "audio_url": RACE_START_COUNTDOWN_AUDIO_URL,
-                "duration_ms": RACE_START_COUNTDOWN_DURATION_MS,
-                "play_sound": race_manager.get_start_countdown_sound_enabled(),
-                "message": "Starting in 3, 2, 1, Go",
-            }
+    try:
+        return await run_countdown_and_start()
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+def apply_challenge_config() -> None:
+    settings = race_manager.get_challenge_settings()
+    apply_race_config(
+        RaceConfig(race_type="time", duration_sec=settings["challenge_duration_sec"])
+    )
+
+
+@app.post("/api/race/challenge")
+async def set_challenge_mode(payload: ChallengeModePayload, request: Request):
+    require_admin(request)
+    try:
+        race_manager.set_challenge_settings(
+            payload.enabled,
+            payload.duration_sec,
+            payload.min_result_sec,
+            payload.start_wait_sec,
         )
-        await asyncio.sleep(RACE_START_COUNTDOWN_DURATION_MS / 1000)
+        if not payload.enabled:
+            challenge_pending_registrations.clear()
+        if payload.enabled:
+            apply_challenge_config()
+        return await broadcast_race_state()
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+CHALLENGE_TICK_INTERVAL_SEC = 0.5
+
+
+def station_is_open(station_number: int) -> bool:
+    """IDLE/READY and nobody registered on it yet."""
+    if race_manager.get_state() not in (RaceState.IDLE, RaceState.READY):
+        return False
+    station = race_manager.get_stations_status()["stations"].get(station_number)
+    return bool(station and not station.get("registered"))
+
+
+# LAN sign-ups submitted while the previous challenge run's result is still
+# on screen (STOPPED). They are held here -- in submission order -- and
+# registered once the scheduler has reset for them.
+challenge_pending_registrations: deque = deque()
+
+
+def drain_challenge_pending() -> int:
+    registered = 0
+    for item in list(challenge_pending_registrations):
+        if not station_is_open(item["station_number"]):
+            continue
+        challenge_pending_registrations.remove(item)
         try:
-            race_manager.start_race()
-            roster_manager.mark_current_heat_started()
-            race_event_engine.reset()
-            return await broadcast_race_state()
+            race_manager.register_athlete(**item)
+            registered += 1
         except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
+            logger.info("Dropping queued challenge sign-up: %s", e)
+    return registered
+
+
+async def challenge_tick(
+    now_ms_fn=lambda: int(time.time() * 1000),
+) -> Optional[str]:
+    """One challenge-mode scheduling pass; the decision itself is the pure
+    usecase next_challenge_action(). Returns the action taken, if any."""
+    settings = race_manager.get_challenge_settings()
+    if settings["challenge_mode_enabled"] and drain_challenge_pending():
+        await broadcast_race_state()
+    now_ms = now_ms_fn()
+    stations = race_manager.get_stations_status()["stations"]
+    action = next_challenge_action(
+        enabled=settings["challenge_mode_enabled"],
+        state=race_manager.get_state(),
+        session_mode=race_manager.get_session_mode(),
+        assigned_stations=[
+            int(sn) for sn, station in stations.items() if station.get("node_id")
+        ],
+        registered_stations=[
+            int(sn) for sn, station in stations.items() if station.get("registered")
+        ],
+        countdown_active=race_start_countdown_lock.locked(),
+        pending_signups=len(challenge_pending_registrations)
+        + (cloud_signup_processor.queue_length if cloud_signup_processor else 0),
+        now_epoch_ms=now_ms,
+        end_time_epoch_ms=race_manager.get_end_time_epoch_ms(),
+        min_result_ms=settings["challenge_min_result_sec"] * 1000,
+        first_signup_epoch_ms=race_manager.get_first_signup_epoch_ms(),
+        start_wait_ms=settings["challenge_start_wait_sec"] * 1000,
+    )
+    if action == "start":
+        try:
+            enforce_race_readiness()
+            await run_countdown_and_start()
+        except (HTTPException, ValueError) as e:
+            logger.info("Challenge auto-start waiting: %s", getattr(e, "detail", e))
+            return None
+    elif action == "reset":
+        reset_race_state()
+        apply_challenge_config()
+        drain_challenge_pending()
+        await broadcast_race_state()
+    elif action == "configure":
+        apply_challenge_config()
+        drain_challenge_pending()
+        await broadcast_race_state()
+    if action != "start" and (
+        (current_challenge_show_standings(now_ms), current_challenge_start_at())
+        != (_last_broadcast_challenge_view or (False, None))
+    ):
+        # The standings screen and the start window change on the clock or on
+        # a sign-up, not on a state change.
+        await broadcast_race_state(now_ms)
+    return action
+
+
+async def challenge_loop():
+    while True:
+        try:
+            await challenge_tick()
+        except Exception:
+            logger.exception("Challenge tick failed")
+        await asyncio.sleep(CHALLENGE_TICK_INTERVAL_SEC)
 
 
 @app.post("/api/race/stop")
@@ -1909,63 +2258,148 @@ async def load_next_heat(request: Request):
     return roster_summary_response()
 
 
+async def broadcast_registration_success(
+    station_number: int, athlete_name: Optional[str], team_name: Optional[str] = None
+) -> None:
+    equipment_type = race_manager.get_station_equipment_type(station_number)
+    await ws_manager.broadcast(
+        {
+            "type": "registration_success",
+            "athlete_name": athlete_name,
+            "station_number": station_number,
+            "team_name": team_name,
+            "equipment_type": equipment_type,
+        }
+    )
+
+
+# -- cloud sign-up (outbound pull only; every variable must be set) --------
+
+cloud_signup_config: Optional[CloudSignupConfig] = load_cloud_signup_config(os.environ)
+cloud_claim_source: Optional[UpstashClaimSource] = None
+cloud_signup_processor: Optional[CloudSignupProcessor] = None
+
+
+async def register_cloud_claim(
+    station_number: int, name: str, avatar_base64: Optional[str]
+) -> None:
+    avatar_id = None
+    if avatar_base64:
+        avatar_id = avatar_store.save(decode_avatar_webp(avatar_base64))
+    race_manager.register_athlete(station_number, name, avatar_id=avatar_id)
+    await broadcast_registration_success(station_number, name)
+
+
+def build_cloud_signup_processor(
+    config: CloudSignupConfig, source: UpstashClaimSource
+) -> CloudSignupProcessor:
+    return CloudSignupProcessor(
+        secret=config.secret,
+        venue=config.venue,
+        fetch_claims=source.fetch,
+        register=register_cloud_claim,
+        assigned_stations=lambda: [
+            int(sn)
+            for sn, st in race_manager.get_stations_status()["stations"].items()
+            if st.get("node_id")
+        ],
+        station_open=station_is_open,
+        now_s=time.time,
+        on_claims_pulled=signup_token_issuer.rotate,
+    )
+
+
+if cloud_signup_config:
+    cloud_claim_source = UpstashClaimSource(
+        cloud_signup_config.upstash_url,
+        cloud_signup_config.upstash_token,
+        cloud_signup_config.venue,
+    )
+    cloud_signup_processor = build_cloud_signup_processor(
+        cloud_signup_config, cloud_claim_source
+    )
+
+CLOUD_SIGNUP_TICK_INTERVAL_SEC = 1.5
+_last_broadcast_signup_fields: Optional[dict] = None
+
+
+_last_published_stations: Optional[tuple[str, float]] = None
+
+
+async def publish_station_snapshot(now_s: float) -> None:
+    """Tell the cloud page which stations it can offer (on change, plus a
+    refresh before the key's 30 s TTL lapses)."""
+    global _last_published_stations
+    queued = set(cloud_signup_processor.queued_stations)
+    queued |= {item["station_number"] for item in challenge_pending_registrations}
+    snapshot = build_station_snapshot(get_stations_status_data()["stations"], queued)
+    encoded = json.dumps(snapshot, sort_keys=True)
+    last_json, last_at = _last_published_stations or (None, None)
+    if not should_publish_snapshot(last_json, last_at, encoded, now_s):
+        return
+    if await cloud_claim_source.publish_stations(snapshot):
+        _last_published_stations = (encoded, now_s)
+
+
+async def cloud_signup_tick(now_s_fn=time.time) -> int:
+    """Pull + register once. Rebroadcasts state when someone registered or
+    the QR-driving fields changed (token rotation, online flip, queue)."""
+    global _last_broadcast_signup_fields
+    if cloud_signup_processor is None:
+        return 0
+    registered = await cloud_signup_processor.tick()
+    await publish_station_snapshot(now_s_fn())
+    fields = current_signup_fields()
+    if registered or fields != _last_broadcast_signup_fields:
+        _last_broadcast_signup_fields = fields
+        await broadcast_race_state()
+    return registered
+
+
+async def cloud_signup_loop():
+    while True:
+        try:
+            await cloud_signup_tick()
+        except Exception:
+            logger.exception("Cloud sign-up tick failed")
+        await asyncio.sleep(CLOUD_SIGNUP_TICK_INTERVAL_SEC)
+
+
 @app.post("/api/race/register")
 async def register_athlete(payload: RegisterAthletePayload):
     try:
-        has_avatar = False
+        queue_for_next_run = (
+            race_manager.get_state() == RaceState.STOPPED
+            and race_manager.get_session_mode() == "race"
+            and race_manager.get_challenge_settings()["challenge_mode_enabled"]
+        )
+        avatar_id = None
         if payload.avatar_base64:
             try:
                 img_data = decode_avatar_webp(payload.avatar_base64)
-                avatar_dir = os.path.join(
-                    os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-                    "static",
-                    "avatars",
-                )
-                os.makedirs(avatar_dir, exist_ok=True)
-                file_path = os.path.join(
-                    avatar_dir, f"station_{payload.station_number}.webp"
-                )
-                with open(file_path, "wb") as f:
-                    f.write(img_data)
-                has_avatar = True
+                avatar_id = avatar_store.save(img_data)
             except Exception as e:
                 raise HTTPException(
                     status_code=400, detail=f"Invalid avatar image: {str(e)}"
                 )
-        else:
-            avatar_dir = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-                "static",
-                "avatars",
-            )
-            file_path = os.path.join(
-                avatar_dir, f"station_{payload.station_number}.webp"
-            )
-            if os.path.exists(file_path):
-                try:
-                    os.remove(file_path)
-                except Exception:
-                    pass
 
-        race_manager.register_athlete(
-            payload.station_number,
-            payload.athlete_name,
+        registration = dict(
+            station_number=payload.station_number,
+            athlete_name=payload.athlete_name,
             team_name=payload.team_name,
-            has_avatar=has_avatar,
+            avatar_id=avatar_id,
             division=payload.division,
             relay_members=payload.relay_members,
         )
+        if queue_for_next_run:
+            # Challenge mode: the result screen stays up; this sign-up waits
+            # and the scheduler resets for it.
+            challenge_pending_registrations.append(registration)
+            return get_stations_status_data()
+        race_manager.register_athlete(**registration)
 
-        # Broadcast registration success to the dashboard
-        equipment_type = race_manager.get_station_equipment_type(payload.station_number)
-        await ws_manager.broadcast(
-            {
-                "type": "registration_success",
-                "athlete_name": payload.athlete_name,
-                "station_number": payload.station_number,
-                "team_name": payload.team_name,
-                "equipment_type": equipment_type,
-            }
+        await broadcast_registration_success(
+            payload.station_number, payload.athlete_name, payload.team_name
         )
 
         return get_stations_status_data()

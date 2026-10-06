@@ -669,7 +669,11 @@
       const sy = ((img.naturalHeight || img.height) - sourceSize) / 2;
       ctx.drawImage(img, sx, sy, sourceSize, sourceSize, 0, 0, size, size);
 
-      return canvas.toDataURL('image/webp', quality);
+      // iOS Safari cannot encode WebP: its canvas silently returns a PNG.
+      // Fall back to JPEG; never send PNG.
+      const webp = canvas.toDataURL('image/webp', quality);
+      if (webp.startsWith('data:image/webp')) return webp;
+      return canvas.toDataURL('image/jpeg', quality);
     }
 
     async function convertAvatarSourceToWebp(source) {

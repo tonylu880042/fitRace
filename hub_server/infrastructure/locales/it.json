@@ -110,6 +110,7 @@
   "stage.countdown": "Conto alla rovescia",
   "stage.go": "3, 2, 1, Go",
   "stage.countdown_sub": "Il cronometro parte al Go. L'audio segue l'impostazione di Game Admin.",
+  "challenge.start_wait": "Si parte tra {seconds} s — le altre postazioni possono ancora iscriversi",
   "stage.timer_go": "VIA",
   "stage.live_race": "Gara in diretta",
   "stage.running_main": "{competition} — gara {raceType}",

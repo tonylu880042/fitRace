@@ -1,6 +1,6 @@
 import hashlib
 import itertools
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from hub_server.usecases.race_result_store import RaceResultStore
 
@@ -37,7 +37,14 @@ def _format_number(value: float) -> str:
 class RaceResultsQuery:
     """Read-only query layer over the append-only race results jsonl store."""
 
-    def __init__(self, store: RaceResultStore):
+    def __init__(
+        self,
+        store: RaceResultStore,
+        avatar_exists: Optional[Callable[[str], bool]] = None,
+    ):
+        # Optional so every existing caller is unchanged; when given, a
+        # standings row never carries an avatar_url whose file was pruned.
+        self._avatar_exists = avatar_exists
         self._store = store
 
     def list_races(self, limit: int = 20) -> list[dict[str, Any]]:
@@ -139,7 +146,9 @@ class RaceResultsQuery:
         return {"records": records}
 
     def get_standings(
-        self, event_start_epoch_ms: Optional[float] = None
+        self,
+        event_start_epoch_ms: Optional[float] = None,
+        limit: Optional[int] = None,
     ) -> dict[str, Any]:
         """One combined ranking across every heat of the current event.
 
@@ -165,6 +174,9 @@ class RaceResultsQuery:
         label, relay_legs) as today's heats never becomes the scope, and
         never contributes rows either. None (the default) keeps counting
         the entire history, unchanged from before this parameter existed.
+
+        `limit` (None = no truncation, the original behaviour) keeps only the
+        top N rows of each division section, for the projector's top-10 view.
         """
         empty: dict[str, Any] = {"race_type": None, "sections": [], "race_count": 0}
 
@@ -172,6 +184,42 @@ class RaceResultsQuery:
         scope = self._latest_standings_scope(records)
         if scope is None:
             return empty
+        return self._standings_in_scope(records, scope, limit)
+
+    def get_top_rows_all_categories(
+        self, event_start_epoch_ms: Optional[float] = None, limit: int = 10
+    ) -> list[dict[str, Any]]:
+        """Top `limit` rows of EVERY category stored in the current event
+        (union of one standings ranking per distinct scope), not just the
+        most recent one. Used to decide which registration photos are still
+        worth keeping, where a stray test race of another category must not
+        make the real ranking look disposable."""
+        records = self._records_since(event_start_epoch_ms)
+        scopes: list[tuple[Any, str, Any]] = []
+        for record in records:
+            config = self._record_config(record)
+            if config is None or config.get("race_type") == "mixed":
+                continue
+            label = self._category_label(config.get("race_type"), config)
+            if label is None:
+                continue
+            scope = (config.get("race_type"), label, config.get("relay_legs"))
+            if scope not in scopes:
+                scopes.append(scope)
+        rows: list[dict[str, Any]] = []
+        for scope in scopes:
+            standings = self._standings_in_scope(records, scope, limit)
+            for section in standings["sections"]:
+                rows.extend(section["rows"])
+        return rows
+
+    def _standings_in_scope(
+        self,
+        records: list[Any],
+        scope: tuple[Any, str, Any],
+        limit: Optional[int],
+    ) -> dict[str, Any]:
+        empty: dict[str, Any] = {"race_type": None, "sections": [], "race_count": 0}
         race_type, label, relay_legs = scope
 
         combined_rows: list[dict[str, Any]] = []
@@ -215,6 +263,7 @@ class RaceResultsQuery:
                     "station_number": row.get("station_number"),
                     "relay_members": row.get("relay_members"),
                     "race_start_epoch_ms": row.get("race_start_epoch_ms"),
+                    "avatar_url": self._live_avatar_url(row.get("avatar_url")),
                 }
             )
 
@@ -223,6 +272,8 @@ class RaceResultsQuery:
             sections_by_division.keys(), key=self._division_sort_key
         ):
             entries = sections_by_division[division]
+            if limit is not None:
+                entries = entries[: max(0, limit)]
             ranked_rows = [
                 {"rank": index, **entry} for index, entry in enumerate(entries, 1)
             ]
@@ -235,6 +286,11 @@ class RaceResultsQuery:
             "race_count": race_count,
             "sections": sections,
         }
+
+    def _live_avatar_url(self, avatar_url: Any) -> Any:
+        if not avatar_url or self._avatar_exists is None:
+            return avatar_url or None
+        return avatar_url if self._avatar_exists(avatar_url) else None
 
     def get_athlete_result(self, token: str) -> Optional[dict[str, Any]]:
         for summary, ranked_rows, _ in self._iter_races():

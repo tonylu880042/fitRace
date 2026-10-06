@@ -138,6 +138,7 @@ function renderReadinessPanel() {}
 function syncSessionModeControl() {}
 function syncVisibility() {}
 function renderRoster() {}
+function renderChallengeMode() {}
 """
 
 
