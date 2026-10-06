@@ -34,8 +34,8 @@ function createHandler({
     const result = validateClaimInput(parseBody(req.body));
     if (!result.ok) return res.status(400).json({ error: result.error });
 
-    const baseUrl = env.UPSTASH_REDIS_REST_URL;
-    const token = env.UPSTASH_REDIS_REST_TOKEN;
+    const baseUrl = env.UPSTASH_REDIS_REST_URL || env.KV_REST_API_URL;
+    const token = env.UPSTASH_REDIS_REST_TOKEN || env.KV_REST_API_TOKEN;
     const secret = env.FITRACE_CLOUD_SIGNUP_SECRET;
     if (!baseUrl || !token || !secret) return res.status(500).json({ error: 'server_misconfigured' });
 

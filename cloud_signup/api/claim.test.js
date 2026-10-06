@@ -31,10 +31,10 @@ function setup({ env = ENV, response, used = false } = {}) {
   const fetchImpl = async (url, init) => {
     const payload = JSON.parse(init.body);
     calls.push({ url, init, payload });
-    if (url === 'https://r.upstash.io' && payload[0] === 'SET') {
+    if (!url.endsWith('/pipeline') && payload[0] === 'SET') {
       return { ok: true, json: async () => ({ result: used ? null : 'OK' }) };
     }
-    if (url === 'https://r.upstash.io' && payload[0] === 'DEL') {
+    if (!url.endsWith('/pipeline') && payload[0] === 'DEL') {
       return { ok: true, json: async () => ({ result: 1 }) };
     }
     return response || { ok: true, json: async () => [{ result: 1 }, { result: 1 }, { result: 'OK' }] };
@@ -167,4 +167,50 @@ test('missing signing secret is a 500', async () => {
   await handler({ method: 'POST', body: body() }, res);
   assert.equal(res.code, 500);
   assert.equal(calls.length, 0);
+});
+
+const SIGNING = { FITRACE_CLOUD_SIGNUP_SECRET: SECRET };
+
+test('Vercel KV env names alone are accepted', async () => {
+  const { handler, calls } = setup({
+    env: { KV_REST_API_URL: 'https://kv.example.io', KV_REST_API_TOKEN: 'kvtok', ...SIGNING },
+  });
+  const res = fakeRes();
+  await handler({ method: 'POST', body: body() }, res);
+  assert.equal(res.code, 200);
+  assert.ok(calls.length >= 2);
+  for (const call of calls) {
+    assert.ok(call.url.startsWith('https://kv.example.io'), call.url);
+    assert.equal(call.init.headers.Authorization, 'Bearer kvtok');
+  }
+});
+
+test('UPSTASH_* names win when both sets are present', async () => {
+  const { handler, calls } = setup({
+    env: { ...ENV, KV_REST_API_URL: 'https://kv.example.io', KV_REST_API_TOKEN: 'kvtok' },
+  });
+  const res = fakeRes();
+  await handler({ method: 'POST', body: body() }, res);
+  assert.equal(res.code, 200);
+  for (const call of calls) {
+    assert.ok(call.url.startsWith('https://r.upstash.io'), call.url);
+    assert.equal(call.init.headers.Authorization, 'Bearer tok');
+  }
+});
+
+test('KV URL without any token is a 500 server_misconfigured', async () => {
+  const { handler, calls } = setup({ env: { KV_REST_API_URL: 'https://kv.example.io', ...SIGNING } });
+  const res = fakeRes();
+  await handler({ method: 'POST', body: body() }, res);
+  assert.equal(res.code, 500);
+  assert.deepEqual(res.body, { error: 'server_misconfigured' });
+  assert.equal(calls.length, 0);
+});
+
+test('no Redis configuration at all is a 500 server_misconfigured', async () => {
+  const { handler } = setup({ env: { ...SIGNING } });
+  const res = fakeRes();
+  await handler({ method: 'POST', body: body() }, res);
+  assert.equal(res.code, 500);
+  assert.deepEqual(res.body, { error: 'server_misconfigured' });
 });

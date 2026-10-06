@@ -18,7 +18,10 @@ cloud_signup/
 1. Create a Vercel project from this repo and set **Root Directory** to
    `cloud_signup/`. No build command; zero npm dependencies.
 2. Vercel Marketplace -> add **Upstash Redis** to the project. This sets
-   `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`. Also add
+   `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`, or (Marketplace
+   integration) the Sensitive `KV_REST_API_URL` and `KV_REST_API_TOKEN`; the
+   function accepts either set, `UPSTASH_*` winning if both exist. The hub
+   keeps the `UPSTASH_REDIS_REST_*` names. Also add
    `FITRACE_CLOUD_SIGNUP_SECRET` (same value as the hub).
 3. On the hub (systemd unit), set all five variables or the feature stays off:
 
