@@ -17,11 +17,16 @@ def next_challenge_action(
     now_epoch_ms: int,
     end_time_epoch_ms: Optional[int],
     min_result_ms: int,
+    first_signup_epoch_ms: Optional[int],
+    start_wait_ms: int,
 ) -> Optional[ChallengeAction]:
     """What the challenge-mode scheduler should do right now (pure).
 
-    "start":     READY, every assigned station has an athlete, and no
-                 countdown is already running.
+    "start":     READY, no countdown running, at least one athlete signed up
+                 on an assigned station, and either every assigned station
+                 has an athlete or the start window (first sign-up plus
+                 start_wait_ms) has ended. With one station that is simply
+                 "the sign-up arrived".
     "reset":     STOPPED and at least one new sign-up is waiting -- caller
                  resets and re-applies the timed config, but not before the result
                  has been on screen for min_result_ms. With nobody waiting
@@ -37,7 +42,16 @@ def next_challenge_action(
         assigned = set(assigned_stations)
         if not assigned or countdown_active:
             return None
-        return "start" if assigned <= set(registered_stations) else None
+        registered = assigned & set(registered_stations)
+        if not registered:
+            return None
+        if registered == assigned:
+            return "start"
+        window_over = (
+            first_signup_epoch_ms is not None
+            and now_epoch_ms >= first_signup_epoch_ms + start_wait_ms
+        )
+        return "start" if window_over else None
     if state == RaceState.STOPPED and pending_signups > 0:
         # The athlete who just finished gets to see their result first.
         shown_long_enough = (
@@ -74,3 +88,23 @@ def challenge_shows_standings(
     if state in (RaceState.IDLE, RaceState.READY):
         return not list(registered_stations)
     return False
+
+
+def challenge_start_at(
+    *,
+    enabled: bool,
+    state: RaceState,
+    assigned_stations: Iterable[int],
+    registered_stations: Iterable[int],
+    first_signup_epoch_ms: Optional[int],
+    start_wait_ms: int,
+) -> Optional[int]:
+    """When the pending run will start on its own, or None unless the hub is
+    actually waiting for more stations (some, but not all, signed up)."""
+    if not enabled or state != RaceState.READY or first_signup_epoch_ms is None:
+        return None
+    assigned = set(assigned_stations)
+    registered = assigned & set(registered_stations)
+    if not registered or registered == assigned:
+        return None
+    return first_signup_epoch_ms + start_wait_ms

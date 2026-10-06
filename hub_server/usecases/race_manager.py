@@ -53,6 +53,13 @@ class RaceManager:
         self._challenge_mode_enabled: bool = False
         self._challenge_duration_sec: int = 180
         self._challenge_min_result_sec: int = 10
+        self._challenge_start_wait_sec: int = 30
+        # When the first athlete signed up for the pending run (hub clock);
+        # the multi-station start window counts from here. None = nobody yet.
+        self._first_signup_epoch_ms: Optional[int] = None
+        # Challenge mode only: node_ids that take part in the RUNNING race
+        # (stations somebody signed up on). None = everyone, as always.
+        self._run_participant_nodes: Optional[set] = None
         self._idle_telemetry = IdleTelemetryTracker(now_ms=self._now_ms)
         self._settings_store = settings_store
         # Injected callable, never the registry itself (Clean Architecture:
@@ -151,6 +158,10 @@ class RaceManager:
         if isinstance(min_result, int) and not isinstance(min_result, bool):
             if 0 <= min_result <= 120:
                 self._challenge_min_result_sec = min_result
+        start_wait = data.get("challenge_start_wait_sec")
+        if isinstance(start_wait, int) and not isinstance(start_wait, bool):
+            if 0 <= start_wait <= 300:
+                self._challenge_start_wait_sec = start_wait
         config = data.get("config")
         if isinstance(config, dict):
             try:
@@ -203,6 +214,7 @@ class RaceManager:
                 "challenge_mode_enabled": self._challenge_mode_enabled,
                 "challenge_duration_sec": self._challenge_duration_sec,
                 "challenge_min_result_sec": self._challenge_min_result_sec,
+                "challenge_start_wait_sec": self._challenge_start_wait_sec,
                 "config": self._config.model_dump() if self._config else None,
                 "session_mode": self._session_mode,
                 "class_plan": (
@@ -339,20 +351,28 @@ class RaceManager:
             "challenge_mode_enabled": self._challenge_mode_enabled,
             "challenge_duration_sec": self._challenge_duration_sec,
             "challenge_min_result_sec": self._challenge_min_result_sec,
+            "challenge_start_wait_sec": self._challenge_start_wait_sec,
         }
 
     def set_challenge_settings(
-        self, enabled: bool, duration_sec: int, min_result_sec: int = 10
+        self,
+        enabled: bool,
+        duration_sec: int,
+        min_result_sec: int = 10,
+        start_wait_sec: int = 30,
     ) -> Dict[str, Any]:
         if self._state == RaceState.RUNNING:
             raise ValueError("Cannot change challenge mode while a race is RUNNING")
         if not 10 <= duration_sec <= 3600:
             raise ValueError("challenge duration must be 10-3600 seconds")
+        if not 0 <= start_wait_sec <= 300:
+            raise ValueError("challenge start wait must be 0-300 seconds")
         if not 0 <= min_result_sec <= 120:
             raise ValueError("challenge minimum result time must be 0-120 seconds")
         self._challenge_mode_enabled = bool(enabled)
         self._challenge_duration_sec = duration_sec
         self._challenge_min_result_sec = min_result_sec
+        self._challenge_start_wait_sec = start_wait_sec
         self._persist_settings()
         return self.get_challenge_settings()
 
@@ -855,6 +875,8 @@ class RaceManager:
             self._station_divisions.clear()
             self._station_relay_members.clear()
             self._station_avatar_ids.clear()
+            self._first_signup_epoch_ms = None
+            self._run_participant_nodes = None
             self._active_nodes.clear()
 
         self._config = config
@@ -882,6 +904,8 @@ class RaceManager:
             self._station_divisions.clear()
             self._station_relay_members.clear()
             self._station_avatar_ids.clear()
+            self._first_signup_epoch_ms = None
+            self._run_participant_nodes = None
             self._active_nodes.clear()
 
         self._class_plan = plan
@@ -958,6 +982,12 @@ class RaceManager:
             return {}
         return {"group_index": self._mixed_group_index(node_id)}
 
+    def _is_excluded_from_run(self, node_id: str) -> bool:
+        return (
+            self._run_participant_nodes is not None
+            and node_id not in self._run_participant_nodes
+        )
+
     def ensure_running_node_registered(self, node_id: str):
         if node_id in self.get_registered_nodes():
             return
@@ -995,6 +1025,8 @@ class RaceManager:
         if self.get_state() != RaceState.RUNNING:
             return None
 
+        if self._is_excluded_from_run(node_id):
+            return None
         self.ensure_running_node_registered(node_id)
         return self.update_telemetry(payload)
 
@@ -1040,11 +1072,16 @@ class RaceManager:
     ):
         if self._state not in (RaceState.IDLE, RaceState.READY):
             raise ValueError(f"Cannot register athletes in state {self._state}")
+        if self._first_signup_epoch_ms is None:
+            self._first_signup_epoch_ms = self._now_ms()
         self._station_registrations[station_number] = athlete_name
         self._station_teams[station_number] = team_name
         self._station_divisions[station_number] = division
         self._station_relay_members[station_number] = relay_members
         self._station_avatar_ids[station_number] = avatar_id
+
+    def get_first_signup_epoch_ms(self) -> Optional[int]:
+        return self._first_signup_epoch_ms
 
     def clear_station_registrations(self):
         """Drop every station's athlete registration -- e.g. so the roster's
@@ -1060,6 +1097,8 @@ class RaceManager:
         self._station_divisions.clear()
         self._station_relay_members.clear()
         self._station_avatar_ids.clear()
+        self._first_signup_epoch_ms = None
+        self._run_participant_nodes = None
 
     def get_stations_status(self) -> dict:
         assigned_nodes = set(self._stations.values())
@@ -1116,6 +1155,15 @@ class RaceManager:
         if self._session_mode == "class" and self._class_plan is None:
             raise ValueError("Cannot start a class without a configured plan")
         self._state = RaceState.RUNNING
+        # Challenge mode: only stations somebody signed up on take part.
+        if self._challenge_mode_enabled and self._session_mode == "race":
+            self._run_participant_nodes = {
+                self._stations[sn]
+                for sn in self._station_registrations
+                if self._stations.get(sn)
+            }
+        else:
+            self._run_participant_nodes = None
         # Release last race's frozen clock offsets -- this race re-freezes
         # each edge's offset fresh, the first time it's used.
         self._frozen_clock_offsets_ms = {}
@@ -1254,6 +1302,8 @@ class RaceManager:
         self._station_divisions.clear()
         self._station_relay_members.clear()
         self._station_avatar_ids.clear()
+        self._first_signup_epoch_ms = None
+        self._run_participant_nodes = None
         self._active_nodes.clear()
         self.reset_idle_telemetry()
         # Reset must actually stick: without this, race_settings.json still
@@ -1272,6 +1322,9 @@ class RaceManager:
 
         node_id = payload.get("node_id")
         if not node_id:
+            return self._progress
+
+        if self._is_excluded_from_run(node_id):
             return self._progress
 
         # Between the hub deadline and the next deadline tick, results are

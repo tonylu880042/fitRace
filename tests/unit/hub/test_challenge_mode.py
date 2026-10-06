@@ -29,6 +29,8 @@ def _decide(**overrides):
         now_epoch_ms=1_000_000,
         end_time_epoch_ms=0,
         min_result_ms=10_000,
+        first_signup_epoch_ms=None,
+        start_wait_ms=30_000,
     )
     inputs.update(overrides)
     return next_challenge_action(**inputs)
@@ -116,6 +118,7 @@ def test_challenge_settings_default_off_180():
         "challenge_mode_enabled": False,
         "challenge_duration_sec": 180,
         "challenge_min_result_sec": 10,
+        "challenge_start_wait_sec": 30,
     }
 
 
@@ -130,6 +133,7 @@ def test_challenge_settings_persist_across_restart(tmp_path):
         "challenge_mode_enabled": True,
         "challenge_duration_sec": 120,
         "challenge_min_result_sec": 25,
+        "challenge_start_wait_sec": 30,
     }
 
 

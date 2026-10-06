@@ -74,7 +74,7 @@ def client(monkeypatch):
         hub_app.race_manager.assign_station(sn, None)
     monkeypatch.setattr(hub_app, "RACE_START_COUNTDOWN_DURATION_MS", 0)
     monkeypatch.setattr(hub_app, "enforce_race_readiness", lambda: None)
-    monkeypatch.setattr(hub_app, "_last_broadcast_challenge_standings", None)
+    monkeypatch.setattr(hub_app, "_last_broadcast_challenge_view", None)
     yield c
     hub_app.race_manager.reset_race()
     hub_app.race_manager.set_challenge_settings(False, 180)

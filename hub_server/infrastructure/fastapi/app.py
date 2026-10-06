@@ -40,6 +40,7 @@ from hub_server.usecases.cloud_signup import CloudSignupProcessor, build_signup_
 from hub_server.usecases.signup_token import SignupTokenIssuer
 from hub_server.usecases.challenge_mode import (
     challenge_shows_standings,
+    challenge_start_at,
     next_challenge_action,
 )
 from hub_server.usecases.race_manager import RaceManager
@@ -292,6 +293,7 @@ class ChallengeModePayload(BaseModel):
     enabled: bool
     duration_sec: int = Field(180, ge=10, le=3600)
     min_result_sec: int = Field(10, ge=0, le=120)
+    start_wait_sec: int = Field(30, ge=0, le=300)
 
 
 class AssignStationPayload(BaseModel):
@@ -617,10 +619,29 @@ def current_challenge_show_standings(now_ms: Optional[int] = None) -> bool:
     )
 
 
+def current_challenge_start_at() -> Optional[int]:
+    settings = race_manager.get_challenge_settings()
+    stations = race_manager.get_stations_status()["stations"]
+    return challenge_start_at(
+        enabled=(
+            settings["challenge_mode_enabled"]
+            and race_manager.get_session_mode() == "race"
+        ),
+        state=race_manager.get_state(),
+        assigned_stations=[int(sn) for sn, st in stations.items() if st.get("node_id")],
+        registered_stations=[
+            int(sn) for sn, st in stations.items() if st.get("registered")
+        ],
+        first_signup_epoch_ms=race_manager.get_first_signup_epoch_ms(),
+        start_wait_ms=settings["challenge_start_wait_sec"] * 1000,
+    )
+
+
 async def get_race_state_data(now_ms: Optional[int] = None) -> dict:
     snapshot = race_manager.get_state_snapshot()
     snapshot.update(current_signup_fields())
     snapshot["challenge_show_standings"] = current_challenge_show_standings(now_ms)
+    snapshot["challenge_start_at_epoch_ms"] = current_challenge_start_at()
     return enrich_race_state_display_names(snapshot, node_registry.list_nodes())
 
 
@@ -713,13 +734,17 @@ def prune_unneeded_avatars() -> int:
     return sum(1 for avatar_id in doomed if avatar_store.delete(avatar_id))
 
 
-_last_broadcast_challenge_standings: Optional[bool] = None
+# (show_standings, start_at) as of the last state broadcast.
+_last_broadcast_challenge_view: Optional[tuple] = None
 
 
 async def broadcast_race_state(now_ms: Optional[int] = None):
-    global _avatar_prune_needed, _last_broadcast_challenge_standings
+    global _avatar_prune_needed, _last_broadcast_challenge_view
     state_data = await get_race_state_data(now_ms)
-    _last_broadcast_challenge_standings = state_data["challenge_show_standings"]
+    _last_broadcast_challenge_view = (
+        state_data["challenge_show_standings"],
+        state_data["challenge_start_at_epoch_ms"],
+    )
     if race_result_store.save_finished_snapshot(state_data):
         _avatar_prune_needed = True
     if _avatar_prune_needed and state_data.get("state") != "RUNNING":
@@ -1758,7 +1783,10 @@ async def set_challenge_mode(payload: ChallengeModePayload, request: Request):
     require_admin(request)
     try:
         race_manager.set_challenge_settings(
-            payload.enabled, payload.duration_sec, payload.min_result_sec
+            payload.enabled,
+            payload.duration_sec,
+            payload.min_result_sec,
+            payload.start_wait_sec,
         )
         if not payload.enabled:
             challenge_pending_registrations.clear()
@@ -1826,6 +1854,8 @@ async def challenge_tick(
         now_epoch_ms=now_ms,
         end_time_epoch_ms=race_manager.get_end_time_epoch_ms(),
         min_result_ms=settings["challenge_min_result_sec"] * 1000,
+        first_signup_epoch_ms=race_manager.get_first_signup_epoch_ms(),
+        start_wait_ms=settings["challenge_start_wait_sec"] * 1000,
     )
     if action == "start":
         try:
@@ -1844,10 +1874,11 @@ async def challenge_tick(
         drain_challenge_pending()
         await broadcast_race_state()
     if action != "start" and (
-        current_challenge_show_standings(now_ms)
-        != bool(_last_broadcast_challenge_standings)
+        (current_challenge_show_standings(now_ms), current_challenge_start_at())
+        != (_last_broadcast_challenge_view or (False, None))
     ):
-        # The standings screen flips on the clock, not on a state change.
+        # The standings screen and the start window change on the clock or on
+        # a sign-up, not on a state change.
         await broadcast_race_state(now_ms)
     return action
 
