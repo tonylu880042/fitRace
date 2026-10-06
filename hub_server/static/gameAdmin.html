@@ -1198,6 +1198,10 @@
                     <input id="challenge-min-result" type="number" min="0" max="120" value="10" onchange="saveChallengeMode()">
                   </div>
                   <div class="field">
+                    <label for="challenge-start-wait" data-i18n="label.challenge_start_wait">Start Window with Several Stations (s)</label>
+                    <input id="challenge-start-wait" type="number" min="0" max="300" value="30" onchange="saveChallengeMode()">
+                  </div>
+                  <div class="field">
                     <p class="field-note show" data-i18n="text.challenge_note">When on, the race starts automatically once every station has signed up.</p>
                   </div>
                 </div>
@@ -1545,6 +1549,7 @@
         "label.challenge_mode": "Challenge Mode",
         "label.challenge_duration": "Challenge Duration (s)",
         "label.challenge_min_result": "Minimum Result Display (s)",
+        "label.challenge_start_wait": "Start Window with Several Stations (s)",
         "option.challenge_off": "Off",
         "option.challenge_on": "On",
         "text.challenge_note": "When on, the race starts automatically once every station has signed up.",
@@ -1844,6 +1849,7 @@
       "label.challenge_mode": "挑戰模式",
       "label.challenge_duration": "挑戰時間 (s)",
       "label.challenge_min_result": "成績畫面最短停留 (s)",
+      "label.challenge_start_wait": "多台時等待開跑 (s)",
       "option.challenge_off": "關閉",
       "option.challenge_on": "開啟",
       "text.challenge_note": "開啟後，所有站位報名完成會自動倒數開跑。",
@@ -3927,7 +3933,11 @@
       $("challenge-min-result").value = String(
         Number.isInteger(race.challenge_min_result_sec) ? race.challenge_min_result_sec : 10
       );
+      $("challenge-start-wait").value = String(
+        Number.isInteger(race.challenge_start_wait_sec) ? race.challenge_start_wait_sec : 30
+      );
       const locked = race.state === "RUNNING";
+      $("challenge-start-wait").disabled = locked;
       $("challenge-mode-enabled").disabled = locked;
       $("challenge-duration").disabled = locked;
       $("challenge-min-result").disabled = locked;
@@ -3942,6 +3952,7 @@
             enabled: $("challenge-mode-enabled").value === "true",
             duration_sec: parseInt($("challenge-duration").value, 10),
             min_result_sec: parseInt($("challenge-min-result").value, 10),
+            start_wait_sec: parseInt($("challenge-start-wait").value, 10),
           }),
         });
         renderRace();
