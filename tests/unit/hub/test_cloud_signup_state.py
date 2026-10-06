@@ -126,6 +126,9 @@ class FakeSource:
         out, self.claims = self.claims, []
         return out
 
+    async def publish_stations(self, snapshot):
+        return True
+
 
 @pytest.fixture
 def client(monkeypatch):

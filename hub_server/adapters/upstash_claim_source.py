@@ -9,6 +9,7 @@ logger = logging.getLogger("hub_server.upstash_claim_source")
 
 TIMEOUT_SEC = 5
 POP_COUNT = "10"
+STATIONS_TTL_SEC = 30
 
 
 def _urllib_post_json(url: str, headers: dict, body: Any, timeout: float) -> Any:
@@ -39,6 +40,7 @@ class UpstashClaimSource:
     ):
         self._base_url = base_url
         self._token = token
+        self._venue = venue
         self._key = f"fitrace:claims:{venue}"
         self._post_json = post_json
         self._now_s = now_s
@@ -73,3 +75,28 @@ class UpstashClaimSource:
             if isinstance(parsed, dict):
                 claims.append(parsed)
         return claims
+
+    async def publish_stations(self, snapshot: list) -> bool:
+        return await asyncio.to_thread(self._publish_sync, snapshot)
+
+    def _publish_sync(self, snapshot: list) -> bool:
+        try:
+            response = self._post_json(
+                self._base_url,
+                {"Authorization": f"Bearer {self._token}"},
+                [
+                    "SET",
+                    f"fitrace:stations:{self._venue}",
+                    json.dumps(snapshot, separators=(",", ":"), ensure_ascii=False),
+                    "EX",
+                    str(STATIONS_TTL_SEC),
+                ],
+                TIMEOUT_SEC,
+            )
+            if not isinstance(response, dict) or "error" in response:
+                raise ValueError("Upstash returned an error response")
+        except Exception as exc:
+            self.last_failure_epoch_s = self._now_s()
+            logger.warning("Station snapshot publish failed: %s", exc)
+            return False
+        return True

@@ -11,6 +11,49 @@ MAX_CLOUD_NAME_LENGTH = 20
 _SEEN_IDS_LIMIT = 1000
 
 
+SNAPSHOT_REFRESH_SEC = 20
+
+
+def build_station_snapshot(
+    stations: dict, queued_stations: Iterable[int]
+) -> list[dict[str, Any]]:
+    """What the cloud sign-up page may offer: every ASSIGNED station, with
+    whether someone can still take it (nobody registered, nobody queued).
+    label is the operator's display name, or None (the page then says
+    "Station N" in its own language)."""
+    queued = set(queued_stations)
+    rows: list[dict[str, Any]] = []
+    for number in sorted(stations, key=int):
+        station = stations[number]
+        node_id = station.get("node_id")
+        if not node_id:
+            continue
+        label = station.get("node_display_name")
+        rows.append(
+            {
+                "station": int(number),
+                "label": label if label and label != node_id else None,
+                "equipment_type": station.get("equipment_type"),
+                "available": not station.get("registered")
+                and int(number) not in queued,
+            }
+        )
+    return rows
+
+
+def should_publish_snapshot(
+    last_json: Optional[str],
+    last_published_s: Optional[float],
+    new_json: str,
+    now_s: float,
+) -> bool:
+    """Write on change, and at least every SNAPSHOT_REFRESH_SEC so the key's
+    30 s TTL never lapses while the hub is up."""
+    if last_json is None or last_published_s is None or new_json != last_json:
+        return True
+    return now_s - last_published_s >= SNAPSHOT_REFRESH_SEC
+
+
 def build_cloud_signup_url(base_url: str, venue: str, token: str) -> str:
     query = urlencode({"v": venue, "t": token})
     separator = "&" if "?" in base_url else "?"
@@ -51,6 +94,10 @@ class CloudSignupProcessor:
     @property
     def queue_length(self) -> int:
         return len(self._queue)
+
+    @property
+    def queued_stations(self) -> set[int]:
+        return {item["station"] for item in self._queue}
 
     async def tick(self) -> int:
         """One pull + drain pass. Returns how many athletes were registered."""

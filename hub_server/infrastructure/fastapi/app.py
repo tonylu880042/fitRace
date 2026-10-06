@@ -1,5 +1,6 @@
 import asyncio
 import hmac
+import json
 import os
 import io
 import logging
@@ -36,7 +37,12 @@ from hub_server.usecases.avatar_store import (
     decode_avatar_image,
     sniff_image_type,
 )
-from hub_server.usecases.cloud_signup import CloudSignupProcessor, build_signup_fields
+from hub_server.usecases.cloud_signup import (
+    CloudSignupProcessor,
+    build_signup_fields,
+    build_station_snapshot,
+    should_publish_snapshot,
+)
 from hub_server.usecases.signup_token import SignupTokenIssuer
 from hub_server.usecases.challenge_mode import (
     challenge_shows_standings,
@@ -2312,13 +2318,32 @@ CLOUD_SIGNUP_TICK_INTERVAL_SEC = 1.5
 _last_broadcast_signup_fields: Optional[dict] = None
 
 
-async def cloud_signup_tick() -> int:
+_last_published_stations: Optional[tuple[str, float]] = None
+
+
+async def publish_station_snapshot(now_s: float) -> None:
+    """Tell the cloud page which stations it can offer (on change, plus a
+    refresh before the key's 30 s TTL lapses)."""
+    global _last_published_stations
+    queued = set(cloud_signup_processor.queued_stations)
+    queued |= {item["station_number"] for item in challenge_pending_registrations}
+    snapshot = build_station_snapshot(get_stations_status_data()["stations"], queued)
+    encoded = json.dumps(snapshot, sort_keys=True)
+    last_json, last_at = _last_published_stations or (None, None)
+    if not should_publish_snapshot(last_json, last_at, encoded, now_s):
+        return
+    if await cloud_claim_source.publish_stations(snapshot):
+        _last_published_stations = (encoded, now_s)
+
+
+async def cloud_signup_tick(now_s_fn=time.time) -> int:
     """Pull + register once. Rebroadcasts state when someone registered or
     the QR-driving fields changed (token rotation, online flip, queue)."""
     global _last_broadcast_signup_fields
     if cloud_signup_processor is None:
         return 0
     registered = await cloud_signup_processor.tick()
+    await publish_station_snapshot(now_s_fn())
     fields = current_signup_fields()
     if registered or fields != _last_broadcast_signup_fields:
         _last_broadcast_signup_fields = fields
