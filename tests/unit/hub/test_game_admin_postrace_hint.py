@@ -119,6 +119,7 @@ function el(id) {
 }
 function $(id) { return el(id); }
 function escapeHtml(value) { return String(value ?? ""); }
+function syncVisibility() {}
 function t(key, params = {}) {
   const table = {
     "text.postrace_hint_next_heat": "Heat results saved. Next: press Next Heat Up.",

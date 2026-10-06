@@ -387,3 +387,67 @@ def test_switch_to_race_mode_field_markup_wraps_button_and_note():
     assert tree.by_id["switch-to-race-mode-note"].inside(
         id_="switch-to-race-mode-field"
     )
+
+
+# ---------------------------------------------------------------------------
+# R5 -- heat/queue blocks appear only once the roster has entries
+# ---------------------------------------------------------------------------
+
+_ROSTER_BLOCKS = [
+    "roster-current-heat-block",
+    "roster-next-heat-block",
+    "roster-heat-actions",
+    "roster-pending-block",
+    "roster-done-block",
+    "roster-absent-block",
+]
+
+
+def _run_roster_visibility(counts_js: str) -> list:
+    src = _stripped_script()
+    fns = "\n".join(
+        _extract_function(src, n) for n in ("disclosureState", "syncVisibility")
+    )
+    script = _STUB + fns + f"""
+state.roster = {{ counts: {counts_js} }};
+$("competition-mode").value = "individual";
+syncVisibility();
+console.log(JSON.stringify({json.dumps(_ROSTER_BLOCKS)}.map((id) => $(id).hidden)));
+"""
+    return json.loads(_run_node(script))
+
+
+def test_empty_roster_hides_every_heat_and_queue_block():
+    hidden = _run_roster_visibility("{ pending: 0, loaded: 0, done: 0, absent: 0 }")
+    assert hidden == [True] * len(_ROSTER_BLOCKS)
+
+
+def test_any_roster_entry_shows_every_heat_and_queue_block():
+    for counts in (
+        "{ pending: 1, loaded: 0, done: 0, absent: 0 }",
+        "{ pending: 0, loaded: 1, done: 0, absent: 0 }",
+        "{ pending: 0, loaded: 0, done: 1, absent: 0 }",
+        "{ pending: 0, loaded: 0, done: 0, absent: 1 }",
+    ):
+        assert _run_roster_visibility(counts) == [False] * len(_ROSTER_BLOCKS), counts
+
+
+def test_roster_blocks_exist_in_roster_panel_and_walk_in_and_toolbar_do_not_hide():
+    tree = _tree()
+    for block_id in _ROSTER_BLOCKS:
+        assert tree.by_id[block_id].inside(tag="section"), block_id
+    assert tree.by_id["roster-current-heat"].inside(id_="roster-current-heat-block")
+    assert tree.by_id["roster-next-heat"].inside(id_="roster-next-heat-block")
+    assert tree.by_id["btn-load-next-heat"].inside(id_="roster-heat-actions")
+    assert tree.by_id["roster-pending-list"].inside(id_="roster-pending-block")
+    assert tree.by_id["roster-done-list"].inside(id_="roster-done-block")
+    assert tree.by_id["roster-absent-list"].inside(id_="roster-absent-block")
+    # Always-visible: walk-in registration, import toolbar, roster status.
+    for always in ("walk-in-name", "roster-file-input", "roster-counts"):
+        node = tree.by_id[always]
+        for block_id in _ROSTER_BLOCKS:
+            assert not node.inside(id_=block_id), (always, block_id)
+
+
+def test_render_roster_re_syncs_visibility_after_every_roster_change():
+    assert "syncVisibility()" in _extract_function(_stripped_script(), "renderRoster")

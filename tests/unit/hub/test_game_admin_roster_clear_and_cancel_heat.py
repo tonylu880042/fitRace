@@ -138,6 +138,7 @@ function el(id) {
 function $(id) { return el(id); }
 function escapeHtml(value) { return String(value ?? ""); }
 let currentLocale = "zh-TW";
+function syncVisibility() {}
 function t(key, params = {}) {
   const paramText = Object.keys(params).length ? ` ${JSON.stringify(params)}` : "";
   return `${key}${paramText}`;
