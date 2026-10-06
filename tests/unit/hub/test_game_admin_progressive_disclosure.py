@@ -224,7 +224,8 @@ _FIELDS = ["relay-legs-field", "team-scoring-field", "team-completion-field"]
 def _run_sync(competition_mode: str) -> dict:
     src = _stripped_script()
     fns = "\n".join(
-        _extract_function(src, n) for n in ("disclosureState", "syncVisibility")
+        _extract_function(src, n)
+        for n in ("rulesOpenAfterTransition", "disclosureState", "syncVisibility")
     )
     script = _STUB + fns + f"""
 $("competition-mode").value = {json.dumps(competition_mode)};
@@ -295,6 +296,7 @@ def _configure_payload(toggle: bool) -> dict:
     src = _stripped_script()
     fns = "\n".join(
         [
+            _extract_function(src, "rulesOpenAfterTransition"),
             _extract_function(src, "disclosureState"),
             _extract_function(src, "syncVisibility"),
             _extract_function(src, "isRelayCompetitionMode"),
@@ -355,7 +357,8 @@ def test_toggling_competition_keeps_team_values_and_payload_unchanged():
 def _run_sync_with_state(state_js: str, extra: str = "") -> dict:
     src = _stripped_script()
     fns = "\n".join(
-        _extract_function(src, n) for n in ("disclosureState", "syncVisibility")
+        _extract_function(src, n)
+        for n in ("rulesOpenAfterTransition", "disclosureState", "syncVisibility")
     )
     script = _STUB + fns + f"""
 Object.assign(state, {state_js});
@@ -406,7 +409,8 @@ _ROSTER_BLOCKS = [
 def _run_roster_visibility(counts_js: str) -> list:
     src = _stripped_script()
     fns = "\n".join(
-        _extract_function(src, n) for n in ("disclosureState", "syncVisibility")
+        _extract_function(src, n)
+        for n in ("rulesOpenAfterTransition", "disclosureState", "syncVisibility")
     )
     script = _STUB + fns + f"""
 state.roster = {{ counts: {counts_js} }};
@@ -451,3 +455,96 @@ def test_roster_blocks_exist_in_roster_panel_and_walk_in_and_toolbar_do_not_hide
 
 def test_render_roster_re_syncs_visibility_after_every_roster_change():
     assert "syncVisibility()" in _extract_function(_stripped_script(), "renderRoster")
+
+
+# ---------------------------------------------------------------------------
+# R7 -- Race Rules collapses on the transition into RUNNING, only then
+# ---------------------------------------------------------------------------
+
+
+def _run_rules_sequence(steps: list) -> list:
+    """steps: list of {"state": ..., "manualOpen": bool|None}. Before each
+    syncVisibility() tick the operator may toggle the <details> by hand
+    (manualOpen). Returns details.open after every tick."""
+    src = _stripped_script()
+    fns = "\n".join(
+        _extract_function(src, n)
+        for n in ("rulesOpenAfterTransition", "disclosureState", "syncVisibility")
+    )
+    script = _STUB + fns + f"""
+$("competition-mode").value = "individual";
+$("rules-details").open = true;
+const out = [];
+for (const step of {json.dumps(steps)}) {{
+  state.race = {{ session_mode: "race", state: step.state }};
+  if (step.manualOpen !== null) $("rules-details").open = step.manualOpen;
+  syncVisibility();
+  out.push($("rules-details").open);
+}}
+console.log(JSON.stringify(out));
+"""
+    return json.loads(_run_node(script))
+
+
+def _step(state, manual=None):
+    return {"state": state, "manualOpen": manual}
+
+
+def test_rules_details_collapses_on_transition_into_running():
+    assert _run_rules_sequence([_step("IDLE"), _step("READY"), _step("RUNNING")]) == [
+        True,
+        True,
+        False,
+    ]
+
+
+def test_rules_details_reopens_on_transition_out_of_running():
+    out = _run_rules_sequence([_step("READY"), _step("RUNNING"), _step("STOPPED")])
+    assert out == [True, False, True]
+
+
+def test_manual_toggle_during_running_is_not_overridden_by_later_ticks():
+    out = _run_rules_sequence(
+        [_step("READY"), _step("RUNNING"), _step("RUNNING", True), _step("RUNNING")]
+    )
+    assert out == [True, False, True, True]
+
+
+def test_manual_close_while_not_running_is_not_overridden():
+    out = _run_rules_sequence([_step("IDLE"), _step("IDLE", False), _step("IDLE")])
+    assert out == [True, False, False]
+
+
+def test_rules_open_after_transition_pure_truth_table():
+    fn = _extract_function(_stripped_script(), "rulesOpenAfterTransition")
+    script = fn + """
+const cases = [
+  ["READY", "RUNNING", true], ["RUNNING", "RUNNING", true],
+  ["RUNNING", "STOPPED", false], ["STOPPED", "STOPPED", false],
+  [null, "RUNNING", true], [null, "IDLE", false],
+];
+console.log(JSON.stringify(cases.map(([p, n, o]) => rulesOpenAfterTransition(p, n, o))));
+"""
+    assert json.loads(_run_node(script)) == [False, True, True, False, False, False]
+
+
+def test_rules_details_markup_wraps_body_with_title_as_summary():
+    tree = _tree()
+    details = tree.by_id["rules-details"]
+    assert details.tag == "details"
+    assert "open" in details.attrs
+    assert details.inside(id_="rules-block")
+    summary = next(c for c in details.children if c.tag == "summary")
+    assert any(
+        c.tag == "h3" and c.attrs.get("data-i18n") == "panel.race_rules"
+        for c in summary.children
+    )
+    for field_id in (
+        "race-type",
+        "competition-mode",
+        "team-scoring-field",
+        "race-target",
+        "race-groups-field",
+    ):
+        assert tree.by_id[field_id].inside(tag="details", id_="rules-details"), field_id
+    assert tree.by_id["rules-dirty-badge"].inside(tag="summary")

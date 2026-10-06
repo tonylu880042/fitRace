@@ -274,7 +274,9 @@ def _run_sync_competition_fields_relay(competition_mode: str, race_type: str) ->
     completion_field_state_fn = _extract_function(source, "completionFieldState")
     race_rule_note_key_fn = _extract_function(source, "raceRuleNoteKey")
     sync_competition_fields_fn = _extract_function(source, "syncCompetitionFields")
-    disclosure_state_fn = _extract_function(source, "disclosureState")
+    disclosure_state_fn = _extract_function(
+        source, "rulesOpenAfterTransition"
+    ) + _extract_function(source, "disclosureState")
     sync_visibility_fn = _extract_function(source, "syncVisibility")
     script = (
         "const mockElements = {};\n"

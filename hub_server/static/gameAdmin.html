@@ -604,6 +604,19 @@
       display: none;
     }
 
+    #rules-details > summary {
+      cursor: pointer;
+      list-style: none;
+    }
+
+    #rules-details > summary::-webkit-details-marker {
+      display: none;
+    }
+
+    #rules-details[open] > summary {
+      margin-bottom: 12px;
+    }
+
     .guidance-card[hidden],
     .control-block[hidden],
     .action-bar[hidden] {
@@ -1084,10 +1097,11 @@
           <div class="race-control-grid">
             <div class="race-control-left">
               <div class="control-block" id="rules-block">
-                <div class="control-block-header">
+                <details id="rules-details" open>
+                <summary class="control-block-header">
                   <h3 class="control-block-title" data-i18n="panel.race_rules">Race Rules</h3>
                   <span class="badge-dirty" id="rules-dirty-badge" data-i18n="badge.unsaved_changes">Unsaved Changes</span>
-                </div>
+                </summary>
                 <div class="grid-2">
                   <div class="field">
                     <label for="race-type" data-i18n="label.race_type">Race Type</label>
@@ -1139,6 +1153,7 @@
                     <button type="button" id="btn-add-race-group" onclick="addRaceGroup()" data-i18n="button.add_race_group">Add Group</button>
                   </div>
                 </div>
+                </details>
               </div>
 
               <div class="control-block" id="live-block">
@@ -2504,17 +2519,31 @@
       };
     }
 
+    // Race Rules folds away when a race starts and unfolds when it ends, but
+    // only on the transition itself: while the state is unchanged the
+    // operator's own toggle of the <details> is left alone.
+    function rulesOpenAfterTransition(prevState, nextState, currentOpen) {
+      if (prevState === nextState) return currentOpen;
+      if (nextState === "RUNNING") return false;
+      if (prevState === "RUNNING") return true;
+      return currentOpen;
+    }
+
     function syncVisibility() {
       const counts = (state.roster && state.roster.counts) || {};
       const rosterTotal = (counts.pending || 0) + (counts.loaded || 0)
         + (counts.done || 0) + (counts.absent || 0);
+      const raceState = state.race?.state || "IDLE";
       const visible = disclosureState({
         competitionMode: $("competition-mode").value,
         challengeModeOn: false,
         sessionMode: state.race?.session_mode,
-        raceState: state.race?.state || "IDLE",
+        raceState,
         hasRoster: rosterTotal > 0,
       });
+      const rulesDetails = $("rules-details");
+      rulesDetails.open = rulesOpenAfterTransition(state.rulesPrevRaceState, raceState, rulesDetails.open);
+      state.rulesPrevRaceState = raceState;
       $("relay-legs-field").classList.toggle("field-collapsed", !visible.relayLegs);
       $("team-scoring-field").classList.toggle("field-collapsed", !visible.teamScoring);
       $("team-completion-field").classList.toggle("field-collapsed", !visible.teamCompletion);
