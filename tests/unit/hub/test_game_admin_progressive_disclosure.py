@@ -548,3 +548,57 @@ def test_rules_details_markup_wraps_body_with_title_as_summary():
     ):
         assert tree.by_id[field_id].inside(tag="details", id_="rules-details"), field_id
     assert tree.by_id["rules-dirty-badge"].inside(tag="summary")
+
+
+# ---------------------------------------------------------------------------
+# R8.5 -- destructive roster actions live in a closed "Advanced" details
+# ---------------------------------------------------------------------------
+
+
+def _element_children(node):
+    return [c for c in node.children if c.tag]
+
+
+def test_roster_advanced_is_a_closed_details_with_i18n_summary():
+    tree = _tree()
+    details = tree.by_id["roster-advanced"]
+    assert details.tag == "details"
+    assert "open" not in details.attrs
+    summary = next(c for c in details.children if c.tag == "summary")
+    assert summary.attrs.get("data-i18n") == "panel.advanced"
+
+
+def test_clear_buttons_moved_out_of_toolbar_into_roster_advanced():
+    tree = _tree()
+    for button_id in ("btn-clear-results", "btn-clear-roster"):
+        button = tree.by_id[button_id]
+        assert button.inside(tag="details", id_="roster-advanced"), button_id
+        assert not button.inside(id_="roster-toolbar"), button_id
+    # Import / template / export stay in the toolbar.
+    for button_id in (
+        "btn-download-roster-template",
+        "roster-file-input",
+        "btn-download-results-csv",
+    ):
+        assert tree.by_id[button_id].inside(id_="roster-toolbar"), button_id
+
+
+def test_roster_advanced_is_the_last_block_of_the_roster_panel():
+    tree = _tree()
+    details = tree.by_id["roster-advanced"]
+    section = details.parent
+    assert section.tag == "section"
+    assert _element_children(section)[-1] is details
+
+
+def test_clear_modals_ids_and_handlers_unchanged():
+    tree = _tree()
+    assert tree.by_id["btn-clear-results"].attrs["onclick"] == "openClearResultsModal()"
+    assert tree.by_id["btn-clear-roster"].attrs["onclick"] == "openClearRosterModal()"
+    assert "clear-results-modal" in tree.by_id
+    assert "clear-roster-modal" in tree.by_id
+
+
+def test_panel_advanced_key_in_both_dictionaries():
+    source = _read()
+    assert source.count('"panel.advanced":') == 2

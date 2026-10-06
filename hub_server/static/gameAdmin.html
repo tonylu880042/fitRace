@@ -617,6 +617,17 @@
       margin-bottom: 12px;
     }
 
+    .advanced-details {
+      margin-top: 14px;
+    }
+
+    .advanced-details > summary {
+      cursor: pointer;
+      color: var(--muted, inherit);
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
     .guidance-card[hidden],
     .control-block[hidden],
     .action-bar[hidden] {
@@ -1275,8 +1286,6 @@
               <label for="roster-file-input" class="file-input-label" data-i18n="button.import_roster">Import Roster</label>
               <input type="file" id="roster-file-input" class="visually-hidden-input" accept=".csv,text/csv" onchange="handleRosterFileSelected(event)">
               <button type="button" id="btn-download-results-csv" onclick="downloadResultsCsv()" data-i18n="button.download_results_csv">Download Results (CSV)</button>
-              <button type="button" class="danger" id="btn-clear-results" onclick="openClearResultsModal()" data-i18n="button.clear_results">Clear All Past Results</button>
-              <button type="button" class="danger" id="btn-clear-roster" onclick="openClearRosterModal()" data-i18n="button.clear_roster">Clear Roster</button>
             </div>
           </div>
           <div class="status-text" id="roster-import-message"></div>
@@ -1349,6 +1358,14 @@
               <button type="button" class="primary" onclick="addWalkIn()" data-i18n="button.add_walk_in">Add</button>
             </div>
           </div>
+
+          <details id="roster-advanced" class="advanced-details">
+            <summary data-i18n="panel.advanced">Advanced</summary>
+            <div class="button-group">
+              <button type="button" class="danger" id="btn-clear-results" onclick="openClearResultsModal()" data-i18n="button.clear_results">Clear All Past Results</button>
+              <button type="button" class="danger" id="btn-clear-roster" onclick="openClearRosterModal()" data-i18n="button.clear_roster">Clear Roster</button>
+            </div>
+          </details>
         </section>
 
         <section class="panel" aria-labelledby="station-title">
@@ -1664,6 +1681,7 @@
         "check.groups": "Equipment Groups",
         "panel.race_rules": "Race Rules",
         "panel.live_presentation": "Live Presentation",
+        "panel.advanced": "Advanced",
         "panel.local_preference": "Local Preference",
         "badge.unsaved_changes": "Unsaved Changes",
         "pill.applies_immediately": "Applies Immediately",
@@ -1955,6 +1973,7 @@
       "check.groups": "器材分組",
       "panel.race_rules": "比賽規則",
       "panel.live_presentation": "即時呈現",
+      "panel.advanced": "進階",
       "panel.local_preference": "本機偏好",
       "badge.unsaved_changes": "未儲存變更",
       "pill.applies_immediately": "立即套用",
