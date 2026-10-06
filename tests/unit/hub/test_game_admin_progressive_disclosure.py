@@ -653,3 +653,67 @@ def test_switch_to_race_mode_field_stays_in_the_race_panel_left_column():
     assert field.parent is tree.by_id["race-advanced"].parent
     assert not field.inside(id_="race-advanced")
     assert not field.inside(id_="live-block")
+
+
+# ---------------------------------------------------------------------------
+# Real wiring: race type -> mixed forces competition to individual
+# ---------------------------------------------------------------------------
+
+
+def test_choosing_mixed_race_type_collapses_team_fields_via_registered_listeners():
+    """Runs the page's actual `$("race-type").addEventListener(...)` lines
+    (not a direct syncVisibility() call), in registration order."""
+    src = _stripped_script()
+    listener_lines = re.findall(
+        r'^\s*\$\("race-type"\)\.addEventListener\([^\n]*\);\s*$', src, re.MULTILINE
+    )
+    assert listener_lines, "no race-type listeners found"
+    fns = "\n".join(
+        _extract_function(src, n)
+        for n in (
+            "isMixedRaceType",
+            "rulesOpenAfterTransition",
+            "disclosureState",
+            "syncVisibility",
+            "syncMixedRaceFields",
+        )
+    )
+    script = (
+        _STUB
+        + """
+const listeners = {};
+const origMk = mk;
+function renderRaceGroupsEditor() {}
+state.raceGroups = [];
+"""
+        + fns
+        + """
+$("race-type").addEventListener = (ev, fn) => {
+  (listeners[ev] = listeners[ev] || []).push(fn);
+};
+"""
+        + "\n".join(listener_lines)
+        + """
+$("competition-mode").value = "team";
+$("race-type").value = "distance";
+syncVisibility();
+const before = [
+  $("team-scoring-field").classList.contains("field-collapsed"),
+  $("team-completion-field").classList.contains("field-collapsed"),
+];
+$("race-type").value = "mixed";
+for (const fn of listeners.change) fn();
+console.log(JSON.stringify({
+  before,
+  competition: $("competition-mode").value,
+  after: [
+    $("team-scoring-field").classList.contains("field-collapsed"),
+    $("team-completion-field").classList.contains("field-collapsed"),
+  ],
+}));
+"""
+    )
+    out = json.loads(_run_node(script))
+    assert out["before"] == [False, False]
+    assert out["competition"] == "individual"
+    assert out["after"] == [True, True]
