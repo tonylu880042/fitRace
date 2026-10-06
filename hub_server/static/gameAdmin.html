@@ -604,8 +604,28 @@
       display: none;
     }
 
-    #rules-details > summary {
+    #rules-details > summary,
+    .advanced-details > summary {
       cursor: pointer;
+      list-style: none;
+    }
+
+    #rules-details > summary::-webkit-details-marker,
+    .advanced-details > summary::-webkit-details-marker {
+      display: none;
+    }
+
+    #rules-details > summary::before,
+    .advanced-details > summary::before {
+      content: "▸";
+      display: inline-block;
+      width: 1em;
+      flex: none;
+    }
+
+    #rules-details[open] > summary::before,
+    .advanced-details[open] > summary::before {
+      content: "▾";
     }
 
     #rules-details[open] > summary {
