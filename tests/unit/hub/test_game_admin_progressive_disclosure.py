@@ -345,3 +345,45 @@ def test_toggling_competition_keeps_team_values_and_payload_unchanged():
     assert toggled["completion"] == "all_members"
     assert baseline["body"]["team_scoring_policy"] == "total"
     assert baseline["body"]["team_completion_policy"] == "all_members"
+
+
+# ---------------------------------------------------------------------------
+# R4 -- Switch Projector to Race Mode only while the hub is not in race mode
+# ---------------------------------------------------------------------------
+
+
+def _run_sync_with_state(state_js: str, extra: str = "") -> dict:
+    src = _stripped_script()
+    fns = "\n".join(
+        _extract_function(src, n) for n in ("disclosureState", "syncVisibility")
+    )
+    script = _STUB + fns + f"""
+Object.assign(state, {state_js});
+$("competition-mode").value = "individual";
+syncVisibility();
+{extra}
+console.log(JSON.stringify({{
+  switchCollapsed: $("switch-to-race-mode-field").classList.contains("field-collapsed"),
+}}));
+"""
+    return json.loads(_run_node(script))
+
+
+def test_switch_to_race_mode_field_is_collapsed_when_session_mode_is_race():
+    out = _run_sync_with_state('{ race: { session_mode: "race", state: "IDLE" } }')
+    assert out["switchCollapsed"] is True
+
+
+def test_switch_to_race_mode_field_is_shown_when_session_mode_is_class():
+    out = _run_sync_with_state('{ race: { session_mode: "class", state: "IDLE" } }')
+    assert out["switchCollapsed"] is False
+
+
+def test_switch_to_race_mode_field_markup_wraps_button_and_note():
+    tree = _tree()
+    field = tree.by_id["switch-to-race-mode-field"]
+    assert "field" in field.classes
+    assert tree.by_id["btn-switch-to-race-mode"].inside(id_="switch-to-race-mode-field")
+    assert tree.by_id["switch-to-race-mode-note"].inside(
+        id_="switch-to-race-mode-field"
+    )

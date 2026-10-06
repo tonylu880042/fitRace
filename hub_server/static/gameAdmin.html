@@ -1193,7 +1193,7 @@
                   </div>
                   <p class="field-note show" data-i18n="text.start_new_event_note">Excludes older races from the dashboard's overall standings -- does not touch the Record Wall.</p>
                 </div>
-                <div class="field">
+                <div class="field" id="switch-to-race-mode-field">
                   <button type="button" class="primary" id="btn-switch-to-race-mode" onclick="switchToRaceMode()" data-i18n="button.switch_to_race_mode">Switch Projector to Race Mode</button>
                   <p class="field-note show" id="switch-to-race-mode-note" data-i18n="text.switch_to_race_mode_note">Switches the dashboard to show the race leaderboard.</p>
                 </div>
@@ -2517,6 +2517,7 @@
       $("team-scoring-field").classList.toggle("field-collapsed", !visible.teamScoring);
       $("team-completion-field").classList.toggle("field-collapsed", !visible.teamCompletion);
       $("team-rule-card").hidden = !visible.teamRuleCard;
+      $("switch-to-race-mode-field").classList.toggle("field-collapsed", !visible.switchToRaceMode);
     }
 
     function syncCompetitionFields() {
