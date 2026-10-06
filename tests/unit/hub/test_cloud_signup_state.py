@@ -31,7 +31,6 @@ def _fields(**overrides):
         token_nonce="n1",
         issue_tokens=True,
         assigned=[1],
-        registered=[],
         lan_url=LAN,
         queue_length=3,
     )
@@ -48,9 +47,9 @@ def test_online_cloud_uses_the_cloud_url_with_a_valid_token():
     assert fields["cloud_signup_queue_length"] == 3
     q = parse_qs(urlparse(fields["signup_url"]).query)
     assert fields["signup_url"].startswith(CLOUD + "?")
-    assert q["v"] == [VENUE] and q["s"] == ["1"]
-    assert verify_signup_token(SECRET, VENUE, 1, q["t"][0], NOW)
-    assert q["t"][0] == make_signup_token(SECRET, VENUE, 1, NOW + 300, "n1")
+    assert q["v"] == [VENUE] and "s" not in q
+    assert verify_signup_token(SECRET, VENUE, q["t"][0], NOW)
+    assert q["t"][0] == make_signup_token(SECRET, VENUE, NOW + 300, "n1")
 
 
 def test_no_token_is_issued_while_challenge_mode_is_off():
@@ -88,11 +87,6 @@ def test_disabled_feature_is_just_the_lan_url():
         "cloud_signup_online": False,
         "cloud_signup_queue_length": 0,
     }
-
-
-def test_qr_points_at_the_first_unregistered_station():
-    q = parse_qs(urlparse(_fields(assigned=[1, 2], registered=[1])["signup_url"]).query)
-    assert q["s"] == ["2"]
 
 
 # -- env config ------------------------------------------------------------------
@@ -217,7 +211,7 @@ def _valid_claim(cid="c1", station=1, name="Amy", avatar=PHOTO):
         "id": cid,
         "venue": VENUE,
         "station": station,
-        "token": make_signup_token(SECRET, VENUE, station, exp, "n0"),
+        "token": make_signup_token(SECRET, VENUE, exp, "n0"),
         "name": name,
         "avatar_base64": avatar,
         "received_at": 1,

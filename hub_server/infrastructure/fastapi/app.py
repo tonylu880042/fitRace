@@ -593,7 +593,6 @@ def current_signup_fields(now_s: Optional[float] = None) -> dict:
         token_nonce=nonce,
         issue_tokens=race_manager.get_challenge_settings()["challenge_mode_enabled"],
         assigned=[int(sn) for sn, st in stations.items() if st.get("node_id")],
-        registered=[int(sn) for sn, st in stations.items() if st.get("registered")],
         lan_url=lan_signup_url(),
         queue_length=(
             cloud_signup_processor.queue_length if cloud_signup_processor else 0

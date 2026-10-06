@@ -40,7 +40,7 @@ function createHandler({
     if (!baseUrl || !token || !secret) return res.status(500).json({ error: 'server_misconfigured' });
 
     const verdict = verifySignupToken(
-      secret, result.value.venue, result.value.station, result.value.token, Math.floor(now() / 1000),
+      secret, result.value.venue, result.value.token, Math.floor(now() / 1000),
     );
     if (verdict !== 'ok') return res.status(400).json({ error: verdict === 'expired' ? 'expired' : 'token' });
 

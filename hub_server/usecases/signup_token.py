@@ -7,26 +7,23 @@ TOKEN_VALIDITY_SEC = 300
 TOKEN_ROTATE_SEC = 60
 
 
-def _signature(
-    secret: str, venue: str, station: int, exp_epoch_s: int, nonce: str
-) -> str:
-    message = f"{venue}|{station}|{exp_epoch_s}|{nonce}".encode()
+def _signature(secret: str, venue: str, exp_epoch_s: int, nonce: str) -> str:
+    message = f"{venue}|{exp_epoch_s}|{nonce}".encode()
     return hmac.new(secret.encode(), message, hashlib.sha256).hexdigest()[:16]
 
 
-def make_signup_token(
-    secret: str, venue: str, station: int, exp_epoch_s: int, nonce: str
-) -> str:
-    """ "<exp>.<nonce>.<first 16 hex of HMAC-SHA256>", bound to venue and
-    station. Same algorithm as cloud_signup/lib/token.js (pinned by a shared
-    test vector). One-time use is enforced by the cloud and, as defence in
-    depth, by the processor -- not by this function."""
-    sig = _signature(secret, venue, station, exp_epoch_s, nonce)
+def make_signup_token(secret: str, venue: str, exp_epoch_s: int, nonce: str) -> str:
+    """ "<exp>.<nonce>.<first 16 hex of HMAC-SHA256>", bound to the venue (not
+    a station: the visitor picks the station on the sign-up page). Same
+    algorithm as cloud_signup/lib/token.js (pinned by a shared test vector).
+    One-time use is enforced by the cloud and, as defence in depth, by the
+    processor -- not by this function."""
+    sig = _signature(secret, venue, exp_epoch_s, nonce)
     return f"{exp_epoch_s}.{nonce}.{sig}"
 
 
 def verify_signup_token(
-    secret: str, venue: str, station: int, token: object, now_epoch_s: float
+    secret: str, venue: str, token: object, now_epoch_s: float
 ) -> bool:
     if not isinstance(token, str):
         return False
@@ -37,7 +34,7 @@ def verify_signup_token(
     if not exp_text.isdigit() or not nonce:
         return False
     exp_epoch_s = int(exp_text)
-    expected = _signature(secret, venue, station, exp_epoch_s, nonce)
+    expected = _signature(secret, venue, exp_epoch_s, nonce)
     if not hmac.compare_digest(signature.encode(), expected.encode()):
         return False
     return now_epoch_s <= exp_epoch_s

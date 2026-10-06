@@ -4,7 +4,6 @@ import logging
 from hub_server.usecases.cloud_signup import (
     CloudSignupProcessor,
     build_cloud_signup_url,
-    choose_signup_station,
 )
 from hub_server.usecases.signup_token import make_signup_token
 
@@ -16,7 +15,7 @@ PHOTO = "data:image/webp;base64,UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4H"
 
 def _claim(cid, station=1, name="Amy", venue=VENUE, token=None, avatar=PHOTO):
     if token is None:
-        token = make_signup_token(SECRET, venue, station, NOW + 500, cid)
+        token = make_signup_token(SECRET, venue, NOW + 500, cid)
     return {
         "id": cid,
         "venue": venue,
@@ -85,7 +84,7 @@ def test_invalid_claims_are_dropped_and_logged_without_the_photo(caplog):
         _claim("bad-token", token="1.deadbeefdeadbeef", avatar=secret_photo),
         _claim(
             "expired",
-            token=make_signup_token(SECRET, VENUE, 1, NOW - 1, "n0"),
+            token=make_signup_token(SECRET, VENUE, NOW - 1, "n0"),
             avatar=secret_photo,
         ),
         _claim("empty-name", name="   ", avatar=secret_photo),
@@ -167,28 +166,20 @@ def test_fetch_returning_nothing_is_fine():
     assert h.tick() == 0
 
 
-def test_choose_signup_station_prefers_first_unregistered_assigned():
-    assert choose_signup_station([1, 2, 3], registered=[1]) == 2
-    assert choose_signup_station([3, 1, 2], registered=[]) == 1
-    # everyone registered: still point at the lowest assigned station so the
-    # next person queues up for the following round.
-    assert choose_signup_station([1, 2], registered=[1, 2]) == 1
-    assert choose_signup_station([], registered=[]) is None
-
-
-def test_build_cloud_signup_url_carries_venue_station_and_token():
+def test_build_cloud_signup_url_carries_venue_and_token_but_no_station():
     from urllib.parse import parse_qs, urlparse
 
-    token = make_signup_token(SECRET, "gym a", 2, NOW + 300, "n1")
-    url = build_cloud_signup_url("https://signup.example.app/", "gym a", 2, token)
+    token = make_signup_token(SECRET, "gym a", NOW + 300, "n1")
+    url = build_cloud_signup_url("https://signup.example.app/", "gym a", token)
     q = parse_qs(urlparse(url).query)
     assert url.startswith("https://signup.example.app/?")
-    assert q["v"] == ["gym a"] and q["s"] == ["2"] and q["t"] == [token]
+    assert q["v"] == ["gym a"] and q["t"] == [token]
+    assert "s" not in q
 
 
 def test_a_token_is_accepted_for_only_the_first_claim():
     h = Harness(assigned=(1, 2))
-    shared = make_signup_token(SECRET, VENUE, 1, NOW + 500, "n1")
+    shared = make_signup_token(SECRET, VENUE, NOW + 500, "n1")
     h.tick(_claim("c1", name="First", token=shared))
     h.open.add(1)
     h.tick(_claim("c2", name="Second", token=shared))
@@ -207,7 +198,7 @@ def test_any_pulled_claim_triggers_token_rotation_even_if_it_is_invalid():
 
 
 def _late_claim(received_at, exp=NOW + 5, cid="late"):
-    claim = _claim(cid, token=make_signup_token(SECRET, VENUE, 1, exp, cid))
+    claim = _claim(cid, token=make_signup_token(SECRET, VENUE, exp, cid))
     claim["received_at"] = received_at
     return claim
 
@@ -239,3 +230,10 @@ def test_received_at_in_the_future_or_malformed_falls_back_to_hub_time():
         h.now = NOW + 10
         h.tick(_late_claim(received_at=bad, exp=NOW + 5, cid=f"exp{i}"))
         assert h.registered == [], bad
+
+
+def test_one_token_is_valid_for_a_claim_on_any_assigned_station():
+    h = Harness(assigned=(1, 2))
+    token = make_signup_token(SECRET, VENUE, NOW + 500, "shared")
+    h.tick(_claim("c1", station=2, name="Two", token=token))
+    assert [(r[0], r[1]) for r in h.registered] == [(2, "Two")]

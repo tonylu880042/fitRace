@@ -11,7 +11,7 @@ const ENV = {
   FITRACE_CLOUD_SIGNUP_SECRET: SECRET,
 };
 const NOW_MS = 1_800_000_000_000;
-const TOKEN = makeSignupToken(SECRET, 'gym-a', 1, 1_800_000_300, '0a1b2c3d');
+const TOKEN = makeSignupToken(SECRET, 'gym-a', 1_800_000_300, '0a1b2c3d');
 
 function fakeRes() {
   return {
@@ -77,18 +77,20 @@ test('a forged token is rejected and nothing is queued', async () => {
 test('an expired token is rejected', async () => {
   const { handler, calls } = setup();
   const res = fakeRes();
-  const expired = makeSignupToken(SECRET, 'gym-a', 1, 1_799_999_999, 'aa');
+  const expired = makeSignupToken(SECRET, 'gym-a', 1_799_999_999, 'aa');
   await handler({ method: 'POST', body: body({ token: expired }) }, res);
   assert.equal(res.code, 400);
   assert.deepEqual(res.body, { error: 'expired' });
   assert.equal(calls.length, 0);
 });
 
-test('a token for another station is rejected', async () => {
-  const { handler } = setup();
+test('the same token works whichever station the visitor picked', async () => {
+  const { handler, calls } = setup();
   const res = fakeRes();
   await handler({ method: 'POST', body: body({ station: 2 }) }, res);
-  assert.equal(res.code, 400);
+  assert.equal(res.code, 200);
+  const [push] = calls[1].payload;
+  assert.equal(JSON.parse(push[2]).station, 2);
 });
 
 test('a token that was already used is a 409 and queues nothing', async () => {

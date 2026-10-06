@@ -11,20 +11,8 @@ MAX_CLOUD_NAME_LENGTH = 20
 _SEEN_IDS_LIMIT = 1000
 
 
-def choose_signup_station(
-    assigned: Iterable[int], registered: Iterable[int]
-) -> Optional[int]:
-    """Station a cloud QR should point at: the first assigned station still
-    waiting for an athlete, else the lowest assigned one."""
-    ordered = sorted(assigned)
-    if not ordered:
-        return None
-    taken = set(registered)
-    return next((sn for sn in ordered if sn not in taken), ordered[0])
-
-
-def build_cloud_signup_url(base_url: str, venue: str, station: int, token: str) -> str:
-    query = urlencode({"v": venue, "s": station, "t": token})
+def build_cloud_signup_url(base_url: str, venue: str, token: str) -> str:
+    query = urlencode({"v": venue, "t": token})
     separator = "&" if "?" in base_url else "?"
     return f"{base_url}{separator}{query}"
 
@@ -130,7 +118,6 @@ class CloudSignupProcessor:
         if not verify_signup_token(
             self._secret,
             self._venue,
-            station,
             claim.get("token"),
             self._expiry_reference_s(claim),
         ):
@@ -180,15 +167,14 @@ def build_signup_fields(
     token_nonce: str,
     issue_tokens: bool,
     assigned: Iterable[int],
-    registered: Iterable[int],
     lan_url: Optional[str],
     queue_length: int,
 ) -> dict[str, Any]:
     """The three race-state fields the projector's sign-up QR is driven by.
 
     Cloud URL only while the cloud was reachable within ONLINE_WINDOW_SEC,
-    tokens are being issued (challenge mode on) and there is a station to
-    point at; otherwise the LAN sign-up page, so a venue
+    tokens are being issued (challenge mode on) and at least one station is
+    assigned; otherwise the LAN sign-up page, so a venue
     that loses internet keeps working. cloud_base_url None = feature off.
     """
     online = (
@@ -196,14 +182,9 @@ def build_signup_fields(
         and last_success_epoch_s is not None
         and now_s - last_success_epoch_s <= ONLINE_WINDOW_SEC
     )
-    station = choose_signup_station(assigned, registered)
-    if online and issue_tokens and station is not None and secret and venue:
-        token = make_signup_token(
-            secret, venue, station, token_exp_epoch_s, token_nonce
-        )
-        url: Optional[str] = build_cloud_signup_url(
-            cloud_base_url, venue, station, token
-        )
+    if online and issue_tokens and any(True for _ in assigned) and secret and venue:
+        token = make_signup_token(secret, venue, token_exp_epoch_s, token_nonce)
+        url: Optional[str] = build_cloud_signup_url(cloud_base_url, venue, token)
     else:
         url = lan_url
     return {
