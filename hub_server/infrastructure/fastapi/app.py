@@ -127,7 +127,12 @@ async def enforce_time_deadline_tick(
 ) -> bool:
     """One deadline check. The clock is injected so tests never sleep; a
     stop goes through broadcast_race_state() so the result is persisted."""
-    if race_manager.enforce_time_deadline(now_ms_fn()):
+    now_ms = now_ms_fn()
+    # Countdown cues first: the stop below may be the very tick that crosses
+    # the last threshold. Same event shape the telemetry path broadcasts.
+    for event in race_event_engine.evaluate_clock(race_manager, now_ms):
+        await ws_manager.broadcast({"type": "race_event", "event": event})
+    if race_manager.enforce_time_deadline(now_ms):
         await broadcast_race_state()
         return True
     return False

@@ -1,10 +1,16 @@
+import time
 from collections import defaultdict
-from typing import Dict, List, Optional, Set, Any
+from typing import Callable, Dict, List, Optional, Set, Any
 from hub_server.domain.models import RaceState
+
+_CLOCK_COUNTDOWN_TYPES = ("time", "max_power", "watts")
 
 
 class RaceEventEngine:
-    def __init__(self):
+    def __init__(self, now_ms: Optional[Callable[[], int]] = None):
+        # Hub clock for the timed-race countdown cues (injectable for tests).
+        self._now_ms: Callable[[], int] = now_ms or (lambda: int(time.time() * 1000))
+        self._start_ms: Optional[int] = None
         self._checkpoints_passed: Dict[str, Set[int]] = defaultdict(set)
         self._segment_start: Dict[str, Dict[str, float]] = {}
         self._segment_best: Dict[Any, Dict[str, Any]] = {}
@@ -37,6 +43,39 @@ class RaceEventEngine:
         self._group_final_sprint_triggered.clear()
         self._group_prev_remaining_sec.clear()
 
+    def evaluate_clock(self, race_manager, now_ms: int) -> List[Dict]:
+        """Countdown cues only, from the hub clock -- for the periodic tick,
+        so a silent treadmill (or samples ignored after the hub deadline)
+        cannot swallow the last seconds. Shares dedupe state with
+        evaluate(), so a cue fires once whichever path sees it first."""
+        events: List[Dict] = []
+        if (
+            race_manager.get_state() != RaceState.RUNNING
+            or race_manager.get_session_mode() != "race"
+        ):
+            return events
+        config = race_manager.get_config()
+        start_ms = race_manager.get_start_time_epoch_ms()
+        if not config or start_ms is None:
+            return events
+
+        if config.race_type == "mixed":
+            progress = race_manager.get_leaderboard_progress()
+            for group_index in range(len(config.groups)):
+                scoped = config.scoped_config(group_index)
+                if scoped.race_type not in _CLOCK_COUNTDOWN_TYPES:
+                    continue
+                if not any(
+                    r.get("group_index") == group_index for r in progress.values()
+                ):
+                    continue
+                self._check_countdown_or_sprint(
+                    {}, scoped, events, group_index, start_ms, now_ms
+                )
+        elif config.race_type in _CLOCK_COUNTDOWN_TYPES:
+            self._check_countdown_or_sprint({}, config, events, None, start_ms, now_ms)
+        return events
+
     def evaluate(self, race_manager, progress: Dict[str, Any]) -> List[Dict]:
         events: List[Dict] = []
         state = race_manager.get_state()
@@ -46,6 +85,7 @@ class RaceEventEngine:
         config = race_manager.get_config()
         if not config:
             return events
+        self._start_ms = race_manager.get_start_time_epoch_ms()
 
         if config.race_type == "mixed":
             # Run every _check_* helper once PER GROUP, against only that
@@ -272,16 +312,26 @@ class RaceEventEngine:
         config,
         events: List[Dict],
         group_index: Optional[int] = None,
+        start_ms: Optional[int] = None,
+        now_ms: Optional[int] = None,
     ):
         race_type = config.race_type
 
         if race_type in ("time", "calories", "max_power", "watts"):
-            max_elapsed = max(
-                (p.get("elapsed_time_ms", 0) for p in progress.values()),
-                default=0,
-            )
             total_duration_ms = config.duration_sec * 1000
-            remaining_ms = total_duration_ms - max_elapsed
+            if start_ms is None:
+                start_ms = self._start_ms
+            if race_type in _CLOCK_COUNTDOWN_TYPES and start_ms is not None:
+                # Hub clock: equipment elapsed can stall or be ignored.
+                if now_ms is None:
+                    now_ms = self._now_ms()
+                remaining_ms = start_ms + total_duration_ms - now_ms
+            else:
+                max_elapsed = max(
+                    (p.get("elapsed_time_ms", 0) for p in progress.values()),
+                    default=0,
+                )
+                remaining_ms = total_duration_ms - max_elapsed
             remaining_sec = max(0, int(remaining_ms / 1000))
 
             countdown_thresholds = [10, 5, 3, 2, 1]

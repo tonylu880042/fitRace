@@ -146,7 +146,8 @@ def test_event_engine_no_catch_up_for_max_power():
 
 def test_event_engine_countdown():
     manager = RaceManager()
-    engine = RaceEventEngine()
+    # Cues follow the hub clock: 20 s into a 30 s race.
+    engine = RaceEventEngine(now_ms=lambda: manager.get_start_time_epoch_ms() + 20_000)
 
     config = RaceConfig(race_type="time", duration_sec=30)
     manager.configure(config)
