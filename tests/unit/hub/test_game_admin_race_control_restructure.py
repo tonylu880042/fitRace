@@ -156,7 +156,7 @@ def test_staged_fields_live_in_rules_block_with_original_handlers():
 
     assert 'onchange="syncRaceFields(); markRaceConfigDirty()"' in rules_block
     assert (
-        'onchange="syncCompetitionFields(); renderStations(); markRaceConfigDirty()"'
+        'onchange="syncCompetitionFields(); syncVisibility(); renderStations(); markRaceConfigDirty()"'
         in rules_block
     )
     assert (
@@ -258,7 +258,10 @@ def test_team_fields_no_longer_use_is_hidden_toggle():
     script = _stripped_script(_read())
     body = _extract_function_body(script, "syncCompetitionFields")
     assert "is-hidden" not in body
-    assert '$("team-scoring-field").classList.toggle("is-disabled"' in body
+    # Team Scoring is now hidden (not greyed) when irrelevant -- see
+    # test_game_admin_progressive_disclosure.py. Completion Rule keeps its
+    # visible-but-disabled state for time-based race types.
+    assert '$("team-scoring-field").classList.toggle("is-disabled"' not in body
     assert '$("team-completion-field").classList.toggle("is-disabled"' in body
 
 
@@ -275,7 +278,7 @@ def test_sync_competition_fields_disables_team_selects_for_individual_mode():
     tests/unit/hub/test_game_admin_race_rule_guidance.py."""
     script = _stripped_script(_read())
     body = _extract_function_body(script, "syncCompetitionFields")
-    assert '$("team-scoring-policy").disabled = !isTeamRace;' in body
+    assert '$("team-scoring-policy").disabled' not in body
     assert "completionFieldState(" in body
     assert '$("team-completion-policy").disabled = completion.disabled;' in body
 
@@ -284,9 +287,11 @@ def test_team_fields_carry_team_only_note_with_i18n():
     source = _read()
     panel = _race_control_panel(source)
     rules_block = _block(panel, "rules-block")
-    assert 'id="team-scoring-note"' in rules_block
+    # Team Scoring's "team only" note went away with the grey-out: the field
+    # is collapsed instead. Completion Rule keeps its constraint note.
+    assert 'id="team-scoring-note"' not in rules_block
     assert 'id="team-completion-note"' in rules_block
-    assert rules_block.count('data-i18n="text.team_field_note"') == 2
+    assert rules_block.count('data-i18n="text.team_field_note"') == 1
 
 
 def test_team_fields_stay_in_the_dom_regardless_of_competition_mode():

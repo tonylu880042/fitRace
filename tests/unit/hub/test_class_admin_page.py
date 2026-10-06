@@ -1233,6 +1233,7 @@ def _run_game_admin_sync_session_mode_control(race_state: str) -> dict:
         "  return mockElements[id];\n"
         "}\n"
         "function t(key) { return `T[${key}]`; }\n"
+        "function syncVisibility() {}\n"
         "const state = { race: "
         + json.dumps({"state": race_state})
         + " };\n"

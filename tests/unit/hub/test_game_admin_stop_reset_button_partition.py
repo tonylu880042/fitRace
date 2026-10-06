@@ -120,6 +120,7 @@ function renderRaceActionButtons() {}
 function updateControlGuidance() {}
 function renderReadinessPanel() {}
 function renderRoster() {}
+function syncVisibility() {}
 const state = {};
 """
 

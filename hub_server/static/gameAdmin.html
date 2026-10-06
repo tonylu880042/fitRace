@@ -604,6 +604,10 @@
       display: none;
     }
 
+    .guidance-card[hidden] {
+      display: none;
+    }
+
     .race-state {
       color: var(--accent);
       border-color: rgba(226,255,59,0.75);
@@ -1096,7 +1100,7 @@
                   </div>
                   <div class="field">
                     <label for="competition-mode" data-i18n="label.competition">Competition</label>
-                    <select id="competition-mode" onchange="syncCompetitionFields(); renderStations(); markRaceConfigDirty()">
+                    <select id="competition-mode" onchange="syncCompetitionFields(); syncVisibility(); renderStations(); markRaceConfigDirty()">
                       <option value="individual" data-i18n="option.individual">Individual Race (Anonymous Allowed)</option>
                       <option value="team" id="competition-option-team" data-i18n="option.team">Team Race</option>
                       <option value="relay" id="competition-option-relay" data-i18n="option.relay">Relay Race (same machine)</option>
@@ -1105,7 +1109,6 @@
                   <div class="field" id="relay-legs-field">
                     <label for="relay-legs" data-i18n="label.relay_legs">Legs</label>
                     <input type="number" id="relay-legs" min="2" max="10" value="4" oninput="markRaceConfigDirty()">
-                    <p class="field-note" id="relay-legs-note" data-i18n="text.relay_field_note">Applies to relay races only.</p>
                   </div>
                   <div class="field" id="team-scoring-field">
                     <label for="team-scoring-policy" data-i18n="label.team_scoring">Team Scoring</label>
@@ -1113,7 +1116,6 @@
                       <option value="average" data-i18n="option.team_average">Team Average</option>
                       <option value="total" data-i18n="option.team_total">Team Total</option>
                     </select>
-                    <p class="field-note" id="team-scoring-note" data-i18n="text.team_field_note">Applies to team races only.</p>
                   </div>
                   <div class="field" id="team-completion-field">
                     <label for="team-completion-policy" data-i18n="label.completion_rule">Completion Rule</label>
@@ -1213,7 +1215,7 @@
               </div>
 
               <div class="guidance-grid" aria-label="Race setup guidance">
-                <div class="guidance-card">
+                <div class="guidance-card" id="team-rule-card">
                   <div class="guidance-title" data-i18n="guidance.team_rule">Team Rule</div>
                   <div class="guidance-body" id="team-rule-summary" data-i18n="text.individual_race">Individual race. Team rules are not applied.</div>
                 </div>
@@ -1724,7 +1726,6 @@
         "message.entry_marked_absent": "Marked absent.",
         "message.entry_requeued": "Requeued.",
         "confirm.skip_unraced_heat": "The current heat ({names}) has not raced yet. Skip it and load the next heat?",
-        "text.relay_field_note": "Applies to relay races only.",
         "text.relay_race": "Relay race: teammates take turns running one leg each on the same machine. The team finishes when the last leg is done.",
         "button.register_relay_team": "Register Team",
         "message.relay_team_registered": "Relay team registered.",
@@ -2008,7 +2009,6 @@
       "message.entry_marked_absent": "已標記缺席。",
       "message.entry_requeued": "已重新排入。",
       "confirm.skip_unraced_heat": "目前這組（{names}）還沒比賽，確定要跳過並載入下一組嗎？",
-      "text.relay_field_note": "僅適用於接力賽。",
       "text.relay_race": "接力賽:隊員輪流在同一台機器上各跑一棒,最後一棒完成即為隊伍完賽。",
       "button.register_relay_team": "登記隊伍",
       "message.relay_team_registered": "接力隊伍已登記。",
@@ -2484,6 +2484,41 @@
       syncCompetitionFields();
     }
 
+    // One partition over the operator's earlier choices: every result comes
+    // from this single pass, so two fields that must be exact complements
+    // (relay legs vs. team policies) can never drift apart. Result booleans
+    // mean "visible".
+    function disclosureState({ competitionMode, challengeModeOn, sessionMode, raceState, hasRoster }) {
+      const isRelay = competitionMode === "relay";
+      const isTeam = competitionMode === "team";
+      return {
+        relayLegs: isRelay,
+        teamScoring: isTeam,
+        teamCompletion: isTeam,
+        challengeSettings: Boolean(challengeModeOn),
+        switchToRaceMode: sessionMode !== "race",
+        rosterLists: Boolean(hasRoster),
+        teamRuleCard: isRelay || isTeam,
+      };
+    }
+
+    function syncVisibility() {
+      const counts = (state.roster && state.roster.counts) || {};
+      const rosterTotal = (counts.pending || 0) + (counts.loaded || 0)
+        + (counts.done || 0) + (counts.absent || 0);
+      const visible = disclosureState({
+        competitionMode: $("competition-mode").value,
+        challengeModeOn: false,
+        sessionMode: state.race?.session_mode,
+        raceState: state.race?.state || "IDLE",
+        hasRoster: rosterTotal > 0,
+      });
+      $("relay-legs-field").classList.toggle("field-collapsed", !visible.relayLegs);
+      $("team-scoring-field").classList.toggle("field-collapsed", !visible.teamScoring);
+      $("team-completion-field").classList.toggle("field-collapsed", !visible.teamCompletion);
+      $("team-rule-card").hidden = !visible.teamRuleCard;
+    }
+
     function syncCompetitionFields() {
       const isTeamRace = $("competition-mode").value === "team";
       const isRelayRace = isRelayCompetitionMode($("competition-mode").value);
@@ -2502,13 +2537,6 @@
         $("race-target-label").textContent = t("label.target_distance");
       }
       const raceType = $("race-type").value;
-
-      $("relay-legs-field").classList.toggle("is-disabled", !isRelayRace);
-      $("relay-legs").disabled = !isRelayRace;
-
-      $("team-scoring-field").classList.toggle("is-disabled", !isTeamRace);
-      $("team-scoring-policy").disabled = !isTeamRace;
-      $("team-scoring-note").classList.toggle("show", !isTeamRace);
 
       const completion = completionFieldState(raceType, isTeamRace);
       $("team-completion-field").classList.toggle("is-disabled", completion.disabled);
@@ -2697,7 +2725,6 @@
       renderReadinessPanel();
       syncSessionModeControl();
       renderRoster();
-
     }
 
     function sessionModeSwitchState(raceState) {
@@ -2716,6 +2743,7 @@
       button.disabled = modeState.disabled;
       if (note.dataset) note.dataset.i18n = modeState.noteKey;
       note.textContent = t(modeState.noteKey);
+      syncVisibility();
     }
 
     function renderRaceActionButtons() {
@@ -4097,10 +4125,12 @@
     // syncMixedRaceFields() for why this is a separate listener rather than
     // a call inside syncRaceFields()/syncCompetitionFields() themselves.
     $("race-type").addEventListener("change", syncMixedRaceFields);
+    $("race-type").addEventListener("change", syncVisibility);
 
     syncMixedRaceFields();
     syncRaceFields();
     syncCompetitionFields();
+    syncVisibility();
     applyTranslations();
     connectWebSocket();
     refreshAll();

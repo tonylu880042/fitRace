@@ -274,6 +274,8 @@ def _run_sync_competition_fields_relay(competition_mode: str, race_type: str) ->
     completion_field_state_fn = _extract_function(source, "completionFieldState")
     race_rule_note_key_fn = _extract_function(source, "raceRuleNoteKey")
     sync_competition_fields_fn = _extract_function(source, "syncCompetitionFields")
+    disclosure_state_fn = _extract_function(source, "disclosureState")
+    sync_visibility_fn = _extract_function(source, "syncVisibility")
     script = (
         "const mockElements = {};\n"
         "function makeEl() {\n"
@@ -291,6 +293,11 @@ def _run_sync_competition_fields_relay(competition_mode: str, race_type: str) ->
         "}\n"
         "function t(key) { return `T[${key}]`; }\n"
         "function updateControlGuidance() {}\n"
+        "const state = { race: { session_mode: 'race' }, roster: { counts: {} } };\n"
+        + disclosure_state_fn
+        + "\n"
+        + sync_visibility_fn
+        + "\n"
         + is_relay_mode_fn
         + "\n"
         + completion_field_state_fn
@@ -302,12 +309,12 @@ def _run_sync_competition_fields_relay(competition_mode: str, race_type: str) ->
         f"mockElements['competition-mode'] = {{ value: {json.dumps(competition_mode)} }};\n"
         f"mockElements['race-type'] = {{ value: {json.dumps(race_type)}, dataset: {{}} }};\n"
         "syncCompetitionFields();\n"
+        "syncVisibility();\n"
         "console.log(JSON.stringify({\n"
         "  raceTypeValue: mockElements['race-type'].value,\n"
         "  raceTypeDisabled: mockElements['race-type'].disabled,\n"
-        "  relayLegsFieldDisabled: mockElements['relay-legs-field'].classList.toggled['is-disabled'],\n"
-        "  relayLegsInputDisabled: mockElements['relay-legs'].disabled,\n"
-        "  teamScoringFieldDisabled: mockElements['team-scoring-field'].classList.toggled['is-disabled'],\n"
+        "  relayLegsFieldCollapsed: mockElements['relay-legs-field'].classList.toggled['field-collapsed'],\n"
+        "  teamScoringFieldCollapsed: mockElements['team-scoring-field'].classList.toggled['field-collapsed'],\n"
         "}));\n"
     )
     return json.loads(_run_node(script))
@@ -321,21 +328,19 @@ def test_relay_mode_forces_race_type_to_distance_and_disables_selector():
 
 def test_relay_mode_enables_the_legs_field():
     result = _run_sync_competition_fields_relay("relay", "distance")
-    assert result["relayLegsFieldDisabled"] is False
-    assert result["relayLegsInputDisabled"] is False
+    assert result["relayLegsFieldCollapsed"] is False
 
 
 def test_relay_mode_hides_team_scoring_field_like_individual():
     result = _run_sync_competition_fields_relay("relay", "distance")
-    assert result["teamScoringFieldDisabled"] is True
+    assert result["teamScoringFieldCollapsed"] is True
 
 
 def test_individual_mode_keeps_legs_field_hidden_and_race_type_enabled():
     result = _run_sync_competition_fields_relay("individual", "time")
     assert result["raceTypeValue"] == "time"
     assert result["raceTypeDisabled"] is False
-    assert result["relayLegsFieldDisabled"] is True
-    assert result["relayLegsInputDisabled"] is True
+    assert result["relayLegsFieldCollapsed"] is True
 
 
 # ---------------------------------------------------------------------------
