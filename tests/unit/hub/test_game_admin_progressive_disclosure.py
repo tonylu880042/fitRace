@@ -602,3 +602,54 @@ def test_clear_modals_ids_and_handlers_unchanged():
 def test_panel_advanced_key_in_both_dictionaries():
     source = _read()
     assert source.count('"panel.advanced":') == 2
+
+
+# ---------------------------------------------------------------------------
+# R8.1/8.3/8.4 -- Live Presentation slimmed; Advanced holds the rare controls
+# ---------------------------------------------------------------------------
+
+
+def test_live_presentation_keeps_only_display_controls():
+    tree = _tree()
+    for keep in (
+        "leaderboard-display-mode",
+        "start-sound-enabled",
+        "signup-qr-visible",
+        "admin-qr-visible",
+        "idle-live-telemetry-visible",
+    ):
+        assert tree.by_id[keep].inside(id_="live-block"), keep
+    for moved in (
+        "btn-start-new-event",
+        "event-start-label",
+        "auto-refresh",
+        "btn-switch-to-race-mode",
+    ):
+        assert not tree.by_id[moved].inside(id_="live-block"), moved
+
+
+def test_race_advanced_is_a_closed_details_at_the_bottom_of_the_left_column():
+    tree = _tree()
+    details = tree.by_id["race-advanced"]
+    assert details.tag == "details"
+    assert "open" not in details.attrs
+    summary = next(c for c in details.children if c.tag == "summary")
+    assert summary.attrs.get("data-i18n") == "panel.advanced"
+    left = details.parent
+    assert "race-control-left" in left.classes
+    assert _element_children(left)[-1] is details
+
+
+def test_overall_standings_and_refresh_preference_live_in_race_advanced():
+    tree = _tree()
+    for node_id in ("btn-start-new-event", "event-start-label", "auto-refresh"):
+        assert tree.by_id[node_id].inside(tag="details", id_="race-advanced"), node_id
+    assert "local-block" not in tree.by_id
+
+
+def test_switch_to_race_mode_field_stays_in_the_race_panel_left_column():
+    tree = _tree()
+    field = tree.by_id["switch-to-race-mode-field"]
+    assert field.parent is tree.by_id["race-advanced"].parent
+    assert not field.inside(id_="race-advanced")
+    assert not field.inside(id_="live-block")

@@ -1213,33 +1213,11 @@
                     </select>
                   </div>
                 </div>
-                <div class="field">
-                  <label data-i18n="label.overall_standings_event">Overall Standings Event</label>
-                  <div class="event-start-row">
-                    <button type="button" id="btn-start-new-event" onclick="startNewEvent()" data-i18n="button.start_new_event">Start New Event</button>
-                    <span class="field-note show" id="event-start-label" data-i18n="text.event_start_none">Counting the full history.</span>
-                  </div>
-                  <p class="field-note show" data-i18n="text.start_new_event_note">Excludes older races from the dashboard's overall standings -- does not touch the Record Wall.</p>
-                </div>
-                <div class="field" id="switch-to-race-mode-field">
-                  <button type="button" class="primary" id="btn-switch-to-race-mode" onclick="switchToRaceMode()" data-i18n="button.switch_to_race_mode">Switch Projector to Race Mode</button>
-                  <p class="field-note show" id="switch-to-race-mode-note" data-i18n="text.switch_to_race_mode_note">Switches the dashboard to show the race leaderboard.</p>
-                </div>
               </div>
 
-              <div class="control-block control-block-muted" id="local-block">
-                <div class="control-block-header">
-                  <h3 class="control-block-title" data-i18n="panel.local_preference">Local Preference</h3>
-                </div>
-                <div class="field">
-                  <label for="auto-refresh" data-i18n="label.refresh">Refresh</label>
-                  <select id="auto-refresh">
-                    <option value="0" data-i18n="option.live_websocket">Live WebSocket only</option>
-                    <option value="5000" data-i18n="option.fallback_5s">Fallback: 5 seconds</option>
-                    <option value="15000" selected data-i18n="option.fallback_15s">Fallback: 15 seconds</option>
-                  </select>
-                </div>
-                <p class="control-block-note" data-i18n="text.local_preference_note">Affects this browser only.</p>
+              <div class="field" id="switch-to-race-mode-field">
+                <button type="button" class="primary" id="btn-switch-to-race-mode" onclick="switchToRaceMode()" data-i18n="button.switch_to_race_mode">Switch Projector to Race Mode</button>
+                <p class="field-note show" id="switch-to-race-mode-note" data-i18n="text.switch_to_race_mode_note">Switches the dashboard to show the race leaderboard.</p>
               </div>
 
               <div class="guidance-grid" aria-label="Race setup guidance">
@@ -1257,6 +1235,27 @@
                   <div class="guidance-body" id="start-flow-summary" data-i18n="text.start_flow_default">Start Race sends the countdown to the Dashboard. The race timer begins on Go.</div>
                 </div>
               </div>
+
+              <details id="race-advanced" class="advanced-details">
+                <summary data-i18n="panel.advanced">Advanced</summary>
+                <div class="field">
+                  <label data-i18n="label.overall_standings_event">Overall Standings Event</label>
+                  <div class="event-start-row">
+                    <button type="button" id="btn-start-new-event" onclick="startNewEvent()" data-i18n="button.start_new_event">Start New Event</button>
+                    <span class="field-note show" id="event-start-label" data-i18n="text.event_start_none">Counting the full history.</span>
+                  </div>
+                  <p class="field-note show" data-i18n="text.start_new_event_note">Excludes older races from the dashboard's overall standings -- does not touch the Record Wall.</p>
+                </div>
+                <div class="field">
+                  <label for="auto-refresh" data-i18n="label.refresh">Refresh</label>
+                  <select id="auto-refresh">
+                    <option value="0" data-i18n="option.live_websocket">Live WebSocket only</option>
+                    <option value="5000" data-i18n="option.fallback_5s">Fallback: 5 seconds</option>
+                    <option value="15000" selected data-i18n="option.fallback_15s">Fallback: 15 seconds</option>
+                  </select>
+                  <p class="field-note show" data-i18n="text.local_preference_note">Affects this browser only.</p>
+                </div>
+              </details>
             </div>
 
             <div class="race-control-right">
@@ -1682,7 +1681,6 @@
         "panel.race_rules": "Race Rules",
         "panel.live_presentation": "Live Presentation",
         "panel.advanced": "Advanced",
-        "panel.local_preference": "Local Preference",
         "badge.unsaved_changes": "Unsaved Changes",
         "pill.applies_immediately": "Applies Immediately",
         "text.local_preference_note": "Affects this browser only.",
@@ -1974,7 +1972,6 @@
       "panel.race_rules": "比賽規則",
       "panel.live_presentation": "即時呈現",
       "panel.advanced": "進階",
-      "panel.local_preference": "本機偏好",
       "badge.unsaved_changes": "未儲存變更",
       "pill.applies_immediately": "立即套用",
       "text.local_preference_note": "僅影響此瀏覽器。",
