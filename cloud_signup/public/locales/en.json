@@ -29,5 +29,6 @@
   "equipment_treadmill": "Treadmill",
   "equipment_rowing_machine": "Rowing machine",
   "equipment_fan_bike": "Fan bike",
-  "equipment_spin_bike": "Spin bike"
+  "equipment_spin_bike": "Spin bike",
+  "station_single_busy": "Someone is using it now — you'll be next after you sign up"
 }

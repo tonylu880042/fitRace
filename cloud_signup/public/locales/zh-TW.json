@@ -29,5 +29,6 @@
   "equipment_treadmill": "跑步機",
   "equipment_rowing_machine": "划船機",
   "equipment_fan_bike": "風阻車",
-  "equipment_spin_bike": "飛輪車"
+  "equipment_spin_bike": "飛輪車",
+  "station_single_busy": "目前有人使用中，送出後你會排在下一位"
 }

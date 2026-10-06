@@ -34,7 +34,7 @@
       <h1 data-i18n="heading"></h1>
       <label for="name" data-i18n="name_label"></label>
       <input id="name" type="text" maxlength="20" autocomplete="nickname" data-i18n-placeholder="name_placeholder">
-      <label data-i18n="station_heading"></label>
+      <label id="station-heading" data-i18n="station_heading"></label>
       <div class="stations" id="stations"></div>
       <p class="note" id="station-note"></p>
       <label data-i18n="photo_label"></label>
@@ -92,8 +92,14 @@
       return availableStations(list).length === 0 ? true : entry.available;
     }
 
-    // One free station (the single-treadmill venue): no extra step.
+    // A venue with exactly one station has nothing to choose: no picker.
+    function showPicker(list) {
+      return list.length !== 1;
+    }
+
+    // One station: it is the pick. Otherwise only when exactly one is free.
     function autoSelection(list) {
+      if (list.length === 1) return list[0].station;
       const free = availableStations(list);
       return free.length === 1 ? free[0].station : null;
     }
@@ -107,6 +113,13 @@
     function renderStations() {
       const box = document.getElementById('stations');
       box.textContent = '';
+      const picker = showPicker(stationList);
+      document.getElementById('station-heading').hidden = !picker;
+      if (!picker) {
+        const only = stationList[0];
+        document.getElementById('station-note').textContent = only.available ? '' : t('station_single_busy');
+        return;
+      }
       stationList.forEach((entry) => {
         const button = document.createElement('button');
         button.type = 'button';
