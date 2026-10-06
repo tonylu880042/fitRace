@@ -275,3 +275,17 @@ def test_endpoint_accepts_and_validates_start_wait(client):
         json={"enabled": True, "duration_sec": 120, "start_wait_sec": 301},
     )
     assert bad.status_code == 422
+
+
+def test_ws_state_change_carries_the_hub_clock_but_http_state_stays_stable(
+    client, monkeypatch
+):
+    sent = []
+
+    async def fake(message):
+        sent.append(message)
+
+    monkeypatch.setattr(hub_app.ws_manager, "broadcast", fake)
+    asyncio.run(hub_app.broadcast_race_state())
+    assert isinstance(sent[-1]["hub_now_epoch_ms"], int)
+    assert "hub_now_epoch_ms" not in client.get("/api/race/state").json()

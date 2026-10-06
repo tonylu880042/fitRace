@@ -110,6 +110,7 @@
   "stage.countdown": "Countdown",
   "stage.go": "3, 2, 1, Go",
   "stage.countdown_sub": "Race timer starts on Go. Sound follows the Game Admin setting.",
+  "challenge.start_wait": "Starting in {seconds}s — other stations can still sign up",
   "stage.timer_go": "GO",
   "stage.live_race": "Live Race",
   "stage.running_main": "{competition} {raceType} race",

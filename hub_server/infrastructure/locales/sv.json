@@ -110,6 +110,7 @@
   "stage.countdown": "Nedräkning",
   "stage.go": "3, 2, 1, Go",
   "stage.countdown_sub": "Tidtagningen startar vid Go. Ljudet följer inställningen i Game Admin.",
+  "challenge.start_wait": "Start om {seconds} s — fler stationer kan fortfarande anmäla sig",
   "stage.timer_go": "KÖR",
   "stage.live_race": "Lopp direkt",
   "stage.running_main": "{competition} — {raceType}lopp",

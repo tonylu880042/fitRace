@@ -756,6 +756,9 @@ async def broadcast_race_state(now_ms: Optional[int] = None):
     class_result_store.save_finished_snapshot(state_data)
     ws_data = dict(state_data)
     ws_data["type"] = "state_change"
+    # Only on the live push (it changes every call): lets the display count
+    # down against the hub clock rather than its own.
+    ws_data["hub_now_epoch_ms"] = int(time.time() * 1000)
     await ws_manager.broadcast(ws_data)
     return state_data
 

@@ -276,6 +276,19 @@
       border: 1px solid var(--steel-border);
     }
 
+    .challenge-wait-banner {
+      margin-bottom: 1rem;
+      padding: 0.7rem 1rem;
+      border: 1px solid var(--volt-yellow);
+      border-radius: 4px;
+      background: rgba(226, 255, 59, 0.08);
+      color: var(--volt-yellow);
+      font-family: 'Oswald', sans-serif;
+      font-size: clamp(1rem, 1.6vw, 1.5rem);
+      font-weight: 700;
+      text-align: center;
+    }
+
     .race-stage-banner {
       display: grid;
       grid-template-columns: auto minmax(0, 1fr) auto;
@@ -3346,6 +3359,7 @@
           <div id="leaderboard-panel-title" data-i18n="leaderboard.title">Live Leaderboard</div>
           <span id="race-type-indicator" data-i18n="race.unconfigured">Race: Not configured</span>
         </div>
+        <div class="challenge-wait-banner" id="challenge-wait-banner" aria-live="polite" style="display: none;"></div>
         <div class="race-stage-banner" id="race-stage-banner" aria-live="polite">
           <div class="race-stage-pulse" aria-hidden="true"></div>
           <div>
@@ -7594,6 +7608,7 @@
       }
 
       currentChallengeShowStandings = data.challenge_show_standings === true;
+      applyChallengeWait(data);
       syncRecordWall(data);
 
       // Idle live telemetry only makes sense outside a running/finished
@@ -7708,6 +7723,35 @@
 
     // Challenge mode resets on the backend (when the next sign-up arrives),
     // so the page must never run its own countdown there.
+    // R6: the hub is waiting for more stations to sign up before it starts.
+    // Counts down against the HUB's clock (hub_now_epoch_ms) so a dashboard
+    // browser with a skewed clock still shows the right number.
+    let challengeStartAtEpochMs = null;
+    let hubClockOffsetMs = 0;
+
+    function applyChallengeWait(data) {
+      challengeStartAtEpochMs = data && data.challenge_start_at_epoch_ms ? data.challenge_start_at_epoch_ms : null;
+      if (data && typeof data.hub_now_epoch_ms === "number") {
+        hubClockOffsetMs = data.hub_now_epoch_ms - Date.now();
+      }
+      renderChallengeWaitBanner();
+    }
+
+    function renderChallengeWaitBanner() {
+      const banner = document.getElementById("challenge-wait-banner");
+      if (!banner) return;
+      if (!challengeStartAtEpochMs) {
+        banner.style.display = "none";
+        return;
+      }
+      const remainingMs = challengeStartAtEpochMs - (Date.now() + hubClockOffsetMs);
+      const seconds = Math.max(0, Math.ceil(remainingMs / 1000));
+      banner.textContent = t("challenge.start_wait", { seconds });
+      banner.style.display = "";
+    }
+
+    window.setInterval(renderChallengeWaitBanner, 1000);
+
     function syncAutoReset(data) {
       if (currentState === "STOPPED") {
         if (data && data.challenge_mode_enabled) {

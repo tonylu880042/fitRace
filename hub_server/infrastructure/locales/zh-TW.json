@@ -110,6 +110,7 @@
   "stage.countdown": "倒數計時",
   "stage.go": "3, 2, 1, Go",
   "stage.countdown_sub": "計時將於 Go 之後開始,音效依 Game Admin 設定播放。",
+  "challenge.start_wait": "{seconds} 秒後開跑，其他站位仍可報名",
   "stage.timer_go": "出發",
   "stage.live_race": "賽事直播",
   "stage.running_main": "{competition} {raceType} 賽事",
