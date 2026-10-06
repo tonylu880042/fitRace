@@ -122,6 +122,7 @@ function el(id) {
 }
 function $(id) { return el(id); }
 function escapeHtml(value) { return String(value ?? ""); }
+function syncVisibility() {}
 function t(key, params = {}) {
   const table = {
     "panel.current_heat": "Current Heat",

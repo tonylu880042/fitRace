@@ -488,6 +488,7 @@ function renderRaceActionButtons() {{}}
 function updateControlGuidance() {{}}
 function renderReadinessPanel() {{}}
 function syncSessionModeControl() {{}}
+function syncVisibility() {{}}
 function renderRoster() {{}}
 
 const state = {{

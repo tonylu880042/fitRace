@@ -1,0 +1,719 @@
+"""Progressive disclosure for Game Admin (docs/game_admin_progressive_disclosure_spec.md).
+
+A setting appears only when an earlier choice makes it relevant. Hidden is not
+disabled: irrelevant fields are collapsed (`field-collapsed` / `hidden`), and
+hiding never changes a save payload.
+
+Pure logic (`disclosureState`) is extracted from the comment-stripped inline
+script and executed under `node -e`; DOM structure is checked by parsing the
+HTML (HTMLParser ignores comments), never by substring grep.
+"""
+
+import json
+import re
+import subprocess
+from html.parser import HTMLParser
+from pathlib import Path
+
+STATIC_DIR = Path(__file__).resolve().parents[3] / "hub_server" / "static"
+
+_LINE_COMMENT_RE = re.compile(r"^[ \t]*//.*$\n?", re.MULTILINE)
+_BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
+
+
+def _strip_js_comments(code: str) -> str:
+    return _LINE_COMMENT_RE.sub("", _BLOCK_COMMENT_RE.sub("", code))
+
+
+def _read() -> str:
+    return (STATIC_DIR / "gameAdmin.html").read_text(encoding="utf-8")
+
+
+def _stripped_script() -> str:
+    source = _read()
+    start = source.index("<script>") + len("<script>")
+    end = source.index("</script>", start)
+    return _strip_js_comments(source[start:end])
+
+
+def _match_end(source: str, open_idx: int, open_ch: str, close_ch: str) -> int:
+    depth = 0
+    i = open_idx
+    in_str = None
+    while i < len(source):
+        char = source[i]
+        if in_str:
+            if char == "\\":
+                i += 2
+                continue
+            if char == in_str:
+                in_str = None
+        elif char in ('"', "'", "`"):
+            in_str = char
+        elif char == open_ch:
+            depth += 1
+        elif char == close_ch:
+            depth -= 1
+            if depth == 0:
+                return i
+        i += 1
+    raise ValueError("unbalanced")
+
+
+def _extract_function(source: str, name: str) -> str:
+    marker = f"function {name}("
+    start = source.index(marker)
+    paren_close = _match_end(source, start + len(marker) - 1, "(", ")")
+    brace_open = source.index("{", paren_close)
+    return source[start : _match_end(source, brace_open, "{", "}") + 1]
+
+
+def _run_node(script: str) -> str:
+    result = subprocess.run(
+        ["node", "-e", script], capture_output=True, text=True, timeout=10
+    )
+    assert result.returncode == 0, f"node failed: {result.stderr}"
+    return result.stdout.strip()
+
+
+# ---------------------------------------------------------------------------
+# HTML structure helper
+# ---------------------------------------------------------------------------
+
+_VOID = {"input", "br", "img", "meta", "link", "hr"}
+
+
+class _Node:
+    def __init__(self, tag, attrs, parent):
+        self.tag = tag
+        self.attrs = dict(attrs)
+        self.parent = parent
+        self.children = []
+
+    @property
+    def classes(self):
+        return (self.attrs.get("class") or "").split()
+
+    def ancestors(self):
+        node = self.parent
+        while node is not None:
+            yield node
+            node = node.parent
+
+    def inside(self, tag=None, id_=None):
+        return any(
+            (tag is None or a.tag == tag) and (id_ is None or a.attrs.get("id") == id_)
+            for a in self.ancestors()
+        )
+
+
+class _Tree(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.root = _Node("root", [], None)
+        self.cur = self.root
+        self.by_id = {}
+
+    def handle_starttag(self, tag, attrs):
+        node = _Node(tag, attrs, self.cur)
+        self.cur.children.append(node)
+        if "id" in node.attrs:
+            self.by_id[node.attrs["id"]] = node
+        if tag not in _VOID:
+            self.cur = node
+
+    def handle_endtag(self, tag):
+        node = self.cur
+        while node is not None and node.tag != tag:
+            node = node.parent
+        if node is not None and node.parent is not None:
+            self.cur = node.parent
+
+
+def _tree() -> _Tree:
+    parser = _Tree()
+    parser.feed(_read())
+    return parser
+
+
+# ---------------------------------------------------------------------------
+# disclosureState -- one pure partition
+# ---------------------------------------------------------------------------
+
+
+def _disclosure(**overrides):
+    base = {
+        "competitionMode": "individual",
+        "challengeModeOn": False,
+        "sessionMode": "race",
+        "raceState": "IDLE",
+        "hasRoster": False,
+    }
+    base.update(overrides)
+    fn = _extract_function(_stripped_script(), "disclosureState")
+    return json.loads(
+        _run_node(
+            f"{fn}\nconsole.log(JSON.stringify(disclosureState({json.dumps(base)})));"
+        )
+    )
+
+
+def test_individual_hides_relay_team_fields_and_team_rule_card():
+    s = _disclosure(competitionMode="individual")
+    assert s["relayLegs"] is False
+    assert s["teamScoring"] is False
+    assert s["teamCompletion"] is False
+    assert s["teamRuleCard"] is False
+
+
+def test_team_shows_team_fields_and_card_but_not_relay_legs():
+    s = _disclosure(competitionMode="team")
+    assert s["relayLegs"] is False
+    assert s["teamScoring"] is True
+    assert s["teamCompletion"] is True
+    assert s["teamRuleCard"] is True
+
+
+def test_relay_shows_legs_and_card_but_not_team_fields():
+    s = _disclosure(competitionMode="relay")
+    assert s["relayLegs"] is True
+    assert s["teamScoring"] is False
+    assert s["teamCompletion"] is False
+    assert s["teamRuleCard"] is True
+
+
+def test_challenge_settings_follow_challenge_mode():
+    assert _disclosure(challengeModeOn=True)["challengeSettings"] is True
+    assert _disclosure(challengeModeOn=False)["challengeSettings"] is False
+
+
+def test_switch_to_race_mode_visible_unless_session_is_race():
+    assert _disclosure(sessionMode="race")["switchToRaceMode"] is False
+    assert _disclosure(sessionMode="class")["switchToRaceMode"] is True
+    assert _disclosure(sessionMode=None)["switchToRaceMode"] is True
+
+
+def test_roster_lists_follow_has_roster():
+    assert _disclosure(hasRoster=True)["rosterLists"] is True
+    assert _disclosure(hasRoster=False)["rosterLists"] is False
+
+
+# ---------------------------------------------------------------------------
+# syncVisibility -- applies the decision to the DOM (R1, R2, R6)
+# ---------------------------------------------------------------------------
+
+_STUB = """
+const mk = () => ({
+  classList: {
+    s: new Set(),
+    toggle(c, f) { if (f) this.s.add(c); else this.s.delete(c); },
+    contains(c) { return this.s.has(c); },
+  },
+  hidden: false,
+  value: "",
+});
+const els = {};
+const $ = (id) => (els[id] = els[id] || mk());
+const state = { race: { session_mode: "race", state: "IDLE" },
+                roster: { counts: { pending: 0, loaded: 0, done: 0, absent: 0 } } };
+"""
+
+_FIELDS = ["relay-legs-field", "team-scoring-field", "team-completion-field"]
+
+
+def _run_sync(competition_mode: str) -> dict:
+    src = _stripped_script()
+    fns = "\n".join(
+        _extract_function(src, n)
+        for n in ("rulesOpenAfterTransition", "disclosureState", "syncVisibility")
+    )
+    script = _STUB + fns + f"""
+$("competition-mode").value = {json.dumps(competition_mode)};
+syncVisibility();
+console.log(JSON.stringify({{
+  collapsed: {json.dumps(_FIELDS)}.map((id) => $(id).classList.contains("field-collapsed")),
+  ruleCardHidden: $("team-rule-card").hidden,
+}}));
+"""
+    return json.loads(_run_node(script))
+
+
+def test_sync_visibility_individual_collapses_all_three_fields_and_card():
+    out = _run_sync("individual")
+    assert out["collapsed"] == [True, True, True]
+    assert out["ruleCardHidden"] is True
+
+
+def test_sync_visibility_team_shows_team_fields_only():
+    out = _run_sync("team")
+    assert out["collapsed"] == [True, False, False]
+    assert out["ruleCardHidden"] is False
+
+
+def test_sync_visibility_relay_shows_legs_only():
+    out = _run_sync("relay")
+    assert out["collapsed"] == [False, True, True]
+    assert out["ruleCardHidden"] is False
+
+
+def test_sync_competition_fields_no_longer_greys_out_irrelevant_fields():
+    body = _extract_function(_stripped_script(), "syncCompetitionFields")
+    assert '"relay-legs-field"' not in body
+    assert '"team-scoring-field"' not in body
+    assert '"team-scoring-note"' not in body
+
+
+def test_relay_and_team_notes_removed_from_markup():
+    tree = _tree()
+    assert "relay-legs-note" not in tree.by_id
+    assert "team-scoring-note" not in tree.by_id
+    assert "team-completion-note" in tree.by_id  # time-based constraint note stays
+
+
+def test_sync_visibility_called_from_every_competition_sync_site():
+    tree = _tree()
+    onchange = tree.by_id["competition-mode"].attrs["onchange"]
+    assert "syncVisibility()" in onchange
+    src = _stripped_script()
+    assert "syncVisibility()" in _extract_function(src, "syncSessionModeControl")
+    init_tail = src[src.rindex("syncMixedRaceFields();") :]
+    assert "syncVisibility()" in init_tail
+
+
+def test_team_rule_card_is_a_guidance_card_in_markup():
+    tree = _tree()
+    card = tree.by_id["team-rule-card"]
+    assert "guidance-card" in card.classes
+    assert "team-rule-summary" in tree.by_id
+
+
+# ---------------------------------------------------------------------------
+# Hiding never touches values or the save payload
+# ---------------------------------------------------------------------------
+
+
+def _configure_payload(toggle: bool) -> dict:
+    src = _stripped_script()
+    fns = "\n".join(
+        [
+            _extract_function(src, "rulesOpenAfterTransition"),
+            _extract_function(src, "disclosureState"),
+            _extract_function(src, "syncVisibility"),
+            _extract_function(src, "isRelayCompetitionMode"),
+            "async " + _extract_function(src, "configureRace"),
+        ]
+    )
+    script = (
+        _STUB
+        + """
+const posts = [];
+const adminHeaders = (h) => h;
+const setMessage = () => {};
+const t = (k) => k;
+const refreshReadiness = async () => {};
+const renderRace = () => {};
+const validateRaceGroups = () => null;
+const buildRaceGroupsPayload = () => [];
+async function fetchJson(url, opts) { posts.push(JSON.parse(opts.body)); return {}; }
+"""
+        + fns
+        + f"""
+$("race-type").value = "distance";
+$("competition-mode").value = "team";
+$("team-scoring-policy").value = "total";
+$("team-completion-policy").value = "all_members";
+$("relay-legs").value = "4";
+$("race-target").value = "500";
+syncVisibility();
+if ({json.dumps(toggle)}) {{
+  $("competition-mode").value = "individual"; syncVisibility();
+  $("competition-mode").value = "team"; syncVisibility();
+}}
+configureRace().then(() => console.log(JSON.stringify({{
+  body: posts[0],
+  scoring: $("team-scoring-policy").value,
+  completion: $("team-completion-policy").value,
+}})));
+"""
+    )
+    return json.loads(_run_node(script))
+
+
+def test_toggling_competition_keeps_team_values_and_payload_unchanged():
+    baseline = _configure_payload(toggle=False)
+    toggled = _configure_payload(toggle=True)
+    assert toggled == baseline
+    assert toggled["scoring"] == "total"
+    assert toggled["completion"] == "all_members"
+    assert baseline["body"]["team_scoring_policy"] == "total"
+    assert baseline["body"]["team_completion_policy"] == "all_members"
+
+
+# ---------------------------------------------------------------------------
+# R4 -- Switch Projector to Race Mode only while the hub is not in race mode
+# ---------------------------------------------------------------------------
+
+
+def _run_sync_with_state(state_js: str, extra: str = "") -> dict:
+    src = _stripped_script()
+    fns = "\n".join(
+        _extract_function(src, n)
+        for n in ("rulesOpenAfterTransition", "disclosureState", "syncVisibility")
+    )
+    script = _STUB + fns + f"""
+Object.assign(state, {state_js});
+$("competition-mode").value = "individual";
+syncVisibility();
+{extra}
+console.log(JSON.stringify({{
+  switchCollapsed: $("switch-to-race-mode-field").classList.contains("field-collapsed"),
+}}));
+"""
+    return json.loads(_run_node(script))
+
+
+def test_switch_to_race_mode_field_is_collapsed_when_session_mode_is_race():
+    out = _run_sync_with_state('{ race: { session_mode: "race", state: "IDLE" } }')
+    assert out["switchCollapsed"] is True
+
+
+def test_switch_to_race_mode_field_is_shown_when_session_mode_is_class():
+    out = _run_sync_with_state('{ race: { session_mode: "class", state: "IDLE" } }')
+    assert out["switchCollapsed"] is False
+
+
+def test_switch_to_race_mode_field_markup_wraps_button_and_note():
+    tree = _tree()
+    field = tree.by_id["switch-to-race-mode-field"]
+    assert "field" in field.classes
+    assert tree.by_id["btn-switch-to-race-mode"].inside(id_="switch-to-race-mode-field")
+    assert tree.by_id["switch-to-race-mode-note"].inside(
+        id_="switch-to-race-mode-field"
+    )
+
+
+# ---------------------------------------------------------------------------
+# R5 -- heat/queue blocks appear only once the roster has entries
+# ---------------------------------------------------------------------------
+
+_ROSTER_BLOCKS = [
+    "roster-current-heat-block",
+    "roster-next-heat-block",
+    "roster-heat-actions",
+    "roster-pending-block",
+    "roster-done-block",
+    "roster-absent-block",
+]
+
+
+def _run_roster_visibility(counts_js: str) -> list:
+    src = _stripped_script()
+    fns = "\n".join(
+        _extract_function(src, n)
+        for n in ("rulesOpenAfterTransition", "disclosureState", "syncVisibility")
+    )
+    script = _STUB + fns + f"""
+state.roster = {{ counts: {counts_js} }};
+$("competition-mode").value = "individual";
+syncVisibility();
+console.log(JSON.stringify({json.dumps(_ROSTER_BLOCKS)}.map((id) => $(id).hidden)));
+"""
+    return json.loads(_run_node(script))
+
+
+def test_empty_roster_hides_every_heat_and_queue_block():
+    hidden = _run_roster_visibility("{ pending: 0, loaded: 0, done: 0, absent: 0 }")
+    assert hidden == [True] * len(_ROSTER_BLOCKS)
+
+
+def test_any_roster_entry_shows_every_heat_and_queue_block():
+    for counts in (
+        "{ pending: 1, loaded: 0, done: 0, absent: 0 }",
+        "{ pending: 0, loaded: 1, done: 0, absent: 0 }",
+        "{ pending: 0, loaded: 0, done: 1, absent: 0 }",
+        "{ pending: 0, loaded: 0, done: 0, absent: 1 }",
+    ):
+        assert _run_roster_visibility(counts) == [False] * len(_ROSTER_BLOCKS), counts
+
+
+def test_roster_blocks_exist_in_roster_panel_and_walk_in_and_toolbar_do_not_hide():
+    tree = _tree()
+    for block_id in _ROSTER_BLOCKS:
+        assert tree.by_id[block_id].inside(tag="section"), block_id
+    assert tree.by_id["roster-current-heat"].inside(id_="roster-current-heat-block")
+    assert tree.by_id["roster-next-heat"].inside(id_="roster-next-heat-block")
+    assert tree.by_id["btn-load-next-heat"].inside(id_="roster-heat-actions")
+    assert tree.by_id["roster-pending-list"].inside(id_="roster-pending-block")
+    assert tree.by_id["roster-done-list"].inside(id_="roster-done-block")
+    assert tree.by_id["roster-absent-list"].inside(id_="roster-absent-block")
+    # Always-visible: walk-in registration, import toolbar, roster status.
+    for always in ("walk-in-name", "roster-file-input", "roster-counts"):
+        node = tree.by_id[always]
+        for block_id in _ROSTER_BLOCKS:
+            assert not node.inside(id_=block_id), (always, block_id)
+
+
+def test_render_roster_re_syncs_visibility_after_every_roster_change():
+    assert "syncVisibility()" in _extract_function(_stripped_script(), "renderRoster")
+
+
+# ---------------------------------------------------------------------------
+# R7 -- Race Rules collapses on the transition into RUNNING, only then
+# ---------------------------------------------------------------------------
+
+
+def _run_rules_sequence(steps: list) -> list:
+    """steps: list of {"state": ..., "manualOpen": bool|None}. Before each
+    syncVisibility() tick the operator may toggle the <details> by hand
+    (manualOpen). Returns details.open after every tick."""
+    src = _stripped_script()
+    fns = "\n".join(
+        _extract_function(src, n)
+        for n in ("rulesOpenAfterTransition", "disclosureState", "syncVisibility")
+    )
+    script = _STUB + fns + f"""
+$("competition-mode").value = "individual";
+$("rules-details").open = true;
+const out = [];
+for (const step of {json.dumps(steps)}) {{
+  state.race = {{ session_mode: "race", state: step.state }};
+  if (step.manualOpen !== null) $("rules-details").open = step.manualOpen;
+  syncVisibility();
+  out.push($("rules-details").open);
+}}
+console.log(JSON.stringify(out));
+"""
+    return json.loads(_run_node(script))
+
+
+def _step(state, manual=None):
+    return {"state": state, "manualOpen": manual}
+
+
+def test_rules_details_collapses_on_transition_into_running():
+    assert _run_rules_sequence([_step("IDLE"), _step("READY"), _step("RUNNING")]) == [
+        True,
+        True,
+        False,
+    ]
+
+
+def test_rules_details_reopens_on_transition_out_of_running():
+    out = _run_rules_sequence([_step("READY"), _step("RUNNING"), _step("STOPPED")])
+    assert out == [True, False, True]
+
+
+def test_manual_toggle_during_running_is_not_overridden_by_later_ticks():
+    out = _run_rules_sequence(
+        [_step("READY"), _step("RUNNING"), _step("RUNNING", True), _step("RUNNING")]
+    )
+    assert out == [True, False, True, True]
+
+
+def test_manual_close_while_not_running_is_not_overridden():
+    out = _run_rules_sequence([_step("IDLE"), _step("IDLE", False), _step("IDLE")])
+    assert out == [True, False, False]
+
+
+def test_rules_open_after_transition_pure_truth_table():
+    fn = _extract_function(_stripped_script(), "rulesOpenAfterTransition")
+    script = fn + """
+const cases = [
+  ["READY", "RUNNING", true], ["RUNNING", "RUNNING", true],
+  ["RUNNING", "STOPPED", false], ["STOPPED", "STOPPED", false],
+  [null, "RUNNING", true], [null, "IDLE", false],
+];
+console.log(JSON.stringify(cases.map(([p, n, o]) => rulesOpenAfterTransition(p, n, o))));
+"""
+    assert json.loads(_run_node(script)) == [False, True, True, False, False, False]
+
+
+def test_rules_details_markup_wraps_body_with_title_as_summary():
+    tree = _tree()
+    details = tree.by_id["rules-details"]
+    assert details.tag == "details"
+    assert "open" in details.attrs
+    assert details.inside(id_="rules-block")
+    summary = next(c for c in details.children if c.tag == "summary")
+    assert any(
+        c.tag == "h3" and c.attrs.get("data-i18n") == "panel.race_rules"
+        for c in summary.children
+    )
+    for field_id in (
+        "race-type",
+        "competition-mode",
+        "team-scoring-field",
+        "race-target",
+        "race-groups-field",
+    ):
+        assert tree.by_id[field_id].inside(tag="details", id_="rules-details"), field_id
+    assert tree.by_id["rules-dirty-badge"].inside(tag="summary")
+
+
+# ---------------------------------------------------------------------------
+# R8.5 -- destructive roster actions live in a closed "Advanced" details
+# ---------------------------------------------------------------------------
+
+
+def _element_children(node):
+    return [c for c in node.children if c.tag]
+
+
+def test_roster_advanced_is_a_closed_details_with_i18n_summary():
+    tree = _tree()
+    details = tree.by_id["roster-advanced"]
+    assert details.tag == "details"
+    assert "open" not in details.attrs
+    summary = next(c for c in details.children if c.tag == "summary")
+    assert summary.attrs.get("data-i18n") == "panel.advanced"
+
+
+def test_clear_buttons_moved_out_of_toolbar_into_roster_advanced():
+    tree = _tree()
+    for button_id in ("btn-clear-results", "btn-clear-roster"):
+        button = tree.by_id[button_id]
+        assert button.inside(tag="details", id_="roster-advanced"), button_id
+        assert not button.inside(id_="roster-toolbar"), button_id
+    # Import / template / export stay in the toolbar.
+    for button_id in (
+        "btn-download-roster-template",
+        "roster-file-input",
+        "btn-download-results-csv",
+    ):
+        assert tree.by_id[button_id].inside(id_="roster-toolbar"), button_id
+
+
+def test_roster_advanced_is_the_last_block_of_the_roster_panel():
+    tree = _tree()
+    details = tree.by_id["roster-advanced"]
+    section = details.parent
+    assert section.tag == "section"
+    assert _element_children(section)[-1] is details
+
+
+def test_clear_modals_ids_and_handlers_unchanged():
+    tree = _tree()
+    assert tree.by_id["btn-clear-results"].attrs["onclick"] == "openClearResultsModal()"
+    assert tree.by_id["btn-clear-roster"].attrs["onclick"] == "openClearRosterModal()"
+    assert "clear-results-modal" in tree.by_id
+    assert "clear-roster-modal" in tree.by_id
+
+
+def test_panel_advanced_key_in_both_dictionaries():
+    source = _read()
+    assert source.count('"panel.advanced":') == 2
+
+
+# ---------------------------------------------------------------------------
+# R8.1/8.3/8.4 -- Live Presentation slimmed; Advanced holds the rare controls
+# ---------------------------------------------------------------------------
+
+
+def test_live_presentation_keeps_only_display_controls():
+    tree = _tree()
+    for keep in (
+        "leaderboard-display-mode",
+        "start-sound-enabled",
+        "signup-qr-visible",
+        "admin-qr-visible",
+        "idle-live-telemetry-visible",
+    ):
+        assert tree.by_id[keep].inside(id_="live-block"), keep
+    for moved in (
+        "btn-start-new-event",
+        "event-start-label",
+        "auto-refresh",
+        "btn-switch-to-race-mode",
+    ):
+        assert not tree.by_id[moved].inside(id_="live-block"), moved
+
+
+def test_race_advanced_is_a_closed_details_at_the_bottom_of_the_left_column():
+    tree = _tree()
+    details = tree.by_id["race-advanced"]
+    assert details.tag == "details"
+    assert "open" not in details.attrs
+    summary = next(c for c in details.children if c.tag == "summary")
+    assert summary.attrs.get("data-i18n") == "panel.advanced"
+    left = details.parent
+    assert "race-control-left" in left.classes
+    assert _element_children(left)[-1] is details
+
+
+def test_overall_standings_and_refresh_preference_live_in_race_advanced():
+    tree = _tree()
+    for node_id in ("btn-start-new-event", "event-start-label", "auto-refresh"):
+        assert tree.by_id[node_id].inside(tag="details", id_="race-advanced"), node_id
+    assert "local-block" not in tree.by_id
+
+
+def test_switch_to_race_mode_field_stays_in_the_race_panel_left_column():
+    tree = _tree()
+    field = tree.by_id["switch-to-race-mode-field"]
+    assert field.parent is tree.by_id["race-advanced"].parent
+    assert not field.inside(id_="race-advanced")
+    assert not field.inside(id_="live-block")
+
+
+# ---------------------------------------------------------------------------
+# Real wiring: race type -> mixed forces competition to individual
+# ---------------------------------------------------------------------------
+
+
+def test_choosing_mixed_race_type_collapses_team_fields_via_registered_listeners():
+    """Runs the page's actual `$("race-type").addEventListener(...)` lines
+    (not a direct syncVisibility() call), in registration order."""
+    src = _stripped_script()
+    listener_lines = re.findall(
+        r'^\s*\$\("race-type"\)\.addEventListener\([^\n]*\);\s*$', src, re.MULTILINE
+    )
+    assert listener_lines, "no race-type listeners found"
+    fns = "\n".join(
+        _extract_function(src, n)
+        for n in (
+            "isMixedRaceType",
+            "rulesOpenAfterTransition",
+            "disclosureState",
+            "syncVisibility",
+            "syncMixedRaceFields",
+        )
+    )
+    script = (
+        _STUB
+        + """
+const listeners = {};
+const origMk = mk;
+function renderRaceGroupsEditor() {}
+state.raceGroups = [];
+"""
+        + fns
+        + """
+$("race-type").addEventListener = (ev, fn) => {
+  (listeners[ev] = listeners[ev] || []).push(fn);
+};
+"""
+        + "\n".join(listener_lines)
+        + """
+$("competition-mode").value = "team";
+$("race-type").value = "distance";
+syncVisibility();
+const before = [
+  $("team-scoring-field").classList.contains("field-collapsed"),
+  $("team-completion-field").classList.contains("field-collapsed"),
+];
+$("race-type").value = "mixed";
+for (const fn of listeners.change) fn();
+console.log(JSON.stringify({
+  before,
+  competition: $("competition-mode").value,
+  after: [
+    $("team-scoring-field").classList.contains("field-collapsed"),
+    $("team-completion-field").classList.contains("field-collapsed"),
+  ],
+}));
+"""
+    )
+    out = json.loads(_run_node(script))
+    assert out["before"] == [False, False]
+    assert out["competition"] == "individual"
+    assert out["after"] == [True, True]

@@ -121,7 +121,7 @@ def test_panel_body_has_left_and_right_columns_in_dom_order():
 # ---------------------------------------------------------------------------
 
 
-def test_left_column_contains_rules_live_local_blocks_in_order():
+def test_left_column_contains_rules_live_advanced_in_order():
     panel = _race_control_panel(_read())
     left_start = panel.index('class="race-control-left"')
     right_start = panel.index('class="race-control-right"')
@@ -129,9 +129,8 @@ def test_left_column_contains_rules_live_local_blocks_in_order():
 
     rules_idx = left_column.index('id="rules-block"')
     live_idx = left_column.index('id="live-block"')
-    local_idx = left_column.index('id="local-block"')
-    assert rules_idx < live_idx < local_idx
-    assert "control-block-muted" in _named_div(left_column, "local-block")
+    advanced_idx = left_column.index('id="race-advanced"')
+    assert rules_idx < live_idx < advanced_idx
 
 
 def test_right_column_contains_the_readiness_panel():

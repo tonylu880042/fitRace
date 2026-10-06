@@ -1233,6 +1233,7 @@ def _run_game_admin_sync_session_mode_control(race_state: str) -> dict:
         "  return mockElements[id];\n"
         "}\n"
         "function t(key) { return `T[${key}]`; }\n"
+        "function syncVisibility() {}\n"
         "const state = { race: "
         + json.dumps({"state": race_state})
         + " };\n"
@@ -1313,11 +1314,10 @@ def test_game_admin_new_keys_exist_in_both_inline_dictionaries():
 
 
 def test_game_admin_live_presentation_block_contains_the_new_control():
-    """The control belongs in the existing Live Presentation block -- the
-    'what the projector shows' area -- next to the leaderboard-view
-    control, per CLAUDE.md's page-responsibility guidance."""
+    """The control belongs in the race panel's left column (the progressive
+    disclosure regroup moved it out of Live Presentation into its own
+    field, shown only while the hub is not in race mode)."""
     source = _read_game_admin()
-    live_block_start = source.index('id="live-block"')
-    live_block_end = source.index('id="local-block"', live_block_start)
-    live_block_source = source[live_block_start:live_block_end]
-    assert 'id="btn-switch-to-race-mode"' in live_block_source
+    left_start = source.index('class="race-control-left"')
+    left_end = source.index('class="race-control-right"', left_start)
+    assert 'id="btn-switch-to-race-mode"' in source[left_start:left_end]

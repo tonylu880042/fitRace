@@ -135,16 +135,15 @@ def test_race_control_panel_has_three_ordered_blocks_with_i18n_titles():
     panel = _race_control_panel(_read())
     rules_idx = panel.index('id="rules-block"')
     live_idx = panel.index('id="live-block"')
-    local_idx = panel.index('id="local-block"')
-    assert rules_idx < live_idx < local_idx
+    advanced_idx = panel.index('id="race-advanced"')
+    assert rules_idx < live_idx < advanced_idx
 
     rules_block = _block(panel, "rules-block")
     live_block = _block(panel, "live-block")
-    local_block = _block(panel, "local-block")
 
     assert 'data-i18n="panel.race_rules"' in rules_block
     assert 'data-i18n="panel.live_presentation"' in live_block
-    assert 'data-i18n="panel.local_preference"' in local_block
+    assert 'data-i18n="panel.advanced"' in panel[advanced_idx:]
 
 
 def test_staged_fields_live_in_rules_block_with_original_handlers():
@@ -156,7 +155,7 @@ def test_staged_fields_live_in_rules_block_with_original_handlers():
 
     assert 'onchange="syncRaceFields(); markRaceConfigDirty()"' in rules_block
     assert (
-        'onchange="syncCompetitionFields(); renderStations(); markRaceConfigDirty()"'
+        'onchange="syncCompetitionFields(); syncVisibility(); renderStations(); markRaceConfigDirty()"'
         in rules_block
     )
     assert (
@@ -186,13 +185,15 @@ def test_immediate_fields_live_in_live_block_with_original_handlers():
         assert f'id="{field_id}"' not in live_block
 
 
-def test_local_field_lives_alone_in_local_block():
+def test_local_field_lives_in_advanced_not_in_rules_or_live_blocks():
     panel = _race_control_panel(_read())
-    local_block = _block(panel, "local-block")
+    advanced = panel[panel.index('id="race-advanced"') :]
 
-    assert 'id="auto-refresh"' in local_block
+    assert 'id="auto-refresh"' in advanced
     for field_id in STAGED_FIELD_IDS + IMMEDIATE_FIELD_IDS:
-        assert f'id="{field_id}"' not in local_block
+        assert f'id="{field_id}"' not in advanced
+    assert 'id="auto-refresh"' not in _block(panel, "rules-block")
+    assert 'id="auto-refresh"' not in _block(panel, "live-block")
 
 
 def test_all_race_types_and_leaderboard_views_preserved():
@@ -240,12 +241,11 @@ def test_live_block_has_a_static_always_visible_immediate_pill():
     assert ".pill-immediate" in style
 
 
-def test_local_block_is_visually_deemphasised_with_browser_only_note():
+def test_refresh_preference_carries_browser_only_note_inside_advanced():
     source = _read()
     panel = _race_control_panel(source)
-    local_block = _block(panel, "local-block")
-    assert "control-block-muted" in local_block
-    assert 'data-i18n="text.local_preference_note"' in local_block
+    advanced = panel[panel.index('id="race-advanced"') :]
+    assert 'data-i18n="text.local_preference_note"' in advanced
 
 
 # ---------------------------------------------------------------------------
@@ -258,7 +258,10 @@ def test_team_fields_no_longer_use_is_hidden_toggle():
     script = _stripped_script(_read())
     body = _extract_function_body(script, "syncCompetitionFields")
     assert "is-hidden" not in body
-    assert '$("team-scoring-field").classList.toggle("is-disabled"' in body
+    # Team Scoring is now hidden (not greyed) when irrelevant -- see
+    # test_game_admin_progressive_disclosure.py. Completion Rule keeps its
+    # visible-but-disabled state for time-based race types.
+    assert '$("team-scoring-field").classList.toggle("is-disabled"' not in body
     assert '$("team-completion-field").classList.toggle("is-disabled"' in body
 
 
@@ -275,7 +278,7 @@ def test_sync_competition_fields_disables_team_selects_for_individual_mode():
     tests/unit/hub/test_game_admin_race_rule_guidance.py."""
     script = _stripped_script(_read())
     body = _extract_function_body(script, "syncCompetitionFields")
-    assert '$("team-scoring-policy").disabled = !isTeamRace;' in body
+    assert '$("team-scoring-policy").disabled' not in body
     assert "completionFieldState(" in body
     assert '$("team-completion-policy").disabled = completion.disabled;' in body
 
@@ -284,9 +287,11 @@ def test_team_fields_carry_team_only_note_with_i18n():
     source = _read()
     panel = _race_control_panel(source)
     rules_block = _block(panel, "rules-block")
-    assert 'id="team-scoring-note"' in rules_block
+    # Team Scoring's "team only" note went away with the grey-out: the field
+    # is collapsed instead. Completion Rule keeps its constraint note.
+    assert 'id="team-scoring-note"' not in rules_block
     assert 'id="team-completion-note"' in rules_block
-    assert rules_block.count('data-i18n="text.team_field_note"') == 2
+    assert rules_block.count('data-i18n="text.team_field_note"') == 1
 
 
 def test_team_fields_stay_in_the_dom_regardless_of_competition_mode():
@@ -439,7 +444,7 @@ def test_save_and_start_actions_guard_against_pending_countdown_and_running():
 NEW_I18N_KEYS = [
     "panel.race_rules",
     "panel.live_presentation",
-    "panel.local_preference",
+    "panel.advanced",
     "badge.unsaved_changes",
     "pill.applies_immediately",
     "text.local_preference_note",
