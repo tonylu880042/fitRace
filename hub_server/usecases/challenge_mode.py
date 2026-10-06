@@ -46,3 +46,31 @@ def next_challenge_action(
         )
         return "reset" if shown_long_enough else None
     return None
+
+
+def challenge_shows_standings(
+    *,
+    enabled: bool,
+    state: RaceState,
+    end_time_epoch_ms: Optional[int],
+    now_epoch_ms: int,
+    min_result_ms: int,
+    registered_stations: Iterable[int],
+) -> bool:
+    """Should the projector show the top-10 standings right now?
+
+    Between runs of a challenge: once the result screen has been up for
+    min_result_ms (STOPPED), and while waiting for the next athlete (IDLE or
+    READY with nobody signed up). Never during a run or once someone is
+    registered for the next one.
+    """
+    if not enabled:
+        return False
+    if state == RaceState.STOPPED:
+        return (
+            end_time_epoch_ms is None
+            or now_epoch_ms >= end_time_epoch_ms + min_result_ms
+        )
+    if state in (RaceState.IDLE, RaceState.READY):
+        return not list(registered_stations)
+    return False

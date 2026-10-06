@@ -3503,6 +3503,7 @@
     let recordWallRotateTimer = null;
     let recordWallRefreshTimer = null;
     let recordWallStandingsMode = false;
+    let currentChallengeShowStandings = false;
     let classClockInterval = null;
     let currentClassPlan = null;
     let currentClassLeaderboard = {};
@@ -4298,7 +4299,7 @@
       // A late, throttled broadcast that lands just after RUNNING started
       // (or during class mode, which has its own board) must never
       // resurrect the idle grid on top of the real leaderboard.
-      if (currentState === "RUNNING" || currentState === "STOPPED" || currentSessionMode === "class") {
+      if (currentState === "RUNNING" || currentState === "STOPPED" || currentSessionMode === "class" || currentChallengeShowStandings) {
         hideIdleTelemetry();
         return;
       }
@@ -7592,15 +7593,8 @@
         showPodiumOverlay();
       }
 
-      // B2: idle record wall carousel, shown only while IDLE and in race mode.
-      if (data.session_mode === "class") {
-        // Class mode never shows idle record wall
-        exitIdleRecordWall();
-      } else if (currentState === "IDLE") {
-        enterIdleRecordWall();
-      } else {
-        exitIdleRecordWall();
-      }
+      currentChallengeShowStandings = data.challenge_show_standings === true;
+      syncRecordWall(data);
 
       // Idle live telemetry only makes sense outside a running/finished
       // race (see get_idle_telemetry_snapshot's "visible" rule) and while
@@ -7727,6 +7721,20 @@
           celebrationShownForRaceKey = null;
         }
         cancelAutoReset(false);
+      }
+    }
+
+    // B2: idle record wall, shown only while IDLE and in race mode -- plus,
+    // in challenge mode, whenever the hub says the standings screen is due
+    // (challenge_show_standings), which is never IDLE between runs.
+    function syncRecordWall(data) {
+      if (data.session_mode === "class") {
+        // Class mode never shows idle record wall
+        exitIdleRecordWall();
+      } else if (currentState === "IDLE" || data.challenge_show_standings === true) {
+        enterIdleRecordWall();
+      } else {
+        exitIdleRecordWall();
       }
     }
 

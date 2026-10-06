@@ -143,6 +143,7 @@ def _run_render_idle_telemetry(
     script = (
         f"let currentState = {json.dumps(current_state)};\n"
         f"let currentSessionMode = {json.dumps(current_session_mode)};\n"
+        "let currentChallengeShowStandings = false;\n"
         "function t(key) { return key; }\n"
         "function escapeHtml(value) { return String(value); }\n"
         "let enterIdleRecordWallCalls = 0;\n"

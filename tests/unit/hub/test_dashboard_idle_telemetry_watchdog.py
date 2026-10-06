@@ -276,6 +276,7 @@ def _run_full_message_path_watchdog():
         # the message is actually rendered rather than hidden.
         'let currentState = "IDLE";\n'
         'let currentSessionMode = "race";\n'
+        "let currentChallengeShowStandings = false;\n"
         "let lastIdleTelemetryStations = null;\n"
         "let lastIdleTelemetryReceivedAtMs = null;\n"
         "let idleTelemetryWatchdogTimer = null;\n"
