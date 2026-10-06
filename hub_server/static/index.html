@@ -3447,6 +3447,11 @@
   </div>
   <audio id="race-start-countdown-audio" preload="auto" src="/static/audio/countdown_start.wav"></audio>
   <audio id="class-segment-cue-audio" preload="auto" src="/static/audio/checkpoint.wav"></audio>
+  <audio id="race-cue-tick-audio" preload="auto" src="/static/audio/countdown_tick.wav"></audio>
+  <audio id="race-cue-3-audio" preload="auto" src="/static/audio/countdown_3.wav"></audio>
+  <audio id="race-cue-2-audio" preload="auto" src="/static/audio/countdown_2.wav"></audio>
+  <audio id="race-cue-1-audio" preload="auto" src="/static/audio/countdown_1.wav"></audio>
+  <audio id="race-cue-finish-audio" preload="auto" src="/static/audio/finish.wav"></audio>
 
   <script>
     let ws;
@@ -3689,6 +3694,70 @@
       } catch (err) {
         console.warn("Dashboard countdown audio was blocked by the browser:", err);
       }
+    }
+
+    // Final-seconds cues from the hub's race_event "countdown": 10 and 5 tick,
+    // 3/2/1 are spoken and also get a big number on screen.
+    const RACE_CUE_FILES = {
+      tick: "countdown_tick.wav",
+      "3": "countdown_3.wav",
+      "2": "countdown_2.wav",
+      "1": "countdown_1.wav",
+      finish: "finish.wav",
+    };
+
+    function countdownCueSound(secondsLeft) {
+      if (secondsLeft === 10 || secondsLeft === 5) return "tick";
+      if (secondsLeft === 3 || secondsLeft === 2 || secondsLeft === 1) return String(secondsLeft);
+      return null;
+    }
+
+    async function playRaceCue(name) {
+      if (currentSoundEnabled === false) return;
+      const audio = document.getElementById(`race-cue-${name}-audio`) || new Audio(`/static/audio/${RACE_CUE_FILES[name]}`);
+      audio.currentTime = 0;
+      try {
+        await audio.play();
+      } catch (err) {
+        console.warn("Race cue audio was blocked by the browser:", err);
+      }
+    }
+
+    function showFinalSecondsOverlay(secondsLeft) {
+      const existing = document.getElementById("race-countdown-overlay");
+      if (existing) existing.remove();
+      const overlay = document.createElement("div");
+      overlay.id = "race-countdown-overlay";
+      overlay.className = "race-countdown-overlay";
+      overlay.innerHTML = `<div class="race-countdown-card"><div class="race-countdown-value">${secondsLeft}</div></div>`;
+      document.body.appendChild(overlay);
+      requestAnimationFrame(() => overlay.classList.add("show"));
+      window.setTimeout(() => {
+        overlay.classList.remove("show");
+        window.setTimeout(() => overlay.remove(), 220);
+      }, 700);
+    }
+
+    function handleRaceEvent(data) {
+      const event = data && data.event;
+      if (!event || event.event_type !== "countdown") return;
+      const secondsLeft = event.data && event.data.seconds_left;
+      const sound = countdownCueSound(secondsLeft);
+      if (!sound) return;
+      if (secondsLeft <= 3) showFinalSecondsOverlay(secondsLeft);
+      playRaceCue(sound);
+    }
+
+    // Finish sound: a live timed race stopping -- never on loading the page
+    // into an already-finished race.
+    function shouldPlayFinishCue(previousState, state, sessionMode, config) {
+      return (
+        previousState === "RUNNING" &&
+        state === "STOPPED" &&
+        sessionMode !== "class" &&
+        !!config &&
+        ["time", "max_power", "watts"].includes(config.race_type)
+      );
     }
 
     function shouldPlayClassSegmentCue(sessionMode, state, previousIndex, newIndex) {
@@ -3970,6 +4039,7 @@
           return;
         }
         if (data.type === "race_event") {
+          handleRaceEvent(data);
           return;
         }
         if (data.type === "system_power") {
@@ -7599,6 +7669,10 @@
       // empty-state signup QR) is corrected immediately rather than
       // flashing visible for a frame.
       applyDashboardQrVisibility(data);
+
+      if (shouldPlayFinishCue(previousState, currentState, data.session_mode, data.config)) {
+        playRaceCue("finish");
+      }
 
       // A2: full-screen podium reveal, only on a live RUNNING -> STOPPED
       // transition -- never when the page merely loads into an already-
