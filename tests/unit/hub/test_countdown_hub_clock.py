@@ -43,14 +43,32 @@ def test_each_threshold_fires_once_as_the_clock_advances_without_telemetry(monke
     assert seen == [10, 5, 3, 2, 1]
 
 
+def test_cues_fire_on_the_second_not_a_second_early(monkeypatch):
+    """Remaining time rounds UP, so threshold N fires when remaining <= N s."""
+    manager = _started(monkeypatch)
+    end = T0 + DURATION * 1000
+    for threshold in (10, 5, 3, 2, 1):
+        engine = RaceEventEngine()
+        engine.evaluate_clock(manager, T0)
+        # Prime just above the mark (cues crossed on the way are not asserted).
+        engine.evaluate_clock(manager, end - threshold * 1000 - 900)
+        early = end - threshold * 1000 - 500  # 0.5 s before the mark: not yet
+        assert _fired(engine.evaluate_clock(manager, early)) == [], threshold
+        assert _fired(engine.evaluate_clock(manager, end - threshold * 1000)) == [
+            threshold
+        ], threshold
+
+
 def test_a_tick_that_jumps_over_thresholds_fires_each_crossed_one_once(monkeypatch):
     manager = _started(monkeypatch)
     engine = RaceEventEngine()
     end = T0 + DURATION * 1000
     engine.evaluate_clock(manager, T0)
     assert _fired(engine.evaluate_clock(manager, end - 12_000)) == []
-    assert _fired(engine.evaluate_clock(manager, end - 2_500)) == [10, 5, 3, 2]
+    # 2.5 s left rounds UP to 3: the "3" is due, the "2" is not yet.
+    assert _fired(engine.evaluate_clock(manager, end - 2_500)) == [10, 5, 3]
     assert _fired(engine.evaluate_clock(manager, end - 2_400)) == []
+    assert _fired(engine.evaluate_clock(manager, end - 2_000)) == [2]
     assert _fired(engine.evaluate_clock(manager, end - 500)) == [1]
 
 

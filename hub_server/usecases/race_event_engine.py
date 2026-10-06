@@ -1,3 +1,4 @@
+import math
 import time
 from collections import defaultdict
 from typing import Callable, Dict, List, Optional, Set, Any
@@ -326,13 +327,15 @@ class RaceEventEngine:
                 if now_ms is None:
                     now_ms = self._now_ms()
                 remaining_ms = start_ms + total_duration_ms - now_ms
+                # Round UP: threshold N fires when N s (not N+1 s) remain.
+                remaining_sec = max(0, math.ceil(remaining_ms / 1000))
             else:
                 max_elapsed = max(
                     (p.get("elapsed_time_ms", 0) for p in progress.values()),
                     default=0,
                 )
                 remaining_ms = total_duration_ms - max_elapsed
-            remaining_sec = max(0, int(remaining_ms / 1000))
+                remaining_sec = max(0, int(remaining_ms / 1000))
 
             countdown_thresholds = [10, 5, 3, 2, 1]
             triggered_at = self._countdown_state(group_index)
