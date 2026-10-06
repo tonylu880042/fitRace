@@ -44,11 +44,32 @@ def _function(source, name):
         i += 1
 
 
-def _run(body, fail=False):
+_CONTROLS = ("challenge-mode-enabled", "challenge-duration", "challenge-min-result")
+
+
+def _onchange_handler(control_id):
+    """The inline onchange of the real control, straight from the page."""
+    html = _source()
+    match = re.search(r'<(?:select|input)[^>]*id="%s"[^>]*>' % control_id, html)
+    assert match, control_id
+    handler = re.search(r'onchange="([^"]*)"', match.group(0))
+    return handler.group(1) if handler else ""
+
+
+def _run(body, fail=False, state_race=None):
     src = _source()
     fns = "\n".join(
         _function(src, n)
         for n in ("fetchJson", "saveChallengeMode", "renderChallengeMode")
+    )
+    initial = json.dumps(
+        state_race
+        or {
+            "state": "IDLE",
+            "challenge_mode_enabled": False,
+            "challenge_duration_sec": 180,
+            "challenge_min_result_sec": 10,
+        }
     )
     js = f"""
 const elements = {{}};
@@ -56,15 +77,18 @@ function $(id) {{ return elements[id] || (elements[id] = {{ value: "", checked: 
 function t(k) {{ return k; }}
 function setMessage(id, text, kind) {{ $(id).textContent = text; $(id).kind = kind; }}
 function adminHeaders(extra = {{}}) {{ return {{ ...extra, "X-FitRace-Admin-Token": "secret" }}; }}
-let state = {{ race: {{ state: "IDLE" }} }};
-function renderRace() {{}}
+let state = {{ race: {initial} }};
+function renderRace() {{ renderChallengeMode(); }}
 const calls = [];
 global.fetch = async (url, options) => {{
   calls.push({{ url, options }});
+  const body = JSON.parse(options.body);
   return {{ ok: {str(not fail).lower()}, status: {500 if fail else 200}, statusText: "x",
-    text: async () => JSON.stringify({{ state: "READY", challenge_mode_enabled: true, challenge_duration_sec: 90, detail: "boom" }}) }};
+    text: async () => JSON.stringify({{ state: "READY", challenge_mode_enabled: body.enabled,
+      challenge_duration_sec: body.duration_sec, challenge_min_result_sec: body.min_result_sec, detail: "boom" }}) }};
 }};
 {fns}
+renderChallengeMode();
 (async () => {{ {body} }})();
 """
     out = subprocess.run(["node", "-e", js], capture_output=True, text=True, timeout=10)
@@ -72,67 +96,87 @@ global.fetch = async (url, options) => {{
     return json.loads(out.stdout.strip().splitlines()[-1])
 
 
-def test_save_posts_enabled_and_duration_with_admin_headers():
-    result = _run("""
-$("challenge-mode-enabled").value = "true";
-$("challenge-duration").value = "90";
-$("challenge-min-result").value = "25";
-await saveChallengeMode();
-console.log(JSON.stringify({ url: calls[0].url, method: calls[0].options.method,
+def _change(control_id, value):
+    handler = json.dumps(_onchange_handler(control_id))
+    return f"""
+$("{control_id}").value = "{value}";
+await eval({handler});
+"""
+
+
+def test_changing_the_select_posts_all_three_values_immediately():
+    result = _run(_change("challenge-mode-enabled", "true") + """
+console.log(JSON.stringify({ n: calls.length, url: calls[0].url, method: calls[0].options.method,
   body: JSON.parse(calls[0].options.body),
-  token: calls[0].options.headers["X-FitRace-Admin-Token"], race: state.race }));
+  token: calls[0].options.headers["X-FitRace-Admin-Token"] }));
 """)
+    assert result["n"] == 1
     assert result["url"] == "/api/race/challenge"
     assert result["method"] == "POST"
-    assert result["body"]["enabled"] is True
-    assert result["body"]["duration_sec"] == 90
-    assert result["body"]["min_result_sec"] == 25
+    assert result["body"] == {
+        "enabled": True,
+        "duration_sec": 180,
+        "min_result_sec": 10,
+    }
     assert result["token"] == "secret"
-    assert result["race"]["challenge_duration_sec"] == 90
 
 
-def test_save_sends_disabled_when_switched_off():
-    result = _run("""
-$("challenge-mode-enabled").value = "false";
-$("challenge-duration").value = "180";
-await saveChallengeMode();
-console.log(JSON.stringify({ body: JSON.parse(calls[0].options.body) }));
+def test_changing_either_number_input_posts_too():
+    for control, value, key, expected in (
+        ("challenge-duration", "90", "duration_sec", 90),
+        ("challenge-min-result", "25", "min_result_sec", 25),
+    ):
+        result = _run(
+            _change(control, value)
+            + "console.log(JSON.stringify({ n: calls.length, body: JSON.parse(calls[0].options.body) }));"
+        )
+        assert result["n"] == 1, control
+        assert result["body"][key] == expected, control
+
+
+def test_state_change_render_after_a_successful_save_keeps_the_saved_value():
+    result = _run(_change("challenge-mode-enabled", "true") + """
+// A later state_change broadcast re-renders from state.race.
+renderChallengeMode();
+console.log(JSON.stringify({ enabled: $("challenge-mode-enabled").value }));
 """)
-    assert result["body"]["enabled"] is False
+    assert result["enabled"] == "true"
 
 
-def test_save_failure_shows_error_and_keeps_state():
+def test_failed_post_restores_the_previous_values_and_shows_the_error():
     result = _run(
-        """
-$("challenge-mode-enabled").value = "true";
-$("challenge-duration").value = "90";
-await saveChallengeMode();
-console.log(JSON.stringify({ kind: $("race-message").kind, race: state.race }));
+        _change("challenge-mode-enabled", "true") + """
+console.log(JSON.stringify({ enabled: $("challenge-mode-enabled").value,
+  duration: $("challenge-duration").value, kind: $("race-message").kind,
+  text: $("race-message").textContent }));
 """,
         fail=True,
     )
+    assert result["enabled"] == "false"
+    assert result["duration"] == "180"
     assert result["kind"] == "error"
-    assert result["race"] == {"state": "IDLE"}
+    assert result["text"]
 
 
-def test_render_fills_controls_from_state_and_locks_them_while_running():
+def test_all_three_controls_are_disabled_while_running():
     result = _run("""
 state.race = { state: "RUNNING", challenge_mode_enabled: true, challenge_duration_sec: 120, challenge_min_result_sec: 40 };
 renderChallengeMode();
-const running = { enabled: $("challenge-mode-enabled").value, duration: $("challenge-duration").value, minResult: $("challenge-min-result").value,
-  locked: $("btn-save-challenge").disabled };
-state.race = { state: "READY", challenge_mode_enabled: false, challenge_duration_sec: 180 };
+const running = ["challenge-mode-enabled", "challenge-duration", "challenge-min-result"].map((id) => $(id).disabled);
+const values = [$("challenge-mode-enabled").value, $("challenge-duration").value, $("challenge-min-result").value];
+state.race = { state: "READY", challenge_mode_enabled: false, challenge_duration_sec: 180, challenge_min_result_sec: 10 };
 renderChallengeMode();
-console.log(JSON.stringify({ running, ready: { enabled: $("challenge-mode-enabled").value,
-  locked: $("btn-save-challenge").disabled } }));
+console.log(JSON.stringify({ running, values, ready: ["challenge-mode-enabled", "challenge-duration", "challenge-min-result"].map((id) => $(id).disabled) }));
 """)
-    assert result["running"] == {
-        "enabled": "true",
-        "duration": "120",
-        "minResult": "40",
-        "locked": True,
-    }
-    assert result["ready"] == {"enabled": "false", "locked": False}
+    assert result["running"] == [True, True, True]
+    assert result["values"] == ["true", "120", "40"]
+    assert result["ready"] == [False, False, False]
+
+
+def test_there_is_no_separate_challenge_save_button_or_orphaned_strings():
+    html = _source()
+    assert 'id="btn-save-challenge"' not in html
+    assert "button.save_challenge" not in html
 
 
 def test_render_race_calls_render_challenge_mode():

@@ -1184,21 +1184,20 @@
                   </div>
                   <div class="field">
                     <label for="challenge-mode-enabled" data-i18n="label.challenge_mode">Challenge Mode</label>
-                    <select id="challenge-mode-enabled">
+                    <select id="challenge-mode-enabled" onchange="saveChallengeMode()">
                       <option value="false" selected data-i18n="option.challenge_off">Off</option>
                       <option value="true" data-i18n="option.challenge_on">On</option>
                     </select>
                   </div>
                   <div class="field">
                     <label for="challenge-duration" data-i18n="label.challenge_duration">Challenge Duration (s)</label>
-                    <input id="challenge-duration" type="number" min="10" max="3600" value="180">
+                    <input id="challenge-duration" type="number" min="10" max="3600" value="180" onchange="saveChallengeMode()">
                   </div>
                   <div class="field">
                     <label for="challenge-min-result" data-i18n="label.challenge_min_result">Minimum Result Display (s)</label>
-                    <input id="challenge-min-result" type="number" min="0" max="120" value="10">
+                    <input id="challenge-min-result" type="number" min="0" max="120" value="10" onchange="saveChallengeMode()">
                   </div>
                   <div class="field">
-                    <button type="button" id="btn-save-challenge" onclick="saveChallengeMode()" data-i18n="button.save_challenge">Save Challenge Mode</button>
                     <p class="field-note show" data-i18n="text.challenge_note">When on, the race starts automatically once every station has signed up.</p>
                   </div>
                 </div>
@@ -1548,7 +1547,6 @@
         "label.challenge_min_result": "Minimum Result Display (s)",
         "option.challenge_off": "Off",
         "option.challenge_on": "On",
-        "button.save_challenge": "Save Challenge Mode",
         "text.challenge_note": "When on, the race starts automatically once every station has signed up.",
         "message.challenge_saved": "Challenge mode saved.",
         "label.access_code": "Access Code",
@@ -1848,7 +1846,6 @@
       "label.challenge_min_result": "成績畫面最短停留 (s)",
       "option.challenge_off": "關閉",
       "option.challenge_on": "開啟",
-      "button.save_challenge": "儲存挑戰模式",
       "text.challenge_note": "開啟後，所有站位報名完成會自動倒數開跑。",
       "message.challenge_saved": "已儲存挑戰模式。",
       "label.access_code": "存取碼",
@@ -3930,7 +3927,10 @@
       $("challenge-min-result").value = String(
         Number.isInteger(race.challenge_min_result_sec) ? race.challenge_min_result_sec : 10
       );
-      $("btn-save-challenge").disabled = race.state === "RUNNING";
+      const locked = race.state === "RUNNING";
+      $("challenge-mode-enabled").disabled = locked;
+      $("challenge-duration").disabled = locked;
+      $("challenge-min-result").disabled = locked;
     }
 
     async function saveChallengeMode() {
@@ -3947,6 +3947,8 @@
         renderRace();
         setMessage("race-message", t("message.challenge_saved"), "ok");
       } catch (error) {
+        // Put the controls back to what the hub still has.
+        renderChallengeMode();
         setMessage("race-message", error.message, "error");
       }
     }
