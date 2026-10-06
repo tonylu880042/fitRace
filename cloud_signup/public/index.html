@@ -19,6 +19,10 @@
     button:disabled { opacity: 0.5; cursor: not-allowed; }
     .note { color: var(--muted); font-size: 0.85rem; min-height: 1.2em; margin-bottom: 0.4rem; }
     .error { color: var(--danger); font-size: 0.95rem; margin-top: 0.9rem; min-height: 1.2em; }
+    .stations { display: grid; gap: 0.5rem; margin-bottom: 0.4rem; }
+    .station-btn { text-align: left; display: flex; justify-content: space-between; gap: 0.6rem; }
+    .station-btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+    .station-busy { color: var(--muted); font-size: 0.85rem; }
     .done { text-align: center; padding: 2rem 0; }
     .done h2 { font-size: 1.8rem; color: var(--accent); margin-bottom: 0.6rem; }
     [hidden] { display: none !important; }
@@ -30,6 +34,9 @@
       <h1 data-i18n="heading"></h1>
       <label for="name" data-i18n="name_label"></label>
       <input id="name" type="text" maxlength="20" autocomplete="nickname" data-i18n-placeholder="name_placeholder">
+      <label data-i18n="station_heading"></label>
+      <div class="stations" id="stations"></div>
+      <p class="note" id="station-note"></p>
       <label data-i18n="photo_label"></label>
       <div class="photo-row">
         <div id="preview"></div>
@@ -48,7 +55,7 @@
   </main>
   <script>
     const params = new URLSearchParams(location.search);
-    const claimParams = { venue: params.get('v'), station: params.get('s'), token: params.get('t') };
+    const claimParams = { venue: params.get('v'), token: params.get('t') };
     const AVATAR_MAX_SOURCE_BYTES = 8 * 1024 * 1024;
     const AVATAR_TARGET_SIZE = 96;
     const AVATAR_MIN_SIZE = 64;
@@ -66,8 +73,78 @@
       return lang.startsWith('en') ? 'en' : 'zh-TW';
     }
 
-    function t(key) {
-      return messages[key] || '';
+    function t(key, vars) {
+      let text = messages[key] || '';
+      Object.entries(vars || {}).forEach(([name, value]) => { text = text.split(`{${name}}`).join(String(value)); });
+      return text;
+    }
+
+    let stationList = [];
+    let selectedStation = null;
+
+    function availableStations(list) {
+      return list.filter((entry) => entry.available);
+    }
+
+    // Busy stations are disabled while another is free; when none is free every
+    // assigned station stays pickable (the sign-up queues for the next round).
+    function isSelectable(list, entry) {
+      return availableStations(list).length === 0 ? true : entry.available;
+    }
+
+    // One free station (the single-treadmill venue): no extra step.
+    function autoSelection(list) {
+      const free = availableStations(list);
+      return free.length === 1 ? free[0].station : null;
+    }
+
+    function stationText(entry) {
+      const name = entry.label || t('station_n', { n: entry.station });
+      const equipment = entry.equipment_type ? t(`equipment_${entry.equipment_type}`) || entry.equipment_type : '';
+      return equipment ? `${name} · ${equipment}` : name;
+    }
+
+    function renderStations() {
+      const box = document.getElementById('stations');
+      box.textContent = '';
+      stationList.forEach((entry) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'station-btn';
+        button.setAttribute('aria-pressed', String(entry.station === selectedStation));
+        button.disabled = !isSelectable(stationList, entry);
+        const label = document.createElement('span');
+        label.textContent = stationText(entry);
+        button.appendChild(label);
+        if (!entry.available) {
+          const busy = document.createElement('span');
+          busy.className = 'station-busy';
+          busy.textContent = t('station_busy');
+          button.appendChild(busy);
+        }
+        button.addEventListener('click', () => { selectedStation = entry.station; renderStations(); });
+        box.appendChild(button);
+      });
+      document.getElementById('station-note').textContent =
+        stationList.length && availableStations(stationList).length === 0 ? t('no_station_free') : '';
+    }
+
+    async function loadStations() {
+      if (!claimParams.venue || !claimParams.token) { showError('error_link'); return; }
+      try {
+        const res = await fetch(`/api/stations?v=${encodeURIComponent(claimParams.venue)}&t=${encodeURIComponent(claimParams.token)}`);
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          showError({ used: 'error_used', expired: 'error_expired' }[data.error] || 'error_link');
+          return;
+        }
+        stationList = (await res.json()).stations || [];
+        selectedStation = autoSelection(stationList);
+        renderStations();
+        if (!stationList.length) showError('error_no_stations');
+      } catch (err) {
+        showError('error_network');
+      }
     }
 
     function applyMessages() {
@@ -75,6 +152,7 @@
       document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => { el.placeholder = t(el.dataset.i18nPlaceholder); });
       document.title = t('page_title');
       document.documentElement.lang = pickLocale();
+      renderStations();
       showError(lastErrorKey);
       showNote(lastNoteKey);
     }
@@ -188,7 +266,8 @@
       event.preventDefault();
       showError(null);
       if (avatarProcessing) return;
-      if (!claimParams.venue || !claimParams.station || !claimParams.token) { showError('error_link'); return; }
+      if (!claimParams.venue || !claimParams.token) { showError('error_link'); return; }
+      if (!selectedStation) { showError('error_station'); return; }
       const name = document.getElementById('name').value.trim();
       if (!name) { showError('error_name'); return; }
 
@@ -199,7 +278,7 @@
         const res = await fetch('/api/claim', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...claimParams, name, avatar_base64: avatarBase64 }),
+          body: JSON.stringify({ ...claimParams, station: selectedStation, name, avatar_base64: avatarBase64 }),
         });
         if (res.ok) {
           document.getElementById('form').hidden = true;
@@ -216,7 +295,7 @@
       button.textContent = t('confirm');
     });
 
-    loadMessages();
+    loadMessages().then(loadStations);
   </script>
 </body>
 </html>

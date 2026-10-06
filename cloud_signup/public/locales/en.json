@@ -19,5 +19,15 @@
   "error_network": "Network error. Please try again.",
   "error_server": "The server is busy. Please try again shortly.",
   "error_used": "This QR code was already used. Please scan the QR code on the big screen again.",
-  "error_expired": "This QR code has expired. Please scan the QR code on the big screen again."
+  "error_expired": "This QR code has expired. Please scan the QR code on the big screen again.",
+  "station_heading": "Choose a station",
+  "station_n": "Station {n}",
+  "station_busy": "In use",
+  "no_station_free": "All stations are busy. You will be queued for the next round.",
+  "error_station": "Please choose a station",
+  "error_no_stations": "No station is open for sign-up right now. Please try again shortly.",
+  "equipment_treadmill": "Treadmill",
+  "equipment_rowing_machine": "Rowing machine",
+  "equipment_fan_bike": "Fan bike",
+  "equipment_spin_bike": "Spin bike"
 }
