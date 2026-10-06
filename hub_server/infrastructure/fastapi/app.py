@@ -1,7 +1,6 @@
 import asyncio
 import hmac
 import os
-import base64
 import io
 import logging
 import subprocess
@@ -32,7 +31,11 @@ from hub_server.infrastructure.cloud_signup_config import (
     load_cloud_signup_config,
 )
 from hub_server.usecases.avatar_retention import avatar_id_from_url, partition_avatars
-from hub_server.usecases.avatar_store import AvatarStore
+from hub_server.usecases.avatar_store import (
+    AvatarStore,
+    decode_avatar_image,
+    sniff_image_type,
+)
 from hub_server.usecases.cloud_signup import CloudSignupProcessor, build_signup_fields
 from hub_server.usecases.signup_token import SignupTokenIssuer
 from hub_server.usecases.challenge_mode import next_challenge_action
@@ -545,21 +548,8 @@ def is_diagnostics_enabled() -> bool:
 
 
 def decode_avatar_webp(avatar_base64: str) -> bytes:
-    if "," in avatar_base64:
-        header, base64_data = avatar_base64.split(",", 1)
-        if header.strip().lower() != "data:image/webp;base64":
-            raise ValueError("Avatar must be a WebP data URL")
-    else:
-        base64_data = avatar_base64
-
-    img_data = base64.b64decode(base64_data, validate=True)
-    if not img_data:
-        raise ValueError("Empty image data")
-    if len(img_data) > MAX_AVATAR_BYTES:
-        raise ValueError("Avatar image is too large")
-    if len(img_data) < 12 or img_data[:4] != b"RIFF" or img_data[8:12] != b"WEBP":
-        raise ValueError("Avatar must be a WebP image")
-    return img_data
+    """Kept under its old name: accepts WebP or JPEG (see decode_avatar_image)."""
+    return decode_avatar_image(avatar_base64, MAX_AVATAR_BYTES)
 
 
 signup_token_issuer = SignupTokenIssuer()
@@ -1194,9 +1184,11 @@ def get_avatar(avatar_file: str):
     if path is None:
         raise HTTPException(status_code=404, detail="avatar not found")
     # The URL is per-registration and never rewritten, so it can be cached.
+    with path.open("rb") as f:
+        media_type = sniff_image_type(f.read(12)) or "image/webp"
     return FileResponse(
         path,
-        media_type="image/webp",
+        media_type=media_type,
         headers={"Cache-Control": "public, max-age=86400"},
     )
 

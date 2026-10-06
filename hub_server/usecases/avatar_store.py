@@ -1,3 +1,4 @@
+import base64
 import re
 import uuid
 from pathlib import Path
@@ -8,6 +9,39 @@ _AVATAR_ID_RE = re.compile(r"[0-9a-f]{32}")
 
 def is_valid_avatar_id(avatar_id: object) -> bool:
     return isinstance(avatar_id, str) and _AVATAR_ID_RE.fullmatch(avatar_id) is not None
+
+
+def sniff_image_type(data: bytes) -> Optional[str]:
+    """Media type from magic bytes: WebP (RIFF....WEBP) or JPEG (FF D8 FF)."""
+    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    if len(data) >= 3 and data[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    return None
+
+
+def decode_avatar_image(avatar_base64: str, max_bytes: int) -> bytes:
+    """Decode a WebP or JPEG avatar (data URL or bare base64). The data-URL
+    header must agree with the bytes; PNG and everything else is rejected."""
+    declared = None
+    if "," in avatar_base64:
+        header, body = avatar_base64.split(",", 1)
+        declared = header.strip().lower()
+        if declared not in ("data:image/webp;base64", "data:image/jpeg;base64"):
+            raise ValueError("Avatar must be a WebP or JPEG data URL")
+    else:
+        body = avatar_base64
+    data = base64.b64decode(body, validate=True)
+    if not data:
+        raise ValueError("Empty image data")
+    if len(data) > max_bytes:
+        raise ValueError("Avatar image is too large")
+    actual = sniff_image_type(data)
+    if actual is None:
+        raise ValueError("Avatar must be a WebP or JPEG image")
+    if declared is not None and declared != f"data:{actual};base64":
+        raise ValueError("Avatar data URL does not match the image bytes (WebP/JPEG)")
+    return data
 
 
 class AvatarStore:

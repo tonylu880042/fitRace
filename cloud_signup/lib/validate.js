@@ -2,7 +2,7 @@
 
 const NAME_MAX = 20;
 const PHOTO_MAX_CHARS = 200 * 1024;
-const PHOTO_PREFIX = 'data:image/webp;base64,';
+const PHOTO_PREFIXES = ['data:image/webp;base64,', 'data:image/jpeg;base64,'];
 
 const VENUE_RE = /^[A-Za-z0-9_-]{1,40}$/;
 const TOKEN_RE = /^[0-9]{1,12}\.[0-9a-f]{2,32}\.[0-9a-f]{16}$/;
@@ -17,8 +17,9 @@ function parseStation(value) {
 function validatePhoto(photo) {
   if (photo === undefined || photo === null || photo === '') return { ok: true, value: null };
   if (typeof photo !== 'string' || photo.length > PHOTO_MAX_CHARS) return { ok: false };
-  if (!photo.startsWith(PHOTO_PREFIX)) return { ok: false };
-  if (!PHOTO_BODY_RE.test(photo.slice(PHOTO_PREFIX.length))) return { ok: false };
+  const prefix = PHOTO_PREFIXES.find((p) => photo.startsWith(p));
+  if (!prefix) return { ok: false };
+  if (!PHOTO_BODY_RE.test(photo.slice(prefix.length))) return { ok: false };
   return { ok: true, value: photo };
 }
 

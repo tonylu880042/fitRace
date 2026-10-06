@@ -80,3 +80,14 @@ test('photo must be a webp data URL no larger than 200KB', () => {
 test('claimKey namespaces by venue', () => {
   assert.equal(claimKey('gym-a'), 'fitrace:claims:gym-a');
 });
+
+test('photo may also be a JPEG data URL (browsers that cannot encode WebP)', () => {
+  const jpeg = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ==';
+  const r = validateClaimInput(good({ avatar_base64: jpeg }));
+  assert.equal(r.ok, true);
+  assert.equal(r.value.avatar_base64, jpeg);
+  assert.deepEqual(validateClaimInput(good({ avatar_base64: 'data:image/jpeg;base64,@@@' })), { ok: false, error: 'photo' });
+  assert.deepEqual(validateClaimInput(good({ avatar_base64: 'data:image/png;base64,iVBORw0KGgo=' })), { ok: false, error: 'photo' });
+  const prefix = 'data:image/jpeg;base64,';
+  assert.deepEqual(validateClaimInput(good({ avatar_base64: prefix + 'A'.repeat(PHOTO_MAX_CHARS) })), { ok: false, error: 'photo' });
+});
