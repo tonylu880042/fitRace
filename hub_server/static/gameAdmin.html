@@ -1234,15 +1234,15 @@
                       <option value="true" data-i18n="option.challenge_on">On</option>
                     </select>
                   </div>
-                  <div class="field">
+                  <div class="field" id="challenge-duration-field">
                     <label for="challenge-duration" data-i18n="label.challenge_duration">Challenge Duration (s)</label>
                     <input id="challenge-duration" type="number" min="10" max="3600" value="180" onchange="saveChallengeMode()">
                   </div>
-                  <div class="field">
+                  <div class="field" id="challenge-min-result-field">
                     <label for="challenge-min-result" data-i18n="label.challenge_min_result">Minimum Result Display (s)</label>
                     <input id="challenge-min-result" type="number" min="0" max="120" value="10" onchange="saveChallengeMode()">
                   </div>
-                  <div class="field">
+                  <div class="field" id="challenge-start-wait-field">
                     <label for="challenge-start-wait" data-i18n="label.challenge_start_wait">Start Window with Several Stations (s)</label>
                     <input id="challenge-start-wait" type="number" min="0" max="300" value="30" onchange="saveChallengeMode()">
                   </div>
@@ -2605,7 +2605,7 @@
       const raceState = state.race?.state || "IDLE";
       const visible = disclosureState({
         competitionMode: $("competition-mode").value,
-        challengeModeOn: false,
+        challengeModeOn: state.race?.challenge_mode_enabled === true,
         sessionMode: state.race?.session_mode,
         raceState,
         hasRoster: rosterTotal > 0,
@@ -2617,6 +2617,9 @@
       $("team-scoring-field").classList.toggle("field-collapsed", !visible.teamScoring);
       $("team-completion-field").classList.toggle("field-collapsed", !visible.teamCompletion);
       $("team-rule-card").hidden = !visible.teamRuleCard;
+      for (const id of ["challenge-duration-field", "challenge-min-result-field", "challenge-start-wait-field"]) {
+        $(id).classList.toggle("field-collapsed", !visible.challengeSettings);
+      }
       $("switch-to-race-mode-field").classList.toggle("field-collapsed", !visible.switchToRaceMode);
       for (const id of [
         "roster-current-heat-block",
@@ -4043,6 +4046,7 @@
       $("challenge-mode-enabled").disabled = locked;
       $("challenge-duration").disabled = locked;
       $("challenge-min-result").disabled = locked;
+      syncVisibility();
     }
 
     async function saveChallengeMode() {

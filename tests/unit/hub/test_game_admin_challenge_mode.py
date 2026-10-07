@@ -81,6 +81,7 @@ def _run(body, fail=False, state_race=None):
 const elements = {{}};
 function $(id) {{ return elements[id] || (elements[id] = {{ value: "", checked: false, disabled: false, textContent: "" }}); }}
 function t(k) {{ return k; }}
+function syncVisibility() {{}}
 function setMessage(id, text, kind) {{ $(id).textContent = text; $(id).kind = kind; }}
 function adminHeaders(extra = {{}}) {{ return {{ ...extra, "X-FitRace-Admin-Token": "secret" }}; }}
 let state = {{ race: {initial} }};
