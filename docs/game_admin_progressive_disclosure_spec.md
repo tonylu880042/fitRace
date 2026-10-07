@@ -100,3 +100,41 @@ inside `<details id=...>` / not inside `#roster-toolbar`), not grep for a
 substring that a comment could satisfy. Existing tests that asserted the old
 greyed-out behaviour or old toolbar placement may be updated — list each one
 and why in the report.
+
+## Addendum (2026-10-07) — challenge mode (R3, R8.2, R9, R10)
+
+Challenge mode is now on main (merge 7ec052a). While it is ON in race
+session mode, the hub's challenge loop re-applies `RaceConfig(time,
+challenge_duration_sec)` on every IDLE and auto-starts on sign-up, so the
+operator's Race Rules and the roster heat flow are overridden. The UI must
+say so instead of offering controls that silently do nothing — or worse:
+pressing Save Race Settings while READY would actually replace the
+challenge's time config, because the loop only re-configures on IDLE.
+
+Source of truth for "challenge on" is the server state
+`state.race.challenge_mode_enabled` (not the select's value), so a failed
+save never shows the wrong layout. Wire it into `disclosureState`'s existing
+`challengeModeOn` input (currently hard-coded `false` in `syncVisibility`)
+and call `syncVisibility()` from `renderChallengeMode()`.
+
+| ID | Element(s) | Visible iff |
+|----|-----------|-------------|
+| R3 | `#challenge-duration`, `#challenge-min-result`, `#challenge-start-wait` fields | challenge on |
+| R9a | `#rules-block` (whole Race Rules block) | challenge off |
+| R9b | `#btn-save-race` | challenge off |
+| R9c | new `#challenge-rules-note` (in `#challenge-block`) | challenge on — text: "Challenge mode is on: every run is a {seconds}-second time race, started automatically when athletes sign up. Race Rules are not used." with `{seconds}` = `challenge_duration_sec` |
+| R10 | the R5 roster blocks (heat/queue lists + Load Next Heat) | `hasRoster && !challengeOn` |
+
+All new outputs come from the same single `disclosureState` pass. R9a and R9c
+are exact complements — derive both from one boolean, and test both states.
+
+**R8.2 regroup:** move the challenge select, its three fields and
+`text.challenge_note` out of `#live-block` into a new
+`<div class="control-block" id="challenge-block">` titled
+"Auto Start (Challenge Mode)" (new i18n key), placed FIRST in
+`.race-control-left` — above `#rules-block`, since it decides whether Race
+Rules apply at all. Keep every existing id, `onchange`, and the
+RUNNING-lock behaviour in `renderChallengeMode`.
+
+Out of scope: Start Race / End Heat buttons (unchanged), the dashboard,
+backend Python, the cloud sign-up page.
