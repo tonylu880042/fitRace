@@ -1122,6 +1122,39 @@
           </div>
           <div class="race-control-grid">
             <div class="race-control-left">
+              <div class="control-block" id="challenge-block">
+                <div class="control-block-header">
+                  <h3 class="control-block-title" data-i18n="panel.challenge_block">Auto Start (Challenge Mode)</h3>
+                </div>
+                <div class="grid-2">
+                  <div class="field">
+                    <label for="challenge-mode-enabled" data-i18n="label.challenge_mode">Challenge Mode</label>
+                    <select id="challenge-mode-enabled" onchange="saveChallengeMode()">
+                      <option value="false" selected data-i18n="option.challenge_off">Off</option>
+                      <option value="true" data-i18n="option.challenge_on">On</option>
+                    </select>
+                  </div>
+                  <div class="field" id="challenge-duration-field">
+                    <label for="challenge-duration" data-i18n="label.challenge_duration">Challenge Duration (s)</label>
+                    <input id="challenge-duration" type="number" min="10" max="3600" value="180" onchange="saveChallengeMode()">
+                  </div>
+                  <div class="field" id="challenge-min-result-field">
+                    <label for="challenge-min-result" data-i18n="label.challenge_min_result">Minimum Result Display (s)</label>
+                    <input id="challenge-min-result" type="number" min="0" max="120" value="10" onchange="saveChallengeMode()">
+                  </div>
+                  <div class="field" id="challenge-start-wait-field">
+                    <label for="challenge-start-wait" data-i18n="label.challenge_start_wait">Start Window with Several Stations (s)</label>
+                    <input id="challenge-start-wait" type="number" min="0" max="300" value="30" onchange="saveChallengeMode()">
+                  </div>
+                  <div class="field" id="challenge-rules-note">
+                    <p class="field-note show" id="challenge-rules-note-text" data-i18n="text.challenge_rules_note">Challenge mode is on: every run is a {seconds}-second time race, started automatically when athletes sign up. Race Rules are not used.</p>
+                  </div>
+                  <div class="field">
+                    <p class="field-note show" data-i18n="text.challenge_note">When on, the race starts automatically once every station has signed up.</p>
+                  </div>
+                </div>
+              </div>
+
               <div class="control-block" id="rules-block">
                 <details id="rules-details" open>
                 <summary class="control-block-header">
@@ -1226,31 +1259,6 @@
                       <option value="true" selected data-i18n="option.qr_visible">Visible</option>
                       <option value="false" data-i18n="option.qr_hidden">Hidden</option>
                     </select>
-                  </div>
-                  <div class="field">
-                    <label for="challenge-mode-enabled" data-i18n="label.challenge_mode">Challenge Mode</label>
-                    <select id="challenge-mode-enabled" onchange="saveChallengeMode()">
-                      <option value="false" selected data-i18n="option.challenge_off">Off</option>
-                      <option value="true" data-i18n="option.challenge_on">On</option>
-                    </select>
-                  </div>
-                  <div class="field" id="challenge-duration-field">
-                    <label for="challenge-duration" data-i18n="label.challenge_duration">Challenge Duration (s)</label>
-                    <input id="challenge-duration" type="number" min="10" max="3600" value="180" onchange="saveChallengeMode()">
-                  </div>
-                  <div class="field" id="challenge-min-result-field">
-                    <label for="challenge-min-result" data-i18n="label.challenge_min_result">Minimum Result Display (s)</label>
-                    <input id="challenge-min-result" type="number" min="0" max="120" value="10" onchange="saveChallengeMode()">
-                  </div>
-                  <div class="field" id="challenge-start-wait-field">
-                    <label for="challenge-start-wait" data-i18n="label.challenge_start_wait">Start Window with Several Stations (s)</label>
-                    <input id="challenge-start-wait" type="number" min="0" max="300" value="30" onchange="saveChallengeMode()">
-                  </div>
-                  <div class="field" id="challenge-rules-note">
-                    <p class="field-note show" id="challenge-rules-note-text" data-i18n="text.challenge_rules_note">Challenge mode is on: every run is a {seconds}-second time race, started automatically when athletes sign up. Race Rules are not used.</p>
-                  </div>
-                  <div class="field">
-                    <p class="field-note show" data-i18n="text.challenge_note">When on, the race starts automatically once every station has signed up.</p>
                   </div>
                 </div>
               </div>
@@ -1605,6 +1613,7 @@
         "label.challenge_start_wait": "Start Window with Several Stations (s)",
         "option.challenge_off": "Off",
         "option.challenge_on": "On",
+        "panel.challenge_block": "Auto Start (Challenge Mode)",
         "text.challenge_note": "When on, the race starts automatically once every station has signed up.",
         "text.challenge_rules_note": "Challenge mode is on: every run is a {seconds}-second time race, started automatically when athletes sign up. Race Rules are not used.",
         "message.challenge_saved": "Challenge mode saved.",
@@ -1905,6 +1914,7 @@
       "label.challenge_start_wait": "多台時等待開跑 (s)",
       "option.challenge_off": "關閉",
       "option.challenge_on": "開啟",
+      "panel.challenge_block": "自動開跑（挑戰模式）",
       "text.challenge_note": "開啟後，所有站位報名完成會自動倒數開跑。",
       "text.challenge_rules_note": "挑戰模式已開啟：每次都是 {seconds} 秒限時賽，選手報名後自動開跑，不使用比賽規則。",
       "message.challenge_saved": "已儲存挑戰模式。",

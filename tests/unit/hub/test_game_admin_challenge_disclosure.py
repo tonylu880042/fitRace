@@ -190,6 +190,10 @@ class _Node:
         self.attrs = dict(attrs)
         self.parent = parent
 
+    @property
+    def classes(self):
+        return (self.attrs.get("class") or "").split()
+
     def inside(self, id_):
         node = self.parent
         while node is not None:
@@ -205,9 +209,11 @@ class _Tree(HTMLParser):
         self.root = _Node("root", [], None)
         self.cur = self.root
         self.by_id = {}
+        self.all_nodes = []
 
     def handle_starttag(self, tag, attrs):
         node = _Node(tag, attrs, self.cur)
+        self.all_nodes.append(node)
         if "id" in node.attrs:
             self.by_id[node.attrs["id"]] = node
         if tag not in _VOID:
@@ -447,3 +453,61 @@ console.log(JSON.stringify([before, ids.map((id) => $(id).hidden)]));""",
         roster_counts=_WITH_ROSTER,
     )
     assert out == [[False] * len(_ROSTER_BLOCKS), [True] * len(_ROSTER_BLOCKS)]
+
+
+# ---------------------------------------------------------------------------
+# R8.2 -- regroup: Auto Start (Challenge Mode) block, first in the left column
+# ---------------------------------------------------------------------------
+
+
+def test_challenge_block_is_first_element_child_of_race_control_left():
+    tree = _tree()
+    left = [n for n in tree.all_nodes if "race-control-left" in n.classes][0]
+    kids = [n for n in tree.all_nodes if n.parent is left]
+    assert kids[0].attrs.get("id") == "challenge-block"
+    assert "control-block" in kids[0].classes
+    ids = [k.attrs.get("id") for k in kids]
+    assert ids.index("challenge-block") < ids.index("rules-block")
+
+
+def test_challenge_controls_and_notes_live_in_challenge_block_not_live_block():
+    tree = _tree()
+    for id_ in (
+        "challenge-mode-enabled",
+        "challenge-duration",
+        "challenge-min-result",
+        "challenge-start-wait",
+        "challenge-duration-field",
+        "challenge-min-result-field",
+        "challenge-start-wait-field",
+        "challenge-rules-note",
+        "challenge-rules-note-text",
+    ):
+        node = tree.by_id[id_]
+        assert node.inside("challenge-block"), id_
+        assert not node.inside("live-block"), id_
+    notes = [
+        n for n in tree.all_nodes if n.attrs.get("data-i18n") == "text.challenge_note"
+    ]
+    assert len(notes) == 1 and notes[0].inside("challenge-block")
+
+
+def test_live_presentation_keeps_its_own_controls():
+    tree = _tree()
+    for id_ in ("leaderboard-display-mode", "idle-live-telemetry-visible"):
+        assert tree.by_id[id_].inside("live-block"), id_
+
+
+def test_challenge_block_title_is_translated_in_both_locales():
+    tree = _tree()
+    titles = [
+        n for n in tree.all_nodes if n.inside("challenge-block") and n.tag == "h3"
+    ]
+    assert len(titles) == 1
+    key = titles[0].attrs["data-i18n"]
+    src = _stripped_script()
+    en_at = src.index("const dictionaries = ")
+    en = src[en_at : _match_end(src, src.index("{", en_at), "{", "}") + 1]
+    zh_at = src.index('dictionaries["zh-TW"] = ')
+    zh = src[zh_at : _match_end(src, src.index("{", zh_at), "{", "}") + 1]
+    assert f'"{key}"' in en and f'"{key}"' in zh
