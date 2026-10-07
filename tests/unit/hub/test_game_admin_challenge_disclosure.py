@@ -382,3 +382,68 @@ def test_challenge_note_follows_a_changed_duration():
 def test_challenge_rules_note_markup_is_a_field_wrapper_around_the_text():
     tree = _tree()
     assert tree.by_id["challenge-rules-note-text"].inside("challenge-rules-note")
+
+
+# ---------------------------------------------------------------------------
+# R10 -- roster heat/queue blocks: hasRoster && !challengeOn
+# ---------------------------------------------------------------------------
+
+_ROSTER_BLOCKS = [
+    "roster-current-heat-block",
+    "roster-next-heat-block",
+    "roster-heat-actions",
+    "roster-pending-block",
+    "roster-done-block",
+    "roster-absent-block",
+]
+_WITH_ROSTER = "{ pending: 2, loaded: 1, done: 0, absent: 0 }"
+
+
+def _roster_hidden(race_js: str, counts: str) -> list:
+    return _run(
+        f"syncVisibility(); console.log(JSON.stringify({json.dumps(_ROSTER_BLOCKS)}.map((id) => $(id).hidden)));",
+        race_js,
+        roster_counts=counts,
+    )
+
+
+def test_disclosure_roster_lists_need_roster_and_challenge_off():
+    assert _disclosure(hasRoster=True, challengeModeOn=False)["rosterLists"] is True
+    assert _disclosure(hasRoster=True, challengeModeOn=True)["rosterLists"] is False
+    assert _disclosure(hasRoster=False, challengeModeOn=False)["rosterLists"] is False
+    assert _disclosure(hasRoster=False, challengeModeOn=True)["rosterLists"] is False
+
+
+def test_challenge_on_hides_every_roster_block_even_with_a_roster():
+    hidden = _roster_hidden("{ challenge_mode_enabled: true }", _WITH_ROSTER)
+    assert hidden == [True] * len(_ROSTER_BLOCKS)
+
+
+def test_challenge_off_with_roster_shows_every_roster_block():
+    hidden = _roster_hidden("{ challenge_mode_enabled: false }", _WITH_ROSTER)
+    assert hidden == [False] * len(_ROSTER_BLOCKS)
+
+
+def test_select_value_does_not_hide_roster_blocks_when_server_state_is_off():
+    out = _run(
+        f"""$("challenge-mode-enabled").value = "true";
+syncVisibility();
+console.log(JSON.stringify({json.dumps(_ROSTER_BLOCKS)}.map((id) => $(id).hidden)));""",
+        "{ challenge_mode_enabled: false }",
+        roster_counts=_WITH_ROSTER,
+    )
+    assert out == [False] * len(_ROSTER_BLOCKS)
+
+
+def test_render_challenge_mode_re_hides_roster_blocks_through_real_call_path():
+    out = _run(
+        f"""const ids = {json.dumps(_ROSTER_BLOCKS)};
+state.race.challenge_mode_enabled = false;
+renderChallengeMode();
+const before = ids.map((id) => $(id).hidden);
+state.race.challenge_mode_enabled = true;
+renderChallengeMode();
+console.log(JSON.stringify([before, ids.map((id) => $(id).hidden)]));""",
+        roster_counts=_WITH_ROSTER,
+    )
+    assert out == [[False] * len(_ROSTER_BLOCKS), [True] * len(_ROSTER_BLOCKS)]

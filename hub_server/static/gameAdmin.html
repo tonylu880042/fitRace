@@ -2592,7 +2592,7 @@
         saveRace: !challenge,
         challengeRulesNote: challenge,
         switchToRaceMode: sessionMode !== "race",
-        rosterLists: Boolean(hasRoster),
+        rosterLists: Boolean(hasRoster) && !challenge,
         teamRuleCard: isRelay || isTeam,
       };
     }
