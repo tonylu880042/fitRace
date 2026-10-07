@@ -103,7 +103,9 @@ def test_start_race_action_is_actually_defined():
 # ---------------------------------------------------------------------------
 
 
-def _run_start_race_action(dirty, configure_race_return=True, race_state="READY"):
+def _run_start_race_action(
+    dirty, configure_race_return=True, race_state="READY", challenge=False
+):
     body = _extract_start_race_action()
     harness = f"""
 const callLog = [];
@@ -116,14 +118,14 @@ const state = {{
   raceActionPending: null,
   countdownActive: false,
   raceConfigDirty: {"true" if dirty else "false"},
-  race: {{ state: "{race_state}", session_mode: "race" }},
+  race: {{ state: "{race_state}", session_mode: "race", challenge_mode_enabled: {"true" if challenge else "false"} }},
 }};
 
 {body}
 
 (async () => {{
   await startRaceAction();
-  console.log(JSON.stringify({{ callLog, pending: state.raceActionPending }}));
+  console.log(JSON.stringify({{ callLog, pending: state.raceActionPending, dirty: state.raceConfigDirty }}));
 }})();
 """
     output = _run_node(harness)
@@ -152,6 +154,23 @@ def test_clean_config_starts_directly_without_saving():
     result = _run_start_race_action(dirty=False, configure_race_return=True)
     assert "configureRace" not in result["callLog"]
     assert result["callLog"].count("startRace") == 1
+
+
+def test_challenge_on_skips_the_dirty_config_save_but_still_starts():
+    result = _run_start_race_action(dirty=True, challenge=True)
+    assert "configureRace" not in result["callLog"]
+    assert result["callLog"].count("startRace") == 1
+
+
+def test_challenge_on_clears_the_stale_dirty_flag():
+    result = _run_start_race_action(dirty=True, challenge=True)
+    assert result["dirty"] is False
+
+
+def test_challenge_off_still_saves_dirty_config_before_starting():
+    result = _run_start_race_action(dirty=True, challenge=False)
+    assert result["callLog"] == ["configureRace", "startRace"]
+    assert result["dirty"] is True  # the stub save does not clear it
 
 
 # ---------------------------------------------------------------------------

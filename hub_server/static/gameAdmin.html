@@ -4144,8 +4144,12 @@
       renderRaceActionButtons();
       try {
         if (state.raceConfigDirty) {
-          const saved = await configureRace();
-          if (!saved) return;
+          if (state.race?.challenge_mode_enabled === true) {
+            state.raceConfigDirty = false;
+          } else {
+            const saved = await configureRace();
+            if (!saved) return;
+          }
         }
         if (state.race?.session_mode !== "race") {
           const switched = await switchToRaceMode();
