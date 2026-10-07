@@ -231,3 +231,154 @@ def test_each_challenge_input_sits_inside_its_own_field_wrapper():
     tree = _tree()
     for key in ("duration", "min-result", "start-wait"):
         assert tree.by_id[f"challenge-{key}"].inside(f"challenge-{key}-field"), key
+
+
+# ---------------------------------------------------------------------------
+# R9a / R9b / R9c -- Race Rules vs. the challenge note: exact complements
+# ---------------------------------------------------------------------------
+
+
+def _disclosure(**overrides):
+    base = {
+        "competitionMode": "individual",
+        "challengeModeOn": False,
+        "sessionMode": "race",
+        "raceState": "IDLE",
+        "hasRoster": False,
+    }
+    base.update(overrides)
+    fn = _extract_function(_stripped_script(), "disclosureState")
+    return json.loads(
+        _run_node(
+            f"{fn}\nconsole.log(JSON.stringify(disclosureState({json.dumps(base)})));"
+        )
+    )
+
+
+def test_challenge_on_hides_rules_and_save_and_shows_note():
+    s = _disclosure(challengeModeOn=True)
+    assert (s["raceRules"], s["saveRace"], s["challengeRulesNote"]) == (
+        False,
+        False,
+        True,
+    )
+
+
+def test_challenge_off_shows_rules_and_save_and_hides_note():
+    s = _disclosure(challengeModeOn=False)
+    assert (s["raceRules"], s["saveRace"], s["challengeRulesNote"]) == (
+        True,
+        True,
+        False,
+    )
+
+
+def test_rules_and_note_are_exact_complements_in_every_input_combination():
+    for mode in ("individual", "team", "relay"):
+        for challenge in (True, False):
+            for session in ("race", "class", None):
+                for has_roster in (True, False):
+                    s = _disclosure(
+                        competitionMode=mode,
+                        challengeModeOn=challenge,
+                        sessionMode=session,
+                        hasRoster=has_roster,
+                    )
+                    assert s["raceRules"] is not s["challengeRulesNote"], s
+                    assert s["saveRace"] is s["raceRules"], s
+
+
+def _applied(race_js: str) -> dict:
+    return _run(
+        """syncVisibility();
+console.log(JSON.stringify({
+  rulesHidden: $("rules-block").hidden,
+  saveHidden: $("btn-save-race").hidden,
+  noteCollapsed: collapsed("challenge-rules-note"),
+}));""",
+        race_js,
+    )
+
+
+def test_sync_visibility_hides_rules_block_and_save_button_when_challenge_on():
+    out = _applied("{ challenge_mode_enabled: true }")
+    assert out == {"rulesHidden": True, "saveHidden": True, "noteCollapsed": False}
+
+
+def test_sync_visibility_shows_rules_block_and_save_button_when_challenge_off():
+    out = _applied("{ challenge_mode_enabled: false }")
+    assert out == {"rulesHidden": False, "saveHidden": False, "noteCollapsed": True}
+
+
+def test_select_value_does_not_decide_rules_visibility():
+    out = _run(
+        """$("challenge-mode-enabled").value = "true";
+syncVisibility();
+console.log(JSON.stringify({ rulesHidden: $("rules-block").hidden,
+  saveHidden: $("btn-save-race").hidden }));""",
+        "{ challenge_mode_enabled: false }",
+    )
+    assert out == {"rulesHidden": False, "saveHidden": False}
+
+
+def test_render_challenge_mode_hides_rules_through_real_call_path():
+    out = _run(
+        """state.race.challenge_mode_enabled = true;
+renderChallengeMode();
+const on = [$("rules-block").hidden, $("btn-save-race").hidden];
+state.race.challenge_mode_enabled = false;
+renderChallengeMode();
+console.log(JSON.stringify([on, [$("rules-block").hidden, $("btn-save-race").hidden]]));"""
+    )
+    assert out == [[True, True], [False, False]]
+
+
+def _note_text(locale: str, duration: int) -> str:
+    src = _stripped_script()
+    dictionaries_at = src.index("const dictionaries = ")
+    dict_end = _match_end(src, src.index("{", dictionaries_at), "{", "}") + 1
+    zh_at = src.index('dictionaries["zh-TW"] = ')
+    zh_end = _match_end(src, src.index("{", zh_at), "{", "}") + 1
+    script = (
+        _STUB.replace("const t = (k, p = {}) => k + JSON.stringify(p);\n", "")
+        + f"let currentLocale = {json.dumps(locale)};\n"
+        + src[dictionaries_at:dict_end]
+        + ";\n"
+        + src[zh_at:zh_end]
+        + ";\n"
+        + _extract_function(src, "t")
+        + "\n"
+        + "\n".join(_extract_function(src, n) for n in _FNS)
+        + f"""
+state.race = {{ session_mode: "race", state: "IDLE",
+  challenge_mode_enabled: true, challenge_duration_sec: {duration} }};
+$("competition-mode").value = "individual";
+syncVisibility();
+console.log(JSON.stringify($("challenge-rules-note-text").textContent));
+"""
+    )
+    return json.loads(_run_node(script))
+
+
+def test_challenge_note_text_contains_configured_duration_in_english():
+    text = _note_text("en-US", 137)
+    assert "137" in text
+    assert "{seconds}" not in text
+    assert "Challenge mode is on" in text
+
+
+def test_challenge_note_text_contains_configured_duration_in_chinese():
+    text = _note_text("zh-TW", 137)
+    assert "137" in text
+    assert "{seconds}" not in text
+    assert "挑戰模式" in text
+
+
+def test_challenge_note_follows_a_changed_duration():
+    assert "90" in _note_text("en-US", 90)
+    assert "90" not in _note_text("en-US", 137)
+
+
+def test_challenge_rules_note_markup_is_a_field_wrapper_around_the_text():
+    tree = _tree()
+    assert tree.by_id["challenge-rules-note-text"].inside("challenge-rules-note")

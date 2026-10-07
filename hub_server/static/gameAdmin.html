@@ -1246,6 +1246,9 @@
                     <label for="challenge-start-wait" data-i18n="label.challenge_start_wait">Start Window with Several Stations (s)</label>
                     <input id="challenge-start-wait" type="number" min="0" max="300" value="30" onchange="saveChallengeMode()">
                   </div>
+                  <div class="field" id="challenge-rules-note">
+                    <p class="field-note show" id="challenge-rules-note-text" data-i18n="text.challenge_rules_note">Challenge mode is on: every run is a {seconds}-second time race, started automatically when athletes sign up. Race Rules are not used.</p>
+                  </div>
                   <div class="field">
                     <p class="field-note show" data-i18n="text.challenge_note">When on, the race starts automatically once every station has signed up.</p>
                   </div>
@@ -1603,6 +1606,7 @@
         "option.challenge_off": "Off",
         "option.challenge_on": "On",
         "text.challenge_note": "When on, the race starts automatically once every station has signed up.",
+        "text.challenge_rules_note": "Challenge mode is on: every run is a {seconds}-second time race, started automatically when athletes sign up. Race Rules are not used.",
         "message.challenge_saved": "Challenge mode saved.",
         "label.access_code": "Access Code",
         "panel.race_control": "Race Control",
@@ -1902,6 +1906,7 @@
       "option.challenge_off": "關閉",
       "option.challenge_on": "開啟",
       "text.challenge_note": "開啟後，所有站位報名完成會自動倒數開跑。",
+      "text.challenge_rules_note": "挑戰模式已開啟：每次都是 {seconds} 秒限時賽，選手報名後自動開跑，不使用比賽規則。",
       "message.challenge_saved": "已儲存挑戰模式。",
       "label.access_code": "存取碼",
       "panel.race_control": "比賽控制",
@@ -2577,11 +2582,15 @@
     function disclosureState({ competitionMode, challengeModeOn, sessionMode, raceState, hasRoster }) {
       const isRelay = competitionMode === "relay";
       const isTeam = competitionMode === "team";
+      const challenge = Boolean(challengeModeOn);
       return {
         relayLegs: isRelay,
         teamScoring: isTeam,
         teamCompletion: isTeam,
-        challengeSettings: Boolean(challengeModeOn),
+        challengeSettings: challenge,
+        raceRules: !challenge,
+        saveRace: !challenge,
+        challengeRulesNote: challenge,
         switchToRaceMode: sessionMode !== "race",
         rosterLists: Boolean(hasRoster),
         teamRuleCard: isRelay || isTeam,
@@ -2617,6 +2626,12 @@
       $("team-scoring-field").classList.toggle("field-collapsed", !visible.teamScoring);
       $("team-completion-field").classList.toggle("field-collapsed", !visible.teamCompletion);
       $("team-rule-card").hidden = !visible.teamRuleCard;
+      $("rules-block").hidden = !visible.raceRules;
+      $("btn-save-race").hidden = !visible.saveRace;
+      $("challenge-rules-note").classList.toggle("field-collapsed", !visible.challengeRulesNote);
+      $("challenge-rules-note-text").textContent = t("text.challenge_rules_note", {
+        seconds: state.race?.challenge_duration_sec || 180,
+      });
       for (const id of ["challenge-duration-field", "challenge-min-result-field", "challenge-start-wait-field"]) {
         $(id).classList.toggle("field-collapsed", !visible.challengeSettings);
       }

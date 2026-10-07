@@ -214,6 +214,7 @@ const mk = () => ({
 });
 const els = {};
 const $ = (id) => (els[id] = els[id] || mk());
+const t = (k) => k;
 const state = { race: { session_mode: "race", state: "IDLE" },
                 roster: { counts: { pending: 0, loaded: 0, done: 0, absent: 0 } } };
 """
@@ -309,7 +310,6 @@ def _configure_payload(toggle: bool) -> dict:
 const posts = [];
 const adminHeaders = (h) => h;
 const setMessage = () => {};
-const t = (k) => k;
 const refreshReadiness = async () => {};
 const renderRace = () => {};
 const validateRaceGroups = () => null;
