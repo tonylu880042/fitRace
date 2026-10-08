@@ -47,3 +47,4 @@ extend-exclude = ["referece_for_edge_node"]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 asyncio_mode = "auto"
+pythonpath = ["."]

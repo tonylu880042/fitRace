@@ -62,9 +62,19 @@ class RaceResultStore:
         # above should still surface as a real exception.
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
+            # A torn tail (power cut mid-append) has no trailing newline;
+            # start a fresh line so it cannot swallow this record.
+            lead = ""
+            if self._path.exists() and self._path.stat().st_size > 0:
+                with self._path.open("rb") as f:
+                    f.seek(-1, os.SEEK_END)
+                    if f.read(1) != b"\n":
+                        lead = "\n"
             with self._path.open("a", encoding="utf-8") as f:
                 f.write(
-                    json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n"
+                    lead
+                    + json.dumps(record, ensure_ascii=False, separators=(",", ":"))
+                    + "\n"
                 )
         except OSError as exc:
             logger.warning(
@@ -78,15 +88,19 @@ class RaceResultStore:
         if not self._path.exists():
             return []
         records: list[dict[str, Any]] = []
-        with self._path.open(encoding="utf-8") as f:
+        # errors="replace": a power cut can tear a line inside a multibyte
+        # character; strict decoding would make every later read raise.
+        with self._path.open(encoding="utf-8", errors="replace") as f:
             for line in f:
                 line = line.strip()
                 if not line:
                     continue
                 try:
-                    records.append(json.loads(line))
+                    record = json.loads(line)
                 except json.JSONDecodeError:
                     continue
+                if isinstance(record, dict):
+                    records.append(record)
         if limit is None:
             return records
         return records[-max(1, limit) :]
@@ -94,7 +108,7 @@ class RaceResultStore:
     def _key_exists(self, result_key: str) -> bool:
         if not self._path.exists():
             return False
-        with self._path.open(encoding="utf-8") as f:
+        with self._path.open(encoding="utf-8", errors="replace") as f:
             for line in f:
                 if not line.strip():
                     continue
@@ -102,7 +116,7 @@ class RaceResultStore:
                     record = json.loads(line)
                 except json.JSONDecodeError:
                     continue
-                if record.get("result_id") == result_key:
+                if isinstance(record, dict) and record.get("result_id") == result_key:
                     return True
         return False
 
@@ -125,7 +139,7 @@ class RaceResultStore:
         # Count valid records if file exists
         cleared_count = 0
         if self._path.exists():
-            with self._path.open(encoding="utf-8") as f:
+            with self._path.open(encoding="utf-8", errors="replace") as f:
                 for line in f:
                     line = line.strip()
                     if not line:
