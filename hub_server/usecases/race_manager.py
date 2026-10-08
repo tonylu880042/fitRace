@@ -97,6 +97,10 @@ class RaceManager:
         )  # node_id -> athlete_name (for legacy backward compatibility)
         self._progress: Dict[str, Dict[str, Any]] = {}  # node_id -> metrics dict
         self._telemetry_seen: OrderedDict[tuple, None] = OrderedDict()
+        # (node_id, producer_id) -> highest producer_sequence ever observed,
+        # and its snapshot taken at start_race(). See _is_before_current_race.
+        self._producer_high_water: Dict[tuple, int] = {}
+        self._race_start_watermark: Dict[tuple, int] = {}
 
         # New station mapping structures
         self._stations: Dict[int, str] = {}  # station_number (int) -> node_id (str)
@@ -1057,32 +1061,42 @@ class RaceManager:
         key = self._telemetry_dedup_key(payload)
         if key is None:
             return
+        if key[0] == "producer":
+            stream = (key[1], key[2])
+            if key[3] > self._producer_high_water.get(stream, 0):
+                self._producer_high_water[stream] = key[3]
         self._telemetry_seen[key] = None
         self._telemetry_seen.move_to_end(key)
         while len(self._telemetry_seen) > self.TELEMETRY_DEDUP_MAX_ENTRIES:
             self._telemetry_seen.popitem(last=False)
 
     def _is_before_current_race(self, payload: Dict[str, Any]) -> bool:
-        # Legacy timestamp-only producers are allowed to keep their existing
-        # behaviour for synthetic/unsynchronised clocks. Their duplicate
-        # protection is the retained `(node_id, timestamp)` history. A
-        # timestamp boundary is safe for the new publisher identity, whose
-        # UUID and sequence provide an unambiguous sample source.
-        if not payload.get("producer_id") or payload.get("producer_sequence") is None:
+        # Legacy timestamp-only producers keep their existing behaviour; their
+        # duplicate protection is the retained `(node_id, timestamp)` history.
+        # New publishers are judged by producer sequence against the
+        # high-water mark snapshotted at start_race(), never by the edge
+        # clock (a Pi without RTC/NTP can be minutes behind the hub, and the
+        # heartbeat-derived offset may not exist yet after a hub restart).
+        # A producer_id unseen before start (edge restarted mid-race) has
+        # watermark 0, so it is accepted.
+        # ponytail: a pre-start sample never delivered before start (still in
+        # the edge's publish retry, bounded by the ~5s edge publish timeout)
+        # can still score. Upgrade path: a hub-side boundary carried in the
+        # race-start broadcast. The watermark dict grows by one entry per
+        # (stream, edge process restart); no eviction needed.
+        producer_id = payload.get("producer_id")
+        producer_sequence = payload.get("producer_sequence")
+        node_id = payload.get("node_id")
+        if not producer_id or producer_sequence is None or not node_id:
             return False
-        timestamp = payload.get("timestamp_epoch_ms")
-        if (
-            self._session_mode != "race"
-            or timestamp is None
-            or self._start_time_epoch_ms is None
-        ):
+        if self._session_mode != "race" or self._start_time_epoch_ms is None:
             return False
         try:
-            sample_time_ms = int(self._metric_number(timestamp))
+            sequence = int(producer_sequence)
         except (TypeError, ValueError):
             return False
-        corrected_sample_time_ms = sample_time_ms + self._clock_offset_ms(payload)
-        return corrected_sample_time_ms < self._start_time_epoch_ms
+        stream = (str(node_id), str(producer_id))
+        return sequence <= self._race_start_watermark.get(stream, 0)
 
     def _accept_telemetry(self, payload: Dict[str, Any]) -> bool:
         """Record a sample identity and report whether it may be scored.
@@ -1283,6 +1297,7 @@ class RaceManager:
 
         self._start_time_epoch_ms = int(time.time() * 1000)
         self._end_time_epoch_ms = None
+        self._race_start_watermark = dict(self._producer_high_water)
 
         # Initialize progress
         self._progress = {}
