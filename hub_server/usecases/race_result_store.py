@@ -62,9 +62,19 @@ class RaceResultStore:
         # above should still surface as a real exception.
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
+            # A torn tail (power cut mid-append) has no trailing newline;
+            # start a fresh line so it cannot swallow this record.
+            lead = ""
+            if self._path.exists() and self._path.stat().st_size > 0:
+                with self._path.open("rb") as f:
+                    f.seek(-1, os.SEEK_END)
+                    if f.read(1) != b"\n":
+                        lead = "\n"
             with self._path.open("a", encoding="utf-8") as f:
                 f.write(
-                    json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n"
+                    lead
+                    + json.dumps(record, ensure_ascii=False, separators=(",", ":"))
+                    + "\n"
                 )
         except OSError as exc:
             logger.warning(
