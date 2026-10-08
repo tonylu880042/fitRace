@@ -419,7 +419,8 @@ class RaceManager:
         for station_number, node_id in sorted(self._stations.items()):
             sample = self._idle_telemetry.get_sample(node_id)
             # Stale = no data for > IDLE_STALE_MS, OR the device keeps
-            # sending but has not moved (speed > 0) for > IDLE_STALE_MS
+            # sending but has not moved (speed, power or cadence > 0) for
+            # > IDLE_STALE_MS
             # (a never-moved device is stale too).
             is_stale = (
                 sample is None

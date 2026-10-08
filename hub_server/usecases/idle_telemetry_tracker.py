@@ -26,6 +26,10 @@ BEST_METRICS = (
     "cadence_rpm",
 )
 
+# Metrics where a value > 0 means someone is actually training on the machine.
+# Heart rate is excluded on purpose (a resting athlete still has one).
+MOVING_METRICS = ("instantaneous_speed_kph", "power_watts", "cadence_rpm")
+
 # Equipment types the dashboard shows a running pace for instead of raw
 # speed (mirrors the dashboard's own isRunningEquipment in index.html).
 TREADMILL_EQUIPMENT_TYPES = frozenset({"treadmill", "curved_treadmill"})
@@ -54,11 +58,16 @@ class IdleTelemetryTracker:
             received_epoch_ms = self._now_ms()
         sample = dict(metrics)
         sample["received_epoch_ms"] = received_epoch_ms
-        # When the device last reported speed > 0: a machine that keeps
-        # sending zero-speed telemetry is idle, not live. Carried over from
-        # the previous sample while stationary; None if it never moved.
-        speed = metrics.get("instantaneous_speed_kph")
-        if speed is not None and speed > 0:
+        # When the device last reported speed, power or cadence > 0: a machine
+        # that keeps sending all-zero telemetry is idle, not live. Some FTMS
+        # bikes/ergs report only power+cadence (no speed), so any one of the
+        # three counts. Heart rate deliberately does not: a resting athlete
+        # still has one. Carried over from the previous sample while
+        # stationary; None if it never moved.
+        if any(
+            isinstance(metrics.get(name), (int, float)) and metrics.get(name) > 0
+            for name in MOVING_METRICS
+        ):
             sample["last_moving_epoch_ms"] = received_epoch_ms
         else:
             previous = self._samples.get(node_id) or {}
