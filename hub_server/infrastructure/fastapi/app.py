@@ -57,6 +57,7 @@ from hub_server.usecases.node_display_names import (
     enrich_station_display_names,
 )
 from hub_server.usecases.race_event_engine import RaceEventEngine
+from hub_server.usecases.data_backup import backup_files
 from hub_server.usecases.race_result_store import RaceResultStore
 from hub_server.usecases.race_results_query import RaceResultsQuery
 from hub_server.usecases.race_settings_store import RaceSettingsStore
@@ -190,19 +191,38 @@ async def add_no_cache_header(request: Request, call_next):
 # (a usecase) must never import the registry itself, only receive this
 # callable, per Clean Architecture's inward-only dependency direction.
 node_registry = NodeRegistry()
+_race_settings_path = os.getenv("FITRACE_RACE_SETTINGS_PATH", "data/race_settings.json")
+_roster_path = os.getenv("FITRACE_ROSTER_PATH", "data/roster.json")
 race_manager = RaceManager(
-    settings_store=RaceSettingsStore(
-        os.getenv("FITRACE_RACE_SETTINGS_PATH", "data/race_settings.json")
-    ),
+    settings_store=RaceSettingsStore(_race_settings_path),
     clock_offset_ms_fn=node_registry.get_clock_offset_ms,
 )
-roster_manager = RosterManager(
-    RaceSettingsStore(os.getenv("FITRACE_ROSTER_PATH", "data/roster.json"))
-)
+roster_manager = RosterManager(RaceSettingsStore(_roster_path))
 ws_manager = WebSocketManager()
 race_event_engine = RaceEventEngine()
 _race_results_path = os.getenv("FITRACE_RACE_RESULTS_PATH", "data/race_results.jsonl")
-race_result_store = RaceResultStore(_race_results_path)
+_class_results_path = os.getenv(
+    "FITRACE_CLASS_RESULTS_PATH",
+    str(Path(_race_results_path).parent / "class_results.jsonl"),
+)
+
+
+def build_backup_hook(paths):
+    """Copy ``paths`` into FITRACE_BACKUP_DIR after each saved result.
+
+    Returns None when the env var is unset/empty so behaviour (and the
+    filesystem) is untouched unless an operator opts in.
+    """
+    backup_dir = os.getenv("FITRACE_BACKUP_DIR")
+    if not backup_dir:
+        return None
+    return lambda: backup_files(paths, backup_dir, datetime.now())
+
+
+_backup_hook = build_backup_hook(
+    [_race_results_path, _class_results_path, _race_settings_path, _roster_path]
+)
+race_result_store = RaceResultStore(_race_results_path, on_saved=_backup_hook)
 race_results_query = RaceResultsQuery(
     race_result_store,
     # Looked up at call time so a swapped-in store (tests) is honoured.
@@ -224,11 +244,7 @@ avatar_store = AvatarStore(
 # but forgets FITRACE_CLASS_RESULTS_PATH still lands the class store next to
 # it instead of falling back into the (often unwritable) release directory.
 class_result_store = RaceResultStore(
-    os.getenv(
-        "FITRACE_CLASS_RESULTS_PATH",
-        str(Path(_race_results_path).parent / "class_results.jsonl"),
-    ),
-    session_mode="class",
+    _class_results_path, session_mode="class", on_saved=_backup_hook
 )
 race_start_countdown_lock = asyncio.Lock()
 update_checker = UpdateChecker(
