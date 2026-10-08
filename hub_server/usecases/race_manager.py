@@ -1,4 +1,5 @@
 import time
+from collections import OrderedDict
 from typing import Dict, Any, Callable, Optional
 from hub_server.domain.models import RaceState, RaceConfig
 from hub_server.domain.class_models import ClassPlan, segment_at
@@ -10,6 +11,12 @@ from hub_server.usecases.idle_telemetry_tracker import (
 
 
 class RaceManager:
+    # A bounded replay window prevents a long-running venue from retaining an
+    # unbounded set of MQTT sample identities. Timestamped samples are also
+    # rejected when they predate a new race, so late packets remain harmless
+    # after an older identity has eventually aged out of this window.
+    TELEMETRY_DEDUP_MAX_ENTRIES = 8192
+
     VALID_LEADERBOARD_DISPLAY_MODES = {
         "classic",
         "race_track",
@@ -89,6 +96,7 @@ class RaceManager:
             {}
         )  # node_id -> athlete_name (for legacy backward compatibility)
         self._progress: Dict[str, Dict[str, Any]] = {}  # node_id -> metrics dict
+        self._telemetry_seen: OrderedDict[tuple, None] = OrderedDict()
 
         # New station mapping structures
         self._stations: Dict[int, str] = {}  # station_number (int) -> node_id (str)
@@ -1009,12 +1017,108 @@ class RaceManager:
                 station_number,
             )
 
+    @staticmethod
+    def _telemetry_dedup_key(payload: Dict[str, Any]) -> tuple | None:
+        """Return the strongest available stable key for one sample.
+
+        New Edge publishers send a process UUID plus a per-stream sequence.
+        Older producers have no publisher identity, so an epoch timestamp is
+        the fallback. A payload with neither keeps the historical API
+        behaviour and is deliberately not deduplicated.
+        """
+        node_id = payload.get("node_id")
+        if not node_id:
+            return None
+
+        producer_id = payload.get("producer_id")
+        producer_sequence = payload.get("producer_sequence")
+        if producer_id and producer_sequence is not None:
+            try:
+                return (
+                    "producer",
+                    str(node_id),
+                    str(producer_id),
+                    int(producer_sequence),
+                )
+            except (TypeError, ValueError):
+                # Invalid partial identity falls through to the legacy
+                # timestamp key when one is available.
+                pass
+
+        timestamp = payload.get("timestamp_epoch_ms")
+        if timestamp is None:
+            return None
+        try:
+            return ("timestamp", str(node_id), int(timestamp))
+        except (TypeError, ValueError):
+            return None
+
+    def _remember_telemetry(self, payload: Dict[str, Any]) -> None:
+        key = self._telemetry_dedup_key(payload)
+        if key is None:
+            return
+        self._telemetry_seen[key] = None
+        self._telemetry_seen.move_to_end(key)
+        while len(self._telemetry_seen) > self.TELEMETRY_DEDUP_MAX_ENTRIES:
+            self._telemetry_seen.popitem(last=False)
+
+    def _is_before_current_race(self, payload: Dict[str, Any]) -> bool:
+        # Legacy timestamp-only producers are allowed to keep their existing
+        # behaviour for synthetic/unsynchronised clocks. Their duplicate
+        # protection is the retained `(node_id, timestamp)` history. A
+        # timestamp boundary is safe for the new publisher identity, whose
+        # UUID and sequence provide an unambiguous sample source.
+        if not payload.get("producer_id") or payload.get("producer_sequence") is None:
+            return False
+        timestamp = payload.get("timestamp_epoch_ms")
+        if (
+            self._session_mode != "race"
+            or timestamp is None
+            or self._start_time_epoch_ms is None
+        ):
+            return False
+        try:
+            sample_time_ms = int(self._metric_number(timestamp))
+        except (TypeError, ValueError):
+            return False
+        corrected_sample_time_ms = sample_time_ms + self._clock_offset_ms(payload)
+        return corrected_sample_time_ms < self._start_time_epoch_ms
+
+    def _accept_telemetry(self, payload: Dict[str, Any]) -> bool:
+        """Record a sample identity and report whether it may be scored.
+
+        The cache stores every unique key instead of only the latest sequence
+        or timestamp. That permits valid MQTT reordering: sequence 3 may be
+        delivered before sequence 2, and both deltas still count once.
+        """
+        if self._session_mode != "race":
+            return True
+        key = self._telemetry_dedup_key(payload)
+        if self._is_before_current_race(payload):
+            self._remember_telemetry(payload)
+            return False
+        if key is None:
+            return True
+        if key in self._telemetry_seen:
+            self._telemetry_seen.move_to_end(key)
+            return False
+        self._remember_telemetry(payload)
+        return True
+
     def ingest_telemetry(
         self, payload: Dict[str, Any]
     ) -> Optional[Dict[str, Dict[str, Any]]]:
         node_id = payload.get("node_id")
         if not node_id:
             return None
+
+        # Keep identities observed while idle/stopped as well. The edge may
+        # retry a packet across a race boundary; retaining the bounded history
+        # prevents that old packet from becoming the first scored sample of a
+        # new race. Samples without an identity or timestamp retain the old
+        # API semantics and are never deduplicated.
+        if self._session_mode == "race" and self._state != RaceState.RUNNING:
+            self._remember_telemetry(payload)
 
         equipment_type = payload.get("equipment_type", "unknown")
         self.update_active_node(node_id, equipment_type, payload.get("equipment_id"))
@@ -1027,8 +1131,10 @@ class RaceManager:
 
         if self._is_excluded_from_run(node_id):
             return None
+        if not self._accept_telemetry(payload):
+            return None
         self.ensure_running_node_registered(node_id)
-        return self.update_telemetry(payload)
+        return self.update_telemetry(payload, _dedupe_checked=True)
 
     def assign_station(self, station_number: int, node_id: Optional[str]):
         if self._state == RaceState.RUNNING:
@@ -1314,14 +1420,20 @@ class RaceManager:
         # None-ed out config.
         self._persist_settings()
 
-    def update_telemetry(self, payload: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    def update_telemetry(
+        self, payload: Dict[str, Any], *, _dedupe_checked: bool = False
+    ) -> Dict[str, Dict[str, Any]]:
         if self._state == RaceState.STOPPED:
+            self._remember_telemetry(payload)
             return self._progress
         if self._state != RaceState.RUNNING:
             raise ValueError("Telemetry can only be updated during a running race")
 
         node_id = payload.get("node_id")
         if not node_id:
+            return self._progress
+
+        if not _dedupe_checked and not self._accept_telemetry(payload):
             return self._progress
 
         if self._is_excluded_from_run(node_id):

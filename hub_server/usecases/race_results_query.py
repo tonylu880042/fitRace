@@ -4,10 +4,6 @@ from typing import Any, Callable, Optional
 
 from hub_server.usecases.race_result_store import RaceResultStore
 
-# Generous upper bound so we effectively read the whole jsonl history without
-# the store having to grow an "unlimited" mode.
-RESULTS_READ_LIMIT = 500
-
 _TARGET_RACE_TYPES = ("distance", "calories")
 _TIME_BOXED_RACE_TYPES = ("time", "watts")
 
@@ -353,7 +349,7 @@ class RaceResultsQuery:
     def _load_records(self) -> list[Any]:
         # The jsonl file is append-only in chronological order; reverse to
         # present newest-first without needing a separate timestamp sort.
-        return list(reversed(self._store.list_results(limit=RESULTS_READ_LIMIT)))
+        return list(reversed(self._store.list_results(limit=None)))
 
     @staticmethod
     def _summarize(record: Any) -> Optional[dict[str, Any]]:

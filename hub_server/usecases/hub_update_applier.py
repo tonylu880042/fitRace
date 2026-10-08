@@ -103,8 +103,11 @@ def apply_hub_update(
     # so a bad update can be rolled back to it.
     previous_target = current_link.resolve() if current_link.is_symlink() else None
 
-    release_root.mkdir(parents=True, exist_ok=True)
     target = release_root / f"hub-{version}"
+    if previous_target is not None and target.resolve() == previous_target:
+        raise RuntimeError(f"refusing to overwrite active hub release: {target}")
+
+    release_root.mkdir(parents=True, exist_ok=True)
     if target.exists():
         shutil.rmtree(target)
     shutil.copytree(source, target)

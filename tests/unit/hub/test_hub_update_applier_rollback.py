@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from hub_server.usecases.hub_update_applier import apply_hub_update
 
 
@@ -46,6 +48,37 @@ def test_healthy_update_leaves_new_release_linked_and_returns_existing_keys(tmp_
     assert "applied_at_epoch_ms" in result
     assert current_link.resolve() == target
     assert calls == [["systemctl", "restart", "fitracestudio-hub.service"]]
+
+
+def test_same_version_update_refuses_to_overwrite_active_release(tmp_path):
+    cache_dir = tmp_path / "cache"
+    release_root = tmp_path / "releases"
+    current_link = tmp_path / "current"
+    previous = _install_previous_release(
+        release_root, current_link, "0.2.0", "old release\n"
+    )
+    _stage_release(cache_dir, "0.2.0", "print('new')\n")
+    marker_path = tmp_path / "pending-verify.json"
+    marker_path.write_text('{"existing": "marker"}\n')
+    calls = []
+    health_calls = []
+
+    with pytest.raises(RuntimeError, match="refusing to overwrite active hub release"):
+        apply_hub_update(
+            cache_dir=cache_dir,
+            release_root=release_root,
+            current_link=current_link,
+            service_name="fitracestudio-hub.service",
+            runner=lambda command: calls.append(command),
+            health_check=lambda: health_calls.append(True) or True,
+            pending_verify_marker_path=marker_path,
+        )
+
+    assert current_link.resolve() == previous
+    assert (previous / "marker.txt").read_text() == "old release\n"
+    assert marker_path.read_text() == '{"existing": "marker"}\n'
+    assert calls == []
+    assert health_calls == []
 
 
 def test_unhealthy_update_rolls_back_symlink_on_disk_and_restarts(tmp_path):

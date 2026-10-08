@@ -32,6 +32,20 @@ TypedFtmsPayload = SpeedFtmsPayload | RowerFtmsPayload | UnknownFtmsPayload
 
 class TelemetryData(BaseModel):
     node_id: str = Field(..., description="Unique identity of the telemetry stream")
+    producer_id: str | None = Field(
+        None,
+        description=(
+            "Runtime identity of the publisher. A publisher keeps this value "
+            "stable for its process lifetime."
+        ),
+    )
+    producer_sequence: int | None = Field(
+        None,
+        ge=1,
+        description=(
+            "Monotonic sample sequence within a producer and telemetry stream."
+        ),
+    )
     edge_node_id: Optional[str] = Field(
         None,
         description="Physical Edge Node that produced this telemetry stream",

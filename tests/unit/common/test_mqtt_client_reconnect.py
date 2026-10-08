@@ -42,6 +42,7 @@ class FakePahoClient:
         self.published = []
         self.loop_started = False
         self.connect_async_calls = []
+        self.publish_acknowledged = True
 
     def connect_async(self, host, port):
         self.connect_async_calls.append((host, port))
@@ -60,10 +61,11 @@ class FakePahoClient:
 
     def publish(self, topic, payload, qos=1):
         self.published.append((topic, payload, qos))
+        owner = self
 
         class _Info:
             def is_published(self):
-                return True
+                return owner.publish_acknowledged
 
         return _Info()
 
@@ -221,3 +223,100 @@ async def test_publish_gives_up_instead_of_waiting_for_the_broker_forever(fake_p
         await client.publish("gym/telemetry/n1", "{}", timeout_sec=0.1)
 
     assert fake_paho[0].published == []
+
+
+async def test_publish_times_out_when_qos1_ack_never_arrives(fake_paho):
+    client = _client()
+    await client.connect(timeout_sec=0.05)
+    fake_paho[0].fire_connect()
+    await client._connected.wait()
+    fake_paho[0].publish_acknowledged = False
+
+    with pytest.raises(ConnectionError, match="publish"):
+        await asyncio.wait_for(
+            client.publish("gym/telemetry/n1", "{}", timeout_sec=0.02),
+            timeout=0.1,
+        )
+
+    assert fake_paho[0].published == [("gym/telemetry/n1", "{}", 1)]
+
+
+async def test_publish_timeout_budget_includes_waiting_for_connection(fake_paho):
+    client = _client()
+    await client.connect(timeout_sec=0.05)
+    fake_paho[0].publish_acknowledged = False
+    ack_tasks = []
+
+    async def connect_after_part_of_the_budget(timeout_sec=None):
+        await asyncio.sleep(0.04)
+        fake_paho[0].fire_connect()
+        await client._connected.wait()
+        ack_tasks.append(asyncio.create_task(_ack_after_delay(fake_paho[0], 0.04)))
+
+    client.wait_connected = connect_after_part_of_the_budget
+
+    with pytest.raises(ConnectionError, match="publish"):
+        await asyncio.wait_for(
+            client.publish("gym/telemetry/n1", "{}", timeout_sec=0.06), timeout=0.2
+        )
+
+    await ack_tasks[0]
+
+    assert fake_paho[0].published == [("gym/telemetry/n1", "{}", 1)]
+
+
+async def _ack_after_delay(fake, delay_sec):
+    await asyncio.sleep(delay_sec)
+    fake.publish_acknowledged = True
+
+
+async def test_publish_succeeds_when_ack_arrives_before_total_timeout(fake_paho):
+    client = _client()
+    await client.connect(timeout_sec=0.05)
+    fake_paho[0].fire_connect()
+    await client._connected.wait()
+    fake_paho[0].publish_acknowledged = False
+    ack_task = asyncio.create_task(_ack_after_delay(fake_paho[0], 0.02))
+
+    await client.publish("gym/telemetry/n1", "{}", timeout_sec=0.1)
+    await ack_task
+
+    assert fake_paho[0].published == [("gym/telemetry/n1", "{}", 1)]
+
+
+async def test_publish_raises_when_disconnected_while_waiting_for_qos1_ack(fake_paho):
+    client = _client()
+    await client.connect(timeout_sec=0.05)
+    fake_paho[0].fire_connect()
+    await client._connected.wait()
+    fake_paho[0].publish_acknowledged = False
+
+    publishing = asyncio.create_task(
+        client.publish("gym/telemetry/n1", "{}", timeout_sec=30.0)
+    )
+    await asyncio.sleep(0)
+    assert fake_paho[0].published == [("gym/telemetry/n1", "{}", 1)]
+
+    fake_paho[0].fire_disconnect()
+    await asyncio.sleep(0)
+
+    with pytest.raises(ConnectionError, match="Disconnected"):
+        await publishing
+
+
+async def test_publish_propagates_cancellation_while_waiting_for_qos1_ack(fake_paho):
+    client = _client()
+    await client.connect(timeout_sec=0.05)
+    fake_paho[0].fire_connect()
+    await client._connected.wait()
+    fake_paho[0].publish_acknowledged = False
+
+    publishing = asyncio.create_task(
+        client.publish("gym/telemetry/n1", "{}", timeout_sec=30.0)
+    )
+    await asyncio.sleep(0)
+    assert fake_paho[0].published == [("gym/telemetry/n1", "{}", 1)]
+    publishing.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await publishing

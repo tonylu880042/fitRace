@@ -131,17 +131,23 @@ class AsyncMqttClient:
         self, topic: str, payload: str, timeout_sec: float = DEFAULT_PUBLISH_TIMEOUT_SEC
     ):
         try:
-            await self.wait_connected(timeout_sec)
+            async with asyncio.timeout(timeout_sec):
+                await self.wait_connected()
+                info = self._client.publish(topic, payload, qos=1)
+                # Wait for the message to be published
+                while not info.is_published():
+                    if not self._connected.is_set():
+                        raise ConnectionError("Disconnected while publishing message")
+                    await asyncio.sleep(0.05)
         except asyncio.TimeoutError:
+            if self._connected.is_set():
+                raise ConnectionError(
+                    f"MQTT publish was not acknowledged after {timeout_sec}s; "
+                    f"dropped {topic}"
+                ) from None
             raise ConnectionError(
                 f"MQTT broker not connected after {timeout_sec}s; dropped {topic}"
-            )
-        info = self._client.publish(topic, payload, qos=1)
-        # Wait for the message to be published
-        while not info.is_published():
-            if not self._connected.is_set():
-                raise ConnectionError("Disconnected while publishing message")
-            await asyncio.sleep(0.05)
+            ) from None
 
     async def disconnect(self):
         self._logger.info("Disconnecting from MQTT broker")

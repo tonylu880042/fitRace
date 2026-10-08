@@ -11,7 +11,7 @@ import io
 from typing import Any, Callable, Iterator, Optional
 
 from hub_server.usecases.race_result_store import RaceResultStore
-from hub_server.usecases.race_results_query import RESULTS_READ_LIMIT, RaceResultsQuery
+from hub_server.usecases.race_results_query import RaceResultsQuery
 
 CSV_BOM = "﻿"
 
@@ -116,8 +116,8 @@ def _iter_export_races(
     `target_label` reuses RaceResultsQuery's own category-label logic so the
     exported label matches the record wall / results pages too.
     """
-    entries = []
-    for record in store.list_results(limit=RESULTS_READ_LIMIT):
+    labels_by_result_id = {}
+    for record in store.list_results(limit=None):
         if not isinstance(record, dict):
             continue
         result_id = record.get("result_id")
@@ -127,11 +127,24 @@ def _iter_export_races(
         config = snapshot.get("config")
         config = config if isinstance(config, dict) else {}
         race_type = config.get("race_type")
-        label = RaceResultsQuery._category_label(race_type, config) or ""
-        race = query.get_race(result_id)
-        if race is None:
-            continue
-        entries.append((race.get("start_time_epoch_ms") or 0, race, label))
+        labels_by_result_id[result_id] = (
+            RaceResultsQuery._category_label(race_type, config) or ""
+        )
+
+    entries = []
+    for summary, ranked_rows, team_leaderboard in query._iter_races():
+        race = {
+            **summary,
+            "results": ranked_rows,
+            "team_leaderboard": team_leaderboard,
+        }
+        entries.append(
+            (
+                race.get("start_time_epoch_ms") or 0,
+                race,
+                labels_by_result_id.get(race["result_id"], ""),
+            )
+        )
 
     entries.sort(key=lambda item: item[0])
     for _, race, label in entries:

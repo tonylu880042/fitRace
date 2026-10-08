@@ -24,6 +24,8 @@ class BindingsRemovedPayload(BaseModel):
 
 class TelemetryPayload(BaseModel):
     node_id: str = Field(..., min_length=1)
+    producer_id: str | None = Field(None, min_length=1)
+    producer_sequence: int | None = Field(None, ge=1)
     edge_node_id: str | None = None
     mac_address: str | None = None
     equipment_id: str | None = None

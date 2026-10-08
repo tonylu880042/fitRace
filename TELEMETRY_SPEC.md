@@ -86,6 +86,8 @@ These fields should be present in every normal sample. If a device cannot provid
 | `calories` | number | kcal-like score | Cumulative calories reported by equipment or calculated by Edge Node. If omitted, Central Hub currently estimates it from power and elapsed time. |
 | `ftms_payload` | object | n/a | Type-specific parsed FTMS payload. See below. |
 | `raw_payload` | object | n/a | Original JSON object from the UART `FTMS:` line. |
+| `producer_id` | string | n/a | Runtime identity assigned by the Edge MQTT publisher. Stable for one publisher process and changed on process restart. |
+| `producer_sequence` | integer | n/a | Monotonic sample sequence for this producer and `node_id`. Starts at `1`. |
 
 ## 4. Supported Equipment Types
 
@@ -161,6 +163,28 @@ TREAD_01
 BIKE_02
 ROW_03
 ```
+
+### `producer_id` and `producer_sequence`
+
+Current Edge publishers add a process-scoped `producer_id` (a random UUID) and
+an independent `producer_sequence` for each telemetry stream. The publisher
+assigns both before handing the payload to MQTT. Republishing the same sample
+keeps the same pair, including concurrent retry attempts; a new sample on the
+same stream increments the sequence, while another stream starts its own
+sequence at `1`. A publisher restart creates a new `producer_id`, so its
+sequence can safely start over.
+
+The Hub deduplicates a new-format sample using the tuple
+`(node_id, producer_id, producer_sequence)`. For older producers that have no
+publisher identity, the Hub falls back to `(node_id, timestamp_epoch_ms)` when
+the timestamp is present. It retains a bounded replay history and records
+individual keys rather than only the highest sequence or timestamp, so valid
+out-of-order samples are still accepted once. A new-format sample whose
+timestamp predates the current race start (after the configured edge clock
+correction) is ignored as a late packet from an earlier race. Legacy
+timestamp-only payloads use their retained duplicate history and keep the
+existing processing behaviour when their clocks are synthetic or unsynchronised;
+legacy payloads without a timestamp are never deduplicated.
 
 ### `timestamp_epoch_ms`
 
@@ -251,6 +275,7 @@ Edge Node should enforce these before publishing:
 | Non-negative values | Speed, cadence, power, heart rate, distance, elapsed time, and calories must not be negative. |
 | Stable stream ID | `node_id` must remain stable for the binding during a race. |
 | Cumulative metrics | `distance_m`, `elapsed_time_ms`, and `calories` should be cumulative, not interval deltas. |
+| Publisher identity | New Edge publishers should include `producer_id` and `producer_sequence`; the pair is stable for one sample retry and unique within a stream. |
 | JSON only | Payload must be a JSON object, not an array or nested envelope. |
 | Topic match | MQTT topic suffix `{node_id}` should match payload `node_id`. |
 
@@ -267,7 +292,10 @@ When telemetry arrives:
 1. Central reads `node_id`.
 2. Central records `node_id -> equipment_type` as an active node.
 3. If the race is not `RUNNING`, Central does not score progress.
-4. If the race is `RUNNING`, Central updates leaderboard progress for that `node_id`.
+4. Central removes a duplicate sample before scoring. New-format samples use
+   `(node_id, producer_id, producer_sequence)`; legacy timestamped samples use
+   `(node_id, timestamp_epoch_ms)`.
+5. If the race is `RUNNING`, Central updates leaderboard progress for that `node_id`.
 
 ### Distance Race
 

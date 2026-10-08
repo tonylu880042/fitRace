@@ -36,7 +36,16 @@ class RaceResultStore:
         if snapshot_session_mode != self._session_mode:
             return None
         result_key = self._result_key(snapshot)
-        if result_key in self._saved_keys or self._key_exists(result_key):
+        if result_key in self._saved_keys:
+            return None
+        try:
+            key_exists = self._key_exists(result_key)
+        except OSError as exc:
+            logger.warning(
+                "Failed to inspect existing result records at %s: %s", self._path, exc
+            )
+            return None
+        if key_exists:
             self._saved_keys.add(result_key)
             return None
 
@@ -65,7 +74,7 @@ class RaceResultStore:
         self._saved_keys.add(result_key)
         return record
 
-    def list_results(self, limit: int = 50) -> list[dict[str, Any]]:
+    def list_results(self, limit: int | None = 50) -> list[dict[str, Any]]:
         if not self._path.exists():
             return []
         records: list[dict[str, Any]] = []
@@ -78,6 +87,8 @@ class RaceResultStore:
                     records.append(json.loads(line))
                 except json.JSONDecodeError:
                     continue
+        if limit is None:
+            return records
         return records[-max(1, limit) :]
 
     def _key_exists(self, result_key: str) -> bool:
