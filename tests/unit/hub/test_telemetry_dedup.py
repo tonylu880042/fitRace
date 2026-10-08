@@ -210,3 +210,13 @@ async def test_mqtt_subscriber_preserves_identity_and_scores_distance_and_calori
     assert progress["distance_m"] == 10.0
     assert progress["calories"] == 2.0
     assert ("producer", "bike-01", "edge-runtime-1", 1) in manager._telemetry_seen
+
+
+def test_pre_start_watermark_keeps_the_maximum_sequence_when_delivery_is_out_of_order():
+    # seq 5 arrives, then the older seq 3: the watermark must stay at 5, so a
+    # never-delivered pre-start seq 4 is still rejected after start.
+    manager = _ready_manager_with_pre_start_sequences(5, 3)
+    manager.start_race()
+
+    assert manager.ingest_telemetry(_edge_sample(4)) is None
+    assert "bike-01" not in manager.get_leaderboard_progress()
