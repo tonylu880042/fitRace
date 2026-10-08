@@ -53,6 +53,7 @@ def test_backup_dir_unset_creates_no_backup_directory(monkeypatch, tmp_path):
 
 def test_backup_dir_set_backs_up_results_after_stop(monkeypatch, tmp_path):
     backup_dir = tmp_path / "usb" / "backups"
+    backup_dir.mkdir(parents=True)
     monkeypatch.setenv("FITRACE_BACKUP_DIR", str(backup_dir))
     settings = tmp_path / "race_settings.json"
     settings.write_text('{"a": 1}')
@@ -117,6 +118,7 @@ def _run_module_wiring(tmp_path, backup_dir):
 
 def test_module_level_stores_back_up_both_race_and_class_when_env_set(tmp_path):
     backup_dir = tmp_path / "backups"
+    backup_dir.mkdir()
     (tmp_path / "data").mkdir()
     (tmp_path / "data" / "roster.json").write_text("{}")
 

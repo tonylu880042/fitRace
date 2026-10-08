@@ -12,6 +12,7 @@ def test_copies_existing_files_into_timestamped_folder(tmp_path):
     a.write_bytes(b'{"x":1}\n\xe7\x8e\x8b\n')
     b.write_bytes(b'{"y":2}')
     dest = tmp_path / "backups"
+    dest.mkdir()
 
     result = backup_files([a, b], dest, NOW)
 
@@ -25,6 +26,7 @@ def test_missing_source_does_not_stop_the_rest(tmp_path):
     present.write_bytes(b"ok")
     missing = tmp_path / "missing.json"
     dest = tmp_path / "backups"
+    dest.mkdir()
 
     result = backup_files([missing, present], dest, NOW)
 
@@ -36,6 +38,7 @@ def test_missing_source_does_not_stop_the_rest(tmp_path):
 def test_second_backup_in_same_second_keeps_newer_contents(tmp_path):
     src = tmp_path / "r.jsonl"
     dest = tmp_path / "backups"
+    dest.mkdir()
     src.write_bytes(b"one\n")
     backup_files([src], dest, NOW)
     src.write_bytes(b"one\ntwo\n")
@@ -52,3 +55,13 @@ def test_unwritable_destination_returns_none_without_raising(tmp_path):
     blocker.write_bytes(b"i am a file, not a directory")
 
     assert backup_files([src], blocker, NOW) is None
+
+
+def test_missing_backup_root_is_not_created(tmp_path):
+    src = tmp_path / "r.jsonl"
+    src.write_bytes(b"data")
+    unmounted = tmp_path / "usb-not-mounted"
+
+    assert backup_files([src], unmounted, NOW) is None
+
+    assert not unmounted.exists()

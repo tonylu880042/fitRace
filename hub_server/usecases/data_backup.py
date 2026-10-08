@@ -17,9 +17,14 @@ def backup_files(
     """
     # ponytail: no rotation -- the jsonl files are small; add keep-last-N when
     # the backup volume actually fills.
+    # ponytail: the backup root must already exist (no parents=True) so an
+    # unmounted USB stick whose mount directory is gone fails loudly instead of
+    # silently backing up onto the SD card. Ceiling: an existing-but-unmounted
+    # mount-point directory still lands on the SD card; upgrade path is an
+    # os.path.ismount check on the configured root.
     try:
         dest = Path(backup_dir) / now.strftime("%Y%m%d-%H%M%S")
-        dest.mkdir(parents=True, exist_ok=True)
+        dest.mkdir(exist_ok=True)
         for source in paths:
             source = Path(source)
             if source.is_file():
