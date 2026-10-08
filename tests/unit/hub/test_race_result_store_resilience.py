@@ -122,3 +122,92 @@ def test_save_finished_snapshot_read_error_preserves_retry_and_dedup(
         "1000-2000-distance",
         "1000-3000-distance",
     ]
+
+
+# -- torn / non-object lines in the results jsonl ---------------------------
+
+
+def _line(result_id):
+    import json
+
+    record = {"result_id": result_id, "snapshot": {"state": "STOPPED"}}
+    return json.dumps(record, ensure_ascii=False).encode() + b"\n"
+
+
+# A power cut mid-append can cut a line inside a multibyte character.
+_TORN_LINE = '{"result_id":"x","snapshot":{"n":"'.encode() + "王".encode()[:2] + b"\n"
+
+
+def _torn_file(tmp_path):
+    path = tmp_path / "race_results.jsonl"
+    path.write_bytes(_line("a") + _TORN_LINE + _line("b"))
+    return path
+
+
+def _non_object_file(tmp_path):
+    path = tmp_path / "race_results.jsonl"
+    path.write_bytes(_line("a") + b"123\nnull\n[]\n" + _line("b"))
+    return path
+
+
+def _snapshot(end_ms):
+    return {
+        "state": "STOPPED",
+        "config": {"race_type": "distance"},
+        "start_time_epoch_ms": 1000,
+        "end_time_epoch_ms": end_ms,
+        "leaderboard": {"node-01": {"distance_m": 100}},
+    }
+
+
+def test_list_results_skips_a_line_torn_inside_a_multibyte_character(tmp_path):
+    store = RaceResultStore(_torn_file(tmp_path))
+
+    results = store.list_results(limit=None)
+
+    assert [r["result_id"] for r in results] == ["a", "b"]
+
+
+def test_key_exists_survives_a_torn_utf8_line(tmp_path):
+    store = RaceResultStore(_torn_file(tmp_path))
+
+    assert store._key_exists("b") is True
+    assert store._key_exists("missing") is False
+
+
+def test_save_finished_snapshot_appends_after_a_torn_utf8_line(tmp_path):
+    store = RaceResultStore(_torn_file(tmp_path))
+
+    saved = store.save_finished_snapshot(_snapshot(2000))
+
+    assert saved is not None
+    assert saved["result_id"] == "1000-2000-distance"
+    ids = [r["result_id"] for r in store.list_results(limit=None)]
+    assert ids == ["a", "b", "1000-2000-distance"]
+
+
+def test_archive_counts_valid_records_around_a_torn_utf8_line(tmp_path):
+    from datetime import datetime
+
+    store = RaceResultStore(_torn_file(tmp_path))
+
+    outcome = store.archive(datetime(2026, 1, 1, 0, 0, 0))
+
+    assert outcome["cleared_count"] == 2
+    assert outcome["backup_path"] is not None
+
+
+def test_list_results_skips_non_object_json_lines(tmp_path):
+    store = RaceResultStore(_non_object_file(tmp_path))
+
+    results = store.list_results(limit=None)
+
+    assert all(isinstance(r, dict) for r in results)
+    assert [r["result_id"] for r in results] == ["a", "b"]
+
+
+def test_key_exists_skips_non_object_json_lines(tmp_path):
+    store = RaceResultStore(_non_object_file(tmp_path))
+
+    assert store._key_exists("b") is True
+    assert store._key_exists("missing") is False

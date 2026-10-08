@@ -78,15 +78,19 @@ class RaceResultStore:
         if not self._path.exists():
             return []
         records: list[dict[str, Any]] = []
-        with self._path.open(encoding="utf-8") as f:
+        # errors="replace": a power cut can tear a line inside a multibyte
+        # character; strict decoding would make every later read raise.
+        with self._path.open(encoding="utf-8", errors="replace") as f:
             for line in f:
                 line = line.strip()
                 if not line:
                     continue
                 try:
-                    records.append(json.loads(line))
+                    record = json.loads(line)
                 except json.JSONDecodeError:
                     continue
+                if isinstance(record, dict):
+                    records.append(record)
         if limit is None:
             return records
         return records[-max(1, limit) :]
@@ -94,7 +98,7 @@ class RaceResultStore:
     def _key_exists(self, result_key: str) -> bool:
         if not self._path.exists():
             return False
-        with self._path.open(encoding="utf-8") as f:
+        with self._path.open(encoding="utf-8", errors="replace") as f:
             for line in f:
                 if not line.strip():
                     continue
@@ -102,7 +106,7 @@ class RaceResultStore:
                     record = json.loads(line)
                 except json.JSONDecodeError:
                     continue
-                if record.get("result_id") == result_key:
+                if isinstance(record, dict) and record.get("result_id") == result_key:
                     return True
         return False
 
@@ -125,7 +129,7 @@ class RaceResultStore:
         # Count valid records if file exists
         cleared_count = 0
         if self._path.exists():
-            with self._path.open(encoding="utf-8") as f:
+            with self._path.open(encoding="utf-8", errors="replace") as f:
                 for line in f:
                     line = line.strip()
                     if not line:
