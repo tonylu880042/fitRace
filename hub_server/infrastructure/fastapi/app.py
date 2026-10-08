@@ -4,6 +4,7 @@ import json
 import os
 import io
 import logging
+import zipfile
 import subprocess
 import time
 from collections import deque
@@ -191,8 +192,26 @@ async def add_no_cache_header(request: Request, call_next):
 # (a usecase) must never import the registry itself, only receive this
 # callable, per Clean Architecture's inward-only dependency direction.
 node_registry = NodeRegistry()
-_race_settings_path = os.getenv("FITRACE_RACE_SETTINGS_PATH", "data/race_settings.json")
-_roster_path = os.getenv("FITRACE_ROSTER_PATH", "data/roster.json")
+
+
+def resolve_data_paths() -> dict[str, str]:
+    """The four persisted data files, resolved from env (the single source for
+    both the stores below and the System Admin backup download)."""
+    race_results = os.getenv("FITRACE_RACE_RESULTS_PATH", "data/race_results.jsonl")
+    return {
+        "race_results": race_results,
+        "class_results": os.getenv(
+            "FITRACE_CLASS_RESULTS_PATH",
+            str(Path(race_results).parent / "class_results.jsonl"),
+        ),
+        "settings": os.getenv("FITRACE_RACE_SETTINGS_PATH", "data/race_settings.json"),
+        "roster": os.getenv("FITRACE_ROSTER_PATH", "data/roster.json"),
+    }
+
+
+_data_paths = resolve_data_paths()
+_race_settings_path = _data_paths["settings"]
+_roster_path = _data_paths["roster"]
 race_manager = RaceManager(
     settings_store=RaceSettingsStore(_race_settings_path),
     clock_offset_ms_fn=node_registry.get_clock_offset_ms,
@@ -200,11 +219,8 @@ race_manager = RaceManager(
 roster_manager = RosterManager(RaceSettingsStore(_roster_path))
 ws_manager = WebSocketManager()
 race_event_engine = RaceEventEngine()
-_race_results_path = os.getenv("FITRACE_RACE_RESULTS_PATH", "data/race_results.jsonl")
-_class_results_path = os.getenv(
-    "FITRACE_CLASS_RESULTS_PATH",
-    str(Path(_race_results_path).parent / "class_results.jsonl"),
-)
+_race_results_path = _data_paths["race_results"]
+_class_results_path = _data_paths["class_results"]
 
 
 def build_backup_hook(paths):
@@ -540,6 +556,22 @@ def connect_wifi(payload: WifiConnectPayload, request: Request):
     except wifi_manager.WifiError as e:
         raise HTTPException(status_code=e.status_code, detail=str(e))
     return {"status": "connected", "detail": detail, "ip": get_real_ip() or "127.0.0.1"}
+
+
+@app.get("/api/system/backup.zip")
+def download_data_backup(request: Request):
+    require_admin(request)
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for path in map(Path, resolve_data_paths().values()):
+            if path.is_file():
+                archive.write(path, arcname=path.name)
+    filename = f"fitrace-backup-{datetime.now().strftime('%Y%m%d-%H%M%S')}.zip"
+    return Response(
+        content=buffer.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @app.get("/health")
