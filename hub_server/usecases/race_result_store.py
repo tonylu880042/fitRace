@@ -4,14 +4,23 @@ import os
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 logger = logging.getLogger("hub_server.race_result_store")
 
 
 class RaceResultStore:
-    def __init__(self, path: str | Path, session_mode: str = "race"):
+    def __init__(
+        self,
+        path: str | Path,
+        session_mode: str = "race",
+        on_saved: Callable[[], None] | None = None,
+    ):
         self._path = Path(path)
+        # Called after a NEW record is appended (never for duplicates, skipped
+        # snapshots or failed writes). Lets the composition root hang a backup
+        # off the one place every save funnels through.
+        self._on_saved = on_saved
         self._saved_keys: set[str] = set()
         # Which session kind this instance files: "race" (the historical,
         # default behaviour every existing caller relies on) or "class". A
@@ -82,6 +91,11 @@ class RaceResultStore:
             )
             return None
         self._saved_keys.add(result_key)
+        if self._on_saved is not None:
+            try:
+                self._on_saved()
+            except Exception as exc:
+                logger.warning("on_saved hook failed after saving result: %s", exc)
         return record
 
     def list_results(self, limit: int | None = 50) -> list[dict[str, Any]]:

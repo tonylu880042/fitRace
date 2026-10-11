@@ -4,6 +4,7 @@ import json
 import os
 import io
 import logging
+import zipfile
 import subprocess
 import time
 from collections import deque
@@ -57,6 +58,7 @@ from hub_server.usecases.node_display_names import (
     enrich_station_display_names,
 )
 from hub_server.usecases.race_event_engine import RaceEventEngine
+from hub_server.usecases.data_backup import backup_files
 from hub_server.usecases.race_result_store import RaceResultStore
 from hub_server.usecases.race_results_query import RaceResultsQuery
 from hub_server.usecases.race_settings_store import RaceSettingsStore
@@ -190,19 +192,53 @@ async def add_no_cache_header(request: Request, call_next):
 # (a usecase) must never import the registry itself, only receive this
 # callable, per Clean Architecture's inward-only dependency direction.
 node_registry = NodeRegistry()
+
+
+def resolve_data_paths() -> dict[str, str]:
+    """The four persisted data files, resolved from env (the single source for
+    both the stores below and the System Admin backup download)."""
+    race_results = os.getenv("FITRACE_RACE_RESULTS_PATH", "data/race_results.jsonl")
+    return {
+        "race_results": race_results,
+        "class_results": os.getenv(
+            "FITRACE_CLASS_RESULTS_PATH",
+            str(Path(race_results).parent / "class_results.jsonl"),
+        ),
+        "settings": os.getenv("FITRACE_RACE_SETTINGS_PATH", "data/race_settings.json"),
+        "roster": os.getenv("FITRACE_ROSTER_PATH", "data/roster.json"),
+    }
+
+
+_data_paths = resolve_data_paths()
+_race_settings_path = _data_paths["settings"]
+_roster_path = _data_paths["roster"]
 race_manager = RaceManager(
-    settings_store=RaceSettingsStore(
-        os.getenv("FITRACE_RACE_SETTINGS_PATH", "data/race_settings.json")
-    ),
+    settings_store=RaceSettingsStore(_race_settings_path),
     clock_offset_ms_fn=node_registry.get_clock_offset_ms,
 )
-roster_manager = RosterManager(
-    RaceSettingsStore(os.getenv("FITRACE_ROSTER_PATH", "data/roster.json"))
-)
+roster_manager = RosterManager(RaceSettingsStore(_roster_path))
 ws_manager = WebSocketManager()
 race_event_engine = RaceEventEngine()
-_race_results_path = os.getenv("FITRACE_RACE_RESULTS_PATH", "data/race_results.jsonl")
-race_result_store = RaceResultStore(_race_results_path)
+_race_results_path = _data_paths["race_results"]
+_class_results_path = _data_paths["class_results"]
+
+
+def build_backup_hook(paths):
+    """Copy ``paths`` into FITRACE_BACKUP_DIR after each saved result.
+
+    Returns None when the env var is unset/empty so behaviour (and the
+    filesystem) is untouched unless an operator opts in.
+    """
+    backup_dir = os.getenv("FITRACE_BACKUP_DIR")
+    if not backup_dir:
+        return None
+    return lambda: backup_files(paths, backup_dir, datetime.now())
+
+
+_backup_hook = build_backup_hook(
+    [_race_results_path, _class_results_path, _race_settings_path, _roster_path]
+)
+race_result_store = RaceResultStore(_race_results_path, on_saved=_backup_hook)
 race_results_query = RaceResultsQuery(
     race_result_store,
     # Looked up at call time so a swapped-in store (tests) is honoured.
@@ -224,11 +260,7 @@ avatar_store = AvatarStore(
 # but forgets FITRACE_CLASS_RESULTS_PATH still lands the class store next to
 # it instead of falling back into the (often unwritable) release directory.
 class_result_store = RaceResultStore(
-    os.getenv(
-        "FITRACE_CLASS_RESULTS_PATH",
-        str(Path(_race_results_path).parent / "class_results.jsonl"),
-    ),
-    session_mode="class",
+    _class_results_path, session_mode="class", on_saved=_backup_hook
 )
 race_start_countdown_lock = asyncio.Lock()
 update_checker = UpdateChecker(
@@ -524,6 +556,22 @@ def connect_wifi(payload: WifiConnectPayload, request: Request):
     except wifi_manager.WifiError as e:
         raise HTTPException(status_code=e.status_code, detail=str(e))
     return {"status": "connected", "detail": detail, "ip": get_real_ip() or "127.0.0.1"}
+
+
+@app.get("/api/system/backup.zip")
+def download_data_backup(request: Request):
+    require_admin(request)
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for path in map(Path, resolve_data_paths().values()):
+            if path.is_file():
+                archive.write(path, arcname=path.name)
+    filename = f"fitrace-backup-{datetime.now().strftime('%Y%m%d-%H%M%S')}.zip"
+    return Response(
+        content=buffer.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @app.get("/health")
