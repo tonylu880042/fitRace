@@ -16,15 +16,24 @@ class WebSocketManager:
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
 
+    async def _send(self, connection: WebSocket, message: dict) -> bool:
+        try:
+            await asyncio.wait_for(
+                connection.send_json(message), timeout=self.send_timeout_sec
+            )
+        except Exception:
+            # Failed or timed out (client disconnected or hung); the caller
+            # drops it. CancelledError is a BaseException and still propagates.
+            return False
+        return True
+
     async def broadcast(self, message: dict):
-        for connection in list(self.active_connections):
-            try:
-                await asyncio.wait_for(
-                    connection.send_json(message), timeout=self.send_timeout_sec
-                )
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                # If sending fails or times out (e.g., client disconnected or
-                # hung), we disconnect them without affecting later ones.
+        # Send to every client concurrently so one hung client cannot delay
+        # the others (e.g. the projector dashboard).
+        connections = list(self.active_connections)
+        results = await asyncio.gather(
+            *(self._send(connection, message) for connection in connections)
+        )
+        for connection, ok in zip(connections, results):
+            if not ok:
                 self.disconnect(connection)
