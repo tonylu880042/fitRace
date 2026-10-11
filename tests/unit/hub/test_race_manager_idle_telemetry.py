@@ -368,6 +368,8 @@ def test_zero_speed_for_over_10s_goes_stale_even_though_samples_keep_arriving():
                 "bike-01",
                 equipment_type="fan_bike",
                 instantaneous_speed_kph=0.0,
+                power_watts=0,
+                cadence_rpm=0,
                 distance_m=321.0,
             )
         )
@@ -383,6 +385,8 @@ def test_zero_speed_for_over_10s_goes_stale_even_though_samples_keep_arriving():
             "bike-01",
             equipment_type="fan_bike",
             instantaneous_speed_kph=0.0,
+            power_watts=0,
+            cadence_rpm=0,
             distance_m=321.0,
         )
     )  # the last sample is 0 ms old, yet the station stopped moving 10.001s ago
@@ -401,7 +405,11 @@ def test_resumed_movement_makes_a_zero_speed_stale_station_fresh_again():
     clock["now"] = 20_000
     manager.ingest_telemetry(
         _treadmill_payload(
-            "bike-01", equipment_type="fan_bike", instantaneous_speed_kph=0.0
+            "bike-01",
+            equipment_type="fan_bike",
+            instantaneous_speed_kph=0.0,
+            power_watts=0,
+            cadence_rpm=0,
         )
     )
     assert manager.get_idle_telemetry_snapshot()["stations"][0]["is_stale"] is True
@@ -427,10 +435,74 @@ def test_node_that_never_moved_shows_the_waiting_card():
     manager.assign_station(1, "bike-01")
     manager.ingest_telemetry(
         _treadmill_payload(
-            "bike-01", equipment_type="fan_bike", instantaneous_speed_kph=0.0
+            "bike-01",
+            equipment_type="fan_bike",
+            instantaneous_speed_kph=0.0,
+            power_watts=0,
+            cadence_rpm=0,
         )
     )
 
     station = manager.get_idle_telemetry_snapshot()["stations"][0]
     assert station["is_stale"] is True
     assert station["distance_m"] is None
+
+
+def _bike_payload(node_id, **overrides):
+    # An FTMS bike that reports no usable speed and, unless overridden, no
+    # effort at all (heart rate stays at the _treadmill_payload default).
+    efforts = {"instantaneous_speed_kph": 0, "cadence_rpm": 0, "power_watts": 0}
+    efforts.update(overrides)
+    return _treadmill_payload(node_id, equipment_type="fan_bike", **efforts)
+
+
+def _bike_station_5s_after_ingest(**effort):
+    clock = {"now": 0}
+    manager = RaceManager(now_ms=lambda: clock["now"])
+    manager.assign_station(1, "bike-01")
+    manager.ingest_telemetry(_bike_payload("bike-01", **effort))
+    clock["now"] = 5_000
+    return manager.get_idle_telemetry_snapshot()["stations"][0]
+
+
+def test_idle_power_only_station_is_not_waiting():
+    station = _bike_station_5s_after_ingest(power_watts=150)
+    assert station["is_stale"] is False
+    assert station["power_watts"] == 150
+
+
+def test_idle_cadence_only_station_is_not_waiting():
+    station = _bike_station_5s_after_ingest(cadence_rpm=85)
+    assert station["is_stale"] is False
+    assert station["cadence_rpm"] == 85
+
+
+def test_idle_heart_rate_only_station_stays_waiting():
+    station = _bike_station_5s_after_ingest(heart_rate_bpm=75)
+    assert station["is_stale"] is True
+
+
+def test_idle_station_goes_waiting_10s_after_effort_stops():
+    clock = {"now": 0}
+    manager = RaceManager(now_ms=lambda: clock["now"])
+    manager.assign_station(1, "bike-01")
+    manager.ingest_telemetry(_bike_payload("bike-01", power_watts=150))
+
+    clock["now"] = 10_000
+    manager.ingest_telemetry(_bike_payload("bike-01"))  # fresh, zero effort
+    assert manager.get_idle_telemetry_snapshot()["stations"][0]["is_stale"] is False
+
+    clock["now"] = 10_001
+    manager.ingest_telemetry(_bike_payload("bike-01"))
+    assert manager.get_idle_telemetry_snapshot()["stations"][0]["is_stale"] is True
+
+
+def test_idle_payload_with_null_efforts_does_not_raise():
+    manager = RaceManager()
+    manager.assign_station(1, "bike-01")
+    manager.ingest_telemetry(
+        _bike_payload("bike-01", heart_rate_bpm=None)
+        | {"instantaneous_speed_kph": None, "power_watts": None, "cadence_rpm": None}
+    )
+    station = manager.get_idle_telemetry_snapshot()["stations"][0]
+    assert station["is_stale"] is True

@@ -199,3 +199,54 @@ def test_last_moving_epoch_ms_is_per_node_and_cleared_by_reset():
     tracker.reset()
     tracker.record_sample("node-1", {"instantaneous_speed_kph": 0.0})
     assert tracker.get_sample("node-1")["last_moving_epoch_ms"] is None
+
+
+def test_power_only_sample_counts_as_moving():
+    tracker = IdleTelemetryTracker(now_ms=lambda: 1_000)
+    tracker.record_sample("n1", {"instantaneous_speed_kph": 0, "power_watts": 150})
+    assert tracker.get_sample("n1")["last_moving_epoch_ms"] == 1_000
+
+
+def test_cadence_only_sample_counts_as_moving():
+    tracker = IdleTelemetryTracker(now_ms=lambda: 2_000)
+    tracker.record_sample("n1", {"cadence_rpm": 80})
+    assert tracker.get_sample("n1")["last_moving_epoch_ms"] == 2_000
+
+
+def test_heart_rate_alone_never_counts_as_moving():
+    tracker = IdleTelemetryTracker(now_ms=lambda: 1_000)
+    tracker.record_sample(
+        "n1",
+        {
+            "instantaneous_speed_kph": 0,
+            "power_watts": 0,
+            "cadence_rpm": 0,
+            "heart_rate_bpm": 90,
+        },
+    )
+    assert tracker.get_sample("n1")["last_moving_epoch_ms"] is None
+
+
+def test_none_effort_values_do_not_raise_and_do_not_count_as_moving():
+    tracker = IdleTelemetryTracker(now_ms=lambda: 1_000)
+    tracker.record_sample(
+        "n1",
+        {
+            "instantaneous_speed_kph": None,
+            "power_watts": None,
+            "cadence_rpm": None,
+            "heart_rate_bpm": None,
+        },
+    )
+    assert tracker.get_sample("n1")["last_moving_epoch_ms"] is None
+
+
+def test_power_then_zero_effort_carries_last_moving_forward():
+    clock = {"now": 1_000}
+    tracker = IdleTelemetryTracker(now_ms=lambda: clock["now"])
+    tracker.record_sample("n1", {"power_watts": 150})
+    clock["now"] = 5_000
+    tracker.record_sample(
+        "n1", {"instantaneous_speed_kph": 0, "power_watts": 0, "cadence_rpm": 0}
+    )
+    assert tracker.get_sample("n1")["last_moving_epoch_ms"] == 1_000
