@@ -334,7 +334,7 @@ const messages = {
   "readiness.no_config": "請先儲存設定",
   "readiness.relay_wrong_size": "第 {station} 站需要 {legs} 位，目前 {count} 位",
   "readiness.sound_disabled": "開始音效已關閉",
-  "teams.readiness_blocked": "尚未就緒：{issues}",
+  "teams.readiness_blocked_title": "尚未就緒：",
   "teams.readiness_ready": "可以開始",
   "teams.start_blocked": "目前無法開始，請查看整備清單。",
   "state.idle": "待機",
@@ -408,6 +408,8 @@ RENDER_BAR_FNS = [
     "raceStateName",
     "relayLegs",
     "countdownActive",
+    "escapeHtml",
+    "readinessListHtml",
     "renderRaceBar",
 ]
 
@@ -429,18 +431,47 @@ const state = {{
 }};
 renderRaceBar();
 console.log(JSON.stringify({{
-  line: out["readiness-line"].textContent,
-  warnings: out["readiness-warnings"].textContent,
+  line: out["readiness-line"].innerHTML,
+  warnings: out["readiness-warnings"].innerHTML,
 }}));
 """,
     )
 
 
-def test_race_bar_shows_the_localized_blocking_list_once_and_the_warnings():
+def _li(html: str) -> list[str]:
+    return re.findall(r"<li>(.*?)</li>", html)
+
+
+def test_race_bar_lists_each_localized_blocking_issue_in_its_own_li():
     result = _render_race_bar(READINESS_PAYLOAD)
-    assert result["line"] == "尚未就緒：請先儲存設定 第 2 站需要 3 位，目前 1 位"
+    assert result["line"].startswith("<div")
+    assert "尚未就緒：" in result["line"].split("<ul")[0]
+    assert _li(result["line"]) == ["請先儲存設定", "第 2 站需要 3 位，目前 1 位"]
     assert "EN" not in result["line"]
-    assert result["warnings"] == "開始音效已關閉 EN future warning"
+    # Warnings too: one <li> each, English only where no translation exists.
+    assert _li(result["warnings"]) == ["開始音效已關閉", "EN future warning"]
+
+
+def test_three_blocking_items_render_three_list_items():
+    result = _render_race_bar(
+        "{ready: false,"
+        ' blocking_issues: ["EN a", "EN b", "EN c"],'
+        ' blocking_items: [{code: "no_config", params: {}},'
+        ' {code: "no_config", params: {}}, {code: "sound_disabled", params: {}}],'
+        " warnings: [], warning_items: []}"
+    )
+    assert _li(result["line"]) == ["請先儲存設定", "請先儲存設定", "開始音效已關閉"]
+    assert result["warnings"] == ""
+
+
+def test_issue_text_is_html_escaped_in_the_lists():
+    result = _render_race_bar(
+        '{ready: false, blocking_issues: ["bad <b>bold</b> & more"],'
+        ' blocking_items: [], warnings: ["warn <i>x</i>"], warning_items: []}'
+    )
+    assert "<b>" not in result["line"] and "<i>" not in result["warnings"]
+    assert _li(result["line"]) == ["bad &lt;b&gt;bold&lt;/b&gt; &amp; more"]
+    assert _li(result["warnings"]) == ["warn &lt;i&gt;x&lt;/i&gt;"]
 
 
 def test_race_bar_shows_ready_text_and_no_warnings_when_ready():
@@ -448,7 +479,9 @@ def test_race_bar_shows_ready_text_and_no_warnings_when_ready():
         "{ready: true, blocking_issues: [], blocking_items: [],"
         " warnings: [], warning_items: []}"
     )
-    assert result == {"line": "可以開始", "warnings": ""}
+    assert "可以開始" in result["line"]
+    assert "<li>" not in result["line"]
+    assert result["warnings"] == ""
 
 
 def _bar(raceState: str, readiness_js: str) -> dict:

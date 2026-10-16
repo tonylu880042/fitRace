@@ -379,7 +379,6 @@
   "teams.relay_legs": "Stafettsträckor: {legs}",
   "teams.not_relay": "Det här loppet är inte en stafett. Ställ in stafettreglerna i loppadmin först.",
   "teams.readiness_ready": "Redo att starta",
-  "teams.readiness_blocked": "Inte redo: {issues}",
   "teams.btn_start": "Starta loppet",
   "teams.btn_stop": "Stoppa loppet",
   "teams.btn_next_race": "Nästa lopp",
@@ -436,5 +435,6 @@
   "readiness.teams_individual": "Individuellt lopp; lagregler tillämpas inte.",
   "readiness.sound_silent": "Tyst start vald.",
   "teams.start_blocked": "Kan inte starta än. Kontrollera beredskapslistan ovan.",
-  "teams.state_ready": "Väntar på start"
+  "teams.state_ready": "Väntar på start",
+  "teams.readiness_blocked_title": "Inte redo:"
 }

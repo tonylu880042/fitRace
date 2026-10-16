@@ -200,6 +200,8 @@
     .member-counter.ok { color: var(--ok); }
     .hint { color: var(--muted); font-size: 13px; line-height: 1.4; }
     .hint.warn { color: var(--warn); }
+    .readiness-list { margin: 4px 0 0; padding-left: 20px; }
+    .readiness-list li { margin: 2px 0; }
 
     .login {
       display: none;
@@ -334,12 +336,8 @@
     }
 
     function escapeHtml(value) {
-      return String(value ?? "")
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
+      const entities = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" };
+      return String(value ?? "").replace(/[&<>\x22\x27]/g, (char) => entities[char]);
     }
 
     // ------------------------------------------------------------------
@@ -621,6 +619,12 @@
       node.className = `member-counter ${counter.legs === null ? "" : (counter.ok ? "ok" : "bad")}`;
     }
 
+    // One <li> per line; every line is escaped (issue text comes from the hub).
+    function readinessListHtml(lines) {
+      if (!lines || !lines.length) return "";
+      return `<ul class="readiness-list">${lines.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}</ul>`;
+    }
+
     function renderRaceBar() {
       const raceState = raceStateName();
       const controls = controlState(raceState, state.stations.stations, countdownActive(), state.readiness);
@@ -635,17 +639,17 @@
       $("relay-legs").textContent = legs === null ? "" : t("teams.relay_legs", { legs });
 
       const readiness = state.readiness;
-      let line = "";
-      let warningText = "";
+      let lineHtml = "";
+      let warningHtml = "";
       if (readiness) {
         const lines = readinessLines(readiness, translateIfKnown);
-        line = readiness.ready
-          ? t("teams.readiness_ready")
-          : t("teams.readiness_blocked", { issues: lines.blocking.join(" ") });
-        warningText = lines.warnings.join(" ");
+        lineHtml = readiness.ready
+          ? `<div>${escapeHtml(t("teams.readiness_ready"))}</div>`
+          : `<div>${escapeHtml(t("teams.readiness_blocked_title"))}</div>${readinessListHtml(lines.blocking)}`;
+        warningHtml = readinessListHtml(lines.warnings);
       }
-      $("readiness-line").textContent = line;
-      $("readiness-warnings").textContent = warningText;
+      $("readiness-line").innerHTML = lineHtml;
+      $("readiness-warnings").innerHTML = warningHtml;
 
       let notice = "";
       if (controls.locked) {

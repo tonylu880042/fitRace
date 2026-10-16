@@ -379,7 +379,6 @@
   "teams.relay_legs": "Relais : {legs} relayeurs",
   "teams.not_relay": "Cette course n'est pas un relais. Définissez d'abord les règles du relais dans l'admin de course.",
   "teams.readiness_ready": "Prêt à démarrer",
-  "teams.readiness_blocked": "Pas prêt : {issues}",
   "teams.btn_start": "Démarrer la course",
   "teams.btn_stop": "Arrêter la course",
   "teams.btn_next_race": "Course suivante",
@@ -436,5 +435,6 @@
   "readiness.teams_individual": "Course individuelle ; les règles d'équipe ne s'appliquent pas.",
   "readiness.sound_silent": "Départ silencieux sélectionné.",
   "teams.start_blocked": "Démarrage impossible pour le moment. Consultez la liste ci-dessus.",
-  "teams.state_ready": "En attente du départ"
+  "teams.state_ready": "En attente du départ",
+  "teams.readiness_blocked_title": "Pas prêt :"
 }

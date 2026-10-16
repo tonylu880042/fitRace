@@ -379,7 +379,6 @@
   "teams.relay_legs": "Staffelstrecken: {legs}",
   "teams.not_relay": "Dieses Rennen ist keine Staffel. Legen Sie zuerst die Staffelregeln in der Rennverwaltung fest.",
   "teams.readiness_ready": "Startbereit",
-  "teams.readiness_blocked": "Nicht bereit: {issues}",
   "teams.btn_start": "Rennen starten",
   "teams.btn_stop": "Rennen stoppen",
   "teams.btn_next_race": "Nächstes Rennen",
@@ -436,5 +435,6 @@
   "readiness.teams_individual": "Einzelrennen; Teamregeln werden nicht angewendet.",
   "readiness.sound_silent": "Stiller Start gewählt.",
   "teams.start_blocked": "Start noch nicht möglich. Prüfen Sie die Bereitschaftsliste oben.",
-  "teams.state_ready": "Wartet auf Start"
+  "teams.state_ready": "Wartet auf Start",
+  "teams.readiness_blocked_title": "Nicht bereit:"
 }

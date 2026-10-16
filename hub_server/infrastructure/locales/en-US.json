@@ -379,7 +379,6 @@
   "teams.relay_legs": "Relay legs: {legs}",
   "teams.not_relay": "This race is not a relay. Set the relay race rules in Game Admin first.",
   "teams.readiness_ready": "Ready to start",
-  "teams.readiness_blocked": "Not ready: {issues}",
   "teams.btn_start": "Start Race",
   "teams.btn_stop": "Stop Race",
   "teams.btn_next_race": "Next Race",
@@ -436,5 +435,6 @@
   "readiness.teams_individual": "Individual race; team rules are not applied.",
   "readiness.sound_silent": "Silent start selected.",
   "teams.start_blocked": "Cannot start yet. Check the readiness list above.",
-  "teams.state_ready": "Awaiting start"
+  "teams.state_ready": "Awaiting start",
+  "teams.readiness_blocked_title": "Not ready:"
 }

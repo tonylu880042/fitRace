@@ -379,7 +379,6 @@
   "teams.relay_legs": "Frazioni staffetta: {legs}",
   "teams.not_relay": "Questa gara non è una staffetta. Imposta prima le regole della staffetta in Admin gara.",
   "teams.readiness_ready": "Pronto a partire",
-  "teams.readiness_blocked": "Non pronto: {issues}",
   "teams.btn_start": "Avvia gara",
   "teams.btn_stop": "Ferma gara",
   "teams.btn_next_race": "Gara successiva",
@@ -436,5 +435,6 @@
   "readiness.teams_individual": "Gara individuale; le regole di squadra non si applicano.",
   "readiness.sound_silent": "Partenza silenziosa selezionata.",
   "teams.start_blocked": "Impossibile avviare ora. Controlla l'elenco di idoneità qui sopra.",
-  "teams.state_ready": "In attesa di partenza"
+  "teams.state_ready": "In attesa di partenza",
+  "teams.readiness_blocked_title": "Non pronto:"
 }
