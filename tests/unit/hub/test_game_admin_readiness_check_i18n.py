@@ -16,6 +16,7 @@ and zh-TW inline dictionaries.
 
 import re
 from pathlib import Path
+from page_locale import dictionary_blocks
 
 STATIC_DIR = Path(__file__).resolve().parents[3] / "hub_server" / "static"
 
@@ -79,11 +80,7 @@ def test_check_order_labels_route_through_t():
 
 
 def test_check_labels_present_in_both_dictionaries_with_expected_copy():
-    source = _read()
-    en_start = source.index('"en-US": {')
-    zh_start = source.index('dictionaries["zh-TW"] = {')
-    en_block = source[en_start:zh_start]
-    zh_block = source[zh_start : zh_start + 14000]
+    en_block, zh_block = dictionary_blocks("game_admin.")
 
     for key, (en_text, zh_text) in NEW_CHECK_KEYS.items():
         assert (
@@ -95,11 +92,7 @@ def test_check_labels_present_in_both_dictionaries_with_expected_copy():
 
 
 def test_i18n_keys_stay_symmetric_between_dictionaries():
-    source = _read()
-    en_start = source.index('"en-US": {')
-    zh_start = source.index('dictionaries["zh-TW"] = {')
-    en_block = source[en_start:zh_start]
-    zh_block = source[zh_start : zh_start + 14000]
+    en_block, zh_block = dictionary_blocks("game_admin.")
 
     en_keys = set(re.findall(r'"([a-zA-Z0-9_.]+)":\s*"', en_block))
     zh_keys = set(re.findall(r'"([a-zA-Z0-9_.]+)":\s*"', zh_block))

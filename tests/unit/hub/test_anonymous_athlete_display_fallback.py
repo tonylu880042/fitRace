@@ -9,7 +9,7 @@ tests/unit/hub/test_class_admin_page.py) and checks the actual rendered
 HTML string -- never a source-text grep for a helper's existence.
 
 Where the fallback text itself is the thing under test ("Station 3"), the
-real en-US locale file / real gameAdmin inline dictionary is loaded so the
+real en-US locale file / real gameAdmin locale strings is loaded so the
 assertion pins genuine translated copy, not a symbolic stub.
 """
 
@@ -17,6 +17,8 @@ import json
 import re
 import subprocess
 from pathlib import Path
+
+from page_locale import page_dictionaries
 
 STATIC_DIR = Path(__file__).resolve().parents[3] / "hub_server" / "static"
 LOCALES_DIR = (
@@ -485,21 +487,9 @@ def test_station_status_still_shows_real_name_when_present():
 
 
 def _load_game_admin_en_us_dictionary() -> dict:
-    source = _read("gameAdmin.html")
-    const_start = source.index("const dictionaries = {")
-    const_open = source.index("{", const_start)
-    const_close = _matching_brace_end(source, const_open)
-    zh_marker = 'dictionaries["zh-TW"] = {'
-    zh_start = source.index(zh_marker, const_close)
-    zh_open = source.index("{", zh_start)
-    zh_close = _matching_brace_end(source, zh_open)
-    js = source[const_start : zh_close + 1] + ";"
-    js += "\nconsole.log(JSON.stringify(dictionaries['en-US']));"
-    result = subprocess.run(
-        ["node", "-e", js], capture_output=True, text=True, timeout=5
-    )
-    assert result.returncode == 0, f"node failed: {result.stderr}"
-    return json.loads(result.stdout)
+    """gameAdmin's en-US strings (locale file, `game_admin.` prefix removed
+    -- the page's t() adds the prefix back)."""
+    return page_dictionaries("game_admin.")["en-US"]
 
 
 def _run_game_admin_assigned_stations(

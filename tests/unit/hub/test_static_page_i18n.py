@@ -3,6 +3,7 @@ import re
 import subprocess
 import tempfile
 from pathlib import Path
+from page_locale import dictionary_blocks, page_dictionaries
 
 STATIC_DIR = Path(__file__).resolve().parents[3] / "hub_server" / "static"
 
@@ -220,10 +221,11 @@ def test_game_admin_uses_two_separate_buttons_for_save_and_start_steps():
     assert 'onclick="startRaceAction()"' in source
     assert 'data-i18n="button.save_race"' in source
     assert 'data-i18n="button.start_race"' in source
-    assert '"button.save_race": "Save Race Settings"' in source
-    assert '"button.save_race": "儲存比賽設定"' in source
-    assert '"button.start_race": "Start Race"' in source
-    assert '"button.start_race": "開始比賽"' in source
+    en_block, zh_block = dictionary_blocks("game_admin.")
+    assert '"button.save_race": "Save Race Settings"' in en_block
+    assert '"button.save_race": "儲存比賽設定"' in zh_block
+    assert '"button.start_race": "Start Race"' in en_block
+    assert '"button.start_race": "開始比賽"' in zh_block
     assert "button.save_and_start_race" not in source
     assert 'id="btn-configure"' not in source
 
@@ -258,10 +260,9 @@ def test_game_admin_uses_two_separate_buttons_for_save_and_start_steps():
 
 
 def test_game_admin_labels_individual_race_as_anonymous_optional():
-    source = _read("gameAdmin.html")
-
-    assert '"option.individual": "Individual Race (Anonymous Allowed)"' in source
-    assert '"option.individual": "個人賽（可匿名參加）"' in source
+    en_block, zh_block = dictionary_blocks("game_admin.")
+    assert '"option.individual": "Individual Race (Anonymous Allowed)"' in en_block
+    assert '"option.individual": "個人賽（可匿名參加）"' in zh_block
 
 
 # Keys allowed to carry the exact same string in en-US and zh-TW, e.g. a
@@ -276,8 +277,13 @@ _IDENTICAL_VALUE_ALLOWLIST = {}
 
 def test_game_admin_and_system_admin_inline_dictionaries_stay_symmetric():
     for name in ("gameAdmin.html", "systemAdmin.html"):
-        source = _read(name)
-        dictionaries = _load_dictionaries(source)
+        if name == "gameAdmin.html":
+            # Moved to the locale files (game_admin.* keys).
+            dictionaries = page_dictionaries("game_admin.")
+            allowed_same = {"title"}  # the dashboard's "Game Admin" product name
+        else:
+            dictionaries = _load_dictionaries(_read(name))
+            allowed_same = set()
         en = dictionaries["en-US"]
         zh = dictionaries["zh-TW"]
 
@@ -300,7 +306,7 @@ def test_game_admin_and_system_admin_inline_dictionaries_stay_symmetric():
         # is silently still the English string. Assert every value genuinely
         # differs too, so a key added to en-US but never given a zh-TW
         # override is caught.
-        allowlisted = _IDENTICAL_VALUE_ALLOWLIST.get(name, set())
+        allowlisted = _IDENTICAL_VALUE_ALLOWLIST.get(name, set()) | allowed_same
         untranslated = {
             key for key in en_keys if key not in allowlisted and en[key] == zh[key]
         }
@@ -362,6 +368,8 @@ def _blank_dictionary_blocks(script: str) -> str:
     UI text, while preserving line numbers for readable failure output."""
     out = script
     for marker in ("const dictionaries = {", 'dictionaries["zh-TW"] = {'):
+        if marker not in out:
+            continue  # page already reads its text from the locale files
         idx = out.index(marker)
         brace_start = out.index("{", idx)
         depth = 0

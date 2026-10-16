@@ -683,7 +683,10 @@ def test_render_edge_nodes_last_seen_prefix_is_translated():
 # catches them.
 
 _TOKEN_RE = re.compile(r"\{(\w+)\}")
-_OTHER_LOCALES = ("zh-TW", "de-CH", "fr", "it", "sv")
+_OTHER_LOCALES = ("zh-TW", "zh-CN", "de-CH", "fr", "it", "sv")
+# Not required to be complete: a missing key is served from en-US, so
+# only the keys they do carry are compared.
+_PARTIAL_LOCALES = ("de-CH", "fr", "it", "sv")
 
 
 def _tokens(value: str) -> set:
@@ -704,6 +707,8 @@ def test_placeholder_tokens_match_across_all_locales():
             continue
         for locale in _OTHER_LOCALES:
             other = _load_locale(locale)
+            if key not in other and locale in _PARTIAL_LOCALES:
+                continue
             other_value = other.get(key, "")
             other_tokens = _tokens(other_value)
             if other_tokens != en_tokens:

@@ -1,91 +1,17 @@
-"""Game Admin's readiness panel shows localized text. Its inline dictionaries
-carry no readiness strings: readiness.* keys come from /api/locales/{locale}
-and are merged into the dictionaries at load and on language change.
+"""Game Admin's readiness panel shows localized text. The readiness.* strings
+are ordinary locale-file messages (no `game_admin.` prefix, shared with the
+hub backend); the page loads them with the rest of its locale from
+/api/locales/{locale} and re-renders when the language changes.
 
-Real page functions run under node; comments are stripped before any source
-inspection."""
+Real page functions run under node (including the page's own t()); comments
+are stripped before any source inspection."""
 
 import json
-import re
-import subprocess
-from pathlib import Path
 
-PAGE = Path(__file__).resolve().parents[3] / "hub_server" / "static" / "gameAdmin.html"
+from page_locale import extract_function, run_page_functions, script_of
+from page_locale import strip_js_comments
 
-_LINE_COMMENT_RE = re.compile(r"^[ \t]*//.*$\n?", re.MULTILINE)
-_BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
-
-
-def _strip(code: str) -> str:
-    return _LINE_COMMENT_RE.sub("", _BLOCK_COMMENT_RE.sub("", code))
-
-
-def _script() -> str:
-    source = PAGE.read_text(encoding="utf-8")
-    start = source.index("<script>") + len("<script>")
-    return source[start : source.index("</script>", start)]
-
-
-def _matching(source: str, open_idx: int, open_ch: str, close_ch: str) -> int:
-    depth = 0
-    i = open_idx
-    in_str = None
-    while i < len(source):
-        char = source[i]
-        if in_str:
-            if char == "\\":
-                i += 2
-                continue
-            if char == in_str:
-                in_str = None
-        elif char in ('"', "'", "`"):
-            in_str = char
-        elif char == open_ch:
-            depth += 1
-        elif char == close_ch:
-            depth -= 1
-            if depth == 0:
-                return i
-        i += 1
-    raise ValueError("unbalanced")
-
-
-def _function(source: str, name: str) -> str:
-    start = source.index(f"function {name}(")
-    if source[max(0, start - 6) : start] == "async ":
-        start -= 6
-    paren = source.index("(", start)
-    brace = source.index("{", _matching(source, paren, "(", ")"))
-    return source[start : _matching(source, brace, "{", "}") + 1]
-
-
-def _run(functions: list[str], body: str):
-    code = _strip(_script())
-    bodies = "\n".join(_function(code, name) for name in functions)
-    script = f"{PRELUDE}\n{bodies}\n{body}"
-    result = subprocess.run(
-        ["node", "-e", script], capture_output=True, text=True, timeout=10
-    )
-    assert result.returncode == 0, f"node failed: {result.stderr}\n{script}"
-    return json.loads(result.stdout)
-
-
-# The page's own t() semantics, over small dictionaries.
-PRELUDE = """
-let currentLocale = "zh-TW";
-const dictionaries = {
-  "en-US": { "text.ready": "Ready" },
-  "zh-TW": { "text.ready": "就緒" },
-};
-function t(key, params = {}) {
-  let value = (dictionaries[currentLocale] || dictionaries["en-US"])[key]
-    || dictionaries["en-US"][key] || key;
-  Object.entries(params).forEach(([name, replacement]) => {
-    value = value.replaceAll(`{${name}}`, String(replacement));
-  });
-  return value;
-}
-"""
+PAGE = "gameAdmin.html"
 
 ZH_READINESS = {
     "readiness.no_registered_athletes": "開始前請至少登記一位選手。",
@@ -94,6 +20,24 @@ ZH_READINESS = {
     "readiness.target_ok": "比賽目標有效。",
     "readiness.stations_partial": "{online} 個在線；{offline} 個離線",
 }
+
+
+def _prelude(readiness_messages: dict) -> str:
+    """The page's state after loadLocale(): zh-TW with a few page keys and,
+    optionally, the readiness.* messages."""
+    messages = {"game_admin.text.ready": "就緒", **readiness_messages}
+    return f"""
+let currentLocale = "zh-TW";
+let messages = {json.dumps(messages, ensure_ascii=False)};
+"""
+
+
+def _run(functions: list[str], body: str, readiness_messages=ZH_READINESS):
+    # The page's own t() always runs, so these tests cannot drift from it.
+    return run_page_functions(
+        PAGE, ["t", *functions], _prelude(readiness_messages), body
+    )
+
 
 PAYLOAD = {
     "ready": False,
@@ -134,22 +78,13 @@ PAYLOAD = {
 }
 
 
-def _with_merged_zh(body: str) -> str:
-    return f"""
-dictionaries["zh-TW"] = {{ ...dictionaries["zh-TW"], ...{json.dumps(ZH_READINESS)} }};
-{body}
-"""
-
-
 # ---- pure helpers ----
 
 
 def test_issue_texts_are_localized_skip_station_scoped_ones_and_fall_back():
     texts = _run(
         ["translateReadiness", "readinessIssueTexts"],
-        _with_merged_zh(
-            f"console.log(JSON.stringify(readinessIssueTexts({json.dumps(PAYLOAD)})));"
-        ),
+        f"console.log(JSON.stringify(readinessIssueTexts({json.dumps(PAYLOAD)})));",
     )
     # The relay_wrong_size item has a station param: the per-station cards
     # own those, exactly like the old /^Station \d+:/ filter did.
@@ -178,7 +113,7 @@ def test_issue_texts_for_an_older_hub_filter_station_lines_by_their_prefix():
 def test_check_message_is_localized_with_params_else_english():
     out = _run(
         ["translateReadiness", "readinessCheckMessage"],
-        _with_merged_zh(f"""
+        f"""
 const checks = {json.dumps(PAYLOAD["checks"])};
 console.log(JSON.stringify([
   readinessCheckMessage(checks.target),
@@ -187,7 +122,7 @@ console.log(JSON.stringify([
   readinessCheckMessage({{status: "info", message: "plain english"}}),
   readinessCheckMessage(undefined),
 ]));
-"""),
+""",
     )
     assert out == [
         "比賽目標有效。",
@@ -200,37 +135,27 @@ console.log(JSON.stringify([
 
 # ---- rendered panel ----
 
+PANEL_FUNCTIONS = [
+    "readinessStatusClass",
+    "translateReadiness",
+    "readinessIssueTexts",
+    "readinessCheckMessage",
+    "stationReasonText",
+    "renderReadinessPanel",
+]
 
-def _render_panel(locale: str, merged: bool) -> str:
-    merge = (
-        f'dictionaries["zh-TW"] = {{ ...dictionaries["zh-TW"], ...{json.dumps(ZH_READINESS)} }};'
-        if merged
-        else ""
-    )
-    return _run(
-        [
-            "readinessStatusClass",
-            "translateReadiness",
-            "readinessIssueTexts",
-            "readinessCheckMessage",
-            "stationReasonText",
-            "renderReadinessPanel",
-        ],
-        f"""
-currentLocale = {json.dumps(locale)};
-{merge}
+RENDER_PANEL = f"""
 const out = {{}};
 function $(id) {{ if (!out[id]) out[id] = {{ textContent: "", innerHTML: "" }}; return out[id]; }}
 function escapeHtml(value) {{ return String(value ?? ""); }}
 const state = {{ readiness: {json.dumps(PAYLOAD)} }};
 renderReadinessPanel();
 console.log(JSON.stringify(out["race-readiness-panel"].innerHTML));
-""",
-    )
+"""
 
 
 def test_panel_renders_localized_issues_and_checks():
-    html = _render_panel("zh-TW", merged=True)
+    html = _run(PANEL_FUNCTIONS, RENDER_PANEL)
     assert "開始前請至少登記一位選手。" in html
     assert "開始音效已關閉" in html
     assert "比賽目標有效。" in html
@@ -244,101 +169,80 @@ def test_panel_renders_localized_issues_and_checks():
 
 
 def test_panel_falls_back_to_english_before_the_locale_messages_arrive():
-    html = _render_panel("zh-TW", merged=False)
+    html = _run(PANEL_FUNCTIONS, RENDER_PANEL, readiness_messages={})
     assert "Register at least one athlete before starting." in html
     assert "Race target is valid." in html
 
 
-# ---- merging the server's readiness.* messages ----
+def test_panel_renders_simplified_chinese_from_the_real_zh_cn_locale():
+    # Same panel, the real zh-CN messages instead of the small fixture.
+    from page_locale import messages_js
 
-
-def test_merge_copies_only_readiness_keys_into_that_locales_dictionary():
-    merged = _run(
-        ["mergeReadinessMessages"],
-        """
-mergeReadinessMessages("zh-TW", {
-  "readiness.no_config": "請先儲存設定",
-  "dashboard.title": "must not leak",
-  "text.ready": "must not override",
-});
-console.log(JSON.stringify(dictionaries));
-""",
+    html = run_page_functions(
+        PAGE,
+        ["t", *PANEL_FUNCTIONS],
+        'let currentLocale = "zh-CN";\n' + messages_js("zh-CN"),
+        RENDER_PANEL,
     )
-    assert merged["zh-TW"] == {
-        "text.ready": "就緒",
-        "readiness.no_config": "請先儲存設定",
-    }
-    assert merged["en-US"] == {"text.ready": "Ready"}
+    assert "开始前请至少登记一位选手。" in html
+    assert "开始音效已关闭" in html or "这场比赛已关闭开始音效。" in html
+    assert "比赛目标有效。" in html
+    assert "Register at least one athlete" not in html
+    assert "Race target is valid." not in html
 
 
-def test_load_fetches_the_locale_merges_and_rerenders():
-    result = _run(
-        ["mergeReadinessMessages", "loadReadinessMessages"],
+# ---- loading and changing the language ----
+
+
+def test_changing_language_loads_that_locale_and_rerenders_the_panel():
+    # setLanguage -> loadLocale -> applyTranslations -> renderReadinessPanel,
+    # all real page functions; only the network and the other renderers are
+    # stubbed.
+    result = run_page_functions(
+        PAGE,
+        [
+            "t",
+            "loadLocale",
+            "setLanguage",
+            "applyTranslations",
+            *PANEL_FUNCTIONS,
+        ],
+        f"""
+let currentLocale = "en-US";
+let messages = {{}};
+const store = {{}};
+const localStorage = {{ setItem: (k, v) => {{ store[k] = v; }} }};
+const out = {{}};
+function $(id) {{ if (!out[id]) out[id] = {{ textContent: "", innerHTML: "", value: "", classList: {{ contains: () => false }} }}; return out[id]; }}
+function escapeHtml(value) {{ return String(value ?? ""); }}
+const document = {{ documentElement: {{ lang: "" }}, querySelectorAll: () => [] }};
+function renderRace() {{}}
+function renderStations() {{}}
+function syncMixedRaceFields() {{}}
+function syncRaceFields() {{}}
+const state = {{ readiness: {json.dumps(PAYLOAD)} }};
+const requested = [];
+globalThis.fetch = async (url) => {{
+  requested.push(url.split("?")[0]);
+  return {{ json: async () => ({{ locale: "zh-TW", messages: {json.dumps(ZH_READINESS, ensure_ascii=False)} }}) }};
+}};
+""",
         """
-const calls = [];
-let rendered = 0;
-function renderReadinessPanel() { rendered += 1; }
-globalThis.fetch = async (url) => {
-  calls.push(url.split("?")[0]);
-  return { ok: true, json: async () => ({ locale: "zh-TW", messages: { "readiness.no_config": "請先儲存設定" } }) };
-};
-loadReadinessMessages("zh-TW").then(() => console.log(JSON.stringify({
-  calls, rendered, key: dictionaries["zh-TW"]["readiness.no_config"],
+setLanguage("zh-TW").then(() => console.log(JSON.stringify({
+  requested, stored: store["fitrace.locale"],
+  html: out["race-readiness-panel"].innerHTML,
 })));
 """,
     )
-    assert result == {
-        "calls": ["/api/locales/zh-TW"],
-        "rendered": 1,
-        "key": "請先儲存設定",
-    }
+    assert result["requested"] == ["/api/locales/zh-TW"]
+    assert result["stored"] == "zh-TW"
+    assert "開始前請至少登記一位選手。" in result["html"]
+    assert "Register at least one athlete" not in result["html"]
 
 
-def test_load_failure_is_harmless_and_keeps_english_fallback():
-    result = _run(
-        ["mergeReadinessMessages", "loadReadinessMessages"],
-        """
-let rendered = 0;
-function renderReadinessPanel() { rendered += 1; }
-globalThis.fetch = async () => { throw new Error("offline"); };
-loadReadinessMessages("zh-TW").then(() => console.log(JSON.stringify({
-  rendered, merged: "readiness.no_config" in dictionaries["zh-TW"],
-})));
-""",
-    )
-    assert result == {"rendered": 0, "merged": False}
-
-
-def test_page_start_up_loads_the_current_locales_readiness_messages():
-    # Top-level start-up code cannot be executed in isolation; check the
-    # comment-stripped tail of the script, in order, after applyTranslations().
-    tail = _strip(_script()).rsplit("applyTranslations();", 1)[1]
-    assert "loadReadinessMessages(currentLocale);" in tail
-    assert tail.index("loadReadinessMessages(currentLocale);") < tail.index(
-        "connectWebSocket();"
-    )
-
-
-def test_game_admin_has_no_inline_readiness_strings():
-    dictionary_text = _script()
-    assert '"readiness.' not in dictionary_text.split("function t(")[0]
-
-
-def test_changing_language_refetches_that_locales_readiness_messages():
-    result = _run(
-        ["setLanguage"],
-        """
-const loaded = [];
-const store = {};
-const localStorage = { setItem: (k, v) => { store[k] = v; } };
-function applyTranslations() {}
-function loadReadinessMessages(locale) { loaded.push(locale); }
-setLanguage("en-US");
-console.log(JSON.stringify({ loaded, locale: currentLocale, store }));
-""",
-    )
-    assert result == {
-        "loaded": ["en-US"],
-        "locale": "en-US",
-        "store": {"fitrace.locale": "en-US"},
-    }
+def test_page_has_no_inline_readiness_strings():
+    # Readiness text comes from the locale files; the script must not carry
+    # any readiness.* message value of its own (only keys it asks for).
+    script = strip_js_comments(script_of(PAGE))
+    assert "readiness.target_ok" not in script
+    assert extract_function(script, "t")  # sanity: the real t() is there

@@ -26,6 +26,7 @@ import json
 import re
 import subprocess
 from pathlib import Path
+from page_locale import dictionary_blocks
 
 STATIC_DIR = Path(__file__).resolve().parents[3] / "hub_server" / "static"
 
@@ -478,31 +479,32 @@ def test_configure_race_posts_null_relay_legs_for_an_individual_race():
 
 
 def test_relay_option_label_translated():
-    source = _read()
-    assert '"option.relay": "Relay Race (same machine)"' in source
-    assert '"option.relay": "接力賽（同一台機器）"' in source
+    en_block, zh_block = dictionary_blocks("game_admin.")
+    assert '"option.relay": "Relay Race (same machine)"' in en_block
+    assert '"option.relay": "接力賽（同一台機器）"' in zh_block
 
 
 def test_relay_legs_label_translated():
-    source = _read()
-    assert '"label.relay_legs": "Legs"' in source
-    assert '"label.relay_legs": "棒數"' in source
+    en_block, zh_block = dictionary_blocks("game_admin.")
+    assert '"label.relay_legs": "Legs"' in en_block
+    assert '"label.relay_legs": "棒數"' in zh_block
 
 
 def test_relay_manage_teams_link_translated():
-    source = _read()
-    assert '"link.relay_manage_teams": "Manage teams"' in source
-    assert '"link.relay_manage_teams": "管理隊伍"' in source
+    en_block, zh_block = dictionary_blocks("game_admin.")
+    assert '"link.relay_manage_teams": "Manage teams"' in en_block
+    assert '"link.relay_manage_teams": "管理隊伍"' in zh_block
 
 
 def test_relay_no_team_text_translated():
-    source = _read()
-    assert '"text.relay_no_team": "No team assigned"' in source
-    assert '"text.relay_no_team": "尚未分配隊伍"' in source
+    en_block, zh_block = dictionary_blocks("game_admin.")
+    assert '"text.relay_no_team": "No team assigned"' in en_block
+    assert '"text.relay_no_team": "尚未分配隊伍"' in zh_block
 
 
 def test_removed_relay_form_keys_are_gone_from_both_dictionaries():
     source = _read()
+    en_block, zh_block = dictionary_blocks("game_admin.")
     for key in (
         "label.relay_team_name",
         "label.relay_members",
@@ -510,3 +512,5 @@ def test_removed_relay_form_keys_are_gone_from_both_dictionaries():
         "message.relay_team_registered",
     ):
         assert f'"{key}"' not in source
+        assert f'"{key}"' not in en_block
+        assert f'"{key}"' not in zh_block

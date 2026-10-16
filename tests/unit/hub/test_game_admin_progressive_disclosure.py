@@ -14,6 +14,7 @@ import re
 import subprocess
 from html.parser import HTMLParser
 from pathlib import Path
+from page_locale import page_dictionaries
 
 STATIC_DIR = Path(__file__).resolve().parents[3] / "hub_server" / "static"
 
@@ -600,8 +601,9 @@ def test_clear_modals_ids_and_handlers_unchanged():
 
 
 def test_panel_advanced_key_in_both_dictionaries():
-    source = _read()
-    assert source.count('"panel.advanced":') == 2
+    dictionaries = page_dictionaries("game_admin.")
+    for locale in ("en-US", "zh-TW"):
+        assert dictionaries[locale]["panel.advanced"], locale
 
 
 # ---------------------------------------------------------------------------

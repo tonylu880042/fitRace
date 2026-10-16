@@ -280,6 +280,13 @@ def test_management_controls_are_split_by_admin_role():
 
     response_game_admin = client.get("/static/gameAdmin.html")
     assert response_game_admin.status_code == 200
+    # Game Admin's texts now come from /api/locales (not inline dictionaries):
+    # strings that appear only in a message value are checked there.
+    en_messages = client.get("/api/locales/en-US").json()["messages"]
+
+    def game_admin_en_text(text):
+        return any(text in value for value in en_messages.values())
+
     assert "Race Control" in response_game_admin.text
     assert "Station Status" in response_game_admin.text
     assert 'id="competition-mode"' in response_game_admin.text
@@ -295,18 +302,15 @@ def test_management_controls_are_split_by_admin_role():
     assert "Team Rule" in response_game_admin.text
     assert "Leaderboard Preview" in response_game_admin.text
     assert "Start Flow" in response_game_admin.text
-    assert "Race Readiness" in response_game_admin.text
+    assert game_admin_en_text("Race Readiness")
     assert "/api/race/readiness" in response_game_admin.text
     assert "renderReadinessPanel" in response_game_admin.text
-    assert "Station Health" in response_game_admin.text
+    assert game_admin_en_text("Station Health")
     assert "Team Average" in response_game_admin.text
     assert "Team Target" in response_game_admin.text
     assert "Everyone Finishes" in response_game_admin.text
-    assert "Countdown Active" in response_game_admin.text
-    assert (
-        "Everyone Finishes means every teammate must complete"
-        in response_game_admin.text
-    )
+    assert game_admin_en_text("Countdown Active")
+    assert game_admin_en_text("Everyone Finishes means every teammate must complete")
     assert "Operator Unlock" in response_game_admin.text
     assert "Access Code" in response_game_admin.text
     assert "Admin Token" not in response_game_admin.text

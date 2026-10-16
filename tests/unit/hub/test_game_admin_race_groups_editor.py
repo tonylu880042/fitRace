@@ -26,6 +26,7 @@ import json
 import re
 import subprocess
 from pathlib import Path
+from page_locale import dictionary_blocks
 
 STATIC_DIR = Path(__file__).resolve().parents[3] / "hub_server" / "static"
 
@@ -134,11 +135,7 @@ def test_race_rule_note_key_maps_mixed_to_its_own_note():
 
 
 def test_mixed_option_and_note_translated_in_both_dictionaries():
-    source = _read()
-    en_start = source.index('"en-US": {')
-    zh_start = source.index('dictionaries["zh-TW"] = {')
-    en_block = source[en_start:zh_start]
-    zh_block = source[zh_start : zh_start + 20000]
+    en_block, zh_block = dictionary_blocks("game_admin.")
     assert '"option.mixed": "Multi-equipment Groups"' in en_block
     assert '"option.mixed": "多器材分組"' in zh_block
     assert (

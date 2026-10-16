@@ -2,8 +2,8 @@
 were confusing operators mid-event: "Stop Race"/"Reset Race" read like race
 control rather than "save this heat's results, then clear the stations for
 the next one". This pins the clarified copy for both locales by loading the
-REAL `dictionaries` object literal (and the real `t()` lookup function) out
-of the page under node -- never a source-text grep -- so deleting the actual
+REAL locale messages (and the real `t()` lookup function of the page, run
+under node) -- never a source-text grep -- so deleting the actual
 wiring turns this red instead of being satisfied by a nearby comment.
 """
 
@@ -11,6 +11,7 @@ import json
 import subprocess
 import tempfile
 from pathlib import Path
+from page_locale import messages_js, page_dictionaries
 
 STATIC_DIR = Path(__file__).resolve().parents[3] / "hub_server" / "static"
 
@@ -44,35 +45,13 @@ def _matching_brace_end(source: str, open_idx: int) -> int:
 
 
 def _extract_dictionaries_js(source: str) -> str:
-    const_start = source.index("const dictionaries = {")
-    const_open = source.index("{", const_start)
-    const_close = _matching_brace_end(source, const_open)
-
-    zh_marker = 'dictionaries["zh-TW"] = {'
-    zh_start = source.index(zh_marker, const_close)
-    zh_open = source.index("{", zh_start)
-    zh_close = _matching_brace_end(source, zh_open)
-
-    return source[const_start : zh_close + 1] + ";"
+    """Kept for the harness below: JS declaring the zh-TW `messages` the
+    page holds after loadLocale() (the strings live in the locale files)."""
+    return messages_js("zh-TW")
 
 
 def _load_dictionaries(source: str) -> dict:
-    js = _extract_dictionaries_js(source)
-    js += "\nconsole.log(JSON.stringify(dictionaries));"
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".js", delete=False) as tmp_file:
-        tmp_file.write(js)
-        tmp_file.flush()
-        tmp_path = tmp_file.name
-    try:
-        result = subprocess.run(
-            ["node", tmp_path], capture_output=True, text=True, timeout=5
-        )
-        assert (
-            result.returncode == 0
-        ), f"node failed to evaluate dictionaries: {result.stderr}"
-        return json.loads(result.stdout)
-    finally:
-        Path(tmp_path).unlink()
+    return page_dictionaries("game_admin.")
 
 
 _EXPECTED = {

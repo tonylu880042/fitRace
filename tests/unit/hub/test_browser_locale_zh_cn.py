@@ -13,7 +13,14 @@ import pytest
 STATIC_DIR = Path(__file__).resolve().parents[3] / "hub_server" / "static"
 
 # Pages that carry their own copy of getBrowserLocale().
-PAGES = ["index.html", "classAdmin.html", "teams.html", "result.html", "results.html"]
+PAGES = [
+    "index.html",
+    "classAdmin.html",
+    "teams.html",
+    "result.html",
+    "results.html",
+    "gameAdmin.html",
+]
 
 
 def _function_source(page: str, name: str) -> str:

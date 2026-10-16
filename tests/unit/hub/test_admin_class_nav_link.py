@@ -20,6 +20,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from page_locale import page_dictionaries
+
 STATIC_DIR = Path(__file__).resolve().parents[3] / "hub_server" / "static"
 
 PAGES = ("gameAdmin.html", "systemAdmin.html")
@@ -93,6 +95,17 @@ def _load_dictionaries(source: str) -> dict:
         Path(tmp_path).unlink()
 
 
+# Pages whose text now lives in the locale files (zh-CN work); the others
+# still carry inline dictionaries.
+_LOCALE_PREFIX = {"gameAdmin.html": "game_admin."}
+
+
+def _dictionaries(page: str) -> dict:
+    if page in _LOCALE_PREFIX:
+        return page_dictionaries(_LOCALE_PREFIX[page])
+    return _load_dictionaries(_read(page))
+
+
 _NAV_BUTTON_RE = re.compile(
     r"<button[^>]*onclick=\"window\.location\.href='/classAdmin'\"[^>]*>.*?</button>",
     re.DOTALL,
@@ -119,8 +132,7 @@ def test_both_admin_pages_nav_entry_uses_i18n_not_hardcoded_english():
 
 def test_new_key_exists_in_both_dictionaries_of_both_pages():
     for page in PAGES:
-        source = _read(page)
-        dictionaries = _load_dictionaries(source)
+        dictionaries = _dictionaries(page)
         assert "nav.class_admin" in dictionaries["en-US"], f"{page}: missing from en-US"
         assert "nav.class_admin" in dictionaries["zh-TW"], f"{page}: missing from zh-TW"
 
@@ -128,8 +140,7 @@ def test_new_key_exists_in_both_dictionaries_of_both_pages():
 def test_new_key_zh_tw_value_differs_from_en_us_and_is_genuinely_chinese():
     cjk_re = re.compile(r"[一-鿿]")
     for page in PAGES:
-        source = _read(page)
-        dictionaries = _load_dictionaries(source)
+        dictionaries = _dictionaries(page)
         en_value = dictionaries["en-US"]["nav.class_admin"]
         zh_value = dictionaries["zh-TW"]["nav.class_admin"]
         assert zh_value != en_value, (

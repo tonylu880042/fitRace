@@ -977,21 +977,10 @@
       line-height: 1.4;
     }
 
-    .lang-toggle {
-      display: flex;
-      gap: 4px;
-    }
-
-    .lang-toggle button {
-      min-width: 50px;
-      padding: 0 10px;
-      font-size: 12px;
-    }
-
-    .lang-toggle button.active {
-      background: var(--accent);
-      border-color: var(--accent);
-      color: #09090b;
+    #language-select {
+      width: auto;
+      height: 42px;
+      padding: 0 8px;
     }
 
     @media (max-width: 1100px) {
@@ -1080,10 +1069,7 @@
         <p data-i18n="header.subtitle">Race setup and coach-operated event control</p>
       </div>
       <div class="top-actions">
-        <span class="lang-toggle">
-          <button type="button" id="lang-en" onclick="setLanguage('en-US')">EN</button>
-          <button type="button" id="lang-zh" onclick="setLanguage('zh-TW')">中文</button>
-        </span>
+        <select id="language-select" onchange="setLanguage(this.value)"></select>
         <div class="pill"><span class="dot" id="ws-dot"></span><span id="ws-label" data-i18n="status.offline">Offline</span></div>
         <div class="pill" id="version-pill">Hub v--</div>
         <button type="button" onclick="window.location.href='/'" data-i18n="nav.dashboard">Dashboard</button>
@@ -1567,625 +1553,69 @@
 
     function getBrowserLocale() {
       const saved = localStorage.getItem("fitrace.locale");
-      if (saved === "en-US" || saved === "zh-TW") return saved;
+      if (saved) return saved;
       const browserLang = navigator.language || navigator.userLanguage;
-      if (browserLang && browserLang.toLowerCase().startsWith("zh")) {
-        return "zh-TW";
+      if (browserLang) {
+        const lower = browserLang.toLowerCase();
+        if (/^zh-(cn|hans|sg)/.test(lower)) return "zh-CN";
+        if (lower.startsWith("zh")) return "zh-TW";
+        if (lower.startsWith("it")) return "it";
+        if (lower.startsWith("fr")) return "fr";
+        if (lower.startsWith("de")) return "de-CH";
+        if (lower.startsWith("sv")) return "sv";
+        if (lower.startsWith("en")) return "en-US";
       }
       return "en-US";
     }
 
     let currentLocale = getBrowserLocale();
 
-    const dictionaries = {
-      "en-US": {
-        "status.offline": "Offline",
-        "status.online": "Online",
-        "nav.dashboard": "Dashboard",
-        "nav.system_admin": "System Admin",
-        "nav.class_admin": "Class Admin",
-        "nav.signup": "Signup",
-        "nav.operator_unlock": "Operator Unlock",
-        "label.race_state": "Race State",
-        "label.stations": "Stations",
-        "label.readiness": "Readiness",
-        "label.start_sound": "Start Sound",
-        "label.race_type": "Race Type",
-        "label.competition": "Competition",
-        "label.team_scoring": "Team Scoring",
-        "label.completion_rule": "Completion Rule",
-        "label.relay_legs": "Legs",
-        "label.target_distance": "Target Distance (m)",
-        "label.target_calories": "Target Calories (kcal)",
-        "label.time_limit": "Time Limit (s)",
-        "label.challenge_time": "Challenge Time (s)",
-        "label.refresh": "Refresh",
-        "label.leaderboard_view": "Leaderboard View",
-        "label.start_sound_select": "Start Sound",
-        "label.signup_qr_visible": "Show Sign-up QR on Dashboard",
-        "label.admin_qr_visible": "Show Game Admin QR on Dashboard",
-        "label.idle_live_telemetry_visible": "Show Live Data While Idle",
-        "label.challenge_mode": "Challenge Mode",
-        "label.challenge_duration": "Challenge Duration (s)",
-        "label.challenge_min_result": "Minimum Result Display (s)",
-        "label.challenge_start_wait": "Start Window with Several Stations (s)",
-        "option.challenge_off": "Off",
-        "option.challenge_on": "On",
-        "panel.challenge_block": "Auto Start (Challenge Mode)",
-        "text.challenge_note": "When on, the race starts automatically once every station has signed up.",
-        "text.challenge_rules_note": "Challenge mode is on: every run is a {seconds}-second time race, started automatically when athletes sign up. Race Rules are not used.",
-        "message.challenge_saved": "Challenge mode saved.",
-        "label.access_code": "Access Code",
-        "panel.race_control": "Race Control",
-        "panel.station_status": "Station Status",
-        "option.distance": "Distance Challenge",
-        "option.calories": "Calories Challenge",
-        "option.time": "Time Challenge",
-        "option.max_power": "Max Power Challenge",
-        "option.mixed": "Multi-equipment Groups",
-        "option.individual": "Individual Race (Anonymous Allowed)",
-        "option.team": "Team Race",
-        "option.relay": "Relay Race (same machine)",
-        "option.team_average": "Team Average",
-        "option.team_total": "Team Total",
-        "option.team_target": "Team Target",
-        "option.everyone_finishes": "Everyone Finishes",
-        "option.live_websocket": "Live WebSocket only",
-        "option.fallback_5s": "Fallback: 5 seconds",
-        "option.fallback_15s": "Fallback: 15 seconds",
-        "option.classic": "Classic",
-        "option.race_track": "Race Track",
-        "option.team_battle": "Team Battle",
-        "option.sprint_board": "Sprint Board",
-        "option.play_countdown": "Play 3, 2, 1, Go",
-        "option.silent_start": "Silent Start",
-        "option.qr_visible": "Visible",
-        "option.qr_hidden": "Hidden",
-        "guidance.team_rule": "Team Rule",
-        "guidance.leaderboard_preview": "Leaderboard Preview",
-        "guidance.start_flow": "Start Flow",
-        "banner.countdown_active": "Countdown active on Dashboard. Race starts on Go.",
-        "button.save_race": "Save Race Settings",
-        "button.start_race": "Start Race",
-        "button.stop_race": "End Heat (Save Results)",
-        "button.reset_race": "Clear Stations (Results Kept)",
-        "button.refresh": "Refresh",
-        "button.save": "Save",
-        "button.cancel": "Cancel",
-        "login.title": "Operator Unlock",
-        "login.description": "Enter the operator access code for protected race actions. Local test systems can leave this blank until protection is enabled.",
-        "text.checking": "Checking",
-        "text.processing_race_action": "Processing",
-        "text.online": "Online",
-        "text.wait": "WAIT",
-        "text.race_readiness": "Race Readiness",
-        "text.ready_to_start": "Ready To Start",
-        "text.needs_attention": "Needs Attention Before Start",
-        "text.start_enabled": "Start Enabled",
-        "text.start_locked": "Start Locked",
-        "text.station": "Station",
-        "text.readiness_meta": "Checks registrations, teams, station health, sound setting, and target value before Start Race.",
-        "station_reason.unassigned": "No equipment assigned — assign a telemetry stream in System Admin -> Stations.",
-        "station_reason.device_missing": "Assigned device not found on any edge node — re-check the binding or reassign it.",
-        "station_reason.edge_offline": "The edge node is offline — check its power and Wi-Fi.",
-        "station_reason.no_data": "Assigned device has sent no data yet — start the machine or check the antenna link.",
-        "station_reason.stale": "Telemetry stopped (no data for over 10s) — check the machine and antenna link.",
-        "station_reason.generic": "Device is missing or offline.",
-        "text.idle": "IDLE",
-        "text.ready": "READY",
-        "text.running": "RUNNING",
-        "text.stopped": "STOPPED",
-        "text.check": "CHECK",
-        "text.countdown_active": "Countdown Active",
-        "text.counting": "Counting",
-        "text.individual_race": "Individual race. Team names can display on the leaderboard, but ranking is per athlete.",
-        "text.everyone_finishes_detail": "Everyone Finishes means every teammate must complete the {targetLabel}; one unfinished member keeps the team unfinished.",
-        "text.team_target_detail": "Team Target lets the team finish when the selected team score reaches the target.",
-        "text.team_average_detail": "Team Average ranks teams by each member's normalized contribution.",
-        "text.team_total_detail": "Team Total ranks teams by the whole team's combined output.",
-        "header.subtitle": "Race setup and coach-operated event control",
-        "leaderboard.mode_classic_detail": "Classic ranking list for clear results.",
-        "leaderboard.mode_race_track_detail": "Race Track shows progress as lanes, best for distance or calorie targets.",
-        "leaderboard.mode_team_battle_detail": "Team Battle emphasizes team-versus-team momentum and member finish count.",
-        "leaderboard.mode_sprint_board_detail": "Sprint Board creates a compact high-energy board for short races.",
-        "label.calorie_target": "calorie target",
-        "label.distance_target": "distance target",
-        "label.challenge_window": "challenge window",
-        "text.sound_status_on_default": "on by default",
-        "text.sound_status_muted": "muted for this start",
-        "text.start_flow_detail": "Start Race sends a 3, 2, 1, Go countdown to the Dashboard. Sound is {soundStatus}; the race timer begins on Go.",
-        "text.start_flow_default": "Start Race sends the countdown to the Dashboard. The race timer begins on Go.",
-        "confirm.reset_race": "Clear stations? Current athlete registrations and race settings will be cleared; results are kept. You will need to Save Race Settings again.",
-        "message.race_started": "Race started after Dashboard countdown.",
-        "message.race_stopped": "Race stopped.",
-        "message.race_reset": "Race reset.",
-        "message.start_sound_enabled": "Start sound enabled.",
-        "message.start_sound_disabled": "Start sound disabled.",
-        "message.signup_qr_shown": "Sign-up QR shown on dashboard.",
-        "message.signup_qr_hidden": "Sign-up QR hidden from dashboard.",
-        "message.admin_qr_shown": "Game Admin QR shown on dashboard.",
-        "message.admin_qr_hidden": "Game Admin QR hidden from dashboard.",
-        "message.idle_live_telemetry_shown": "Live data will show on the dashboard while idle.",
-        "message.idle_live_telemetry_hidden": "Live data hidden from the dashboard while idle.",
-        "state.sound_on": "ON",
-        "state.sound_off": "OFF",
-        "label.lane": "Lane",
-        "status.finish": "Finish",
-        "status.chase": "Chase",
-        "status.push": "Push",
-        "status.fast": "Fast",
-        "status.hot": "Hot",
-        "status.next": "Next",
-        "message.access_code_saved": "Access code saved.",
-        "message.value_required": "Enter a value greater than 0.",
-        "message.race_settings_saved": "Race settings saved.",
-        "message.leaderboard_updated": "Leaderboard view updated.",
-        "message.countdown_playing": "Countdown playing on Dashboard. Race starts on Go.",
-        "text.no_stations_available": "No configured station is available.",
-        "button.go_to_station_setup": "Assign Stations",
-        "button.reload_dashboard": "Reload Dashboard",
-        "confirm.reload_dashboard": "Reload the dashboard screen now?",
-        "message.dashboard_reload_sent": "Dashboard reload sent.",
-        "message.dashboard_reload_failed": "Failed to reload dashboard: {error}",
-        "check.state": "Race State",
-        "check.target": "Target",
-        "check.registrations": "Registrations",
-        "check.teams": "Teams",
-        "check.stations": "Station Health",
-        "check.sound": "Sound",
-        "check.groups": "Equipment Groups",
-        "panel.race_rules": "Race Rules",
-        "panel.live_presentation": "Live Presentation",
-        "panel.advanced": "Advanced",
-        "badge.unsaved_changes": "Unsaved Changes",
-        "pill.applies_immediately": "Applies Immediately",
-        "text.local_preference_note": "Affects this browser only.",
-        "text.team_field_note": "Applies to team races only.",
-        "text.race_note_distance": "Set a target distance. First athlete to reach it wins; ties are broken by finish time. The progress bar shows distance over target.",
-        "text.race_note_calories": "Set a target calorie count. First athlete to reach it wins. The progress bar shows calories over target.",
-        "text.race_note_time": "Set a challenge duration. When time runs out, the greatest total distance wins. The progress bar shows elapsed time.",
-        "text.race_note_max_power": "Set a challenge duration. When time runs out, the highest single peak wattage wins (peak, not average). The progress bar shows elapsed time.",
-        "text.race_note_mixed": "Each equipment group races its own target from the same start and ranks separately.",
-        "label.race_groups": "Equipment Groups",
-        "button.add_race_group": "Add Group",
-        "button.remove_race_group": "Remove",
-        "equipment_type.treadmill": "Treadmill",
-        "equipment_type.curved_treadmill": "Curved Treadmill",
-        "equipment_type.spin_bike": "Spin Bike",
-        "equipment_type.fan_bike": "Fan Bike",
-        "equipment_type.upright_bike": "Upright Bike",
-        "equipment_type.recumbent_bike": "Recumbent Bike",
-        "equipment_type.elliptical": "Elliptical",
-        "equipment_type.stair_climber": "Stair Climber",
-        "equipment_type.rowing_machine": "Rowing Machine",
-        "equipment_type.ski_erg": "Ski Erg",
-        "text.completion_rule_time_based_note": "Time-based race types do not apply a completion rule; the race ends when the clock runs out.",
-        "text.team_total_overridden_by_everyone_finishes": "Under Everyone Finishes, team score is fixed to average progress, so the Team Total setting has no effect.",
-        "leaderboard.mode_race_track_time_based_detail": "In this race type every lane fills by elapsed time, not performance, so lanes advance identically and the track shows nothing about who is winning. Try Classic or Sprint Board instead.",
-        "text.readiness_remedy_summary": "{count} item(s) need attention before you can start.",
-        "text.station_status_subtitle": "Pre-race checklist: confirm every station has a live machine and a registered athlete before you start.",
-        "text.unbound": "unbound",
-        "text.no_telemetry_stream": "No telemetry stream",
-        "text.no_athlete": "No athlete",
-        "label.health": "Health:",
-        "text.unassigned_telemetry": "Unassigned telemetry stream. Configure it in System Admin.",
-        "button.switch_to_race_mode": "Switch Projector to Race Mode",
-        "text.switch_to_race_mode_note": "Switches the dashboard to show the race leaderboard.",
-        "text.switch_to_race_mode_note_disabled": "Stop the current session before switching the projector to race mode.",
-        "message.mode_switched_to_race": "Projector switched to race mode.",
-        "label.overall_standings_event": "Overall Standings Event",
-        "button.start_new_event": "Start New Event",
-        "text.event_start_none": "Counting the full history.",
-        "text.event_start_since": "Since {time}.",
-        "text.start_new_event_note": "Excludes older races from the dashboard's overall standings -- does not touch the Record Wall.",
-        "confirm.start_new_event": "Start a new event? Older races will no longer count toward the overall standings on the dashboard.",
-        "message.new_event_started": "New event started -- overall standings now start from this point.",
-        "message.new_event_failed": "Failed to start new event: {error}",
-        "panel.roster_heats": "Roster & Heats",
-        "panel.current_heat": "Current Heat",
-        "panel.current_heat_raced": "Just Raced",
-        "panel.next_heat": "Next Heat",
-        "panel.walk_in": "Walk-in Registration",
-        "button.import_roster": "Import Roster",
-        "button.load_next_heat": "Next Heat Up \u2192",
-        "button.requeue": "Requeue",
-        "button.add_walk_in": "Add",
-        "label.pending": "Pending",
-        "label.done": "Done",
-        "label.absent": "Absent",
-        "label.walk_in_name": "Name",
-        "label.walk_in_division": "Division",
-        "label.walk_in_team": "Team",
-        "option.division_none": "None",
-        "option.division_men": "Men",
-        "option.division_women": "Women",
-        "confirm.replace_roster": "Importing will replace the existing roster. Continue?",
-        "text.roster_counts_title": "Roster Status",
-        "text.roster_counts_summary": "{pending} pending · {done} done · {absent} absent",
-        "text.no_current_heat": "No heat loaded yet.",
-        "text.no_next_heat": "No more entries queued.",
-        "text.roster_empty": "No entries.",
-        "text.see_errors_below": "See errors below.",
-        "text.row_error_label": "Row {row}",
-        "message.roster_imported": "Roster imported.",
-        "message.roster_import_failed": "Import failed: {error}",
-        "message.heat_loaded": "Next heat loaded.",
-        "message.heat_load_failed": "Failed to load next heat: {error}",
-        "message.walk_in_added": "Walk-in added.",
-        "message.entry_marked_absent": "Marked absent.",
-        "message.entry_requeued": "Requeued.",
-        "confirm.skip_unraced_heat": "The current heat ({names}) has not raced yet. Skip it and load the next heat?",
-        "text.relay_race": "Relay race: teammates take turns running one leg each on the same machine. The team finishes when the last leg is done.",
-        "link.relay_manage_teams": "Manage teams",
-        "text.relay_no_team": "No team assigned",
-        "text.relay_heat_station_team": "Station {station} · {team}",
-        "text.relay_heat_mode_note": "Relay mode: heats load by team.",
-        "button.download_results_csv": "Download Results (CSV)",
-        "message.results_downloaded": "Results downloaded.",
-        "message.results_download_failed": "Download failed: {error}",
-        "button.clear_results": "Clear All Past Results",
-        "button.clear_results_next": "Next",
-        "button.clear_results_confirm": "Clear Results",
-        "clear_results.title": "Clear All Past Results",
-        "clear_results.step1_body": "{count} stored race result(s) will be cleared. Download the CSV first if you need a copy. The original file is kept as a .bak backup on the hub, but the dashboard's overall standings will become empty.",
-        "clear_results.step1_body_empty": "There are no stored race results to clear.",
-        "clear_results.step2_title": "Confirm Clear",
-        "clear_results.step2_body": "Are you sure you want to clear {count} race result(s)? This cannot be undone from this page.",
-        "text.clear_results_loading": "Loading...",
-        "text.clear_results_count_failed": "Could not load the result count: {error}",
-        "message.clear_results_success": "Cleared {count} race result(s). Backup: {backup}",
-        "message.clear_results_race_running": "Race is running -- cannot clear results.",
-        "message.clear_results_unauthorized": "Admin password required. Unlock via Operator Unlock first.",
-        "message.clear_results_failed": "Failed to clear results: {error}",
-        "button.clear_roster": "Clear Roster",
-        "button.clear_roster_next": "Next",
-        "button.clear_roster_confirm": "Clear Roster",
-        "clear_roster.title": "Clear Roster",
-        "clear_roster.step1_body": "{pending} pending, {loaded} in the current heat, {done} done, and {absent} absent will be removed. Race results are NOT affected.",
-        "clear_roster.step1_body_empty": "There is no roster to clear.",
-        "clear_roster.step2_title": "Confirm Clear",
-        "clear_roster.step2_body": "Are you sure you want to clear the entire roster ({total} entries)? This cannot be undone from this page.",
-        "message.roster_cleared": "Roster cleared.",
-        "message.clear_roster_race_running": "Race is running -- cannot clear the roster.",
-        "message.clear_roster_failed": "Failed to clear roster: {error}",
-        "button.cancel_current_heat": "Return Heat to Queue",
-        "button.cancel_heat_confirm": "Cancel Heat",
-        "cancel_heat.title": "Return Heat to Queue",
-        "cancel_heat.body": "Cancel the current heat ({names})? They will return to the front of the pending queue.",
-        "message.heat_cancelled": "Current heat cancelled.",
-        "message.cancel_heat_race_running": "Race is running -- cannot cancel the heat.",
-        "message.cancel_heat_already_raced": "This heat has already raced -- use Load Next Heat instead.",
-        "message.cancel_heat_no_current_heat": "There is no current heat loaded.",
-        "message.cancel_heat_failed": "Failed to cancel the heat: {error}",
-        "text.postrace_hint_next_heat": "Heat results saved. Next: press Next Heat Up.",
-        "text.postrace_hint_roster_done": "Heat results saved. Everyone on the roster has raced.",
-        "text.postrace_hint_saved": "Heat results saved.",
-        "button.download_roster_template": "Download Roster Template",
-        "message.roster_template_download_failed": "Template download failed: {error}",
-        "roster_import_preview.title": "Preview Roster Import",
-        "button.confirm_import": "Confirm Import",
-        "roster_import_preview.replace_note": "This will replace the current {count} entr(y/ies).",
-        "roster_import_preview.team_size_warning": "{count} member(s), expected {expected}.",
-        "roster_import_preview.teamless_warning": "{count} athletes have no team (required for relay)",
-        "roster_error.missing_header_row": "CSV has no header row",
-        "roster_error.missing_header_name": "Missing required column: name",
-        "roster_error.missing_name": "Missing name",
-        "roster_error.name_too_long": "Name too long (max 80 characters): {value}",
-        "roster_error.invalid_division": "Invalid division: {value}",
-        "roster_error.team_too_long": "Team name too long (max 80 characters): {value}"
-      }
-    };
+    // Every string comes from the hub locale files (/api/locales/{locale}).
+    // Until the fetch completes the English already in the HTML shows.
+    let messages = {};
 
-    dictionaries["zh-TW"] = {
-      ...dictionaries["en-US"],
-      "status.offline": "離線",
-      "status.online": "上線",
-      "nav.dashboard": "儀表板",
-      "nav.system_admin": "系統管理",
-      "nav.class_admin": "課程管理",
-      "nav.signup": "報名",
-      "nav.operator_unlock": "操作解鎖",
-      "label.race_state": "比賽狀態",
-      "label.stations": "站位",
-      "label.readiness": "整備狀態",
-      "label.start_sound": "啟動聲音",
-      "label.race_type": "比賽類型",
-      "label.competition": "競賽模式",
-      "label.team_scoring": "隊伍計分",
-      "label.completion_rule": "完成規則",
-      "label.relay_legs": "棒數",
-      "label.target_distance": "目標距離 (m)",
-      "label.target_calories": "目標卡路里 (kcal)",
-      "label.time_limit": "時間限制 (s)",
-      "label.challenge_time": "挑戰時間 (s)",
-      "label.refresh": "重新整理",
-      "label.leaderboard_view": "排行榜顯示",
-      "label.start_sound_select": "啟動聲音",
-      "label.signup_qr_visible": "大螢幕顯示報名 QR Code",
-      "label.admin_qr_visible": "大螢幕顯示 Game Admin QR Code",
-      "label.idle_live_telemetry_visible": "待機時顯示即時數據",
-      "label.challenge_mode": "挑戰模式",
-      "label.challenge_duration": "挑戰時間 (s)",
-      "label.challenge_min_result": "成績畫面最短停留 (s)",
-      "label.challenge_start_wait": "多台時等待開跑 (s)",
-      "option.challenge_off": "關閉",
-      "option.challenge_on": "開啟",
-      "panel.challenge_block": "自動開跑（挑戰模式）",
-      "text.challenge_note": "開啟後，所有站位報名完成會自動倒數開跑。",
-      "text.challenge_rules_note": "挑戰模式已開啟：每次都是 {seconds} 秒限時賽，選手報名後自動開跑，不使用比賽規則。",
-      "message.challenge_saved": "已儲存挑戰模式。",
-      "label.access_code": "存取碼",
-      "panel.race_control": "比賽控制",
-      "panel.station_status": "站位狀態",
-      "option.distance": "距離挑戰",
-      "option.calories": "卡路里挑戰",
-      "option.time": "時間挑戰",
-      "option.max_power": "最大功率挑戰",
-      "option.mixed": "多器材分組",
-      "option.individual": "個人賽（可匿名參加）",
-      "option.team": "隊伍賽",
-      "option.relay": "接力賽（同一台機器）",
-      "option.team_average": "隊伍平均",
-      "option.team_total": "隊伍總計",
-      "option.team_target": "隊伍目標",
-      "option.everyone_finishes": "全員完成",
-      "option.live_websocket": "WebSocket 即時更新",
-      "option.fallback_5s": "後備: 5 秒",
-      "option.fallback_15s": "後備: 15 秒",
-      "option.classic": "經典",
-      "option.race_track": "賽道",
-      "option.team_battle": "隊伍對戰",
-      "option.sprint_board": "衝刺排行",
-      "option.play_countdown": "播放 3, 2, 1, Go",
-      "option.silent_start": "靜音啟動",
-      "option.qr_visible": "顯示",
-      "option.qr_hidden": "隱藏",
-      "guidance.team_rule": "隊伍規則",
-      "guidance.leaderboard_preview": "排行榜預覽",
-      "guidance.start_flow": "啟動流程",
-      "banner.countdown_active": "儀表板上倒計時進行中。比賽將在 Go 開始。",
-      "button.save_race": "儲存比賽設定",
-      "button.start_race": "開始比賽",
-      "button.stop_race": "結束本組（保存成績）",
-      "button.reset_race": "清空賽道（成績保留）",
-      "button.refresh": "重新整理",
-      "button.save": "儲存",
-      "button.cancel": "取消",
-      "login.title": "操作解鎖",
-      "login.description": "輸入受保護比賽操作的操作存取碼。本機測試系統可以先留空,待啟用保護後再更新。",
-      "text.checking": "檢查中",
-      "text.processing_race_action": "處理中",
-      "text.online": "上線",
-      "text.wait": "等待",
-      "text.race_readiness": "比賽整備",
-      "text.ready_to_start": "準備好開始",
-      "text.needs_attention": "開始前需要注意",
-      "text.start_enabled": "啟動已啟用",
-      "text.start_locked": "啟動已鎖定",
-      "text.station": "站位",
-      "text.readiness_meta": "開始比賽前會檢查報名、隊伍、站位健康、開始音效與目標值。",
-      "station_reason.unassigned": "尚未指派設備——請到系統管理 → 站位(Stations),指派一條遙測資料流。",
-      "station_reason.device_missing": "指派的設備在任何 Edge 節點都找不到——請重新確認綁定或重新指派。",
-      "station_reason.edge_offline": "Edge 節點離線——請檢查它的電源與 Wi-Fi。",
-      "station_reason.no_data": "指派的設備尚未送出資料——請讓選手啟動器材,或檢查天線連線。",
-      "station_reason.stale": "遙測已中斷(超過 10 秒沒有資料)——請檢查器材與天線連線。",
-      "station_reason.generic": "設備遺失或離線。",
-      "text.idle": "待命",
-      "text.ready": "就緒",
-      "text.running": "進行中",
-      "text.stopped": "已停止",
-      "text.check": "檢查",
-      "text.countdown_active": "倒計時進行中",
-      "text.counting": "正在計數",
-      "text.individual_race": "個人賽。隊伍名稱可在排行榜上顯示,但排名為各運動員。",
-      "text.everyone_finishes_detail": "全員完成表示每位隊友都必須完成{targetLabel};一位隊友未完成將導致整個隊伍未完成。",
-      "text.team_target_detail": "隊伍目標允許隊伍在選定的隊伍得分達到目標時完成。",
-      "text.team_average_detail": "隊伍平均根據每位成員的標準化貢獻排名隊伍。",
-      "text.team_total_detail": "隊伍總計根據整個隊伍的合併輸出排名隊伍。",
-      "header.subtitle": "比賽設定與教練操作控制",
-      "leaderboard.mode_classic_detail": "經典排行榜,呈現清楚的名次結果。",
-      "leaderboard.mode_race_track_detail": "賽道模式以跑道呈現進度,最適合距離或卡路里目標。",
-      "leaderboard.mode_team_battle_detail": "隊伍對戰模式強調隊伍間的競賽氣勢與成員完成人數。",
-      "leaderboard.mode_sprint_board_detail": "衝刺排行以精簡、高能量的版面呈現短程比賽。",
-      "label.calorie_target": "卡路里目標",
-      "label.distance_target": "距離目標",
-      "label.challenge_window": "挑戰時限",
-      "text.sound_status_on_default": "預設開啟",
-      "text.sound_status_muted": "本次啟動靜音",
-      "text.start_flow_detail": "開始比賽會在儀表板播放 3, 2, 1, Go 倒數計時。聲音{soundStatus};比賽計時將在 Go 時開始。",
-      "text.start_flow_default": "開始比賽會將倒數計時傳送到儀表板。比賽計時將在 Go 時開始。",
-      "confirm.reset_race": "確定清空賽道嗎？各站目前的選手登記與比賽設定會被清除，成績會保留；之後需要重新「儲存比賽設定」。",
-      "message.race_started": "比賽已在儀表板倒數後開始。",
-      "message.race_stopped": "比賽已停止。",
-      "message.race_reset": "比賽已重設。",
-      "message.start_sound_enabled": "啟動聲音已開啟。",
-      "message.start_sound_disabled": "啟動聲音已關閉。",
-      "message.signup_qr_shown": "已在大螢幕顯示報名 QR Code。",
-      "message.signup_qr_hidden": "已在大螢幕隱藏報名 QR Code。",
-      "message.admin_qr_shown": "已在大螢幕顯示 Game Admin QR Code。",
-      "message.admin_qr_hidden": "已在大螢幕隱藏 Game Admin QR Code。",
-      "message.idle_live_telemetry_shown": "待機時將在大螢幕顯示即時數據。",
-      "message.idle_live_telemetry_hidden": "已在待機時隱藏大螢幕即時數據。",
-      "state.sound_on": "開",
-      "state.sound_off": "關",
-      "label.lane": "跑道",
-      "status.finish": "終點",
-      "status.chase": "追趕中",
-      "status.push": "衝刺中",
-      "status.fast": "快速",
-      "status.hot": "火熱",
-      "status.next": "下一位",
-      "message.access_code_saved": "存取碼已儲存。",
-      "message.value_required": "請輸入大於 0 的數值。",
-      "message.race_settings_saved": "比賽設定已儲存。",
-      "message.leaderboard_updated": "排行榜顯示已更新。",
-      "message.countdown_playing": "倒數正在儀表板播放,比賽將於 Go 時開始。",
-      "text.no_stations_available": "目前沒有已設定的站位可用。",
-      "button.go_to_station_setup": "指派站位",
-      "button.reload_dashboard": "重新載入首頁",
-      "confirm.reload_dashboard": "確定要立刻重新載入首頁畫面?",
-      "message.dashboard_reload_sent": "已送出重新載入首頁指令。",
-      "message.dashboard_reload_failed": "重新載入首頁失敗:{error}",
-      "check.state": "比賽狀態",
-      "check.target": "目標設定",
-      "check.registrations": "選手報名",
-      "check.teams": "隊伍編組",
-      "check.stations": "場站狀態",
-      "check.sound": "音效",
-      "check.groups": "器材分組",
-      "panel.race_rules": "比賽規則",
-      "panel.live_presentation": "即時呈現",
-      "panel.advanced": "進階",
-      "badge.unsaved_changes": "未儲存變更",
-      "pill.applies_immediately": "立即套用",
-      "text.local_preference_note": "僅影響此瀏覽器。",
-      "text.team_field_note": "僅適用於隊伍賽。",
-      "text.race_note_distance": "設定目標距離,率先達成者獲勝,平手依完成時間排序;進度條為距離除以目標。",
-      "text.race_note_calories": "設定目標卡路里,率先達成者獲勝;進度條為卡路里除以目標。",
-      "text.race_note_time": "設定挑戰時限,時間結束時累積距離最多者獲勝;進度條顯示經過時間。",
-      "text.race_note_max_power": "設定挑戰時限,時間結束時單次最高瓦數(峰值,非平均值)者獲勝;進度條顯示經過時間。",
-      "text.race_note_mixed": "各器材組同時出發、各自的目標、分開排名。",
-      "label.race_groups": "器材分組",
-      "button.add_race_group": "新增分組",
-      "button.remove_race_group": "移除",
-      "equipment_type.treadmill": "跑步機",
-      "equipment_type.curved_treadmill": "曲面跑步機",
-      "equipment_type.spin_bike": "飛輪",
-      "equipment_type.fan_bike": "風扇車",
-      "equipment_type.upright_bike": "直立式健身車",
-      "equipment_type.recumbent_bike": "臥式健身車",
-      "equipment_type.elliptical": "橢圓機",
-      "equipment_type.stair_climber": "踏步機",
-      "equipment_type.rowing_machine": "划船機",
-      "equipment_type.ski_erg": "滑雪機",
-      "text.completion_rule_time_based_note": "限時類賽制不套用完成規則;比賽於時限結束時結束。",
-      "text.team_total_overridden_by_everyone_finishes": "在「全員完成」規則下,隊伍得分固定為平均進度,因此「隊伍總計」設定不會產生作用。",
-      "leaderboard.mode_race_track_time_based_detail": "此賽制下每條跑道皆依經過時間填滿,而非依表現,因此所有跑道進度一致,無法顯示領先狀況。建議改用經典排行榜或衝刺排行。",
-      "text.readiness_remedy_summary": "尚有 {count} 項需要處理才能開始比賽。",
-      "text.station_status_subtitle": "賽前檢查清單:確認每個站位都已連上機台並完成選手報名,再開始比賽。",
-      "text.unbound": "未綁定",
-      "text.no_telemetry_stream": "無遙測串流",
-      "text.no_athlete": "尚無選手",
-      "label.health": "狀態:",
-      "text.unassigned_telemetry": "未指派遙測串流,請至系統管理設定。",
-      "button.switch_to_race_mode": "切換投影為賽事模式",
-      "text.switch_to_race_mode_note": "將儀表板切換為顯示賽事排行榜。",
-      "text.switch_to_race_mode_note_disabled": "請先停止目前的場次,才能將投影切換為賽事模式。",
-      "message.mode_switched_to_race": "投影已切換為賽事模式。",
-      "panel.roster_heats": "名單與分組",
-      "panel.current_heat": "目前這組",
-      "panel.current_heat_raced": "剛比完的這組",
-      "panel.next_heat": "下一組",
-      "panel.walk_in": "現場報名",
-      "button.import_roster": "匯入名單",
-      "button.load_next_heat": "下一組上場 →",
-      "button.requeue": "重新排入",
-      "button.add_walk_in": "新增",
-      "label.pending": "待比賽",
-      "label.done": "已完成",
-      "label.absent": "缺席",
-      "label.walk_in_name": "姓名",
-      "label.walk_in_division": "組別",
-      "label.walk_in_team": "隊伍",
-      "option.division_none": "無",
-      "option.division_men": "男子",
-      "option.division_women": "女子",
-      "confirm.replace_roster": "匯入將取代目前的名單,確定要繼續嗎?",
-      "text.roster_counts_title": "名單狀態",
-      "text.roster_counts_summary": "待比賽 {pending}・已完成 {done}・缺席 {absent}",
-      "text.no_current_heat": "尚未載入分組。",
-      "text.no_next_heat": "沒有待比賽的選手。",
-      "text.roster_empty": "目前沒有名單。",
-      "text.see_errors_below": "請見以下錯誤。",
-      "text.row_error_label": "第 {row} 行",
-      "message.roster_imported": "名單已匯入。",
-      "message.roster_import_failed": "匯入失敗:{error}",
-      "message.heat_loaded": "下一組已載入。",
-      "message.heat_load_failed": "載入下一組失敗:{error}",
-      "message.walk_in_added": "現場報名已新增。",
-      "message.entry_marked_absent": "已標記缺席。",
-      "message.entry_requeued": "已重新排入。",
-      "confirm.skip_unraced_heat": "目前這組（{names}）還沒比賽，確定要跳過並載入下一組嗎？",
-      "text.relay_race": "接力賽:隊員輪流在同一台機器上各跑一棒,最後一棒完成即為隊伍完賽。",
-      "link.relay_manage_teams": "管理隊伍",
-      "text.relay_no_team": "尚未分配隊伍",
-      "text.relay_heat_station_team": "站位 {station} · {team}",
-      "text.relay_heat_mode_note": "接力模式：依隊伍載入",
-      "button.download_results_csv": "下載成績 (CSV)",
-      "message.results_downloaded": "成績已下載",
-      "message.results_download_failed": "下載失敗：{error}",
-      "button.clear_results": "清除全部歷史成績",
-      "button.clear_results_next": "下一步",
-      "button.clear_results_confirm": "確定清除",
-      "clear_results.title": "清除全部歷史成績",
-      "clear_results.step1_body": "目前已儲存 {count} 場比賽成績,清除後無法復原。建議先下載 CSV 備份;原始檔案會在主機上保留為 .bak 備份,但大螢幕的總排名將會變成空白。",
-      "clear_results.step1_body_empty": "目前沒有已儲存的比賽成績,無需清除。",
-      "clear_results.step2_title": "再次確認",
-      "clear_results.step2_body": "確定要清除 {count} 場成績嗎？此動作無法從頁面復原。",
-      "text.clear_results_loading": "讀取中…",
-      "text.clear_results_count_failed": "無法取得成績數量：{error}",
-      "message.clear_results_success": "已清除 {count} 場成績。備份檔案:{backup}",
-      "message.clear_results_race_running": "比賽進行中，無法清除",
-      "message.clear_results_unauthorized": "需要管理密碼，請先透過「操作者解鎖」設定密碼",
-      "message.clear_results_failed": "清除失敗：{error}",
-      "button.clear_roster": "清除名單",
-      "button.clear_roster_next": "下一步",
-      "button.clear_roster_confirm": "確定清除名單",
-      "clear_roster.title": "清除名單",
-      "clear_roster.step1_body": "將清除 待比賽 {pending}・目前這組 {loaded}・已完成 {done}・缺席 {absent}，比賽成績不受影響。",
-      "clear_roster.step1_body_empty": "目前沒有名單，無需清除。",
-      "clear_roster.step2_title": "再次確認",
-      "clear_roster.step2_body": "確定要清除全部名單（共 {total} 筆）嗎？此動作無法從頁面復原。",
-      "message.roster_cleared": "名單已清除。",
-      "message.clear_roster_race_running": "比賽進行中，無法清除名單",
-      "message.clear_roster_failed": "清除名單失敗：{error}",
-      "button.cancel_current_heat": "退回這組（重新排隊）",
-      "button.cancel_heat_confirm": "確定取消",
-      "cancel_heat.title": "退回這組（重新排隊）",
-      "cancel_heat.body": "確定要取消目前這組（{names}）嗎？他們將回到待比賽名單最前面。",
-      "message.heat_cancelled": "已取消目前這組。",
-      "message.cancel_heat_race_running": "比賽進行中，無法取消",
-      "message.cancel_heat_already_raced": "這組已經比過，請用載入下一組",
-      "message.cancel_heat_no_current_heat": "目前沒有已載入的分組",
-      "message.cancel_heat_failed": "取消失敗：{error}",
-      "text.postrace_hint_next_heat": "本組成績已保存。下一步：按「下一組上場」。",
-      "text.postrace_hint_roster_done": "本組成績已保存。名單已全部比完。",
-      "text.postrace_hint_saved": "本組成績已保存。",
-      "button.download_roster_template": "下載名單範本",
-      "message.roster_template_download_failed": "範本下載失敗：{error}",
-      "roster_import_preview.title": "預覽匯入名單",
-      "button.confirm_import": "確認匯入",
-      "roster_import_preview.replace_note": "將取代目前 {count} 筆名單",
-      "roster_import_preview.team_size_warning": "共 {count} 人，預期 {expected} 人",
-      "roster_import_preview.teamless_warning": "{count} 位選手未填隊伍（接力賽必填）",
-      "roster_error.missing_header_row": "CSV 沒有標題列",
-      "roster_error.missing_header_name": "缺少必要欄位：姓名",
-      "roster_error.missing_name": "缺少姓名",
-      "roster_error.name_too_long": "姓名過長（最多 80 字）：{value}",
-      "roster_error.invalid_division": "組別不正確：{value}",
-      "roster_error.team_too_long": "隊伍名稱過長（最多 80 字）：{value}",
-      "label.overall_standings_event": "總排名活動範圍",
-      "button.start_new_event": "開始新活動",
-      "text.event_start_none": "目前計入全部歷史紀錄。",
-      "text.event_start_since": "自 {time} 起。",
-      "text.start_new_event_note": "會將較舊的比賽排除在大螢幕總排名之外,不影響紀錄牆。",
-      "confirm.start_new_event": "確定要開始新活動嗎?較舊的比賽將不再計入大螢幕總排名。",
-      "message.new_event_started": "已開始新活動,總排名將從現在起算。",
-      "message.new_event_failed": "開始新活動失敗:{error}"
-    };
-
+    // This page's strings are stored as "game_admin.<key>" in the locale
+    // files; keys shared with other pages (readiness.*) have no prefix.
     function t(key, params = {}) {
-      let value = (dictionaries[currentLocale] || dictionaries["en-US"])[key] || dictionaries["en-US"][key] || key;
+      let value = messages[`game_admin.${key}`] || messages[key] || key;
       Object.entries(params).forEach(([name, replacement]) => {
         value = value.replaceAll(`{${name}}`, String(replacement));
       });
       return value;
     }
 
+    async function loadLocaleList() {
+      try {
+        const response = await fetch("/api/locales");
+        const payload = await response.json();
+        const select = $("language-select");
+        select.innerHTML = (payload.locales || []).map((entry) =>
+          `<option value="${escapeHtml(entry.code)}">${escapeHtml(entry.label)}</option>`
+        ).join("");
+        select.value = currentLocale;
+      } catch (_) {
+        // Non-fatal: the page works without the picker.
+      }
+    }
+
+    async function loadLocale(locale = currentLocale) {
+      const response = await fetch(`/api/locales/${encodeURIComponent(locale)}?t=${Date.now()}`);
+      const payload = await response.json();
+      currentLocale = payload.locale || "en-US";
+      messages = payload.messages || {};
+      localStorage.setItem("fitrace.locale", currentLocale);
+      document.documentElement.lang = currentLocale;
+      const select = $("language-select");
+      if (select) select.value = currentLocale;
+    }
+
+    async function setLanguage(locale) {
+      await loadLocale(locale);
+      applyTranslations();
+    }
+
     function applyTranslations() {
       document.documentElement.lang = currentLocale;
-      $("lang-en").classList.toggle("active", currentLocale === "en-US");
-      $("lang-zh").classList.toggle("active", currentLocale === "zh-TW");
       document.querySelectorAll("[data-i18n]").forEach((element) => {
         const key = element.dataset.i18n;
         element.textContent = t(key);
@@ -2203,35 +1633,6 @@
       // path instead of a second, separate guidance call here.
       syncMixedRaceFields();
       syncRaceFields();
-    }
-
-    // The readiness.* strings live in the hub's locale files, not in the
-    // inline dictionaries above: fetch the locale and merge only those keys.
-    function mergeReadinessMessages(locale, messages) {
-      const target = dictionaries[locale];
-      if (!target) return;
-      Object.keys(messages || {}).forEach((key) => {
-        if (key.startsWith("readiness.")) target[key] = messages[key];
-      });
-    }
-
-    async function loadReadinessMessages(locale) {
-      try {
-        const response = await fetch(`/api/locales/${encodeURIComponent(locale)}?t=${Date.now()}`);
-        if (!response.ok) return;
-        const payload = await response.json();
-        mergeReadinessMessages(locale, payload.messages);
-        renderReadinessPanel();
-      } catch (_) {
-        // Non-fatal: the readiness panel keeps showing the hub's English.
-      }
-    }
-
-    function setLanguage(lang) {
-      currentLocale = lang;
-      localStorage.setItem("fitrace.locale", lang);
-      applyTranslations();
-      loadReadinessMessages(lang);
     }
 
     function adminHeaders(extra = {}) {
@@ -3536,12 +2937,12 @@
     // Downloads the roster CSV template (GET /api/roster/template.csv),
     // picking mode/legs from the CURRENT race config (relay when
     // competition_mode is "relay", using its relay_legs) and mapping the
-    // page's currentLocale ("zh-TW"/"en-US") to the "zh-TW"/"en" the
-    // backend understands.
+    // page's currentLocale to the "zh-TW" / "zh-CN" / "en" the backend
+    // understands (every other locale gets the English template).
     async function downloadRosterTemplate() {
       const config = state.race?.config || {};
       const isRelay = config.competition_mode === "relay";
-      const lang = currentLocale === "zh-TW" ? "zh-TW" : "en";
+      const lang = currentLocale === "zh-TW" || currentLocale === "zh-CN" ? currentLocale : "en";
       const params = new URLSearchParams({ mode: isRelay ? "relay" : "individual", lang });
       if (isRelay && config.relay_legs) params.set("legs", String(config.relay_legs));
       try {
@@ -4327,14 +3728,25 @@
     $("race-type").addEventListener("change", syncMixedRaceFields);
     $("race-type").addEventListener("change", syncVisibility);
 
-    syncMixedRaceFields();
-    syncRaceFields();
-    syncCompetitionFields();
-    syncVisibility();
-    applyTranslations();
-    loadReadinessMessages(currentLocale);
-    connectWebSocket();
-    refreshAll();
+    // Start-up waits for the locale so nothing renders as a raw key. If the
+    // fetch fails the page still starts, showing the English in the HTML.
+    async function boot() {
+      loadLocaleList();
+      try {
+        await loadLocale();
+      } catch (_) {
+        // Non-fatal.
+      }
+      syncMixedRaceFields();
+      syncRaceFields();
+      syncCompetitionFields();
+      syncVisibility();
+      applyTranslations();
+      connectWebSocket();
+      refreshAll();
+    }
+
+    boot();
   </script>
 </body>
 </html>

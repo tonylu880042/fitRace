@@ -18,6 +18,7 @@ import re
 import subprocess
 import tempfile
 from pathlib import Path
+from page_locale import messages_js
 
 STATIC_DIR = Path(__file__).resolve().parents[3] / "hub_server" / "static"
 
@@ -86,17 +87,10 @@ def _extract_function(source: str, name: str) -> str:
     return source[start : brace_end + 1]
 
 
-def _extract_dictionaries_js(source: str) -> str:
-    const_start = source.index("const dictionaries = {")
-    const_open = source.index("{", const_start)
-    const_close = _matching_brace_end(source, const_open)
-
-    zh_marker = 'dictionaries["zh-TW"] = {'
-    zh_start = source.index(zh_marker, const_close)
-    zh_open = source.index("{", zh_start)
-    zh_close = _matching_brace_end(source, zh_open)
-
-    return source[const_start : zh_close + 1] + ";"
+def _extract_dictionaries_js(source: str, locale: str = "zh-TW") -> str:
+    """JS declaring `messages` as the page holds them after loadLocale()
+    for `locale` (the strings now live in the locale files)."""
+    return messages_js(locale)
 
 
 def _extract_t_function(source: str) -> str:
@@ -126,7 +120,7 @@ def _run_node(script: str) -> str:
 
 def _run_error_text(locale: str, error_js: str) -> str:
     source = _strip_js_comments(_read())
-    dict_js = _extract_dictionaries_js(source)
+    dict_js = _extract_dictionaries_js(source, locale)
     t_fn = _extract_t_function(source)
     error_text_fn = _extract_function(source, "rosterErrorText")
 

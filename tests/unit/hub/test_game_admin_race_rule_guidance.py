@@ -39,6 +39,7 @@ import json
 import re
 import subprocess
 from pathlib import Path
+from page_locale import page_dictionaries
 
 STATIC_DIR = Path(__file__).resolve().parents[3] / "hub_server" / "static"
 
@@ -557,25 +558,9 @@ _CJK_RE = re.compile(r"[一-鿿]")
 
 
 def _load_dictionaries() -> dict:
-    source = _read()
-    const_start = source.index("const dictionaries = {")
-    const_open = source.index("{", const_start)
-    const_close = _matching_brace_end(source, const_open)
-
-    zh_marker = 'dictionaries["zh-TW"] = {'
-    zh_start = source.index(zh_marker, const_close)
-    zh_open = source.index("{", zh_start)
-    zh_close = _matching_brace_end(source, zh_open)
-
-    js = source[const_start : zh_close + 1] + ";"
-    js += "\nconsole.log(JSON.stringify(dictionaries));"
-    result = subprocess.run(
-        ["node", "-e", js], capture_output=True, text=True, timeout=5
-    )
-    assert (
-        result.returncode == 0
-    ), f"node failed to evaluate dictionaries: {result.stderr}"
-    return json.loads(result.stdout)
+    """gameAdmin's strings from the locale files (`game_admin.` prefix
+    removed)."""
+    return page_dictionaries("game_admin.")
 
 
 def test_new_i18n_keys_exist_in_both_inline_dictionaries():
