@@ -56,8 +56,8 @@ _DIVISION_LOCALE_KEYS = {
 # hub_server/infrastructure/fastapi/app.py) -- matches the anonymous-name
 # fallback wording used on the public results pages (results.html's
 # athleteDisplayName), not the six-locale locale-file system.
-_STATION_WORD = {"zh-TW": "站位", "en-US": "Station"}
-_ATHLETE_WORD = {"zh-TW": "選手", "en-US": "Athlete"}
+_STATION_WORD = {"zh-TW": "站位", "zh-CN": "站位", "en-US": "Station"}
+_ATHLETE_WORD = {"zh-TW": "選手", "zh-CN": "选手", "en-US": "Athlete"}
 
 _DNF_RACE_TYPES = ("distance", "calories")
 

@@ -349,6 +349,7 @@
       const browserLang = navigator.language || navigator.userLanguage;
       if (browserLang) {
         const lower = browserLang.toLowerCase();
+        if (/^zh-(cn|hans|sg)/.test(lower)) return "zh-CN";
         if (lower.startsWith("zh")) return "zh-TW";
         if (lower.startsWith("it")) return "it";
         if (lower.startsWith("fr")) return "fr";

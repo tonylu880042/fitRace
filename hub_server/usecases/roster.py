@@ -21,11 +21,11 @@ MAX_TEAM_LENGTH = 80
 _BOM = "﻿"
 
 _NAME_ALIASES = {"name", "姓名", "名字"}
-_DIVISION_ALIASES = {"division", "組別", "性別"}
-_TEAM_ALIASES = {"team", "隊伍", "隊名"}
+_DIVISION_ALIASES = {"division", "組別", "性別", "组别", "性别"}
+_TEAM_ALIASES = {"team", "隊伍", "隊名", "队伍", "队名"}
 
-_MEN_VALUES = {"men", "male", "m", "男", "男子", "男子組"}
-_WOMEN_VALUES = {"women", "female", "f", "女", "女子", "女子組"}
+_MEN_VALUES = {"men", "male", "m", "男", "男子", "男子組", "男子组"}
+_WOMEN_VALUES = {"women", "female", "f", "女", "女子", "女子組", "女子组"}
 
 _STATUSES = ("pending", "loaded", "done", "absent")
 
@@ -200,6 +200,7 @@ def parse_roster_csv(text: str) -> tuple[list[dict[str, Any]], list[dict[str, An
 
 _TEMPLATE_HEADERS = {
     "zh-TW": ("姓名", "組別", "隊伍"),
+    "zh-CN": ("姓名", "组别", "队伍"),
     "en": ("name", "division", "team"),
 }
 
@@ -208,6 +209,11 @@ _TEMPLATE_INDIVIDUAL_ROWS = {
         ("王小明", "男", ""),
         ("林小華", "女", ""),
         ("陳大同", "", "熊隊"),
+    ],
+    "zh-CN": [
+        ("王小明", "男", ""),
+        ("林小华", "女", ""),
+        ("陈大同", "", "熊队"),
     ],
     "en": [
         ("Alex Chen", "men", ""),
@@ -218,6 +224,7 @@ _TEMPLATE_INDIVIDUAL_ROWS = {
 
 _TEMPLATE_RELAY_TEAM_NAMES = {
     "zh-TW": ("熊隊", "虎隊"),
+    "zh-CN": ("熊队", "虎队"),
     "en": ("Bears", "Tigers"),
 }
 
