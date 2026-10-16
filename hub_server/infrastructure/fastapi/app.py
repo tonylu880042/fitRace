@@ -62,6 +62,7 @@ from hub_server.usecases.data_backup import backup_files
 from hub_server.usecases.race_result_store import RaceResultStore
 from hub_server.usecases.race_results_query import RaceResultsQuery
 from hub_server.usecases.race_settings_store import RaceSettingsStore
+from hub_server.usecases.relay_teams import RelayTeamLibrary, plan_assignments
 from hub_server.usecases.results_export import build_results_csv
 from hub_server.usecases.roster import (
     MAX_NAME_LENGTH,
@@ -195,7 +196,7 @@ node_registry = NodeRegistry()
 
 
 def resolve_data_paths() -> dict[str, str]:
-    """The four persisted data files, resolved from env (the single source for
+    """The five persisted data files, resolved from env (the single source for
     both the stores below and the System Admin backup download)."""
     race_results = os.getenv("FITRACE_RACE_RESULTS_PATH", "data/race_results.jsonl")
     return {
@@ -206,17 +207,20 @@ def resolve_data_paths() -> dict[str, str]:
         ),
         "settings": os.getenv("FITRACE_RACE_SETTINGS_PATH", "data/race_settings.json"),
         "roster": os.getenv("FITRACE_ROSTER_PATH", "data/roster.json"),
+        "relay_teams": os.getenv("FITRACE_RELAY_TEAMS_PATH", "data/relay_teams.json"),
     }
 
 
 _data_paths = resolve_data_paths()
 _race_settings_path = _data_paths["settings"]
 _roster_path = _data_paths["roster"]
+_relay_teams_path = _data_paths["relay_teams"]
 race_manager = RaceManager(
     settings_store=RaceSettingsStore(_race_settings_path),
     clock_offset_ms_fn=node_registry.get_clock_offset_ms,
 )
 roster_manager = RosterManager(RaceSettingsStore(_roster_path))
+relay_team_library = RelayTeamLibrary(RaceSettingsStore(_relay_teams_path))
 ws_manager = WebSocketManager()
 race_event_engine = RaceEventEngine()
 _race_results_path = _data_paths["race_results"]
@@ -236,7 +240,13 @@ def build_backup_hook(paths):
 
 
 _backup_hook = build_backup_hook(
-    [_race_results_path, _class_results_path, _race_settings_path, _roster_path]
+    [
+        _race_results_path,
+        _class_results_path,
+        _race_settings_path,
+        _roster_path,
+        _relay_teams_path,
+    ]
 )
 race_result_store = RaceResultStore(_race_results_path, on_saved=_backup_hook)
 race_results_query = RaceResultsQuery(
@@ -342,6 +352,15 @@ class ChallengeModePayload(BaseModel):
 class AssignStationPayload(BaseModel):
     station_number: int = Field(..., ge=1)
     node_id: Optional[str] = None
+
+
+class RelayTeamPayload(BaseModel):
+    name: str
+    members: list[str] = Field(default_factory=list)
+
+
+class AssignRelayTeamsPayload(BaseModel):
+    assignments: Dict[str, Optional[str]] = Field(default_factory=dict)
 
 
 class RegisterAthletePayload(BaseModel):
@@ -2020,6 +2039,108 @@ def assigned_station_numbers() -> list[int]:
 def has_any_station_registration() -> bool:
     stations = race_manager.get_stations_status()["stations"]
     return any(station.get("registered") for station in stations.values())
+
+
+def _relay_library_call(action):
+    """Run a library mutation; unknown team -> 404, any other rule -> 400."""
+    try:
+        return action()
+    except ValueError as e:
+        status = 404 if str(e) == "team not found" else 400
+        raise HTTPException(status_code=status, detail=str(e))
+
+
+@app.get("/api/relay-teams")
+def list_relay_teams(request: Request):
+    require_admin(request)
+    return {"teams": relay_team_library.teams()}
+
+
+@app.post("/api/relay-teams")
+def create_relay_team(payload: RelayTeamPayload, request: Request):
+    require_admin(request)
+    return _relay_library_call(
+        lambda: relay_team_library.add(payload.name, payload.members)
+    )
+
+
+@app.put("/api/relay-teams/{team_id}")
+def update_relay_team(team_id: str, payload: RelayTeamPayload, request: Request):
+    require_admin(request)
+    return _relay_library_call(
+        lambda: relay_team_library.update(team_id, payload.name, payload.members)
+    )
+
+
+@app.delete("/api/relay-teams/{team_id}")
+def delete_relay_team(team_id: str, request: Request):
+    require_admin(request)
+    _relay_library_call(lambda: relay_team_library.delete(team_id))
+    return {"teams": relay_team_library.teams()}
+
+
+@app.post("/api/relay-teams/assign")
+async def assign_relay_teams(payload: AssignRelayTeamsPayload, request: Request):
+    require_admin(request)
+    if race_manager.get_state() not in (RaceState.IDLE, RaceState.READY):
+        raise HTTPException(
+            status_code=409,
+            detail="Race already started: press Next Race (or stop the race) first",
+        )
+    config = race_manager.get_config()
+    if config is None or config.competition_mode != "relay":
+        raise HTTPException(
+            status_code=409, detail="Save relay race settings in Game Admin first"
+        )
+
+    # Everything is validated BEFORE any race state is touched, so a rejected
+    # assignment leaves registrations and state exactly as they were.
+    try:
+        assignments = {int(k): v for k, v in payload.assignments.items()}
+        plan = plan_assignments(
+            relay_team_library.teams(),
+            assignments,
+            assigned_station_numbers(),
+            config.relay_legs,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if race_manager.get_state() == RaceState.IDLE:
+        # A hub restart loads the saved config straight into RaceManager
+        # without configure(); re-apply it so the race ends READY (same
+        # reason as load_next_heat).
+        apply_race_config(config)
+
+    race_manager.clear_station_registrations()
+    for station_number, team in plan:
+        race_manager.register_athlete(
+            station_number,
+            None,
+            team_name=team["name"],
+            division=None,
+            relay_members=team["members"],
+        )
+    await broadcast_race_state()
+    return get_stations_status_data()
+
+
+@app.post("/api/race/next-race")
+async def next_race(request: Request):
+    """Back to READY with the SAME race config and no registrations.
+
+    POST /api/race/reset is not usable for this: RaceManager.reset_race()
+    sets the config to None, which would make the next team assignment fail.
+    """
+    require_admin(request)
+    if race_manager.get_state() == RaceState.RUNNING:
+        raise HTTPException(status_code=409, detail="Race is running")
+    config = race_manager.get_config()
+    if config is None:
+        raise HTTPException(status_code=409, detail="save race settings first")
+    reset_race_state()
+    apply_race_config(config)
+    return await broadcast_race_state()
 
 
 def roster_summary_response() -> dict:
