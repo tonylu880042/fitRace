@@ -435,5 +435,6 @@
   "readiness.relay_teams_ready": "{count} 支接力隊伍已就緒。",
   "readiness.teams_individual": "個人賽；不套用團隊規則。",
   "readiness.sound_silent": "已選擇靜音開始。",
-  "teams.start_blocked": "目前無法開始，請查看上方的整備清單。"
+  "teams.start_blocked": "目前無法開始，請查看上方的整備清單。",
+  "teams.state_ready": "待開賽"
 }

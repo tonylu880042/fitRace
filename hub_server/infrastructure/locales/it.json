@@ -435,5 +435,6 @@
   "readiness.relay_teams_ready": "{count} squadra/e staffetta pronta/e.",
   "readiness.teams_individual": "Gara individuale; le regole di squadra non si applicano.",
   "readiness.sound_silent": "Partenza silenziosa selezionata.",
-  "teams.start_blocked": "Impossibile avviare ora. Controlla l'elenco di idoneità qui sopra."
+  "teams.start_blocked": "Impossibile avviare ora. Controlla l'elenco di idoneità qui sopra.",
+  "teams.state_ready": "In attesa di partenza"
 }

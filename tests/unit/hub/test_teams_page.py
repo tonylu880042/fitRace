@@ -210,11 +210,32 @@ def test_selections_from_stations_resolves_names_case_insensitively():
     assert selections == {"1": "a", "2": ""}
 
 
-def _control(state: str, stations: str) -> dict:
+READY_OK = "{ready: true}"
+
+
+def _control(state: str, stations: str, readiness: str = READY_OK) -> dict:
     return _run(
         ["assignedStationNumbers", "controlState"],
-        f'controlState("{state}", {stations})',
+        f'controlState("{state}", {stations}, false, {readiness})',
     )
+
+
+THREE_TEAMS = (
+    '{"1": {node_id: "n1", registered: true},'
+    ' "2": {node_id: "n2", registered: true},'
+    ' "3": {node_id: "n3", registered: true}}'
+)
+
+
+def test_start_stays_disabled_until_the_hub_says_ready():
+    assert _control("READY", THREE_TEAMS, "{ready: true}")["canStart"] is True
+    assert _control("READY", THREE_TEAMS, "{ready: false}")["canStart"] is False
+    assert _control("READY", THREE_TEAMS, "null")["canStart"] is False
+    assert _control("READY", THREE_TEAMS, "undefined")["canStart"] is False
+    # Readiness only gates Start; Stop / Next Race / Apply are unaffected.
+    blocked = _control("STOPPED", THREE_TEAMS, "{ready: false}")
+    assert blocked["canNextRace"] is True
+    assert _control("READY", THREE_TEAMS, "{ready: false}")["canAssign"] is True
 
 
 ALL_REGISTERED = (
@@ -278,7 +299,7 @@ def test_stop_only_when_running_and_next_race_only_when_stopped():
 def _control_during_countdown(state: str, countdown_active: str) -> dict:
     return _run(
         ["assignedStationNumbers", "controlState"],
-        f'controlState("{state}", {ALL_REGISTERED}, {countdown_active})',
+        f'controlState("{state}", {ALL_REGISTERED}, {countdown_active}, {READY_OK})',
     )
 
 
@@ -316,6 +337,11 @@ const messages = {
   "teams.readiness_blocked": "尚未就緒：{issues}",
   "teams.readiness_ready": "可以開始",
   "teams.start_blocked": "目前無法開始，請查看整備清單。",
+  "state.idle": "待機",
+  "state.ready": "準備就緒",
+  "state.running": "進行中",
+  "state.stopped": "已結束",
+  "teams.state_ready": "待開賽",
 };
 function t(key, params = {}) {
   let value = messages[key] || key;
@@ -423,6 +449,50 @@ def test_race_bar_shows_ready_text_and_no_warnings_when_ready():
         " warnings: [], warning_items: []}"
     )
     assert result == {"line": "可以開始", "warnings": ""}
+
+
+def _bar(raceState: str, readiness_js: str) -> dict:
+    return _run_script(
+        RENDER_BAR_FNS,
+        f"""
+const out = {{}};
+function $(id) {{
+  if (!out[id]) out[id] = {{ textContent: "", innerHTML: "", disabled: false, className: "" }};
+  return out[id];
+}}
+const state = {{
+  race: {{ state: "{raceState}", config: {{ competition_mode: "relay", relay_legs: 2 }} }},
+  stations: {{ stations: {{ "1": {{ node_id: "n1", registered: true }} }} }},
+  readiness: {readiness_js},
+  busy: false,
+}};
+renderRaceBar();
+console.log(JSON.stringify({{
+  badge: out["race-state-badge"].textContent,
+  startDisabled: out["btn-start"].disabled,
+}}));
+""",
+    )
+
+
+def test_start_button_is_disabled_while_readiness_blocks_and_enabled_when_ready():
+    blocked = _bar("READY", READINESS_PAYLOAD)
+    assert blocked["startDisabled"] is True
+    ready = _bar(
+        "READY",
+        "{ready: true, blocking_issues: [], blocking_items: [],"
+        " warnings: [], warning_items: []}",
+    )
+    assert ready["startDisabled"] is False
+    assert _bar("READY", "null")["startDisabled"] is True
+
+
+def test_badge_names_the_race_state_not_readiness():
+    # READY must not read "ready" (就緒) next to a "not ready" line.
+    assert _bar("READY", "null")["badge"] == "待開賽"
+    assert _bar("IDLE", "null")["badge"] == "待機"
+    assert _bar("RUNNING", "null")["badge"] == "進行中"
+    assert _bar("STOPPED", "null")["badge"] == "已結束"
 
 
 START_FAILURE_FNS = [

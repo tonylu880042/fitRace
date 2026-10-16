@@ -473,12 +473,15 @@
 
     // countdownActive: the 3-2-1 countdown is playing (the race is still READY
     // until Go), so nothing that changes teams or the race may run.
-    function controlState(raceState, stations, countdownActive) {
+    // readiness: the hub's /api/race/readiness payload; Start also needs
+    // readiness.ready === true (an unknown / failed fetch keeps it disabled).
+    function controlState(raceState, stations, countdownActive, readiness) {
       const assigned = assignedStationNumbers(stations);
       const registeredCount = assigned.filter((number) => stations[String(number)].registered).length;
       const idle = !countdownActive;
       return {
-        canStart: idle && raceState === "READY" && registeredCount > 0,
+        canStart: idle && raceState === "READY" && registeredCount > 0 && Boolean(readiness) && readiness.ready === true,
+        hasTeam: registeredCount > 0,
         unregisteredCount: assigned.length - registeredCount,
         canStop: raceState === "RUNNING",
         canNextRace: idle && raceState === "STOPPED",
@@ -620,9 +623,9 @@
 
     function renderRaceBar() {
       const raceState = raceStateName();
-      const controls = controlState(raceState, state.stations.stations, countdownActive());
+      const controls = controlState(raceState, state.stations.stations, countdownActive(), state.readiness);
       const badge = $("race-state-badge");
-      badge.textContent = t(`state.${raceState.toLowerCase()}`);
+      badge.textContent = t(raceState === "READY" ? "teams.state_ready" : `state.${raceState.toLowerCase()}`);
       badge.className = `state-badge ${raceState.toLowerCase()}`;
       $("btn-start").disabled = state.busy || !controls.canStart;
       $("btn-stop").disabled = state.busy || !controls.canStop;
@@ -649,17 +652,17 @@
         notice = t("teams.locked_running");
       } else if (state.race && state.race.config && legs === null) {
         notice = t("teams.not_relay");
-      } else if (raceState === "READY" && !controls.canStart) {
+      } else if (raceState === "READY" && !controls.hasTeam) {
         notice = t("teams.hint_need_one_team");
       }
       $("race-notice").textContent = notice;
-      $("start-warning").textContent = raceState === "READY" && controls.canStart && controls.unregisteredCount > 0
+      $("start-warning").textContent = raceState === "READY" && controls.hasTeam && controls.unregisteredCount > 0
         ? t("teams.warn_stations_without_team", { count: controls.unregisteredCount })
         : "";
     }
 
     function renderLibrary() {
-      const controls = controlState(raceStateName(), state.stations.stations, countdownActive());
+      const controls = controlState(raceStateName(), state.stations.stations, countdownActive(), state.readiness);
       const locked = controls.locked || state.busy;
       const list = $("team-list");
       if (!state.teams.length) {
@@ -700,7 +703,7 @@
     function renderStations() {
       const stations = state.stations.stations || {};
       const numbers = assignedStationNumbers(stations);
-      const controls = controlState(raceStateName(), stations, countdownActive());
+      const controls = controlState(raceStateName(), stations, countdownActive(), state.readiness);
       const disabled = !controls.canAssign || state.busy;
       const signature = JSON.stringify([
         numbers.map((n) => [n, stations[String(n)].registered, stations[String(n)].team_name, stations[String(n)].relay_members, stationDeviceName(stations[String(n)])]),
