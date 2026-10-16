@@ -342,6 +342,8 @@ const messages = {
   "state.running": "進行中",
   "state.stopped": "已結束",
   "teams.state_ready": "待開賽",
+  "teams.hint_need_one_team": "請至少為一個站位分配隊伍。",
+  "teams.warn_stations_without_team": "有 {count} 個站位沒有隊伍",
 };
 function t(key, params = {}) {
   let value = messages[key] || key;
@@ -518,6 +520,53 @@ def test_start_button_is_disabled_while_readiness_blocks_and_enabled_when_ready(
     )
     assert ready["startDisabled"] is False
     assert _bar("READY", "null")["startDisabled"] is True
+
+
+def _notices(stations_js: str, readiness_js: str = "{ready: false}") -> dict:
+    return _run_script(
+        RENDER_BAR_FNS,
+        f"""
+const out = {{}};
+function $(id) {{
+  if (!out[id]) out[id] = {{ textContent: "", innerHTML: "", disabled: false, className: "" }};
+  return out[id];
+}}
+const state = {{
+  race: {{ state: "READY", config: {{ competition_mode: "relay", relay_legs: 2 }} }},
+  stations: {{ stations: {stations_js} }},
+  readiness: {readiness_js},
+  busy: false,
+}};
+renderRaceBar();
+console.log(JSON.stringify({{
+  hint: out["race-notice"].textContent,
+  warning: out["start-warning"].textContent,
+}}));
+""",
+    )
+
+
+def test_ready_with_no_teams_shows_the_assign_hint_and_no_empty_station_warning():
+    # Even with readiness blocking, the operator is told what to do about
+    # teams; the "N stations have no team" warning would be nonsense here.
+    result = _notices(NONE_REGISTERED)
+    assert result == {"hint": "請至少為一個站位分配隊伍。", "warning": ""}
+
+
+def test_ready_with_some_teams_warns_about_empty_stations_and_shows_no_hint():
+    # 2 of 3 stations have a team, readiness blocking for another reason.
+    stations = (
+        '{"1": {node_id: "n1", registered: true},'
+        ' "2": {node_id: "n2", registered: true},'
+        ' "3": {node_id: "n3", registered: false}}'
+    )
+    for readiness in ("{ready: false}", "{ready: true}", "null"):
+        result = _notices(stations, readiness)
+        assert result == {"hint": "", "warning": "有 1 個站位沒有隊伍"}
+
+
+def test_ready_with_every_station_registered_shows_neither_notice():
+    assert _notices(ALL_REGISTERED) == {"hint": "", "warning": ""}
 
 
 def test_badge_names_the_race_state_not_readiness():
