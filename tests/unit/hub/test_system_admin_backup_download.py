@@ -6,6 +6,7 @@ words can never satisfy a test once the real markup/code is deleted."""
 
 import re
 from pathlib import Path
+from page_locale import dictionary_blocks
 
 STATIC_DIR = Path(__file__).resolve().parents[3] / "hub_server" / "static"
 KEYS = [
@@ -68,10 +69,9 @@ def test_handler_fetches_the_zip_with_admin_headers_and_downloads_a_blob():
 
 
 def _dictionaries(source: str):
-    code = _script(source)
-    en_start = code.index('"en-US": {')
-    zh_start = code.index('dictionaries["zh-TW"] = {')
-    return code[en_start:zh_start], code[zh_start:]
+    """(en-US, zh-TW) dictionary text blocks of System Admin's strings,
+    from the locale files (`system_admin.` prefix removed)."""
+    return dictionary_blocks("system_admin.")
 
 
 def test_new_keys_exist_in_both_dictionaries():

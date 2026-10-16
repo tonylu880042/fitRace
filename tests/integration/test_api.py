@@ -332,11 +332,14 @@ def test_management_controls_are_split_by_admin_role():
     assert "Edge Nodes" in response_system_admin.text
     assert "Station Assignment" in response_system_admin.text
     assert ">Assign</button>" in response_system_admin.text
-    assert "Unassign station" in response_system_admin.text
+    # System Admin's texts come from /api/locales too (system_admin.* keys).
+    system_en = client.get("/api/locales/en-US").json()["messages"]
+    system_zh = client.get("/api/locales/zh-TW").json()["messages"]
+    assert any("Unassign station" in value for value in system_en.values())
     assert "Software" in response_system_admin.text
     assert "Power Controls" in response_system_admin.text
-    assert '"sidebar.system_override": "Power Controls"' in response_system_admin.text
-    assert '"sidebar.system_override": "電源與重啟"' in response_system_admin.text
+    assert system_en["system_admin.sidebar.system_override"] == "Power Controls"
+    assert system_zh["system_admin.sidebar.system_override"] == "電源與重啟"
     assert "Maintenance Unlock" in response_system_admin.text
     assert "Access Code" in response_system_admin.text
     assert "Admin Token" not in response_system_admin.text
@@ -476,8 +479,18 @@ def test_system_admin_uses_friendly_stream_labels_and_filters_stale_edge_ids():
         "const staleAssigned = Boolean(staleStreamLabel(station.node_id, catalog));"
         in source
     )
-    assert '"text.stale_stream": "stale stream"' in source
-    assert '"text.stale_stream": "舊資料流"' in source
+    assert (
+        client.get("/api/locales/en-US").json()["messages"][
+            "system_admin.text.stale_stream"
+        ]
+        == "stale stream"
+    )
+    assert (
+        client.get("/api/locales/zh-TW").json()["messages"][
+            "system_admin.text.stale_stream"
+        ]
+        == "舊資料流"
+    )
 
 
 def test_power_status_endpoint_defaults_to_dry_run():

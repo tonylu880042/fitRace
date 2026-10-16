@@ -14,6 +14,7 @@ import re
 import subprocess
 import tempfile
 from pathlib import Path
+from page_locale import dictionary_blocks
 
 STATIC_DIR = Path(__file__).resolve().parents[3] / "hub_server" / "static"
 
@@ -486,10 +487,7 @@ NEW_I18N_KEYS = [
 
 def test_new_orphaned_i18n_keys_present_in_en_us():
     """All orphaned-stations i18n keys must exist in en-US dictionary."""
-    source = _read()
-    en_start = source.index('"en-US": {')
-    zh_start = source.index('dictionaries["zh-TW"] = {')
-    en_block = source[en_start:zh_start]
+    en_block, _ = dictionary_blocks("system_admin.")
 
     for key in NEW_I18N_KEYS:
         assert f'"{key}":' in en_block, f"{key} missing from en-US dictionary"
@@ -497,9 +495,7 @@ def test_new_orphaned_i18n_keys_present_in_en_us():
 
 def test_new_orphaned_i18n_keys_present_in_zh_tw():
     """All orphaned-stations i18n keys must exist in zh-TW dictionary."""
-    source = _read()
-    zh_start = source.index('dictionaries["zh-TW"] = {')
-    zh_block = source[zh_start : zh_start + 8000]
+    _, zh_block = dictionary_blocks("system_admin.")
 
     for key in NEW_I18N_KEYS:
         assert f'"{key}":' in zh_block, f"{key} missing from zh-TW dictionary"

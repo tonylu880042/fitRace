@@ -14,10 +14,7 @@ does not edit) so a mis-nested edit to either dictionary object literal
 fails loudly here too, not just silently in that file.
 """
 
-import json
 import re
-import subprocess
-import tempfile
 from pathlib import Path
 
 from page_locale import page_dictionaries
@@ -39,71 +36,12 @@ def _read(page: str) -> str:
     return _HTML_COMMENT_RE.sub("", raw)
 
 
-def _matching_brace_end(source: str, open_idx: int) -> int:
-    depth = 0
-    i = open_idx
-    in_str = None
-    while i < len(source):
-        char = source[i]
-        if in_str:
-            if char == "\\":
-                i += 2
-                continue
-            if char == in_str:
-                in_str = None
-        elif char in ('"', "'", "`"):
-            in_str = char
-        elif char == "{":
-            depth += 1
-        elif char == "}":
-            depth -= 1
-            if depth == 0:
-                return i
-        i += 1
-    raise ValueError("no matching closing brace found")
-
-
-def _extract_dictionaries_js(source: str) -> str:
-    const_start = source.index("const dictionaries = {")
-    const_open = source.index("{", const_start)
-    const_close = _matching_brace_end(source, const_open)
-
-    zh_marker = 'dictionaries["zh-TW"] = {'
-    zh_start = source.index(zh_marker, const_close)
-    zh_open = source.index("{", zh_start)
-    zh_close = _matching_brace_end(source, zh_open)
-
-    return source[const_start : zh_close + 1] + ";"
-
-
-def _load_dictionaries(source: str) -> dict:
-    js = _extract_dictionaries_js(source)
-    js += "\nconsole.log(JSON.stringify(dictionaries));"
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".js", delete=False) as tmp_file:
-        tmp_file.write(js)
-        tmp_file.flush()
-        tmp_path = tmp_file.name
-    try:
-        result = subprocess.run(
-            ["node", tmp_path], capture_output=True, text=True, timeout=5
-        )
-        assert (
-            result.returncode == 0
-        ), f"node failed to evaluate dictionaries: {result.stderr}"
-        return json.loads(result.stdout)
-    finally:
-        Path(tmp_path).unlink()
-
-
-# Pages whose text now lives in the locale files (zh-CN work); the others
-# still carry inline dictionaries.
-_LOCALE_PREFIX = {"gameAdmin.html": "game_admin."}
+# The pages' text lives in the locale files (zh-CN work), under a page prefix.
+_LOCALE_PREFIX = {"gameAdmin.html": "game_admin.", "systemAdmin.html": "system_admin."}
 
 
 def _dictionaries(page: str) -> dict:
-    if page in _LOCALE_PREFIX:
-        return page_dictionaries(_LOCALE_PREFIX[page])
-    return _load_dictionaries(_read(page))
+    return page_dictionaries(_LOCALE_PREFIX[page])
 
 
 _NAV_BUTTON_RE = re.compile(

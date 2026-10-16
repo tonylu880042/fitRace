@@ -277,12 +277,12 @@ _IDENTICAL_VALUE_ALLOWLIST = {}
 
 def test_game_admin_and_system_admin_inline_dictionaries_stay_symmetric():
     for name in ("gameAdmin.html", "systemAdmin.html"):
+        # Both pages' strings live in the locale files (page-prefixed keys).
         if name == "gameAdmin.html":
-            # Moved to the locale files (game_admin.* keys).
             dictionaries = page_dictionaries("game_admin.")
             allowed_same = {"title"}  # the dashboard's "Game Admin" product name
         else:
-            dictionaries = _load_dictionaries(_read(name))
+            dictionaries = page_dictionaries("system_admin.")
             allowed_same = set()
         en = dictionaries["en-US"]
         zh = dictionaries["zh-TW"]

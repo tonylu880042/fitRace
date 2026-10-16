@@ -551,21 +551,10 @@
       align-items: center;
     }
 
-    .lang-toggle {
-      display: flex;
-      gap: 4px;
-    }
-
-    .lang-toggle button {
-      min-width: 50px;
-      padding: 0 10px;
-      font-size: 12px;
-    }
-
-    .lang-toggle button.active {
-      background: var(--accent);
-      border-color: var(--accent);
-      color: #09090b;
+    #language-select {
+      width: auto;
+      height: 42px;
+      padding: 0 8px;
     }
 
     .pill {
@@ -1088,10 +1077,7 @@
         <p data-i18n="header.subtitle">Edge node status · software updates · system maintenance</p>
       </div>
       <div class="top-actions">
-        <span class="lang-toggle">
-          <button type="button" id="lang-en" onclick="setLanguage('en-US')">EN</button>
-          <button type="button" id="lang-zh" onclick="setLanguage('zh-TW')">中文</button>
-        </span>
+        <select id="language-select" onchange="setLanguage(this.value)"></select>
         <div class="pill"><span class="dot" id="ws-dot"></span><span id="ws-label" data-i18n="status.offline">Offline</span></div>
         <div class="pill" id="version-pill">Hub v--</div>
         <button type="button" class="nav-link" onclick="window.location.href='/'"><span data-i18n="nav.dashboard">Dashboard</span></button>
@@ -1343,323 +1329,69 @@
 
     function getBrowserLocale() {
       const saved = localStorage.getItem("fitrace.locale");
-      if (saved === "en-US" || saved === "zh-TW") return saved;
+      if (saved) return saved;
       const browserLang = navigator.language || navigator.userLanguage;
-      if (browserLang && browserLang.toLowerCase().startsWith("zh")) {
-        return "zh-TW";
+      if (browserLang) {
+        const lower = browserLang.toLowerCase();
+        if (/^zh-(cn|hans|sg)/.test(lower)) return "zh-CN";
+        if (lower.startsWith("zh")) return "zh-TW";
+        if (lower.startsWith("it")) return "it";
+        if (lower.startsWith("fr")) return "fr";
+        if (lower.startsWith("de")) return "de-CH";
+        if (lower.startsWith("sv")) return "sv";
+        if (lower.startsWith("en")) return "en-US";
       }
       return "en-US";
     }
 
     let currentLocale = getBrowserLocale();
 
-    const dictionaries = {
-      "en-US": {
-        "status.offline": "Offline",
-        "status.online": "Online",
-        "nav.dashboard": "Dashboard",
-        "nav.game_admin": "Game Admin",
-        "nav.class_admin": "Class Admin",
-        "nav.signup": "Signup",
-        "nav.results": "Results",
-        "nav.maintenance_unlock": "Maintenance Unlock",
-        "sidebar.admin_console": "Admin Console",
-        "sidebar.overview": "Overview",
-        "sidebar.edge_nodes": "Edge Nodes",
-        "sidebar.stations": "Stations",
-        "sidebar.network": "Network",
-        "sidebar.software": "Software",
-        "sidebar.system_override": "Power Controls",
-        "sidebar.documentation": "Documentation",
-        "sidebar.support": "Support",
-        "panel.edge_nodes": "Edge Nodes",
-        "panel.station_assignment": "Station Assignment",
-        "panel.wifi_network": "Wi-Fi Network",
-        "panel.software": "Software",
-        "panel.power_controls": "Power Controls",
-        "panel.support": "Support",
-        "button.copy_signup_link": "Copy Signup Link",
-        "button.clear_all_stations": "Clear All Stations",
-        "button.clear_orphaned_stations": "Clear Orphaned Stations",
-        "button.assign": "Assign",
-        "button.check_now": "Check Now",
-        "button.update_hub": "Update Hub to {version}",
-        "button.restart_hub_service": "Restart Hub Service",
-        "button.reboot_hub": "Reboot Hub",
-        "button.shutdown_hub": "Shutdown Hub",
-        "button.shutdown_system": "Shutdown System",
-        "button.choose_wifi_network": "Choose Wi-Fi network",
-        "button.copy_system_report": "Copy System Report",
-        "button.refresh": "Refresh",
-        "button.save": "Save",
-        "button.cancel": "Cancel",
-        "label.station": "Station",
-        "label.telemetry_stream": "Telemetry Stream",
-        "label.access_code": "Access Code",
-        "text.idle_only": "Allowed only while race is IDLE.",
-        "wifi.networks_title": "Wi-Fi networks",
-        "wifi.scanning": "Scanning (about 10 seconds)...",
-        "wifi.no_networks": "No networks found.",
-        "wifi.password": "Password",
-        "wifi.back": "Back",
-        "wifi.connect": "Connect",
-        "wifi.rescan": "Rescan",
-        "wifi.connected": "Connected",
-        "support.system_report": "system report",
-        "support.intro": "When reporting a problem, copy the snapshot below and send it to the FitRace team together with what you were doing.",
-        "login.title": "Maintenance Unlock",
-        "login.description": "Enter the maintenance access code for protected system actions. Local test systems can leave this blank until protection is enabled.",
-        "table.equipment": "Equipment",
-        "table.channel": "Channel",
-        "table.ble_target": "BLE Target",
-        "table.link": "Link",
-        "table.last_data": "Last Data",
-        "table.station": "Station",
-        "table.status": "Status",
-        "table.stream": "Stream",
-        "table.action": "Action",
-        "text.online": "online",
-        "text.assigned": "Assigned",
-        "text.empty": "Empty",
-        "text.stream_available": "Stream available",
-        "text.stale_stream": "stale stream",
-        "text.connected": "connected",
-        "text.idle": "idle",
-        "text.no_data": "no data",
-        "text.no_edge_heartbeat": "No Edge Node heartbeat received.",
-        "text.no_station_or_stream": "No station or active telemetry stream is available.",
-        "text.unassign_title": "Unassign station",
-        "text.open_device_page": "Open Device Page",
-        "header.subtitle": "Edge node status · software updates · system maintenance",
-        "power.idle_only_pill": "IDLE only",
-        "update.state_never_checked": "never checked",
-        "update.state_current": "current",
-        "update.state_available": "available",
-        "update.state_downloaded": "downloaded",
-        "update.state_hub_installed": "hub installed",
-        "update.state_error": "error",
-        "update.strip_up_to_date": "up to date",
-        "update.strip_update_available": "update available",
-        "update.no_check_completed": "No update check has completed in this browser session.",
-        "wifi.level_excellent": "Excellent",
-        "wifi.level_good": "Good",
-        "wifi.level_fair": "Fair",
-        "wifi.level_weak": "Weak",
-        "wifi.level_poor": "Poor",
-        "wifi.checking": "Checking",
-        "wifi.disconnected": "Disconnected",
-        "confirm.update_hub": "Update Hub to {version}? This downloads, installs, and restarts the Hub (about 1 minute). Do not do this during a race.",
-        "wifi.choose_network": "Choose a Wi-Fi network to connect.",
-        "wifi.not_connected": "not connected",
-        "message.password_required": "Password is required.",
-        "message.access_code_saved": "Access code saved.",
-        "wifi.connecting_to": "Connecting to {ssid}...",
-        "wifi.connected_to": "Connected to {ssid}. IP: {ip}",
-        "text.no_streams_discovered": "No streams discovered",
-        "wifi.select_ap_hint": "Select the AP this hub should connect to.",
-        "wifi.ip_change_warning": "The hub's IP may change and remote browsers will disconnect.",
-        "confirm.unassign_station": "Unassign station {stationNumber}?",
-        "confirm.clear_all_stations": "Clear all {count} station assignment(s)?",
-        "confirm.clear_orphaned_stations": "Clear {count} orphaned station(s) whose assigned devices no longer exist?",
-        "message.select_station_and_stream": "Select a station number and telemetry stream.",
-        "message.no_assigned_stations": "No stations are currently assigned.",
-        "message.station_assigned": "Station {stationNumber} assigned to {nodeId}.",
-        "message.station_unassigned": "Station {stationNumber} unassigned.",
-        "message.clear_all_stations_success": "All station assignments cleared.",
-        "message.clear_all_stations_partial_failure": "Could not clear: stations {stations}. They remain assigned.",
-        "message.no_orphaned_stations": "No orphaned stations to clear.",
-        "message.clear_orphaned_stations_success": "Orphaned station assignments cleared.",
-        "message.clear_orphaned_stations_partial_failure": "Could not clear: stations {stations}. They remain assigned.",
-        "message.signup_link_copied": "Signup link copied.",
-        "message.select_and_copy_link": "Select and copy the signup link.",
-        "message.report_copied": "Report copied to clipboard.",
-        "message.copy_failed": "Copy failed — select the text above and copy manually.",
-        "message.update_hub_downloading": "Downloading and installing…",
-        "message.update_hub_restarting": "Hub restarting…",
-        "message.update_hub_timeout": "Still waiting for the Hub to come back. Reload the page in a bit — the update may have rolled back.",
-        "text.unknown": "Unknown",
-        "warning.unassigned_streams": "{count} telemetry stream(s) are unassigned and will not take part in a race until assigned to a station.",
-        "warning.orphaned_stations": "{count} station(s) are assigned to devices that no longer exist. Their assignments should be cleared.",
-        "dialog.unassigned_title": "Unassigned telemetry streams",
-        "dialog.unassigned_message": "{count} telemetry stream(s) became unassigned. They will not take part in a race until you assign them to a station.",
-        "button.assign_all_unassigned": "Assign all to next open stations",
-        "message.assign_all_partial_failure": "Could not assign: {streams}. They are still unassigned.",
-        "message.station_loaded": "Station {stationNumber} loaded into the form above — adjust and press Assign.",
-        "text.edit_in_form": "Edit in form above",
-        "panel.clear_results": "Clear Race Results",
-        "text.clear_results_intro": "Archives every finished race result (practice runs included) so the record wall, latest-race slide, and results pages start fresh. Class results, roster, and station assignments are kept. A backup of the cleared file stays on this device.",
-        "label.system_admin_password": "Enter system admin password",
-        "button.clear_results": "Clear Race Results",
-        "confirm.clear_results": "Clear all race results? A backup will be kept first.",
-        "message.clear_results_wrong_password": "Wrong password.",
-        "message.clear_results_not_configured": "Admin password is not configured on this hub.",
-        "message.clear_results_race_running": "A race is running.",
-        "message.clear_results_success": "Cleared {count} results. Backup: {file}",
-        "button.download_backup": "Download Backup",
-        "message.backup_downloaded": "Backup downloaded.",
-        "message.backup_download_failed": "Backup download failed: {detail}"
-      }
-    };
+    // Every string comes from the hub locale files (/api/locales/{locale}).
+    // Until the fetch completes the English already in the HTML shows.
+    let messages = {};
 
-    dictionaries["zh-TW"] = {
-      ...dictionaries["en-US"],
-      "status.offline": "離線",
-      "status.online": "上線",
-      "nav.dashboard": "儀表板",
-      "nav.game_admin": "比賽管理",
-      "nav.class_admin": "課程管理",
-      "nav.signup": "報名",
-      "nav.results": "成績",
-      "nav.maintenance_unlock": "維護解鎖",
-      "sidebar.admin_console": "管理控制台",
-      "sidebar.overview": "概觀",
-      "sidebar.edge_nodes": "Edge 節點",
-      "sidebar.stations": "站位",
-      "sidebar.network": "網路",
-      "sidebar.software": "軟體",
-      "sidebar.system_override": "電源與重啟",
-      "sidebar.documentation": "文件",
-      "sidebar.support": "支援",
-      "panel.edge_nodes": "Edge 節點",
-      "panel.station_assignment": "站位指派",
-      "panel.wifi_network": "Wi-Fi 網路",
-      "panel.software": "軟體",
-      "panel.power_controls": "電源控制",
-      "panel.support": "支援",
-      "button.copy_signup_link": "複製報名連結",
-      "button.clear_all_stations": "清除所有站位指派",
-      "button.clear_orphaned_stations": "清除孤立的站位",
-      "button.assign": "指派",
-      "button.check_now": "立即檢查",
-      "button.update_hub": "更新 Hub 至 {version}",
-      "button.restart_hub_service": "重啟 Hub 服務",
-      "button.reboot_hub": "重開機 Hub",
-      "button.shutdown_hub": "關閉 Hub",
-      "button.shutdown_system": "關閉系統",
-      "button.choose_wifi_network": "選擇 Wi-Fi 網路",
-      "button.copy_system_report": "複製系統報告",
-      "button.refresh": "重新整理",
-      "button.save": "儲存",
-      "button.cancel": "取消",
-      "label.station": "站位",
-      "label.telemetry_stream": "遙測資料流",
-      "label.access_code": "存取碼",
-      "text.idle_only": "只允許在比賽 IDLE 時執行。",
-      "wifi.networks_title": "Wi-Fi 網路",
-      "wifi.scanning": "掃描中(約 10 秒)...",
-      "wifi.no_networks": "找不到網路。",
-      "wifi.password": "密碼",
-      "wifi.back": "上一步",
-      "wifi.connect": "連線",
-      "wifi.rescan": "重新掃描",
-      "wifi.connected": "已連線",
-      "support.system_report": "系統報告",
-      "support.intro": "回報問題時,請複製下方快照並連同操作情境一起寄給 FitRace 團隊。",
-      "login.title": "維護解鎖",
-      "login.description": "輸入受保護系統操作的維護存取碼。本機測試系統可以先留空,待啟用保護後再更新。",
-      "table.equipment": "設備",
-      "table.channel": "通道",
-      "table.ble_target": "BLE 目標",
-      "table.link": "連結",
-      "table.last_data": "最後資料",
-      "table.station": "站位",
-      "table.status": "狀態",
-      "table.stream": "資料流",
-      "table.action": "操作",
-      "text.online": "上線",
-      "text.assigned": "已指派",
-      "text.empty": "空位",
-      "text.stream_available": "可用資料流",
-      "text.stale_stream": "舊資料流",
-      "text.connected": "已連線",
-      "text.idle": "閒置",
-      "text.no_data": "無資料",
-      "text.no_edge_heartbeat": "未收到 Edge Node 心跳。",
-      "text.no_station_or_stream": "沒有站位或活躍的遙測資料流。",
-      "text.unassign_title": "解除站位指派",
-      "text.open_device_page": "開啟裝置頁面",
-      "header.subtitle": "Edge 節點狀態 · 軟體更新 · 系統維護",
-      "power.idle_only_pill": "僅限 IDLE",
-      "update.state_never_checked": "尚未檢查",
-      "update.state_current": "目前版本",
-      "update.state_available": "有更新",
-      "update.state_downloaded": "已下載",
-      "update.state_hub_installed": "Hub 已安裝",
-      "update.state_error": "錯誤",
-      "update.strip_up_to_date": "已是最新版本",
-      "update.strip_update_available": "有可用更新",
-      "update.no_check_completed": "此瀏覽器工作階段尚未完成任何更新檢查。",
-      "wifi.level_excellent": "極佳",
-      "wifi.level_good": "良好",
-      "wifi.level_fair": "普通",
-      "wifi.level_weak": "微弱",
-      "wifi.level_poor": "極弱",
-      "wifi.checking": "偵測中",
-      "wifi.disconnected": "未連線",
-      "confirm.update_hub": "確定要將 Hub 更新至 {version} 嗎？這會下載、安裝並重新啟動 Hub（約需一分鐘）。請勿在比賽進行中執行。",
-      "wifi.choose_network": "請選擇要連線的 Wi-Fi 網路。",
-      "wifi.not_connected": "未連線",
-      "message.password_required": "請輸入密碼。",
-      "message.access_code_saved": "存取碼已儲存。",
-      "wifi.connecting_to": "正在連線至 {ssid}...",
-      "wifi.connected_to": "已連線至 {ssid}。IP:{ip}",
-      "text.no_streams_discovered": "未發現任何資料流",
-      "wifi.select_ap_hint": "請選擇這台 Hub 要連線的無線基地台(AP)。",
-      "wifi.ip_change_warning": "Hub 的 IP 可能會改變,遠端瀏覽器將會中斷連線。",
-      "confirm.unassign_station": "確定要解除站位 {stationNumber} 的指派?",
-      "confirm.clear_all_stations": "確定要清除所有 {count} 個站位指派?",
-      "confirm.clear_orphaned_stations": "確定要清除 {count} 個孤立站位(其指派的設備已不存在)?",
-      "message.select_station_and_stream": "請選擇站位編號與遙測資料流。",
-      "message.no_assigned_stations": "目前沒有已指派的站位。",
-      "message.station_assigned": "站位 {stationNumber} 已指派給 {nodeId}。",
-      "message.station_unassigned": "站位 {stationNumber} 已解除指派。",
-      "message.clear_all_stations_success": "所有站位指派已清除。",
-      "message.clear_all_stations_partial_failure": "無法清除:站位 {stations}。它們仍為指派狀態。",
-      "message.no_orphaned_stations": "沒有孤立的站位可清除。",
-      "message.clear_orphaned_stations_success": "孤立站位指派已清除。",
-      "message.clear_orphaned_stations_partial_failure": "無法清除:站位 {stations}。它們仍為指派狀態。",
-      "message.signup_link_copied": "報名連結已複製。",
-      "message.select_and_copy_link": "請選取並複製報名連結。",
-      "message.report_copied": "報告已複製到剪貼簿。",
-      "message.copy_failed": "複製失敗 — 請選取上方文字並手動複製。",
-      "message.update_hub_downloading": "下載並安裝中…",
-      "message.update_hub_restarting": "Hub 重新啟動中…",
-      "message.update_hub_timeout": "Hub 尚未恢復，請稍後重新整理頁面 — 更新可能已回滾。",
-      "text.unknown": "未知",
-      "warning.unassigned_streams": "有 {count} 個遙測資料流尚未指派站位,在指派站位前不會參與比賽。",
-      "warning.orphaned_stations": "{count} 個站位指派給已不存在的設備。應清除這些指派。",
-      "dialog.unassigned_title": "尚未指派的遙測資料流",
-      "dialog.unassigned_message": "有 {count} 個資料流變成未指派狀態。在指派站位前,它們不會參與比賽。",
-      "button.assign_all_unassigned": "全部指派至下一個空站位",
-      "message.assign_all_partial_failure": "無法指派:{streams}。這些資料流仍為未指派狀態。",
-      "message.station_loaded": "站位 {stationNumber} 已載入上方表單,請調整後按「指派」。",
-      "text.edit_in_form": "在上方表單中編輯",
-      "panel.clear_results": "清除比賽紀錄",
-      "text.clear_results_intro": "封存所有已完成的比賽成績(含練習賽),讓紀錄牆、最新賽事投影片與成績頁面重新開始。課堂成績、名冊與站位指派不受影響。系統會在本機保留一份被清除檔案的備份。",
-      "label.system_admin_password": "請輸入系統管理員密碼",
-      "button.clear_results": "清除比賽紀錄",
-      "confirm.clear_results": "確定要清除所有比賽成績嗎？系統會先保留備份檔",
-      "message.clear_results_wrong_password": "密碼錯誤",
-      "message.clear_results_not_configured": "這台 hub 尚未設定管理員密碼",
-      "message.clear_results_race_running": "比賽進行中，無法清除",
-      "message.clear_results_success": "已清除 {count} 筆成績，備份：{file}",
-      "button.download_backup": "下載資料備份",
-      "message.backup_downloaded": "已下載備份檔",
-      "message.backup_download_failed": "備份下載失敗：{detail}"
-    };
-
+    // This page's strings are stored as "system_admin.<key>" in the locale
+    // files; keys shared with other pages have no prefix.
     function t(key, params = {}) {
-      let value = (dictionaries[currentLocale] || dictionaries["en-US"])[key] || dictionaries["en-US"][key] || key;
+      let value = messages[`system_admin.${key}`] || messages[key] || key;
       Object.entries(params).forEach(([name, replacement]) => {
         value = value.replaceAll(`{${name}}`, String(replacement));
       });
       return value;
     }
 
+    async function loadLocaleList() {
+      try {
+        const response = await fetch("/api/locales");
+        const payload = await response.json();
+        const select = $("language-select");
+        select.innerHTML = (payload.locales || []).map((entry) =>
+          `<option value="${escapeHtml(entry.code)}">${escapeHtml(entry.label)}</option>`
+        ).join("");
+        select.value = currentLocale;
+      } catch (_) {
+        // Non-fatal: the page works without the picker.
+      }
+    }
+
+    async function loadLocale(locale = currentLocale) {
+      const response = await fetch(`/api/locales/${encodeURIComponent(locale)}?t=${Date.now()}`);
+      const payload = await response.json();
+      currentLocale = payload.locale || "en-US";
+      messages = payload.messages || {};
+      localStorage.setItem("fitrace.locale", currentLocale);
+      document.documentElement.lang = currentLocale;
+      const select = $("language-select");
+      if (select) select.value = currentLocale;
+    }
+
+    async function setLanguage(locale) {
+      await loadLocale(locale);
+      applyTranslations();
+    }
+
     function applyTranslations() {
       document.documentElement.lang = currentLocale;
-      $("lang-en").classList.toggle("active", currentLocale === "en-US");
-      $("lang-zh").classList.toggle("active", currentLocale === "zh-TW");
       document.querySelectorAll("[data-i18n]").forEach((element) => {
         const key = element.dataset.i18n;
         if (element.tagName === "BUTTON" && element.querySelector("span")) {
@@ -1674,12 +1406,6 @@
       renderStations();
       renderUpdate();
       renderWifiStatus(state.wifi || {connected:false});
-    }
-
-    function setLanguage(lang) {
-      currentLocale = lang;
-      localStorage.setItem("fitrace.locale", lang);
-      applyTranslations();
     }
 
     function adminHeaders(extra = {}) {
@@ -2764,16 +2490,28 @@
       if (event.key === "Escape" && $("unassigned-dialog").classList.contains("show")) closeUnassignedDialog();
     });
 
-    connectWebSocket();
-    updateSignupLink();
-    applyTranslations();
-    refreshAll();
-    if (!state.adminToken && !localStorage.getItem("fitrace.unlockPromptShown")) {
-      window.setTimeout(() => {
-        openLogin();
-        localStorage.setItem("fitrace.unlockPromptShown", "true");
-      }, 250);
+    // Start-up waits for the locale so nothing renders as a raw key. If the
+    // fetch fails the page still starts, showing the English in the HTML.
+    async function boot() {
+      loadLocaleList();
+      try {
+        await loadLocale();
+      } catch (_) {
+        // Non-fatal.
+      }
+      connectWebSocket();
+      updateSignupLink();
+      applyTranslations();
+      refreshAll();
+      if (!state.adminToken && !localStorage.getItem("fitrace.unlockPromptShown")) {
+        window.setTimeout(() => {
+          openLogin();
+          localStorage.setItem("fitrace.unlockPromptShown", "true");
+        }, 250);
+      }
     }
+
+    boot();
   </script>
 </body>
 </html>

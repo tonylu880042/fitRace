@@ -20,6 +20,7 @@ PAGES = [
     "result.html",
     "results.html",
     "gameAdmin.html",
+    "systemAdmin.html",
 ]
 
 
