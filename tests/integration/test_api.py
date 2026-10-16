@@ -178,6 +178,7 @@ def test_locales_endpoint_defaults_to_english_and_lists_supported_locales():
     assert [locale["code"] for locale in payload["locales"]] == [
         "en-US",
         "zh-TW",
+        "zh-CN",
         "it",
         "fr",
         "de-CH",
