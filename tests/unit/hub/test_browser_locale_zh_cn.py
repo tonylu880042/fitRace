@@ -22,6 +22,7 @@ PAGES = [
     "gameAdmin.html",
     "systemAdmin.html",
     "signup.html",
+    "docs.html",
 ]
 
 
