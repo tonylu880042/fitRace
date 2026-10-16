@@ -436,5 +436,16 @@
   "readiness.sound_silent": "Départ silencieux sélectionné.",
   "teams.start_blocked": "Démarrage impossible pour le moment. Consultez la liste ci-dessus.",
   "teams.state_ready": "En attente du départ",
-  "teams.readiness_blocked_title": "Pas prêt :"
+  "teams.readiness_blocked_title": "Pas prêt :",
+  "signup_page.signup.subtitle": "Inscription athlète",
+  "signup_page.signup.avatar": "Avatar athlète",
+  "signup_page.signup.station_select": "Sélectionner un poste",
+  "signup_page.signup.athlete_name": "Nom de l'athlète (facultatif)",
+  "signup_page.signup.athlete_placeholder": "Saisir le nom...",
+  "signup_page.signup.team": "Équipe (facultatif)",
+  "signup_page.signup.division": "Catégorie (facultatif)",
+  "signup_page.signup.division_none": "Aucune catégorie",
+  "signup_page.signup.division_men": "Hommes",
+  "signup_page.signup.division_women": "Femmes",
+  "signup_page.signup.submit": "S'inscrire"
 }

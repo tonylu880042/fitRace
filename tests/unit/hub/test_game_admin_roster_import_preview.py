@@ -16,6 +16,7 @@ import json
 import re
 import subprocess
 from pathlib import Path
+from page_locale import messages_js
 
 STATIC_DIR = Path(__file__).resolve().parents[3] / "hub_server" / "static"
 
@@ -84,17 +85,10 @@ def _extract_function(source: str, name: str) -> str:
     return source[start : brace_end + 1]
 
 
-def _extract_dictionaries_js(source: str) -> str:
-    const_start = source.index("const dictionaries = {")
-    const_open = source.index("{", const_start)
-    const_close = _matching_brace_end(source, const_open)
-
-    zh_marker = 'dictionaries["zh-TW"] = {'
-    zh_start = source.index(zh_marker, const_close)
-    zh_open = source.index("{", zh_start)
-    zh_close = _matching_brace_end(source, zh_open)
-
-    return source[const_start : zh_close + 1] + ";"
+def _extract_dictionaries_js(source: str, locale: str = "zh-TW") -> str:
+    """JS declaring `messages` as the page holds them after loadLocale()
+    for `locale` (the strings now live in the locale files)."""
+    return messages_js(locale)
 
 
 def _extract_t_function(source: str) -> str:
@@ -361,7 +355,7 @@ def test_render_preview_modal_shows_header_level_error_with_no_rows():
     # NO row in `rows` carrying it -- build_import_preview() returns
     # rows: [] for these. Before this fix, rendering only `rows` left the
     # table empty and Confirm disabled with no explanation at all. This
-    # uses the REAL `dictionaries`/`t()` (not this file's simplified stub)
+    # uses the REAL locale messages/`t()` (not this file's simplified stub)
     # so it actually proves the zh-TW localized text renders, not just
     # some key echoed back.
     source = _strip_js_comments(_read())

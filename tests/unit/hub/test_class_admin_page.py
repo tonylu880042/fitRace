@@ -39,6 +39,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from hub_server.infrastructure.fastapi.app import app
+from page_locale import page_dictionaries
 
 STATIC_DIR = Path(__file__).resolve().parents[3] / "hub_server" / "static"
 LOCALES_DIR = (
@@ -1278,25 +1279,9 @@ GAME_ADMIN_NEW_KEYS = [
 
 
 def _load_game_admin_dictionaries() -> dict:
-    source = _read_game_admin()
-    const_start = source.index("const dictionaries = {")
-    const_open = source.index("{", const_start)
-    const_close = _matching_brace_end(source, const_open)
-
-    zh_marker = 'dictionaries["zh-TW"] = {'
-    zh_start = source.index(zh_marker, const_close)
-    zh_open = source.index("{", zh_start)
-    zh_close = _matching_brace_end(source, zh_open)
-
-    js = source[const_start : zh_close + 1] + ";"
-    js += "\nconsole.log(JSON.stringify(dictionaries));"
-    result = subprocess.run(
-        ["node", "-e", js], capture_output=True, text=True, timeout=5
-    )
-    assert (
-        result.returncode == 0
-    ), f"node failed to evaluate dictionaries: {result.stderr}"
-    return json.loads(result.stdout)
+    """gameAdmin's strings from the locale files (`game_admin.` prefix
+    removed), as {"en-US": {...}, "zh-TW": {...}, "zh-CN": {...}}."""
+    return page_dictionaries("game_admin.")
 
 
 def test_game_admin_new_keys_exist_in_both_inline_dictionaries():

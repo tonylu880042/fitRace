@@ -13,11 +13,9 @@ These tests verify:
 4. New i18n keys exist in both inline dictionaries
 """
 
-import json
 import re
-import subprocess
-import tempfile
 from pathlib import Path
+from page_locale import page_dictionaries
 
 STATIC_DIR = Path(__file__).resolve().parents[3] / "hub_server" / "static"
 
@@ -53,45 +51,10 @@ def _matching_brace_end(source: str, open_idx: int) -> int:
     raise ValueError("no matching closing brace found")
 
 
-def _extract_dictionaries_js(source: str) -> str:
-    """Pull the `const dictionaries = {...}` and the following
-    `dictionaries["zh-TW"] = {...}` statements out of gameAdmin.html,
-    brace-matched so the slice ends exactly where each dictionary ends --
-    no matter how many keys either one grows to. A fixed-length window (the
-    previous approach, shared with test_static_page_i18n.py) silently
-    truncates once the dictionary outgrows it, producing false "missing
-    from zh-TW" failures for keys that are actually present."""
-    const_start = source.index("const dictionaries = {")
-    const_open = source.index("{", const_start)
-    const_close = _matching_brace_end(source, const_open)
-
-    zh_marker = 'dictionaries["zh-TW"] = {'
-    zh_start = source.index(zh_marker, const_close)
-    zh_open = source.index("{", zh_start)
-    zh_close = _matching_brace_end(source, zh_open)
-
-    return source[const_start : zh_close + 1] + ";"
-
-
 def _load_dictionaries(source: str) -> dict:
-    """Evaluate the real `dictionaries` object literal under node and
-    return it as a Python dict ({"en-US": {...}, "zh-TW": {...}})."""
-    js = _extract_dictionaries_js(source)
-    js += "\nconsole.log(JSON.stringify(dictionaries));"
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".js", delete=False) as tmp_file:
-        tmp_file.write(js)
-        tmp_file.flush()
-        tmp_path = tmp_file.name
-    try:
-        result = subprocess.run(
-            ["node", tmp_path], capture_output=True, text=True, timeout=5
-        )
-        assert (
-            result.returncode == 0
-        ), f"node failed to evaluate dictionaries: {result.stderr}"
-        return json.loads(result.stdout)
-    finally:
-        Path(tmp_path).unlink()
+    """gameAdmin's strings from the locale files (`game_admin.` prefix
+    removed) as {"en-US": {...}, "zh-TW": {...}}."""
+    return page_dictionaries("game_admin.")
 
 
 def _extract_panel(source: str, panel_id: str) -> str:

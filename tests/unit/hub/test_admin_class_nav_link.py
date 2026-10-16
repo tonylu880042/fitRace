@@ -14,11 +14,10 @@ does not edit) so a mis-nested edit to either dictionary object literal
 fails loudly here too, not just silently in that file.
 """
 
-import json
 import re
-import subprocess
-import tempfile
 from pathlib import Path
+
+from page_locale import page_dictionaries
 
 STATIC_DIR = Path(__file__).resolve().parents[3] / "hub_server" / "static"
 
@@ -37,60 +36,12 @@ def _read(page: str) -> str:
     return _HTML_COMMENT_RE.sub("", raw)
 
 
-def _matching_brace_end(source: str, open_idx: int) -> int:
-    depth = 0
-    i = open_idx
-    in_str = None
-    while i < len(source):
-        char = source[i]
-        if in_str:
-            if char == "\\":
-                i += 2
-                continue
-            if char == in_str:
-                in_str = None
-        elif char in ('"', "'", "`"):
-            in_str = char
-        elif char == "{":
-            depth += 1
-        elif char == "}":
-            depth -= 1
-            if depth == 0:
-                return i
-        i += 1
-    raise ValueError("no matching closing brace found")
+# The pages' text lives in the locale files (zh-CN work), under a page prefix.
+_LOCALE_PREFIX = {"gameAdmin.html": "game_admin.", "systemAdmin.html": "system_admin."}
 
 
-def _extract_dictionaries_js(source: str) -> str:
-    const_start = source.index("const dictionaries = {")
-    const_open = source.index("{", const_start)
-    const_close = _matching_brace_end(source, const_open)
-
-    zh_marker = 'dictionaries["zh-TW"] = {'
-    zh_start = source.index(zh_marker, const_close)
-    zh_open = source.index("{", zh_start)
-    zh_close = _matching_brace_end(source, zh_open)
-
-    return source[const_start : zh_close + 1] + ";"
-
-
-def _load_dictionaries(source: str) -> dict:
-    js = _extract_dictionaries_js(source)
-    js += "\nconsole.log(JSON.stringify(dictionaries));"
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".js", delete=False) as tmp_file:
-        tmp_file.write(js)
-        tmp_file.flush()
-        tmp_path = tmp_file.name
-    try:
-        result = subprocess.run(
-            ["node", tmp_path], capture_output=True, text=True, timeout=5
-        )
-        assert (
-            result.returncode == 0
-        ), f"node failed to evaluate dictionaries: {result.stderr}"
-        return json.loads(result.stdout)
-    finally:
-        Path(tmp_path).unlink()
+def _dictionaries(page: str) -> dict:
+    return page_dictionaries(_LOCALE_PREFIX[page])
 
 
 _NAV_BUTTON_RE = re.compile(
@@ -119,8 +70,7 @@ def test_both_admin_pages_nav_entry_uses_i18n_not_hardcoded_english():
 
 def test_new_key_exists_in_both_dictionaries_of_both_pages():
     for page in PAGES:
-        source = _read(page)
-        dictionaries = _load_dictionaries(source)
+        dictionaries = _dictionaries(page)
         assert "nav.class_admin" in dictionaries["en-US"], f"{page}: missing from en-US"
         assert "nav.class_admin" in dictionaries["zh-TW"], f"{page}: missing from zh-TW"
 
@@ -128,8 +78,7 @@ def test_new_key_exists_in_both_dictionaries_of_both_pages():
 def test_new_key_zh_tw_value_differs_from_en_us_and_is_genuinely_chinese():
     cjk_re = re.compile(r"[一-鿿]")
     for page in PAGES:
-        source = _read(page)
-        dictionaries = _load_dictionaries(source)
+        dictionaries = _dictionaries(page)
         en_value = dictionaries["en-US"]["nav.class_admin"]
         zh_value = dictionaries["zh-TW"]["nav.class_admin"]
         assert zh_value != en_value, (

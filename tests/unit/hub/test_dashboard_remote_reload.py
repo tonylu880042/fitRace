@@ -40,6 +40,7 @@ from fastapi.testclient import TestClient
 
 from hub_server.domain.models import RaceConfig
 from hub_server.infrastructure.fastapi import app as app_module
+from page_locale import dictionary_blocks
 
 client = TestClient(app_module.app)
 
@@ -183,11 +184,7 @@ def test_reload_dashboard_button_has_data_i18n_attribute():
 
 
 def test_new_i18n_keys_present_in_both_dictionaries():
-    source = _read_game_admin()
-    en_start = source.index('"en-US": {')
-    zh_start = source.index('dictionaries["zh-TW"] = {')
-    en_block = source[en_start:zh_start]
-    zh_block = source[zh_start : zh_start + 14000]
+    en_block, zh_block = dictionary_blocks("game_admin.")
 
     for key in NEW_I18N_KEYS:
         assert (
@@ -199,11 +196,7 @@ def test_new_i18n_keys_present_in_both_dictionaries():
 
 
 def test_i18n_keys_are_symmetric():
-    source = _read_game_admin()
-    en_start = source.index('"en-US": {')
-    zh_start = source.index('dictionaries["zh-TW"] = {')
-    en_block = source[en_start:zh_start]
-    zh_block = source[zh_start : zh_start + 14000]
+    en_block, zh_block = dictionary_blocks("game_admin.")
 
     en_keys = set(re.findall(r'"([^"]+)":\s*"', en_block))
     zh_keys = set(re.findall(r'"([^"]+)":\s*"', zh_block))

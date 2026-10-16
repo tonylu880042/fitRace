@@ -23,6 +23,7 @@ import json
 import re
 import subprocess
 from pathlib import Path
+from page_locale import dictionary_blocks
 
 STATIC_DIR = Path(__file__).resolve().parents[3] / "hub_server" / "static"
 
@@ -307,11 +308,7 @@ def test_groups_check_message_shown_verbatim_not_remapped():
 
 
 def test_check_groups_label_translated_in_both_dictionaries():
-    source = _read()
-    en_start = source.index('"en-US": {')
-    zh_start = source.index('dictionaries["zh-TW"] = {')
-    en_block = source[en_start:zh_start]
-    zh_block = source[zh_start : zh_start + 20000]
+    en_block, zh_block = dictionary_blocks("game_admin.")
     assert '"check.groups": "Equipment Groups"' in en_block
     assert '"check.groups": "器材分組"' in zh_block
 

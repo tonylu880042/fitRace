@@ -50,7 +50,10 @@ NEW_KEYS = [
     "readiness.reason_stations",
 ]
 
-LOCALE_FILES = ["de-CH", "en-US", "fr", "it", "sv", "zh-TW"]
+LOCALE_FILES = ["de-CH", "en-US", "fr", "it", "sv", "zh-CN", "zh-TW"]
+# en-US, zh-TW and zh-CN are the complete locales; the rest may miss keys
+# (the hub serves them on top of en-US).
+COMPLETE_LOCALE_FILES = ["en-US", "zh-CN", "zh-TW"]
 
 
 def _strip_js_comments(code: str) -> str:
@@ -427,8 +430,12 @@ def test_all_locales_contain_new_keys_with_identical_key_sets():
             assert data[key].strip(), f"{name}.json has empty value for {key}"
         key_sets[name] = set(data.keys())
 
-    reference = key_sets[LOCALE_FILES[0]]
-    for name in LOCALE_FILES[1:]:
+    reference = key_sets["en-US"]
+    for name in COMPLETE_LOCALE_FILES:
         assert (
             key_sets[name] == reference
-        ), f"{name}.json key set differs from {LOCALE_FILES[0]}.json"
+        ), f"{name}.json key set differs from en-US.json"
+    for name in LOCALE_FILES:
+        assert (
+            key_sets[name] <= reference
+        ), f"{name}.json has keys en-US.json lacks: {key_sets[name] - reference}"

@@ -15,6 +15,7 @@ This adds:
 
 import re
 from pathlib import Path
+from page_locale import dictionary_blocks
 
 STATIC_DIR = Path(__file__).resolve().parents[3] / "hub_server" / "static"
 
@@ -132,16 +133,7 @@ def test_device_name_fallback_chain_order_preserved():
 
 
 def test_new_keys_present_in_both_dictionaries_with_expected_copy():
-    source = _read()
-    en_start = source.index('"en-US": {')
-    zh_start = source.index('dictionaries["zh-TW"] = {')
-    en_block = source[en_start:zh_start]
-    # Fixed-length slice like the sibling i18n tests (test_game_admin_
-    # station_signpost.py, test_game_admin_readiness_check_i18n.py) --
-    # NOT source[zh_start:].index("};"), because some zh-TW copy contains a
-    # literal "};" inside a placeholder (e.g. "{targetLabel};..."), which
-    # truncates the block early and produces false "missing key" failures.
-    zh_block = source[zh_start : zh_start + 14000]
+    en_block, zh_block = dictionary_blocks("game_admin.")
 
     for key, (en_text, zh_text) in NEW_KEYS.items():
         assert (
@@ -153,11 +145,7 @@ def test_new_keys_present_in_both_dictionaries_with_expected_copy():
 
 
 def test_i18n_keys_stay_symmetric_between_dictionaries():
-    source = _read()
-    en_start = source.index('"en-US": {')
-    zh_start = source.index('dictionaries["zh-TW"] = {')
-    en_block = source[en_start:zh_start]
-    zh_block = source[zh_start : zh_start + 14000]
+    en_block, zh_block = dictionary_blocks("game_admin.")
 
     en_keys = set(re.findall(r'"([a-zA-Z0-9_.]+)":\s*"', en_block))
     zh_keys = set(re.findall(r'"([a-zA-Z0-9_.]+)":\s*"', zh_block))

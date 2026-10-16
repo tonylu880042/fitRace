@@ -73,7 +73,12 @@ from hub_server.usecases.roster import (
 )
 from hub_server.adapters.websocket_manager import WebSocketManager
 from hub_server.infrastructure.build_fingerprint import compute_build_fingerprint
-from hub_server.infrastructure.locales import DEFAULT_LOCALE, list_locales, load_locale
+from hub_server.infrastructure.locales import (
+    DEFAULT_LOCALE,
+    list_locales,
+    load_locale,
+    normalize_locale,
+)
 from hub_server.usecases.update_checker import UpdateChecker
 from fitrace_common import wifi_manager
 from fitrace_common.wifi_status import LinuxWifiStatusReader
@@ -1426,11 +1431,20 @@ def _resolve_export_lang(lang: Optional[str]) -> str:
     # The export only ships translations an operator is likely to actually
     # need at check-out time; anything else falls back to English rather
     # than silently picking one of the other locale files.
-    if lang == "zh-TW":
+    if not lang:
         return "zh-TW"
-    if lang == "en-US":
-        return "en-US"
-    return "zh-TW" if not lang else "en-US"
+    resolved = normalize_locale(lang)
+    return resolved if resolved in ("zh-TW", "zh-CN") else "en-US"
+
+
+def _resolve_roster_template_lang(lang: Optional[str]) -> str:
+    # en -> the English template; any Simplified spelling -> zh-CN; everything
+    # else (including no lang at all) keeps the historical zh-TW template.
+    if lang in ("en", "en-US"):
+        return "en"
+    if lang and normalize_locale(lang) == "zh-CN":
+        return "zh-CN"
+    return "zh-TW"
 
 
 @app.get("/api/results/export.csv")
@@ -2337,7 +2351,7 @@ def download_roster_template_csv(
     lang: Optional[str] = None,
 ):
     require_admin(request)
-    resolved_lang = "zh-TW" if lang != "en" else "en"
+    resolved_lang = _resolve_roster_template_lang(lang)
     resolved_mode = "relay" if mode == "relay" else "individual"
     if legs is not None:
         resolved_legs = legs

@@ -178,6 +178,7 @@ def test_locales_endpoint_defaults_to_english_and_lists_supported_locales():
     assert [locale["code"] for locale in payload["locales"]] == [
         "en-US",
         "zh-TW",
+        "zh-CN",
         "it",
         "fr",
         "de-CH",
@@ -201,8 +202,10 @@ def test_signup_page_has_language_switcher_defaulting_to_english():
     assert '<html lang="en-US">' in response.text
     assert 'id="language-select"' in response.text
     assert "Athlete Self-Registration" in response.text
-    assert "Deutsch (Schweiz)" in response.text
-    assert "Svenska" in response.text
+    # The language list is built from /api/locales, not hardcoded markup.
+    assert "/api/locales" in response.text
+    labels = {entry["label"] for entry in client.get("/api/locales").json()["locales"]}
+    assert {"Deutsch (Schweiz)", "Svenska", "简体中文"} <= labels
     assert "function convertAvatarFileToWebp" in response.text
     assert "function convertAvatarSourceToWebp" in response.text
     assert "AVATAR_MAX_SOURCE_BYTES = 8 * 1024 * 1024" in response.text
@@ -279,6 +282,13 @@ def test_management_controls_are_split_by_admin_role():
 
     response_game_admin = client.get("/static/gameAdmin.html")
     assert response_game_admin.status_code == 200
+    # Game Admin's texts now come from /api/locales (not inline dictionaries):
+    # strings that appear only in a message value are checked there.
+    en_messages = client.get("/api/locales/en-US").json()["messages"]
+
+    def game_admin_en_text(text):
+        return any(text in value for value in en_messages.values())
+
     assert "Race Control" in response_game_admin.text
     assert "Station Status" in response_game_admin.text
     assert 'id="competition-mode"' in response_game_admin.text
@@ -294,18 +304,15 @@ def test_management_controls_are_split_by_admin_role():
     assert "Team Rule" in response_game_admin.text
     assert "Leaderboard Preview" in response_game_admin.text
     assert "Start Flow" in response_game_admin.text
-    assert "Race Readiness" in response_game_admin.text
+    assert game_admin_en_text("Race Readiness")
     assert "/api/race/readiness" in response_game_admin.text
     assert "renderReadinessPanel" in response_game_admin.text
-    assert "Station Health" in response_game_admin.text
+    assert game_admin_en_text("Station Health")
     assert "Team Average" in response_game_admin.text
     assert "Team Target" in response_game_admin.text
     assert "Everyone Finishes" in response_game_admin.text
-    assert "Countdown Active" in response_game_admin.text
-    assert (
-        "Everyone Finishes means every teammate must complete"
-        in response_game_admin.text
-    )
+    assert game_admin_en_text("Countdown Active")
+    assert game_admin_en_text("Everyone Finishes means every teammate must complete")
     assert "Operator Unlock" in response_game_admin.text
     assert "Access Code" in response_game_admin.text
     assert "Admin Token" not in response_game_admin.text
@@ -327,11 +334,14 @@ def test_management_controls_are_split_by_admin_role():
     assert "Edge Nodes" in response_system_admin.text
     assert "Station Assignment" in response_system_admin.text
     assert ">Assign</button>" in response_system_admin.text
-    assert "Unassign station" in response_system_admin.text
+    # System Admin's texts come from /api/locales too (system_admin.* keys).
+    system_en = client.get("/api/locales/en-US").json()["messages"]
+    system_zh = client.get("/api/locales/zh-TW").json()["messages"]
+    assert any("Unassign station" in value for value in system_en.values())
     assert "Software" in response_system_admin.text
     assert "Power Controls" in response_system_admin.text
-    assert '"sidebar.system_override": "Power Controls"' in response_system_admin.text
-    assert '"sidebar.system_override": "電源與重啟"' in response_system_admin.text
+    assert system_en["system_admin.sidebar.system_override"] == "Power Controls"
+    assert system_zh["system_admin.sidebar.system_override"] == "電源與重啟"
     assert "Maintenance Unlock" in response_system_admin.text
     assert "Access Code" in response_system_admin.text
     assert "Admin Token" not in response_system_admin.text
@@ -471,8 +481,18 @@ def test_system_admin_uses_friendly_stream_labels_and_filters_stale_edge_ids():
         "const staleAssigned = Boolean(staleStreamLabel(station.node_id, catalog));"
         in source
     )
-    assert '"text.stale_stream": "stale stream"' in source
-    assert '"text.stale_stream": "舊資料流"' in source
+    assert (
+        client.get("/api/locales/en-US").json()["messages"][
+            "system_admin.text.stale_stream"
+        ]
+        == "stale stream"
+    )
+    assert (
+        client.get("/api/locales/zh-TW").json()["messages"][
+            "system_admin.text.stale_stream"
+        ]
+        == "舊資料流"
+    )
 
 
 def test_power_status_endpoint_defaults_to_dry_run():

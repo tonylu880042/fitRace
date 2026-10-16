@@ -303,6 +303,7 @@
       const browserLang = navigator.language || navigator.userLanguage;
       if (browserLang) {
         const lower = browserLang.toLowerCase();
+        if (/^zh-(cn|hans|sg)/.test(lower)) return "zh-CN";
         if (lower.startsWith("zh")) return "zh-TW";
         if (lower.startsWith("it")) return "it";
         if (lower.startsWith("fr")) return "fr";
@@ -484,7 +485,7 @@
       }
       const stationWord = {
         en: "Station", "en-US": "Station",
-        zh: "站位", "zh-TW": "站位",
+        zh: "站位", "zh-TW": "站位", "zh-CN": "站位",
         "de-CH": "Station",
         fr: "Poste",
         it: "Postazione",
@@ -492,7 +493,7 @@
       };
       const athleteWord = {
         en: "Athlete", "en-US": "Athlete",
-        zh: "選手", "zh-TW": "選手",
+        zh: "選手", "zh-TW": "選手", "zh-CN": "选手",
         "de-CH": "Athlet",
         fr: "Athlète",
         it: "Atleta",

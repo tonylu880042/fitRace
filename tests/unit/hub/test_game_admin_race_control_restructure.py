@@ -36,6 +36,7 @@ This test module pins:
 
 import re
 from pathlib import Path
+from page_locale import dictionary_blocks
 
 STATIC_DIR = Path(__file__).resolve().parents[3] / "hub_server" / "static"
 
@@ -91,11 +92,9 @@ def _extract_function_body(script: str, func_name: str) -> str:
 
 
 def _en_zh_blocks(source: str):
-    en_start = source.index('"en-US": {')
-    zh_start = source.index('dictionaries["zh-TW"] = {')
-    en_block = source[en_start:zh_start]
-    zh_block = source[zh_start : zh_start + 14000]
-    return en_block, zh_block
+    """(en-US, zh-TW) dictionary text blocks of gameAdmin's strings, built
+    from the locale files (`game_admin.` prefix removed)."""
+    return dictionary_blocks("game_admin.")
 
 
 # ---------------------------------------------------------------------------

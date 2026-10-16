@@ -11,6 +11,7 @@ import json
 import re
 import subprocess
 from pathlib import Path
+from page_locale import dictionary_blocks, messages_js
 
 STATIC_DIR = Path(__file__).resolve().parents[3] / "hub_server" / "static"
 
@@ -341,17 +342,11 @@ console.log(JSON.stringify([on, [$("rules-block").hidden, $("btn-save-race").hid
 
 def _note_text(locale: str, duration: int) -> str:
     src = _stripped_script()
-    dictionaries_at = src.index("const dictionaries = ")
-    dict_end = _match_end(src, src.index("{", dictionaries_at), "{", "}") + 1
-    zh_at = src.index('dictionaries["zh-TW"] = ')
-    zh_end = _match_end(src, src.index("{", zh_at), "{", "}") + 1
     script = (
         _STUB.replace("const t = (k, p = {}) => k + JSON.stringify(p);\n", "")
         + f"let currentLocale = {json.dumps(locale)};\n"
-        + src[dictionaries_at:dict_end]
-        + ";\n"
-        + src[zh_at:zh_end]
-        + ";\n"
+        + messages_js(locale)
+        + "\n"
         + _extract_function(src, "t")
         + "\n"
         + "\n".join(_extract_function(src, n) for n in _FNS)
@@ -505,9 +500,5 @@ def test_challenge_block_title_is_translated_in_both_locales():
     ]
     assert len(titles) == 1
     key = titles[0].attrs["data-i18n"]
-    src = _stripped_script()
-    en_at = src.index("const dictionaries = ")
-    en = src[en_at : _match_end(src, src.index("{", en_at), "{", "}") + 1]
-    zh_at = src.index('dictionaries["zh-TW"] = ')
-    zh = src[zh_at : _match_end(src, src.index("{", zh_at), "{", "}") + 1]
+    en, zh = dictionary_blocks("game_admin.")
     assert f'"{key}"' in en and f'"{key}"' in zh

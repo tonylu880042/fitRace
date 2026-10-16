@@ -10,6 +10,7 @@ comment or a same-named string sitting somewhere else on the page.
 
 import re
 from pathlib import Path
+from page_locale import dictionary_blocks
 
 STATIC_DIR = Path(__file__).resolve().parents[3] / "hub_server" / "static"
 
@@ -224,11 +225,7 @@ NEW_I18N_KEYS = [
 
 
 def test_new_i18n_keys_present_in_both_dictionaries():
-    source = _read()
-    en_start = source.index('"en-US": {')
-    zh_start = source.index('dictionaries["zh-TW"] = {')
-    en_block = source[en_start:zh_start]
-    zh_block = source[zh_start : zh_start + 6000]
+    en_block, zh_block = dictionary_blocks("system_admin.")
 
     for key in NEW_I18N_KEYS:
         assert f'"{key}":' in en_block, f"{key} missing from en-US dictionary"

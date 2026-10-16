@@ -436,5 +436,16 @@
   "readiness.sound_silent": "Tyst start vald.",
   "teams.start_blocked": "Kan inte starta än. Kontrollera beredskapslistan ovan.",
   "teams.state_ready": "Väntar på start",
-  "teams.readiness_blocked_title": "Inte redo:"
+  "teams.readiness_blocked_title": "Inte redo:",
+  "signup_page.signup.subtitle": "Deltagarregistrering",
+  "signup_page.signup.avatar": "Deltagarbild",
+  "signup_page.signup.station_select": "Välj station",
+  "signup_page.signup.athlete_name": "Deltagarens namn (valfritt)",
+  "signup_page.signup.athlete_placeholder": "Ange namn...",
+  "signup_page.signup.team": "Lag (valfritt)",
+  "signup_page.signup.division": "Kategori (valfritt)",
+  "signup_page.signup.division_none": "Ingen kategori",
+  "signup_page.signup.division_men": "Herrar",
+  "signup_page.signup.division_women": "Damer",
+  "signup_page.signup.submit": "Registrera"
 }

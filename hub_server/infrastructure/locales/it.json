@@ -436,5 +436,16 @@
   "readiness.sound_silent": "Partenza silenziosa selezionata.",
   "teams.start_blocked": "Impossibile avviare ora. Controlla l'elenco di idoneità qui sopra.",
   "teams.state_ready": "In attesa di partenza",
-  "teams.readiness_blocked_title": "Non pronto:"
+  "teams.readiness_blocked_title": "Non pronto:",
+  "signup_page.signup.subtitle": "Registrazione atleta",
+  "signup_page.signup.avatar": "Avatar atleta",
+  "signup_page.signup.station_select": "Seleziona postazione",
+  "signup_page.signup.athlete_name": "Nome atleta (facoltativo)",
+  "signup_page.signup.athlete_placeholder": "Inserisci il nome...",
+  "signup_page.signup.team": "Team (opzionale)",
+  "signup_page.signup.division": "Categoria (facoltativo)",
+  "signup_page.signup.division_none": "Nessuna categoria",
+  "signup_page.signup.division_men": "Uomini",
+  "signup_page.signup.division_women": "Donne",
+  "signup_page.signup.submit": "Registrati"
 }

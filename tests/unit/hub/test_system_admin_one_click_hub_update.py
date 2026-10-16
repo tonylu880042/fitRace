@@ -11,6 +11,7 @@ import re
 import subprocess
 import tempfile
 from pathlib import Path
+from page_locale import dictionary_blocks
 
 STATIC_DIR = Path(__file__).resolve().parents[3] / "hub_server" / "static"
 
@@ -78,21 +79,6 @@ def _matching_brace_end(source: str, open_idx: int) -> int:
     raise ValueError("no matching closing brace found")
 
 
-def _extract_dictionaries_js(source: str) -> str:
-    """Pull the `const dictionaries = {...}` and the following
-    `dictionaries["zh-TW"] = {...}` statements out of a static page."""
-    const_start = source.index("const dictionaries = {")
-    const_open = source.index("{", const_start)
-    const_close = _matching_brace_end(source, const_open)
-
-    zh_marker = 'dictionaries["zh-TW"] = {'
-    zh_start = source.index(zh_marker, const_close)
-    zh_open = source.index("{", zh_start)
-    zh_close = _matching_brace_end(source, zh_open)
-
-    return source[const_start : zh_close + 1] + ";"
-
-
 # ---------------------------------------------------------------------------
 # 1. One-click button exists and old buttons are gone
 # ---------------------------------------------------------------------------
@@ -128,9 +114,6 @@ def test_one_click_hub_update_button_exists():
 def test_new_i18n_keys_present_in_both_dictionaries():
     """All new i18n keys for one-click update must exist in both en-US and
     zh-TW inline dictionaries."""
-    source = _read()
-    dicts_js = _extract_dictionaries_js(source)
-
     # Required keys
     required_keys = [
         "button.update_hub",
@@ -140,24 +123,21 @@ def test_new_i18n_keys_present_in_both_dictionaries():
         "message.update_hub_timeout",
     ]
 
-    en_start = dicts_js.index('"en-US": {')
-    zh_start = dicts_js.index('dictionaries["zh-TW"] = {')
-    en_block = dicts_js[en_start:zh_start]
-    zh_block = dicts_js[zh_start : zh_start + 8000]
+    en_block, zh_block = dictionary_blocks("system_admin.")
 
     for key in required_keys:
         assert f'"{key}":' in en_block, f"{key} missing from en-US dictionary"
         assert f'"{key}":' in zh_block, f"{key} missing from zh-TW dictionary"
 
     # Keys should contain {version} placeholder where appropriate
-    en_start_idx = dicts_js.index('"button.update_hub"')
+    en_start_idx = en_block.index('"button.update_hub"')
     en_end_idx = en_start_idx + 100
-    button_key_text = dicts_js[en_start_idx:en_end_idx]
+    button_key_text = en_block[en_start_idx:en_end_idx]
     assert "{version}" in button_key_text
 
-    confirm_start = dicts_js.index('"confirm.update_hub"')
+    confirm_start = en_block.index('"confirm.update_hub"')
     confirm_end = confirm_start + 150
-    confirm_text = dicts_js[confirm_start:confirm_end]
+    confirm_text = en_block[confirm_start:confirm_end]
     assert "{version}" in confirm_text
 
 
