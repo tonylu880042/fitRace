@@ -380,12 +380,13 @@
   "teams.not_relay": "This race is not a relay. Set the relay race rules in Game Admin first.",
   "teams.readiness_ready": "Ready to start",
   "teams.readiness_blocked": "Not ready: {issues}",
-  "teams.hint_all_registered": "Every assigned station needs a registered team before the race can start.",
   "teams.btn_start": "Start Race",
   "teams.btn_stop": "Stop Race",
   "teams.btn_next_race": "Next Race",
   "teams.msg_race_started": "Race started.",
   "teams.msg_race_stopped": "Race stopped.",
   "teams.msg_next_race": "Ready for the next race. Assign teams to stations.",
-  "teams.locked_running": "Race in progress: editing is locked."
+  "teams.locked_running": "Race in progress: editing is locked.",
+  "teams.hint_need_one_team": "Assign at least one team to a station before starting.",
+  "teams.warn_stations_without_team": "{count} stations have no team"
 }

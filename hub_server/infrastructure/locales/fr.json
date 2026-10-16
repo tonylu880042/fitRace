@@ -380,12 +380,13 @@
   "teams.not_relay": "Cette course n'est pas un relais. Définissez d'abord les règles du relais dans l'admin de course.",
   "teams.readiness_ready": "Prêt à démarrer",
   "teams.readiness_blocked": "Pas prêt : {issues}",
-  "teams.hint_all_registered": "Chaque poste attribué doit avoir une équipe inscrite avant le départ.",
   "teams.btn_start": "Démarrer la course",
   "teams.btn_stop": "Arrêter la course",
   "teams.btn_next_race": "Course suivante",
   "teams.msg_race_started": "Course démarrée.",
   "teams.msg_race_stopped": "Course arrêtée.",
   "teams.msg_next_race": "Prêt pour la course suivante. Attribuez les équipes aux postes.",
-  "teams.locked_running": "Course en cours : modification verrouillée."
+  "teams.locked_running": "Course en cours : modification verrouillée.",
+  "teams.hint_need_one_team": "Attribuez au moins une équipe à un poste avant de démarrer.",
+  "teams.warn_stations_without_team": "{count} postes sans équipe"
 }

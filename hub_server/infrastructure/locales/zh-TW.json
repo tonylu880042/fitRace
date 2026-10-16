@@ -380,12 +380,13 @@
   "teams.not_relay": "目前不是接力賽，請先到比賽管理設定接力賽規則。",
   "teams.readiness_ready": "可以開始",
   "teams.readiness_blocked": "尚未就緒：{issues}",
-  "teams.hint_all_registered": "開始前，每個已綁定設備的站位都需要登記隊伍。",
   "teams.btn_start": "開始比賽",
   "teams.btn_stop": "停止比賽",
   "teams.btn_next_race": "下一場",
   "teams.msg_race_started": "比賽已開始。",
   "teams.msg_race_stopped": "比賽已停止。",
   "teams.msg_next_race": "已準備下一場，請為站位分配隊伍。",
-  "teams.locked_running": "比賽進行中，已鎖定編輯。"
+  "teams.locked_running": "比賽進行中，已鎖定編輯。",
+  "teams.hint_need_one_team": "開始前，請至少為一個站位分配隊伍。",
+  "teams.warn_stations_without_team": "有 {count} 個站位沒有隊伍"
 }

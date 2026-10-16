@@ -380,12 +380,13 @@
   "teams.not_relay": "Questa gara non è una staffetta. Imposta prima le regole della staffetta in Admin gara.",
   "teams.readiness_ready": "Pronto a partire",
   "teams.readiness_blocked": "Non pronto: {issues}",
-  "teams.hint_all_registered": "Ogni postazione assegnata deve avere una squadra registrata prima della partenza.",
   "teams.btn_start": "Avvia gara",
   "teams.btn_stop": "Ferma gara",
   "teams.btn_next_race": "Gara successiva",
   "teams.msg_race_started": "Gara avviata.",
   "teams.msg_race_stopped": "Gara fermata.",
   "teams.msg_next_race": "Pronto per la gara successiva. Assegna le squadre alle postazioni.",
-  "teams.locked_running": "Gara in corso: modifica bloccata."
+  "teams.locked_running": "Gara in corso: modifica bloccata.",
+  "teams.hint_need_one_team": "Assegna almeno una squadra a una postazione prima di partire.",
+  "teams.warn_stations_without_team": "{count} postazioni senza squadra"
 }

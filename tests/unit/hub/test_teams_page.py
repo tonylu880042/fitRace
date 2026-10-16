@@ -225,12 +225,37 @@ ONE_MISSING = (
 )
 
 
-def test_start_enabled_only_when_ready_and_every_assigned_station_registered():
+NONE_REGISTERED = (
+    '{"1": {node_id: "n1", registered: false},'
+    ' "2": {node_id: "n2", registered: false}}'
+)
+
+
+def test_start_needs_ready_and_at_least_one_registered_assigned_station():
     assert _control("READY", ALL_REGISTERED)["canStart"] is True
-    assert _control("READY", ONE_MISSING)["canStart"] is False
+    assert _control("READY", ONE_MISSING)["canStart"] is True
+    assert _control("READY", NONE_REGISTERED)["canStart"] is False
     assert _control("READY", "{}")["canStart"] is False
     for state in ("IDLE", "RUNNING", "STOPPED"):
         assert _control(state, ALL_REGISTERED)["canStart"] is False
+
+
+def test_start_with_8_stations_and_6_teams_warns_about_the_2_empty_ones():
+    stations = (
+        "(() => { const s = {};"
+        " for (let i = 1; i <= 8; i++)"
+        " s[String(i)] = {node_id: 'n' + i, registered: i <= 6};"
+        " return s; })()"
+    )
+    result = _control("READY", stations)
+    assert result["canStart"] is True
+    assert result["unregisteredCount"] == 2
+
+
+def test_unregistered_count_is_zero_when_all_registered_or_no_stations():
+    assert _control("READY", ALL_REGISTERED)["unregisteredCount"] == 0
+    assert _control("READY", "{}")["unregisteredCount"] == 0
+    assert _control("READY", ONE_MISSING)["unregisteredCount"] == 1
 
 
 def test_start_ignores_registered_stations_without_a_node():

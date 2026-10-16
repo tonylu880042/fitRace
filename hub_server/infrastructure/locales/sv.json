@@ -380,12 +380,13 @@
   "teams.not_relay": "Det här loppet är inte en stafett. Ställ in stafettreglerna i loppadmin först.",
   "teams.readiness_ready": "Redo att starta",
   "teams.readiness_blocked": "Inte redo: {issues}",
-  "teams.hint_all_registered": "Varje tilldelad station måste ha ett registrerat lag innan loppet kan starta.",
   "teams.btn_start": "Starta loppet",
   "teams.btn_stop": "Stoppa loppet",
   "teams.btn_next_race": "Nästa lopp",
   "teams.msg_race_started": "Loppet startade.",
   "teams.msg_race_stopped": "Loppet stoppades.",
   "teams.msg_next_race": "Redo för nästa lopp. Tilldela lag till stationer.",
-  "teams.locked_running": "Loppet pågår: redigering är låst."
+  "teams.locked_running": "Loppet pågår: redigering är låst.",
+  "teams.hint_need_one_team": "Tilldela minst ett lag till en station innan start.",
+  "teams.warn_stations_without_team": "{count} stationer saknar lag"
 }

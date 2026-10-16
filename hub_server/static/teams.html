@@ -249,6 +249,7 @@
           <span class="hint" id="relay-legs"></span>
         </div>
         <div class="hint" id="readiness-line"></div>
+        <div class="hint warn" id="start-warning"></div>
         <div class="hint warn" id="race-notice"></div>
       </div>
       <div class="status-text" id="race-message"></div>
@@ -471,9 +472,10 @@
 
     function controlState(raceState, stations) {
       const assigned = assignedStationNumbers(stations);
-      const everyRegistered = assigned.length > 0 && assigned.every((number) => stations[String(number)].registered);
+      const registeredCount = assigned.filter((number) => stations[String(number)].registered).length;
       return {
-        canStart: raceState === "READY" && everyRegistered,
+        canStart: raceState === "READY" && registeredCount > 0,
+        unregisteredCount: assigned.length - registeredCount,
         canStop: raceState === "RUNNING",
         canNextRace: raceState === "STOPPED",
         canAssign: raceState === "IDLE" || raceState === "READY",
@@ -609,9 +611,12 @@
       } else if (state.race && state.race.config && legs === null) {
         notice = t("teams.not_relay");
       } else if (raceState === "READY" && !controls.canStart) {
-        notice = t("teams.hint_all_registered");
+        notice = t("teams.hint_need_one_team");
       }
       $("race-notice").textContent = notice;
+      $("start-warning").textContent = raceState === "READY" && controls.canStart && controls.unregisteredCount > 0
+        ? t("teams.warn_stations_without_team", { count: controls.unregisteredCount })
+        : "";
     }
 
     function renderLibrary() {
