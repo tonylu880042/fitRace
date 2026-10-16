@@ -960,6 +960,8 @@ def test_individual_race_can_start_anonymously_with_an_online_station():
     assert payload["checks"]["registrations"] == {
         "status": "info",
         "message": "Individual race allows anonymous participation.",
+        "code": "registrations_anonymous",
+        "params": {},
     }
     assert payload["checks"]["stations"]["status"] == "warn"
     station_health = {
