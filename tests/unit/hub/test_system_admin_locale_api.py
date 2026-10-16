@@ -362,3 +362,34 @@ function refreshAll() { calls.push("refresh"); }
     )
     assert out.index("locale") < min(out.index(c) for c in ("ws", "apply", "refresh"))
     assert "signup" in out
+
+
+def test_apply_translations_keeps_the_markup_english_when_a_key_has_no_message():
+    # Locale fetch failed (or not finished): data-i18n elements must keep the
+    # English already in the HTML instead of being overwritten with raw keys,
+    # including a button whose label sits in a <span>.
+    out = run_page_functions(
+        PAGE,
+        ["t", "applyTranslations"],
+        """
+let messages = { "system_admin.nav.dashboard": "仪表盘" };
+let currentLocale = "zh-CN";
+const known = { dataset: { i18n: "nav.dashboard" }, tagName: "SPAN", textContent: "Dashboard", querySelector: () => null };
+const unknown = { dataset: { i18n: "nav.game_admin" }, tagName: "SPAN", textContent: "Game Admin", querySelector: () => null };
+const innerSpan = { textContent: "Signup" };
+const unknownButton = { dataset: { i18n: "nav.signup" }, tagName: "BUTTON", textContent: "", querySelector: () => innerSpan };
+const document = {
+  documentElement: { lang: "" },
+  querySelectorAll: () => [known, unknown, unknownButton],
+};
+const state = { wifi: null };
+const node = { textContent: "", classList: { contains: () => false, toggle() {} } };
+function $() { return node; }
+function renderEdges() {}
+function renderStations() {}
+function renderUpdate() {}
+function renderWifiStatus() {}
+""",
+        "applyTranslations(); console.log(JSON.stringify([known.textContent, unknown.textContent, innerSpan.textContent]));",
+    )
+    assert out == ["仪表盘", "Game Admin", "Signup"]

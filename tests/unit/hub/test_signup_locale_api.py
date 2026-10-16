@@ -611,3 +611,24 @@ def test_start_up_loads_the_language_list_and_the_locale():
     init = extract_function(script, "initializeSignupPage")
     assert "loadLocaleList()" in init
     assert "await loadLocale(" in init
+
+
+def test_apply_translations_keeps_the_markup_english_when_a_key_has_no_message():
+    # Locale fetch failed (or not finished): labels and placeholders must keep
+    # the English already in the HTML instead of being overwritten with raw
+    # keys. Keys that have a built-in English fallback still render.
+    out = run_page_functions(
+        PAGE,
+        [*T_FUNCTIONS, "applyTranslations"],
+        _fallback_const() + """
+let messages = { "signup_page.signup.submit": "确认报名" };
+const known = { dataset: { i18n: "signup.submit" }, innerText: "Register" };
+const unknown = { dataset: { i18n: "signup.athlete_name" }, innerText: "Athlete Name (Optional)" };
+const placeholder = { dataset: { i18nPlaceholder: "signup.athlete_placeholder" }, placeholder: "Enter name..." };
+const document = {
+  querySelectorAll: (selector) => (selector === "[data-i18n]" ? [known, unknown] : [placeholder]),
+};
+""",
+        "applyTranslations(); console.log(JSON.stringify([known.innerText, unknown.innerText, placeholder.placeholder]));",
+    )
+    assert out == ["确认报名", "Athlete Name (Optional)", "Enter name..."]

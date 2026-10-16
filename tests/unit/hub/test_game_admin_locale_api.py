@@ -433,3 +433,31 @@ globalThis.fetch = async (url) => {{
 def test_page_function_extraction_helper_finds_t():
     assert "game_admin." in extract_function(script_of(PAGE), "t")
     assert run_node("console.log(JSON.stringify(1));") == 1
+
+
+def test_apply_translations_keeps_the_markup_english_when_a_key_has_no_message():
+    # Locale fetch failed (or not finished): data-i18n elements must keep the
+    # English already in the HTML instead of being overwritten with raw keys.
+    out = run_page_functions(
+        PAGE,
+        ["t", "applyTranslations"],
+        """
+let messages = { "game_admin.nav.dashboard": "仪表盘" };
+let currentLocale = "zh-CN";
+const known = { dataset: { i18n: "nav.dashboard" }, textContent: "Dashboard" };
+const unknown = { dataset: { i18n: "nav.system_admin" }, textContent: "System Admin" };
+const document = {
+  documentElement: { lang: "" },
+  querySelectorAll: () => [known, unknown],
+};
+const node = { textContent: "", classList: { contains: () => false, toggle() {} } };
+function $() { return node; }
+function renderRace() {}
+function renderReadinessPanel() {}
+function renderStations() {}
+function syncMixedRaceFields() {}
+function syncRaceFields() {}
+""",
+        "applyTranslations(); console.log(JSON.stringify([known.textContent, unknown.textContent]));",
+    )
+    assert out == ["仪表盘", "System Admin"]

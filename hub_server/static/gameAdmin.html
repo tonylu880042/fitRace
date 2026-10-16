@@ -1618,7 +1618,9 @@
       document.documentElement.lang = currentLocale;
       document.querySelectorAll("[data-i18n]").forEach((element) => {
         const key = element.dataset.i18n;
-        element.textContent = t(key);
+        const text = t(key);
+        // No message (locale not loaded): keep the English in the markup.
+        if (text !== key) element.textContent = text;
       });
       $("ws-label").textContent = $("ws-dot").classList.contains("online") ? t("status.online") : t("status.offline");
       renderRace();
