@@ -17,6 +17,7 @@ def _point_at(monkeypatch, tmp_path, create):
         "FITRACE_CLASS_RESULTS_PATH": tmp_path / "class_results.jsonl",
         "FITRACE_RACE_SETTINGS_PATH": tmp_path / "race_settings.json",
         "FITRACE_ROSTER_PATH": tmp_path / "roster.json",
+        "FITRACE_RELAY_TEAMS_PATH": tmp_path / "relay_teams.json",
     }
     for env, path in paths.items():
         monkeypatch.setenv(env, str(path))
@@ -51,6 +52,7 @@ def test_backup_zip_returns_all_existing_files_with_exact_bytes(monkeypatch, tmp
             "FITRACE_CLASS_RESULTS_PATH",
             "FITRACE_RACE_SETTINGS_PATH",
             "FITRACE_ROSTER_PATH",
+            "FITRACE_RELAY_TEAMS_PATH",
         },
     )
 

@@ -1595,8 +1595,6 @@
         "label.team_scoring": "Team Scoring",
         "label.completion_rule": "Completion Rule",
         "label.relay_legs": "Legs",
-        "label.relay_team_name": "Team Name",
-        "label.relay_members": "Members (one per line)",
         "label.target_distance": "Target Distance (m)",
         "label.target_calories": "Target Calories (kcal)",
         "label.time_limit": "Time Limit (s)",
@@ -1818,8 +1816,8 @@
         "message.entry_requeued": "Requeued.",
         "confirm.skip_unraced_heat": "The current heat ({names}) has not raced yet. Skip it and load the next heat?",
         "text.relay_race": "Relay race: teammates take turns running one leg each on the same machine. The team finishes when the last leg is done.",
-        "button.register_relay_team": "Register Team",
-        "message.relay_team_registered": "Relay team registered.",
+        "link.relay_manage_teams": "Manage teams",
+        "text.relay_no_team": "No team assigned",
         "text.relay_heat_station_team": "Station {station} · {team}",
         "text.relay_heat_mode_note": "Relay mode: heats load by team.",
         "button.download_results_csv": "Download Results (CSV)",
@@ -1896,8 +1894,6 @@
       "label.team_scoring": "隊伍計分",
       "label.completion_rule": "完成規則",
       "label.relay_legs": "棒數",
-      "label.relay_team_name": "隊伍名稱",
-      "label.relay_members": "隊員（每行一人）",
       "label.target_distance": "目標距離 (m)",
       "label.target_calories": "目標卡路里 (kcal)",
       "label.time_limit": "時間限制 (s)",
@@ -2111,8 +2107,8 @@
       "message.entry_requeued": "已重新排入。",
       "confirm.skip_unraced_heat": "目前這組（{names}）還沒比賽，確定要跳過並載入下一組嗎？",
       "text.relay_race": "接力賽:隊員輪流在同一台機器上各跑一棒,最後一棒完成即為隊伍完賽。",
-      "button.register_relay_team": "登記隊伍",
-      "message.relay_team_registered": "接力隊伍已登記。",
+      "link.relay_manage_teams": "管理隊伍",
+      "text.relay_no_team": "尚未分配隊伍",
       "text.relay_heat_station_team": "站位 {station} · {team}",
       "text.relay_heat_mode_note": "接力模式：依隊伍載入",
       "button.download_results_csv": "下載成績 (CSV)",
@@ -2209,10 +2205,33 @@
       syncRaceFields();
     }
 
+    // The readiness.* strings live in the hub's locale files, not in the
+    // inline dictionaries above: fetch the locale and merge only those keys.
+    function mergeReadinessMessages(locale, messages) {
+      const target = dictionaries[locale];
+      if (!target) return;
+      Object.keys(messages || {}).forEach((key) => {
+        if (key.startsWith("readiness.")) target[key] = messages[key];
+      });
+    }
+
+    async function loadReadinessMessages(locale) {
+      try {
+        const response = await fetch(`/api/locales/${encodeURIComponent(locale)}?t=${Date.now()}`);
+        if (!response.ok) return;
+        const payload = await response.json();
+        mergeReadinessMessages(locale, payload.messages);
+        renderReadinessPanel();
+      } catch (_) {
+        // Non-fatal: the readiness panel keeps showing the hub's English.
+      }
+    }
+
     function setLanguage(lang) {
       currentLocale = lang;
       localStorage.setItem("fitrace.locale", lang);
       applyTranslations();
+      loadReadinessMessages(lang);
     }
 
     function adminHeaders(extra = {}) {
@@ -2306,7 +2325,7 @@
 
     // Pure-ish markup builder for one group row in the mixed-race editor --
     // reads t()/escapeHtml/EQUIPMENT_TYPES/state.raceGroups like the rest
-    // of the page's render helpers (e.g. buildRelayRegistrationFormHtml).
+    // of the page's render helpers (e.g. buildRelayTeamReadOnlyHtml).
     function buildRaceGroupRowHtml(group, index) {
       const equipmentOptionsHtml = EQUIPMENT_TYPES.map((equipmentType) => {
         const checked = (group.equipmentTypes || []).includes(equipmentType) ? "checked" : "";
@@ -2459,30 +2478,18 @@
       return null;
     }
 
-    // Splits a relay members textarea (one name per line) into a clean
-    // roster: trims each line and drops blanks. Mirrors the hub's own
-    // RegisterAthletePayload._clean_relay_members normalization
-    // (hub_server/infrastructure/fastapi/app.py) so what the operator sees
-    // in the textarea matches what actually gets registered.
-    function relayMembersFromTextarea(text) {
-      return String(text || "")
-        .split("\n")
-        .map((line) => line.trim())
-        .filter((line) => line.length > 0);
-    }
-
-    // Pure markup builder for one station's relay team-registration form
-    // (team name + one-member-per-line roster), so it can be executed and
-    // asserted on directly under node -- see registerRelayTeam() for the
-    // submit handler this form's button wires to.
-    function buildRelayRegistrationFormHtml(stationKey, station) {
-      const teamName = station.team_name || "";
-      const members = (station.relay_members || []).join("\n");
+    // Pure markup builder for one station's read-only relay team block: the
+    // team registered on that station (assigned on the /teams page) plus a
+    // link there. No form controls -- Game Admin never edits teams.
+    function buildRelayTeamReadOnlyHtml(station) {
+      const members = (station.relay_members || []).join(", ");
+      const summary = station.registered && station.team_name
+        ? `<strong>${escapeHtml(station.team_name)}</strong>${members ? ` · ${escapeHtml(members)}` : ""}`
+        : escapeHtml(t("text.relay_no_team"));
       return `
-        <div class="relay-registration">
-          <input type="text" id="relay-team-name-${escapeHtml(stationKey)}" class="relay-team-name-input" placeholder="${escapeHtml(t("label.relay_team_name"))}" value="${escapeHtml(teamName)}">
-          <textarea id="relay-members-${escapeHtml(stationKey)}" class="relay-members-input" placeholder="${escapeHtml(t("label.relay_members"))}">${escapeHtml(members)}</textarea>
-          <button type="button" onclick="registerRelayTeam('${escapeHtml(stationKey)}')">${escapeHtml(t("button.register_relay_team"))}</button>
+        <div class="relay-team-readonly">
+          <div class="row-meta">${summary}</div>
+          <a class="row-meta" href="/teams">${escapeHtml(t("link.relay_manage_teams"))}</a>
         </div>
       `;
     }
@@ -2914,6 +2921,38 @@
       return "info";
     }
 
+    // Localized text for a readiness code, or null while this locale's
+    // readiness.* messages are not loaded (the hub's English is the fallback).
+    function translateReadiness(key, params = {}) {
+      const text = t(key, params);
+      return text === key ? null : text;
+    }
+
+    // Bullet-list lines: blocking issues except station-scoped ones (those
+    // are shown as per-station cards) plus every warning. Localized from the
+    // parallel *_items lists; a hub without items yields its English lines.
+    function readinessIssueTexts(readiness) {
+      const localize = (item, english) => {
+        const text = item ? translateReadiness(`readiness.${item.code}`, item.params || {}) : null;
+        return text === null ? english : text;
+      };
+      const blocking = (readiness.blocking_issues || [])
+        .map((english, index) => ({ item: (readiness.blocking_items || [])[index], english }))
+        .filter(({ item, english }) => item
+          ? !(item.params && item.params.station !== undefined)
+          : !/^Station \d+:/.test(english))
+        .map(({ item, english }) => localize(item, english));
+      const warnings = (readiness.warnings || [])
+        .map((english, index) => localize((readiness.warning_items || [])[index], english));
+      return [...blocking, ...warnings];
+    }
+
+    function readinessCheckMessage(check) {
+      if (!check) return "--";
+      const text = check.code ? translateReadiness(`readiness.${check.code}`, check.params || {}) : null;
+      return text === null ? (check.message || "--") : text;
+    }
+
     function renderReadinessPanel() {
       const panel = $("race-readiness-panel");
       if (!panel) return;
@@ -2938,10 +2977,9 @@
       const title = readiness.ready ? t("text.ready_to_start") : t("text.needs_attention");
       // Station-specific issues are shown as localized cards below; keep only
       // the rest (register athlete, target, teams) in the bullet list.
-      const issues = (readiness.blocking_issues || []).filter((i) => !/^Station \d+:/.test(i));
-      const warnings = readiness.warnings || [];
-      const issueHtml = [...issues, ...warnings].length
-        ? `<ul class="issue-list">${[...issues, ...warnings].map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`
+      const issueLines = readinessIssueTexts(readiness);
+      const issueHtml = issueLines.length
+        ? `<ul class="issue-list">${issueLines.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`
         : "";
       const checks = readiness.checks || {};
       const checkOrder = [
@@ -2968,7 +3006,7 @@
             <span class="readiness-check-dot ${klass}"></span>
             <div class="readiness-check-body">
               <div class="readiness-check-title">${escapeHtml(label)}</div>
-              <div class="readiness-check-message">${escapeHtml(check.message || "--")}</div>
+              <div class="readiness-check-message">${escapeHtml(readinessCheckMessage(check))}</div>
             </div>
           </div>
         `;
@@ -3048,7 +3086,7 @@
         const station = stations[key] || {};
         const health = getStationHealth(key);
         const signupUrl = `${window.location.origin}/static/signup.html?station=${encodeURIComponent(key)}`;
-        const relayFormHtml = isRelayRace ? buildRelayRegistrationFormHtml(key, station) : "";
+        const relayTeamHtml = isRelayRace ? buildRelayTeamReadOnlyHtml(station) : "";
         return `
           <div class="row-card">
             <div class="row-main">
@@ -3060,7 +3098,7 @@
               </div>
               <span class="health-pill ${escapeHtml(health.health || "missing")}">${escapeHtml(health.health || "missing")}</span>
             </div>
-            ${relayFormHtml}
+            ${relayTeamHtml}
           </div>
         `;
       }).join("");
@@ -3073,28 +3111,6 @@
       if (division === "women") return t("option.division_women");
       return "";
     }
-    async function registerRelayTeam(stationKey) {
-      const teamName = $(`relay-team-name-${stationKey}`).value.trim();
-      const members = relayMembersFromTextarea($(`relay-members-${stationKey}`).value);
-      try {
-        state.stations = await fetchJson("/api/race/register", {
-          method: "POST",
-          headers: adminHeaders({ "Content-Type": "application/json" }),
-          body: JSON.stringify({
-            station_number: Number(stationKey),
-            team_name: teamName,
-            relay_members: members,
-          }),
-        });
-        renderStations();
-        await refreshReadiness();
-        setMessage("race-message", t("message.relay_team_registered"), "ok");
-      } catch (error) {
-        setMessage("race-message", error.message, "error");
-      }
-    }
-
-
     function renderRosterHeatList(elementId, entries, emptyKey, withStation) {
       const list = $(elementId);
       if (!entries.length) {
@@ -4316,6 +4332,7 @@
     syncCompetitionFields();
     syncVisibility();
     applyTranslations();
+    loadReadinessMessages(currentLocale);
     connectWebSocket();
     refreshAll();
   </script>

@@ -101,6 +101,7 @@ def _run_module_wiring(tmp_path, backup_dir):
             "FITRACE_RACE_RESULTS_PATH": str(tmp_path / "data" / "race_results.jsonl"),
             "FITRACE_RACE_SETTINGS_PATH": str(tmp_path / "data" / "race_settings.json"),
             "FITRACE_ROSTER_PATH": str(tmp_path / "data" / "roster.json"),
+            "FITRACE_RELAY_TEAMS_PATH": str(tmp_path / "data" / "relay_teams.json"),
             "PYTHONPATH": str(REPO_ROOT),
         }
     )
@@ -121,6 +122,7 @@ def test_module_level_stores_back_up_both_race_and_class_when_env_set(tmp_path):
     backup_dir.mkdir()
     (tmp_path / "data").mkdir()
     (tmp_path / "data" / "roster.json").write_text("{}")
+    (tmp_path / "data" / "relay_teams.json").write_text('{"teams":[]}')
 
     proc = _run_module_wiring(tmp_path, backup_dir)
 
@@ -132,6 +134,7 @@ def test_module_level_stores_back_up_both_race_and_class_when_env_set(tmp_path):
     assert (last / "race_results.jsonl").exists()
     assert (last / "class_results.jsonl").exists()
     assert (last / "roster.json").read_text() == "{}"
+    assert (last / "relay_teams.json").read_text() == '{"teams":[]}'
 
 
 def test_module_level_stores_create_nothing_when_env_unset(tmp_path):

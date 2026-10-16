@@ -4,20 +4,17 @@ number of legs (relay_legs, 2..10), each leg run by a different roster
 member on the SAME machine. This covers:
 
   * isRelayCompetitionMode(mode) -- trivial predicate.
-  * relayMembersFromTextarea(text) -- normalizes the members textarea (one
-    name per line) into a clean roster, mirroring
-    RegisterAthletePayload._clean_relay_members in
-    hub_server/infrastructure/fastapi/app.py.
-  * buildRelayRegistrationFormHtml(stationKey, station) -- the pure markup
-    builder for a station's team-name + roster registration form, executed
-    for real under node (not a source-text grep).
+  * buildRelayTeamReadOnlyHtml(station) -- the pure markup builder for a
+    station's read-only team block (team, members, link to /teams), executed
+    for real under node (not a source-text grep). The per-station
+    registration form was removed: teams are assigned on /teams.
   * syncCompetitionFields() -- when "relay" is selected, forces race type to
     distance (and disables the selector), shows the legs field, and hides
     the team-scoring/completion fields exactly as for "individual" -- run
     against a light fake-DOM harness mirroring
     test_game_admin_race_rule_guidance.py's _run_sync_competition_fields.
   * teamRuleSummaryText -- returns the relay-specific guidance sentence.
-  * Wiring: renderStations() calls the form builder only for a relay
+  * Wiring: renderStations() shows the read-only block only for a relay
     config, and configureRace() includes relay_legs in the POST payload.
   * i18n: every new key exists in both inline dictionaries with genuinely
     different zh-TW copy (test_static_page_i18n.py's symmetry test already
@@ -146,40 +143,16 @@ def test_is_relay_competition_mode():
 
 
 # ---------------------------------------------------------------------------
-# relayMembersFromTextarea -- pure normalization
-# ---------------------------------------------------------------------------
-
-
-def _run_relay_members_from_textarea(text_js: str) -> list:
-    source = _stripped_script()
-    fn = _extract_function(source, "relayMembersFromTextarea")
-    script = (
-        fn + "\n" + f"console.log(JSON.stringify(relayMembersFromTextarea({text_js})));"
-    )
-    return json.loads(_run_node(script))
-
-
-def test_relay_members_textarea_trims_and_drops_blank_lines():
-    out = _run_relay_members_from_textarea('"  Alice  \\n\\n  Bob\\n \\nCara\\n"')
-    assert out == ["Alice", "Bob", "Cara"]
-
-
-def test_relay_members_textarea_empty_gives_empty_list():
-    assert _run_relay_members_from_textarea('""') == []
-    assert _run_relay_members_from_textarea("null") == []
-
-
-# ---------------------------------------------------------------------------
-# buildRelayRegistrationFormHtml -- pure markup builder, real execution
+# buildRelayTeamReadOnlyHtml -- the station card's read-only team block.
+# Teams are now assigned on /teams; Game Admin only shows the result.
 # ---------------------------------------------------------------------------
 
 
 def _t_stub() -> str:
     return (
         "const t = (key) => ({"
-        '"label.relay_team_name": "Team Name",'
-        '"label.relay_members": "Members (one per line)",'
-        '"button.register_relay_team": "Register Team"'
+        '"text.relay_no_team": "No team assigned",'
+        '"link.relay_manage_teams": "Manage teams"'
         "}[key] || key);\n"
     )
 
@@ -196,35 +169,50 @@ def _escape_html_stub() -> str:
     )
 
 
-def _run_build_relay_form(station_key: str, station_js: str) -> str:
+def _run_build_relay_readonly(station_js: str) -> str:
     source = _stripped_script()
-    fn = _extract_function(source, "buildRelayRegistrationFormHtml")
+    fn = _extract_function(source, "buildRelayTeamReadOnlyHtml")
     script = (
         _t_stub()
         + _escape_html_stub()
         + fn
         + "\n"
-        + f"console.log(buildRelayRegistrationFormHtml({json.dumps(station_key)}, {station_js}));"
+        + f"console.log(buildRelayTeamReadOnlyHtml({station_js}));"
     )
     return _run_node(script)
 
 
-def test_relay_form_shows_existing_team_name_and_members():
-    html = _run_build_relay_form(
-        "1", '{team_name: "Volt", relay_members: ["Alice", "Bob"]}'
+def test_relay_readonly_block_shows_team_name_members_and_teams_link():
+    html = _run_build_relay_readonly(
+        '{registered: true, team_name: "Volt", relay_members: ["Alice", "Bob"]}'
     )
-    assert 'value="Volt"' in html
-    assert "Alice\nBob" in html
-    assert (
-        "registerRelayTeam(&#039;1&#039;)" in html or "registerRelayTeam('1')" in html
-    )
+    assert "Volt" in html
+    assert "Alice, Bob" in html
+    assert 'href="/teams"' in html
+    assert "Manage teams" in html
 
 
-def test_relay_form_blank_for_unregistered_station():
-    html = _run_build_relay_form("2", "{}")
-    assert 'value=""' in html
-    assert 'id="relay-team-name-2"' in html
-    assert 'id="relay-members-2"' in html
+def test_relay_readonly_block_has_no_form_controls():
+    html = _run_build_relay_readonly(
+        '{registered: true, team_name: "Volt", relay_members: ["Alice", "Bob"]}'
+    )
+    for tag in ("<input", "<textarea", "<button", "<select"):
+        assert tag not in html
+
+
+def test_relay_readonly_block_for_unassigned_station_says_so_and_still_links():
+    html = _run_build_relay_readonly("{registered: false, team_name: null}")
+    assert "No team assigned" in html
+    assert 'href="/teams"' in html
+
+
+def test_relay_readonly_block_escapes_team_and_member_names():
+    html = _run_build_relay_readonly(
+        '{registered: true, team_name: "<b>x</b>", relay_members: ["<i>y</i>"]}'
+    )
+    assert "<b>x</b>" not in html
+    assert "<i>y</i>" not in html
+    assert "&lt;b&gt;x&lt;/b&gt;" in html
 
 
 # ---------------------------------------------------------------------------
@@ -350,13 +338,60 @@ def test_individual_mode_keeps_legs_field_hidden_and_race_type_enabled():
 # ---------------------------------------------------------------------------
 
 
-def test_render_stations_calls_relay_form_builder_only_when_relay():
+def _render_stations_html(competition_mode: str) -> str:
+    """Run the REAL renderStations() against a stub DOM and return the
+    station list markup it produced."""
     source = _stripped_script()
-    start = source.index("function renderStations(")
-    end = source.index("async function registerRelayTeam", start)
-    body = source[start:end]
-    assert "isRelayCompetitionMode(state.race?.config?.competition_mode)" in body
-    assert "buildRelayRegistrationFormHtml(key, station)" in body
+    fns = "\n".join(
+        _extract_function(source, name)
+        for name in (
+            "isRelayCompetitionMode",
+            "buildRelayTeamReadOnlyHtml",
+            "getStationHealth",
+            "renderStations",
+        )
+    )
+    script = (
+        _t_stub()
+        + _escape_html_stub()
+        + "const out = {};\n"
+        + "function $(id) {\n"
+        + "  if (!out[id]) out[id] = { textContent: '', innerHTML: '' };\n"
+        + "  return out[id];\n"
+        + "}\n"
+        + "const window = { location: { origin: 'http://test.local' } };\n"
+        + "const state = {\n"
+        + f"  race: {{ config: {{ competition_mode: {json.dumps(competition_mode)} }} }},\n"
+        + "  readiness: { station_health: [] },\n"
+        + "  stations: { stations: { '1': { node_id: 'n1', equipment_type: 'treadmill',"
+        + " registered: true, team_name: 'Volt', relay_members: ['Alice', 'Bob'] } },"
+        + " unassigned_nodes: [] },\n"
+        + "};\n"
+        + fns
+        + "\nrenderStations();\n"
+        + "console.log(out['station-list'].innerHTML);\n"
+    )
+    return _run_node(script)
+
+
+def test_render_stations_shows_readonly_team_block_only_for_relay():
+    relay_html = _render_stations_html("relay")
+    assert 'href="/teams"' in relay_html
+    assert "Alice, Bob" in relay_html
+
+    individual_html = _render_stations_html("individual")
+    assert 'href="/teams"' not in individual_html
+    assert "Alice, Bob" not in individual_html
+
+
+def test_game_admin_no_longer_has_a_relay_registration_form():
+    source = _stripped_script()
+    assert "registerRelayTeam" not in source
+    assert "buildRelayRegistrationFormHtml" not in source
+    assert "relayMembersFromTextarea" not in source
+    page = _read()
+    assert "relay-team-name-" not in page
+    assert "relay-members-" not in page
 
 
 def test_configure_race_sends_relay_legs_in_payload():
@@ -437,15 +472,6 @@ def test_configure_race_posts_null_relay_legs_for_an_individual_race():
     assert body["race_type"] == "distance"
 
 
-def test_register_relay_team_posts_to_register_endpoint():
-    source = _stripped_script()
-    start = source.index("async function registerRelayTeam(")
-    end = source.index("\n    }\n", start) + len("\n    }\n")
-    body = source[start:end]
-    assert "/api/race/register" in body
-    assert "relayMembersFromTextarea(" in body
-
-
 # ---------------------------------------------------------------------------
 # i18n: every new key exists in both dictionaries with real zh-TW copy
 # ---------------------------------------------------------------------------
@@ -463,19 +489,24 @@ def test_relay_legs_label_translated():
     assert '"label.relay_legs": "棒數"' in source
 
 
-def test_relay_team_name_label_translated():
+def test_relay_manage_teams_link_translated():
     source = _read()
-    assert '"label.relay_team_name": "Team Name"' in source
-    assert '"label.relay_team_name": "隊伍名稱"' in source
+    assert '"link.relay_manage_teams": "Manage teams"' in source
+    assert '"link.relay_manage_teams": "管理隊伍"' in source
 
 
-def test_relay_members_label_translated():
+def test_relay_no_team_text_translated():
     source = _read()
-    assert '"label.relay_members": "Members (one per line)"' in source
-    assert '"label.relay_members": "隊員（每行一人）"' in source
+    assert '"text.relay_no_team": "No team assigned"' in source
+    assert '"text.relay_no_team": "尚未分配隊伍"' in source
 
 
-def test_register_relay_team_button_translated():
+def test_removed_relay_form_keys_are_gone_from_both_dictionaries():
     source = _read()
-    assert '"button.register_relay_team": "Register Team"' in source
-    assert '"button.register_relay_team": "登記隊伍"' in source
+    for key in (
+        "label.relay_team_name",
+        "label.relay_members",
+        "button.register_relay_team",
+        "message.relay_team_registered",
+    ):
+        assert f'"{key}"' not in source

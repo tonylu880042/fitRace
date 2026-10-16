@@ -41,7 +41,10 @@ TELEMETRY_SPEC.md, OTA_UPDATE.md.
 - Dashboard `/` is a display-only projection screen (leaderboard, countdown,
   race state, QR, device status). No controls of any kind.
 - Game Admin `/gameAdmin`: race operation — mode, leaderboard display, sounds,
-  Start/Stop/Reset.
+  Start/Stop/Reset (shared with `/teams` for relay races).
+- Teams `/teams`: relay team library, team→station assignment, and
+  Start/Stop/Next Race for relay races. Race rules and projector settings stay
+  in Game Admin.
 - System Admin `/systemAdmin`: technical maintenance — station assignment,
   edge nodes, updates, power.
 - Class Admin `/classAdmin`: class operation — plan editing, start/stop/reset

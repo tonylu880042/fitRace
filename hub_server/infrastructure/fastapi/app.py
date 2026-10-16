@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, Literal, Optional
+from typing import Dict, Any, Literal, NamedTuple, Optional
 import segno
 from fastapi import (
     FastAPI,
@@ -62,6 +62,7 @@ from hub_server.usecases.data_backup import backup_files
 from hub_server.usecases.race_result_store import RaceResultStore
 from hub_server.usecases.race_results_query import RaceResultsQuery
 from hub_server.usecases.race_settings_store import RaceSettingsStore
+from hub_server.usecases.relay_teams import RelayTeamLibrary, plan_assignments
 from hub_server.usecases.results_export import build_results_csv
 from hub_server.usecases.roster import (
     MAX_NAME_LENGTH,
@@ -195,7 +196,7 @@ node_registry = NodeRegistry()
 
 
 def resolve_data_paths() -> dict[str, str]:
-    """The four persisted data files, resolved from env (the single source for
+    """The five persisted data files, resolved from env (the single source for
     both the stores below and the System Admin backup download)."""
     race_results = os.getenv("FITRACE_RACE_RESULTS_PATH", "data/race_results.jsonl")
     return {
@@ -206,17 +207,20 @@ def resolve_data_paths() -> dict[str, str]:
         ),
         "settings": os.getenv("FITRACE_RACE_SETTINGS_PATH", "data/race_settings.json"),
         "roster": os.getenv("FITRACE_ROSTER_PATH", "data/roster.json"),
+        "relay_teams": os.getenv("FITRACE_RELAY_TEAMS_PATH", "data/relay_teams.json"),
     }
 
 
 _data_paths = resolve_data_paths()
 _race_settings_path = _data_paths["settings"]
 _roster_path = _data_paths["roster"]
+_relay_teams_path = _data_paths["relay_teams"]
 race_manager = RaceManager(
     settings_store=RaceSettingsStore(_race_settings_path),
     clock_offset_ms_fn=node_registry.get_clock_offset_ms,
 )
 roster_manager = RosterManager(RaceSettingsStore(_roster_path))
+relay_team_library = RelayTeamLibrary(RaceSettingsStore(_relay_teams_path))
 ws_manager = WebSocketManager()
 race_event_engine = RaceEventEngine()
 _race_results_path = _data_paths["race_results"]
@@ -236,7 +240,13 @@ def build_backup_hook(paths):
 
 
 _backup_hook = build_backup_hook(
-    [_race_results_path, _class_results_path, _race_settings_path, _roster_path]
+    [
+        _race_results_path,
+        _class_results_path,
+        _race_settings_path,
+        _roster_path,
+        _relay_teams_path,
+    ]
 )
 race_result_store = RaceResultStore(_race_results_path, on_saved=_backup_hook)
 race_results_query = RaceResultsQuery(
@@ -342,6 +352,15 @@ class ChallengeModePayload(BaseModel):
 class AssignStationPayload(BaseModel):
     station_number: int = Field(..., ge=1)
     node_id: Optional[str] = None
+
+
+class RelayTeamPayload(BaseModel):
+    name: str
+    members: list[str] = Field(default_factory=list)
+
+
+class AssignRelayTeamsPayload(BaseModel):
+    assignments: Dict[str, Optional[str]] = Field(default_factory=dict)
 
 
 class RegisterAthletePayload(BaseModel):
@@ -700,6 +719,7 @@ async def get_race_state_data(now_ms: Optional[int] = None) -> dict:
     snapshot.update(current_signup_fields())
     snapshot["challenge_show_standings"] = current_challenge_show_standings(now_ms)
     snapshot["challenge_start_at_epoch_ms"] = current_challenge_start_at()
+    snapshot["countdown_active"] = race_start_countdown_lock.locked()
     return enrich_race_state_display_names(snapshot, node_registry.list_nodes())
 
 
@@ -894,6 +914,21 @@ def station_stream_health(node_id: str | None) -> dict:
     }
 
 
+class ReadinessItem(NamedTuple):
+    """One readiness issue/warning: a stable code + params for localization
+    and the English sentence kept for backward compatibility. Issues are
+    built ONCE as items; both the English list and the coded list of the API
+    response are derived from them, so they cannot drift apart."""
+
+    code: str
+    params: dict
+    message: str
+
+
+def readiness_item(code: str, message: str, **params) -> ReadinessItem:
+    return ReadinessItem(code, params, message)
+
+
 def station_block_message(station_number: int, reason: str | None) -> str:
     """Actionable, specific reason a station blocks race start."""
     messages = {
@@ -923,18 +958,47 @@ def station_block_message(station_number: int, reason: str | None) -> str:
     )
 
 
-def build_check(status: str, message: str) -> dict:
-    return {"status": status, "message": message}
+STATION_REASON_CODES = (
+    "unassigned",
+    "device_missing",
+    "edge_offline",
+    "no_data",
+    "stale",
+)
 
 
-def edge_clock_skew_messages(assigned_stations: list) -> list[str]:
-    """One message per assigned station's edge whose |clock_offset_ms|
+def station_block_item(station_number: int, reason: str | None) -> ReadinessItem:
+    # The code is the station reason itself ("generic" for anything else).
+    code = reason if reason in STATION_REASON_CODES else "generic"
+    return readiness_item(
+        code,
+        station_block_message(station_number, reason),
+        station=station_number,
+    )
+
+
+def build_check(
+    status: str,
+    message: str,
+    code: Optional[str] = None,
+    params: Optional[dict] = None,
+) -> dict:
+    return {
+        "status": status,
+        "message": message,
+        "code": code,
+        "params": params or {},
+    }
+
+
+def edge_clock_skew_items(assigned_stations: list) -> list[ReadinessItem]:
+    """One item per assigned station's edge whose |clock_offset_ms|
     exceeds the warn threshold -- clock_offset_ms is already applied to
     elapsed-time correction, so this is a diagnostic heads-up only, never
     blocking. Each edge is reported at most once even if several assigned
     stations share it."""
     reported_edge_ids: set[str] = set()
-    messages: list[str] = []
+    items: list[ReadinessItem] = []
     for _, station in assigned_stations:
         node_id = station.get("node_id")
         if not node_id:
@@ -959,8 +1023,19 @@ def edge_clock_skew_messages(assigned_stations: list) -> list[str]:
         if abs(offset_ms) > CLOCK_SKEW_WARN_THRESHOLD_MS:
             reported_edge_ids.add(edge_id)
             edge_label = edge.get("display_name") or edge_id
-            messages.append(f"{edge_label}: clock offset {offset_ms}ms.")
-    return messages
+            items.append(
+                readiness_item(
+                    "clock_skew",
+                    f"{edge_label}: clock offset {offset_ms}ms.",
+                    edge=edge_label,
+                    offset_ms=offset_ms,
+                )
+            )
+    return items
+
+
+def edge_clock_skew_messages(assigned_stations: list) -> list[str]:
+    return [item.message for item in edge_clock_skew_items(assigned_stations)]
 
 
 def get_race_readiness_status() -> dict:
@@ -968,37 +1043,59 @@ def get_race_readiness_status() -> dict:
     config = race_manager.get_config()
     stations_status = race_manager.get_stations_status()
     stations = stations_status.get("stations", {})
-    blocking_issues: list[str] = []
-    warnings: list[str] = []
+    blocking: list[ReadinessItem] = []
+    warning_list: list[ReadinessItem] = []
 
     checks = {
-        "state": build_check("ok", "Race is READY."),
-        "target": build_check("ok", "Race target is valid."),
-        "registrations": build_check("ok", "Athletes are registered."),
-        "teams": build_check("ok", "Team setup is valid."),
-        "stations": build_check("ok", "Participant stations are online."),
-        "sound": build_check("ok", "Start sound is enabled."),
-        "clock": build_check("ok", "Edge clocks are in sync."),
+        "state": build_check("ok", "Race is READY.", "state_ok"),
+        "target": build_check("ok", "Race target is valid.", "target_ok"),
+        "registrations": build_check(
+            "ok", "Athletes are registered.", "registrations_ok"
+        ),
+        "teams": build_check("ok", "Team setup is valid.", "teams_ok"),
+        "stations": build_check(
+            "ok", "Participant stations are online.", "stations_ok"
+        ),
+        "sound": build_check("ok", "Start sound is enabled.", "sound_ok"),
+        "clock": build_check("ok", "Edge clocks are in sync.", "clock_ok"),
     }
 
     if race_state != RaceState.READY:
-        blocking_issues.append(
-            f"Race state must be READY; current state is {race_state.value}."
+        blocking.append(
+            readiness_item(
+                "state_not_ready",
+                f"Race state must be READY; current state is {race_state.value}.",
+                state=race_state.value,
+            )
         )
-        checks["state"] = build_check("block", "Save race settings before starting.")
+        checks["state"] = build_check(
+            "block", "Save race settings before starting.", "no_config"
+        )
 
     if not config:
-        blocking_issues.append("Save race settings before starting.")
-        checks["target"] = build_check("block", "No race target has been saved.")
+        blocking.append(
+            readiness_item("no_config", "Save race settings before starting.")
+        )
+        checks["target"] = build_check(
+            "block", "No race target has been saved.", "target_missing"
+        )
     elif config.race_type in ("distance", "calories") and config.target_value <= 0:
-        blocking_issues.append("Target value must be greater than 0.")
-        checks["target"] = build_check("block", "Target value must be greater than 0.")
+        blocking.append(
+            readiness_item("target_invalid", "Target value must be greater than 0.")
+        )
+        checks["target"] = build_check(
+            "block", "Target value must be greater than 0.", "target_invalid"
+        )
     elif (
         config.race_type in ("time", "max_power", "watts") and config.duration_sec <= 0
     ):
-        blocking_issues.append("Challenge duration must be greater than 0.")
+        blocking.append(
+            readiness_item(
+                "duration_invalid", "Challenge duration must be greater than 0."
+            )
+        )
         checks["target"] = build_check(
-            "block", "Challenge duration must be greater than 0."
+            "block", "Challenge duration must be greater than 0.", "duration_invalid"
         )
 
     assigned_stations = [
@@ -1008,10 +1105,15 @@ def get_race_readiness_status() -> dict:
     ]
     assigned_stations.sort(key=lambda item: item[0])
 
-    clock_skew_messages = edge_clock_skew_messages(assigned_stations)
-    if clock_skew_messages:
-        warnings.extend(clock_skew_messages)
-        checks["clock"] = build_check("warn", " ".join(clock_skew_messages))
+    clock_skew_items = edge_clock_skew_items(assigned_stations)
+    if clock_skew_items:
+        warning_list.extend(clock_skew_items)
+        checks["clock"] = build_check(
+            "warn",
+            " ".join(item.message for item in clock_skew_items),
+            "clock_skew_summary",
+            {"count": len(clock_skew_items)},
+        )
 
     registered_stations = [
         (int(station_number), station)
@@ -1028,23 +1130,40 @@ def get_race_readiness_status() -> dict:
     if is_team_race or is_relay_race:
         participant_stations = registered_stations
         if not registered_stations:
-            blocking_issues.append("Register at least one athlete before starting.")
+            blocking.append(
+                readiness_item(
+                    "no_registered_athletes",
+                    "Register at least one athlete before starting.",
+                )
+            )
             checks["registrations"] = build_check(
-                "block", "No athletes are registered."
+                "block", "No athletes are registered.", "registrations_none"
             )
         else:
             checks["registrations"] = build_check(
-                "ok", f"{len(registered_stations)} athlete(s) registered."
+                "ok",
+                f"{len(registered_stations)} athlete(s) registered.",
+                "registrations_count",
+                {"count": len(registered_stations)},
             )
     else:
         participant_stations = assigned_stations
         checks["registrations"] = build_check(
-            "info", "Individual race allows anonymous participation."
+            "info",
+            "Individual race allows anonymous participation.",
+            "registrations_anonymous",
         )
         if not assigned_stations:
-            blocking_issues.append("Assign at least one station before starting.")
+            blocking.append(
+                readiness_item(
+                    "no_stations_assigned",
+                    "Assign at least one station before starting.",
+                )
+            )
             checks["stations"] = build_check(
-                "block", "No participant station is assigned."
+                "block",
+                "No participant station is assigned.",
+                "stations_none_assigned",
             )
 
     # Mixed races only: every assigned participant station must belong to
@@ -1054,22 +1173,31 @@ def get_race_readiness_status() -> dict:
     # filled in later). checks["groups"] is added only here, so a non-mixed
     # race's readiness output never gains the key.
     if config and config.race_type == "mixed":
-        unmatched_messages: list[str] = []
+        unmatched_items: list[ReadinessItem] = []
         for station_number, station in participant_stations:
             equipment_type = station.get("equipment_type")
             if config.group_index_for(equipment_type) is not None:
                 continue
             if not equipment_type or equipment_type == "unknown":
-                unmatched_messages.append(
-                    f"Station {station_number}: equipment type is unknown; "
-                    "it is not in any race group."
+                unmatched_items.append(
+                    readiness_item(
+                        "group_equipment_unknown",
+                        f"Station {station_number}: equipment type is unknown; "
+                        "it is not in any race group.",
+                        station=station_number,
+                    )
                 )
             else:
-                unmatched_messages.append(
-                    f"Station {station_number}: equipment type {equipment_type} "
-                    "is not in any race group."
+                unmatched_items.append(
+                    readiness_item(
+                        "group_equipment_unmatched",
+                        f"Station {station_number}: equipment type {equipment_type} "
+                        "is not in any race group.",
+                        station=station_number,
+                        equipment=equipment_type,
+                    )
                 )
-        blocking_issues.extend(unmatched_messages)
+        blocking.extend(unmatched_items)
 
         matched_group_indices = {
             config.group_index_for(station.get("equipment_type"))
@@ -1083,27 +1211,38 @@ def get_race_readiness_status() -> dict:
         ]
         for index in empty_group_indices:
             group_label = ", ".join(config.groups[index].equipment_types)
-            warnings.append(
-                f"Group {index + 1} ({group_label}) has no assigned station."
+            warning_list.append(
+                readiness_item(
+                    "group_empty",
+                    f"Group {index + 1} ({group_label}) has no assigned station.",
+                    group=index + 1,
+                    types=group_label,
+                )
             )
 
-        if unmatched_messages:
+        if unmatched_items:
             checks["groups"] = build_check(
                 "block",
-                f"{len(unmatched_messages)} station(s) are not in any race group.",
+                f"{len(unmatched_items)} station(s) are not in any race group.",
+                "groups_unmatched",
+                {"count": len(unmatched_items)},
             )
         elif empty_group_indices:
             checks["groups"] = build_check(
                 "warn",
                 f"{len(empty_group_indices)} group(s) have no assigned station.",
+                "groups_empty",
+                {"count": len(empty_group_indices)},
             )
         else:
             checks["groups"] = build_check(
-                "ok", "Every group has at least one assigned station."
+                "ok",
+                "Every group has at least one assigned station.",
+                "groups_ok",
             )
 
     station_health = []
-    individual_station_issues: list[str] = []
+    individual_station_issues: list[ReadinessItem] = []
     for station_number, station in participant_stations:
         health = station_stream_health(station.get("node_id"))
         health_item = {
@@ -1115,9 +1254,9 @@ def get_race_readiness_status() -> dict:
         }
         station_health.append(health_item)
         if health["health"] in ("missing", "stale"):
-            issue = station_block_message(station_number, health.get("reason"))
+            issue = station_block_item(station_number, health.get("reason"))
             if is_team_race or is_relay_race:
-                blocking_issues.append(issue)
+                blocking.append(issue)
             else:
                 individual_station_issues.append(issue)
 
@@ -1127,20 +1266,26 @@ def get_race_readiness_status() -> dict:
         checks["stations"] = build_check(
             "block",
             f"{len(unhealthy)} station(s) need attention (Station {station_list}).",
+            "stations_need_attention",
+            {"count": len(unhealthy), "stations": station_list},
         )
     elif not (is_team_race or is_relay_race) and assigned_stations:
         online_count = sum(
             1 for station in station_health if station.get("health") == "online"
         )
         if online_count == 0:
-            blocking_issues.extend(individual_station_issues)
-            checks["stations"] = build_check("block", "No assigned station is online.")
+            blocking.extend(individual_station_issues)
+            checks["stations"] = build_check(
+                "block", "No assigned station is online.", "stations_none_online"
+            )
         elif unhealthy:
-            warnings.extend(individual_station_issues)
+            warning_list.extend(individual_station_issues)
             checks["stations"] = build_check(
                 "warn",
                 f"{online_count} station(s) online; "
                 f"{len(unhealthy)} offline station(s) will be excluded.",
+                "stations_partial",
+                {"online": online_count, "offline": len(unhealthy)},
             )
 
     if is_team_race:
@@ -1155,53 +1300,90 @@ def get_race_readiness_status() -> dict:
             if not (station.get("team_name") or "").strip()
         )
         if len(team_names) < 2:
-            blocking_issues.append("Team race needs at least two teams.")
+            blocking.append(
+                readiness_item("team_needs_two", "Team race needs at least two teams.")
+            )
         if missing_team_count:
-            blocking_issues.append("Every team race athlete needs a team name.")
+            blocking.append(
+                readiness_item(
+                    "team_member_needs_name",
+                    "Every team race athlete needs a team name.",
+                )
+            )
         if len(team_names) < 2 or missing_team_count:
-            checks["teams"] = build_check("block", "Team setup needs review.")
+            checks["teams"] = build_check(
+                "block", "Team setup needs review.", "teams_review"
+            )
         else:
-            checks["teams"] = build_check("ok", f"{len(team_names)} teams ready.")
+            checks["teams"] = build_check(
+                "ok",
+                f"{len(team_names)} teams ready.",
+                "teams_ready",
+                {"count": len(team_names)},
+            )
     elif is_relay_race:
         relay_issue_count = 0
         for station_number, station in registered_stations:
             team_name = (station.get("team_name") or "").strip()
             relay_members = station.get("relay_members") or []
             if not team_name:
-                blocking_issues.append(
-                    f"Station {station_number}: relay team needs a team name."
+                blocking.append(
+                    readiness_item(
+                        "relay_needs_name",
+                        f"Station {station_number}: relay team needs a team name.",
+                        station=station_number,
+                    )
                 )
                 relay_issue_count += 1
             elif (
                 config.relay_legs is not None
                 and len(relay_members) != config.relay_legs
             ):
-                blocking_issues.append(
-                    f"Station {station_number}: relay team needs exactly "
-                    f"{config.relay_legs} member(s); has {len(relay_members)}."
+                blocking.append(
+                    readiness_item(
+                        "relay_wrong_size",
+                        f"Station {station_number}: relay team needs exactly "
+                        f"{config.relay_legs} member(s); has {len(relay_members)}.",
+                        station=station_number,
+                        legs=config.relay_legs,
+                        count=len(relay_members),
+                    )
                 )
                 relay_issue_count += 1
         if relay_issue_count:
-            checks["teams"] = build_check("block", "Relay team setup needs review.")
+            checks["teams"] = build_check(
+                "block", "Relay team setup needs review.", "relay_teams_review"
+            )
         else:
             checks["teams"] = build_check(
-                "ok", f"{len(registered_stations)} relay team(s) ready."
+                "ok",
+                f"{len(registered_stations)} relay team(s) ready.",
+                "relay_teams_ready",
+                {"count": len(registered_stations)},
             )
     elif config:
         checks["teams"] = build_check(
-            "info", "Individual race; team rules are not applied."
+            "info", "Individual race; team rules are not applied.", "teams_individual"
         )
 
     if not race_manager.get_start_countdown_sound_enabled():
-        warnings.append("Start sound is disabled for this race.")
-        checks["sound"] = build_check("warn", "Silent start selected.")
+        warning_list.append(
+            readiness_item("sound_disabled", "Start sound is disabled for this race.")
+        )
+        checks["sound"] = build_check("warn", "Silent start selected.", "sound_silent")
 
     return {
-        "ready": not blocking_issues,
+        "ready": not blocking,
         "race_state": race_state.value,
         "competition_mode": config.competition_mode if config else None,
-        "blocking_issues": blocking_issues,
-        "warnings": warnings,
+        "blocking_issues": [item.message for item in blocking],
+        "warnings": [item.message for item in warning_list],
+        "blocking_items": [
+            {"code": item.code, "params": item.params} for item in blocking
+        ],
+        "warning_items": [
+            {"code": item.code, "params": item.params} for item in warning_list
+        ],
         "checks": checks,
         "station_health": station_health,
     }
@@ -2022,6 +2204,120 @@ def has_any_station_registration() -> bool:
     return any(station.get("registered") for station in stations.values())
 
 
+def reject_during_countdown() -> None:
+    if race_start_countdown_lock.locked():
+        raise HTTPException(
+            status_code=409,
+            detail="Race countdown is active: wait for the race to start",
+        )
+
+
+def _relay_library_call(action):
+    """Run a library mutation; unknown team -> 404, any other rule -> 400."""
+    try:
+        return action()
+    except ValueError as e:
+        status = 404 if str(e) == "team not found" else 400
+        raise HTTPException(status_code=status, detail=str(e))
+
+
+@app.get("/api/relay-teams")
+def list_relay_teams(request: Request):
+    require_admin(request)
+    return {"teams": relay_team_library.teams()}
+
+
+@app.post("/api/relay-teams")
+def create_relay_team(payload: RelayTeamPayload, request: Request):
+    require_admin(request)
+    return _relay_library_call(
+        lambda: relay_team_library.add(payload.name, payload.members)
+    )
+
+
+@app.put("/api/relay-teams/{team_id}")
+def update_relay_team(team_id: str, payload: RelayTeamPayload, request: Request):
+    require_admin(request)
+    return _relay_library_call(
+        lambda: relay_team_library.update(team_id, payload.name, payload.members)
+    )
+
+
+@app.delete("/api/relay-teams/{team_id}")
+def delete_relay_team(team_id: str, request: Request):
+    require_admin(request)
+    _relay_library_call(lambda: relay_team_library.delete(team_id))
+    return {"teams": relay_team_library.teams()}
+
+
+@app.post("/api/relay-teams/assign")
+async def assign_relay_teams(payload: AssignRelayTeamsPayload, request: Request):
+    require_admin(request)
+    # The countdown leaves the race READY until Go; changing teams now would
+    # start a race with the wrong (or no) teams.
+    reject_during_countdown()
+    if race_manager.get_state() not in (RaceState.IDLE, RaceState.READY):
+        raise HTTPException(
+            status_code=409,
+            detail="Race already started: press Next Race (or stop the race) first",
+        )
+    config = race_manager.get_config()
+    if config is None or config.competition_mode != "relay":
+        raise HTTPException(
+            status_code=409, detail="Save relay race settings in Game Admin first"
+        )
+
+    # Everything is validated BEFORE any race state is touched, so a rejected
+    # assignment leaves registrations and state exactly as they were.
+    try:
+        assignments = {int(k): v for k, v in payload.assignments.items()}
+        plan = plan_assignments(
+            relay_team_library.teams(),
+            assignments,
+            assigned_station_numbers(),
+            config.relay_legs,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if race_manager.get_state() == RaceState.IDLE:
+        # A hub restart loads the saved config straight into RaceManager
+        # without configure(); re-apply it so the race ends READY (same
+        # reason as load_next_heat).
+        apply_race_config(config)
+
+    race_manager.clear_station_registrations()
+    for station_number, team in plan:
+        race_manager.register_athlete(
+            station_number,
+            None,
+            team_name=team["name"],
+            division=None,
+            relay_members=team["members"],
+        )
+    await broadcast_race_state()
+    return get_stations_status_data()
+
+
+@app.post("/api/race/next-race")
+async def next_race(request: Request):
+    """Back to READY with the SAME race config and no registrations.
+
+    POST /api/race/reset is not usable for this: RaceManager.reset_race()
+    sets the config to None, which would make the next team assignment fail.
+    """
+    require_admin(request)
+    reject_during_countdown()
+    if race_manager.get_state() == RaceState.RUNNING:
+        raise HTTPException(status_code=409, detail="Race is running")
+    config = race_manager.get_config()
+    if config is None:
+        raise HTTPException(status_code=409, detail="save race settings first")
+    reset_race_state()
+    apply_race_config(config)
+    return await broadcast_race_state()
+
+
 def roster_summary_response() -> dict:
     config = race_manager.get_config()
     is_relay = bool(config and config.competition_mode == "relay")
@@ -2538,6 +2834,11 @@ def read_admin():
 @app.get("/gameAdmin")
 def read_game_admin():
     return RedirectResponse(url="/static/gameAdmin.html")
+
+
+@app.get("/teams")
+def read_teams():
+    return RedirectResponse(url="/static/teams.html")
 
 
 @app.get("/classAdmin")
