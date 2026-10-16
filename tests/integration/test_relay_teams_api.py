@@ -325,3 +325,57 @@ def test_next_race_refused_while_running_and_without_config():
     assert res.status_code == 409
     assert _state() == "RUNNING"
     assert _registered() == {"1": ("Volt", ["Alice", "Bob"])}
+
+
+# ---- countdown guard ----
+
+
+def _lock_countdown(monkeypatch):
+    """The 3-2-1 countdown holds race_start_countdown_lock while the race is
+    still READY."""
+    import asyncio
+
+    lock = asyncio.Lock()
+    asyncio.run(lock.acquire())
+    assert lock.locked()
+    monkeypatch.setattr(app_module, "race_start_countdown_lock", lock)
+
+
+def test_assign_refused_during_countdown_and_changes_nothing(monkeypatch):
+    _stations(1, 2)
+    _configure()
+    volt = _team("Volt", ["Alice", "Bob"])
+    amp = _team("Amp", ["Cara", "Dan"])
+    client.post("/api/relay-teams/assign", json={"assignments": {"1": volt["id"]}})
+    before = _registered()
+    _lock_countdown(monkeypatch)
+
+    res = client.post("/api/relay-teams/assign", json={"assignments": {"2": amp["id"]}})
+
+    assert res.status_code == 409
+    assert "countdown" in res.json()["detail"].lower()
+    assert _registered() == before
+    assert _state() == "READY"
+
+
+def test_next_race_refused_during_countdown_and_changes_nothing(monkeypatch):
+    _stations(1)
+    _configure()
+    volt = _team("Volt", ["Alice", "Bob"])
+    client.post("/api/relay-teams/assign", json={"assignments": {"1": volt["id"]}})
+    before = _registered()
+    _lock_countdown(monkeypatch)
+
+    res = client.post("/api/race/next-race")
+
+    assert res.status_code == 409
+    assert "countdown" in res.json()["detail"].lower()
+    assert _registered() == before
+    assert _state() == "READY"
+    assert client.get("/api/race/state").json()["config"] is not None
+
+
+def test_race_state_reports_countdown_active(monkeypatch):
+    assert client.get("/api/race/state").json()["countdown_active"] is False
+    _lock_countdown(monkeypatch)
+    assert client.get("/api/race/state").json()["countdown_active"] is True

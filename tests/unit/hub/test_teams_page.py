@@ -273,6 +273,32 @@ def test_stop_only_when_running_and_next_race_only_when_stopped():
         assert result["canNextRace"] is (state == "STOPPED")
 
 
+def _control_during_countdown(state: str, countdown_active: str) -> dict:
+    return _run(
+        ["assignedStationNumbers", "controlState"],
+        f'controlState("{state}", {ALL_REGISTERED}, {countdown_active})',
+    )
+
+
+def test_countdown_disables_apply_next_race_and_start():
+    during = _control_during_countdown("READY", "true")
+    assert during["canAssign"] is False
+    assert during["canNextRace"] is False
+    assert during["canStart"] is False
+    # Library editing is still allowed in READY; only RUNNING locks it.
+    assert during["locked"] is False
+
+
+def test_countdown_flag_off_or_missing_changes_nothing():
+    for flag in ("false", "undefined"):
+        result = _control_during_countdown("READY", flag)
+        assert result["canAssign"] is True
+        assert result["canStart"] is True
+    stopped = _control_during_countdown("STOPPED", "false")
+    assert stopped["canNextRace"] is True
+    assert _control_during_countdown("STOPPED", "true")["canNextRace"] is False
+
+
 def test_editing_and_assignment_locked_while_running_only():
     for state in ("IDLE", "READY", "RUNNING", "STOPPED"):
         assert _control(state, ALL_REGISTERED)["locked"] is (state == "RUNNING")

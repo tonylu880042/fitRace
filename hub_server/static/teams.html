@@ -470,15 +470,18 @@
       return selections;
     }
 
-    function controlState(raceState, stations) {
+    // countdownActive: the 3-2-1 countdown is playing (the race is still READY
+    // until Go), so nothing that changes teams or the race may run.
+    function controlState(raceState, stations, countdownActive) {
       const assigned = assignedStationNumbers(stations);
       const registeredCount = assigned.filter((number) => stations[String(number)].registered).length;
+      const idle = !countdownActive;
       return {
-        canStart: raceState === "READY" && registeredCount > 0,
+        canStart: idle && raceState === "READY" && registeredCount > 0,
         unregisteredCount: assigned.length - registeredCount,
         canStop: raceState === "RUNNING",
-        canNextRace: raceState === "STOPPED",
-        canAssign: raceState === "IDLE" || raceState === "READY",
+        canNextRace: idle && raceState === "STOPPED",
+        canAssign: idle && (raceState === "IDLE" || raceState === "READY"),
         locked: raceState === "RUNNING",
       };
     }
@@ -514,6 +517,10 @@
 
     function raceStateName() {
       return String((state.race && state.race.state) || "IDLE").toUpperCase();
+    }
+
+    function countdownActive() {
+      return Boolean(state.race && state.race.countdown_active);
     }
 
     function relayLegs() {
@@ -585,7 +592,7 @@
 
     function renderRaceBar() {
       const raceState = raceStateName();
-      const controls = controlState(raceState, state.stations.stations);
+      const controls = controlState(raceState, state.stations.stations, countdownActive());
       const badge = $("race-state-badge");
       badge.textContent = t(`state.${raceState.toLowerCase()}`);
       badge.className = `state-badge ${raceState.toLowerCase()}`;
@@ -620,7 +627,7 @@
     }
 
     function renderLibrary() {
-      const controls = controlState(raceStateName(), state.stations.stations);
+      const controls = controlState(raceStateName(), state.stations.stations, countdownActive());
       const locked = controls.locked || state.busy;
       const list = $("team-list");
       if (!state.teams.length) {
@@ -661,7 +668,7 @@
     function renderStations() {
       const stations = state.stations.stations || {};
       const numbers = assignedStationNumbers(stations);
-      const controls = controlState(raceStateName(), stations);
+      const controls = controlState(raceStateName(), stations, countdownActive());
       const disabled = !controls.canAssign || state.busy;
       const signature = JSON.stringify([
         numbers.map((n) => [n, stations[String(n)].registered, stations[String(n)].team_name, stations[String(n)].relay_members, stationDeviceName(stations[String(n)])]),
@@ -885,6 +892,14 @@
           state.race = payload;
           renderAll();
           Promise.allSettled([refreshStations(), refreshReadiness()]);
+          return;
+        }
+        if (payload.type === "race_countdown") {
+          // The hub sends no state_change when the countdown ends without a
+          // start, so re-read the race shortly after Go.
+          state.race = { ...state.race, countdown_active: true };
+          renderAll();
+          window.setTimeout(refreshRace, Number(payload.duration_ms || 0) + 1000);
           return;
         }
         if (payload.type === "node_status" || payload.type === "registration_success") {

@@ -719,6 +719,7 @@ async def get_race_state_data(now_ms: Optional[int] = None) -> dict:
     snapshot.update(current_signup_fields())
     snapshot["challenge_show_standings"] = current_challenge_show_standings(now_ms)
     snapshot["challenge_start_at_epoch_ms"] = current_challenge_start_at()
+    snapshot["countdown_active"] = race_start_countdown_lock.locked()
     return enrich_race_state_display_names(snapshot, node_registry.list_nodes())
 
 
@@ -2041,6 +2042,14 @@ def has_any_station_registration() -> bool:
     return any(station.get("registered") for station in stations.values())
 
 
+def reject_during_countdown() -> None:
+    if race_start_countdown_lock.locked():
+        raise HTTPException(
+            status_code=409,
+            detail="Race countdown is active: wait for the race to start",
+        )
+
+
 def _relay_library_call(action):
     """Run a library mutation; unknown team -> 404, any other rule -> 400."""
     try:
@@ -2082,6 +2091,9 @@ def delete_relay_team(team_id: str, request: Request):
 @app.post("/api/relay-teams/assign")
 async def assign_relay_teams(payload: AssignRelayTeamsPayload, request: Request):
     require_admin(request)
+    # The countdown leaves the race READY until Go; changing teams now would
+    # start a race with the wrong (or no) teams.
+    reject_during_countdown()
     if race_manager.get_state() not in (RaceState.IDLE, RaceState.READY):
         raise HTTPException(
             status_code=409,
@@ -2133,6 +2145,7 @@ async def next_race(request: Request):
     sets the config to None, which would make the next team assignment fail.
     """
     require_admin(request)
+    reject_during_countdown()
     if race_manager.get_state() == RaceState.RUNNING:
         raise HTTPException(status_code=409, detail="Race is running")
     config = race_manager.get_config()
