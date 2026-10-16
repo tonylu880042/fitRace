@@ -202,8 +202,10 @@ def test_signup_page_has_language_switcher_defaulting_to_english():
     assert '<html lang="en-US">' in response.text
     assert 'id="language-select"' in response.text
     assert "Athlete Self-Registration" in response.text
-    assert "Deutsch (Schweiz)" in response.text
-    assert "Svenska" in response.text
+    # The language list is built from /api/locales, not hardcoded markup.
+    assert "/api/locales" in response.text
+    labels = {entry["label"] for entry in client.get("/api/locales").json()["locales"]}
+    assert {"Deutsch (Schweiz)", "Svenska", "简体中文"} <= labels
     assert "function convertAvatarFileToWebp" in response.text
     assert "function convertAvatarSourceToWebp" in response.text
     assert "AVATAR_MAX_SOURCE_BYTES = 8 * 1024 * 1024" in response.text

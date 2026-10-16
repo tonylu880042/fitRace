@@ -295,18 +295,13 @@
     <div class="language-row">
       <select id="language-select" class="form-control language-select" aria-label="System language">
         <option value="en-US">English</option>
-        <option value="zh-TW">繁體中文</option>
-        <option value="it">Italiano</option>
-        <option value="fr">Français</option>
-        <option value="de-CH">Deutsch (Schweiz)</option>
-        <option value="sv">Svenska</option>
       </select>
     </div>
     <div class="logo">FitRace<span>Studio</span></div>
     <div class="subtitle" data-i18n="signup.subtitle">Athlete Self-Registration</div>
 
     <center>
-      <div class="station-badge" id="station-lbl">Station: Not selected</div>
+      <div class="station-badge" id="station-lbl" data-i18n="signup.station_unspecified">Station: Not selected</div>
     </center>
 
     <form id="signup-form" onsubmit="submitForm(event)">
@@ -337,26 +332,6 @@
       <div class="form-group" id="station-select-group" style="display: none;">
         <label for="station-select" data-i18n="signup.station_select">Select Station</label>
         <select id="station-select" class="form-control">
-          <option value="1">Station 1</option>
-          <option value="2">Station 2</option>
-          <option value="3">Station 3</option>
-          <option value="4">Station 4</option>
-          <option value="5">Station 5</option>
-          <option value="6">Station 6</option>
-          <option value="7">Station 7</option>
-          <option value="8">Station 8</option>
-          <option value="9">Station 9</option>
-          <option value="10">Station 10</option>
-          <option value="11">Station 11</option>
-          <option value="12">Station 12</option>
-          <option value="13">Station 13</option>
-          <option value="14">Station 14</option>
-          <option value="15">Station 15</option>
-          <option value="16">Station 16</option>
-          <option value="17">Station 17</option>
-          <option value="18">Station 18</option>
-          <option value="19">Station 19</option>
-          <option value="20">Station 20</option>
         </select>
       </div>
 
@@ -419,6 +394,7 @@
       const browserLang = navigator.language || navigator.userLanguage;
       if (browserLang) {
         const lower = browserLang.toLowerCase();
+        if (/^zh-(cn|hans|sg)/.test(lower)) return 'zh-CN';
         if (lower.startsWith('zh')) return 'zh-TW';
         if (lower.startsWith('it')) return 'it';
         if (lower.startsWith('fr')) return 'fr';
@@ -429,40 +405,29 @@
       return 'en-US';
     }
     let currentLocale = getBrowserLocale();
-    let signupMessages = {};
+    let messages = {};
     const AVATAR_MAX_SOURCE_BYTES = 8 * 1024 * 1024;
     const AVATAR_TARGET_SIZE = 96;
     const AVATAR_MIN_SIZE = 64;
     const AVATAR_MAX_OUTPUT_BYTES = 32 * 1024;
     const AVATAR_QUALITY_STEPS = [0.72, 0.64, 0.56, 0.48];
 
-    const fallbackMessages = {
-      "signup.subtitle": "Athlete Self-Registration",
-      "signup.avatar": "Athlete Avatar",
-      "avatar.default": "Default",
-      "avatar.male": "Male",
-      "avatar.female": "Female",
-      "avatar.upload": "Upload",
+    // Every string comes from the hub locale files (/api/locales/{locale}),
+    // stored as "signup_page.<key>". The English already in the markup shows
+    // until the fetch completes. FALLBACK_MESSAGES holds only the English
+    // for text this page builds in JavaScript (status, error and station
+    // texts), so those never render as raw keys if the fetch fails; a test
+    // keeps it identical to en-US.json.
+    const FALLBACK_MESSAGES = {
       "avatar.processing_hint": "Photos are compressed on this phone before upload.",
       "avatar.processing": "Compressing photo on this phone...",
       "avatar.ready": "Photo ready. Compressed before upload.",
       "avatar.too_large": "Photo is too large. Please choose an image under 8MB.",
       "avatar.compress_failed": "Could not prepare this photo. Please choose another image.",
-      "signup.station_select": "Select Station",
-      "signup.athlete_name": "Athlete Name (Optional)",
-      "signup.athlete_placeholder": "Enter name...",
-      "signup.team": "Team (Optional)",
-      "signup.team_placeholder": "Example: RD, Red Team, 17Fit...",
-      "signup.division": "Division (Optional)",
-      "signup.division_none": "No division",
-      "signup.division_men": "Men",
-      "signup.division_women": "Women",
-      "signup.submit": "Register",
-      "signup.success": "Registration complete. Please check the venue screen for your station.",
       "signup.error": "Registration failed. Please try again.",
       "signup.error_detail": "Registration failed: {detail}",
       "signup.connection_error": "Connection error. Please check the network.",
-      "signup.station_unspecified": "Station: Not selected",
+      "signup.station_name": "Station {number}",
       "signup.station_unconfigured": "unconfigured",
       "signup.station_unassigned": "unassigned equipment",
       "signup.station_registered": "registered: {name}",
@@ -476,117 +441,65 @@
       "equipment.ski_erg": "Ski Machine"
     };
 
-    const signupLocaleOverrides = {
-      "zh-TW": {
-        "signup.subtitle": "選手自助報名",
-        "signup.avatar": "選手頭像",
-        "avatar.default": "預設",
-        "avatar.male": "男生",
-        "avatar.female": "女生",
-        "avatar.upload": "上傳",
-        "avatar.processing_hint": "照片會先在手機上壓縮後再上傳。",
-        "avatar.processing": "正在手機上壓縮照片...",
-        "avatar.ready": "照片已準備完成，將以壓縮版本上傳。",
-        "avatar.too_large": "照片太大，請選擇 8MB 以下的圖片。",
-        "avatar.compress_failed": "無法處理此照片，請選擇另一張圖片。",
-        "signup.station_select": "選擇設備站位",
-        "signup.athlete_name": "選手姓名（選填）",
-        "signup.athlete_placeholder": "請輸入姓名...",
-        "signup.team": "組別隊伍（選填）",
-        "signup.team_placeholder": "例如：RD、紅隊、17Fit...",
-        "signup.division": "組別（選填）",
-        "signup.division_none": "不分組",
-        "signup.division_men": "男子組",
-        "signup.division_women": "女子組",
-        "signup.submit": "確認報名",
-        "signup.success": "報名成功！請至現場大螢幕確認您的站位。",
-        "signup.error": "報名失敗，請稍後再試。",
-        "signup.error_detail": "報名失敗：{detail}",
-        "signup.connection_error": "連線錯誤，請確認網路連線。",
-        "signup.station_unspecified": "Station: 未指定",
-        "signup.station_unconfigured": "未配置",
-        "signup.station_unassigned": "未指派設備",
-        "signup.station_registered": "已登記：{name}",
-        "signup.device_bound": "裝置：{node}",
-        "signup.device_unbound": "未綁定裝置",
-        "signup.overwrite_warning": "注意：此站位已有選手「{name}」登記，送出將會覆蓋！",
-        "equipment.fan_bike": "風扇車",
-        "equipment.spin_bike": "飛輪車",
-        "equipment.treadmill": "跑步機",
-        "equipment.rower": "划船器",
-        "equipment.ski_erg": "滑雪機"
-      },
-      "it": {
-        "signup.subtitle": "Registrazione atleta",
-        "signup.avatar": "Avatar atleta",
-        "signup.station_select": "Seleziona postazione",
-        "signup.athlete_name": "Nome atleta (facoltativo)",
-        "signup.athlete_placeholder": "Inserisci il nome...",
-        "signup.team": "Team (opzionale)",
-        "signup.division": "Categoria (facoltativo)",
-        "signup.division_none": "Nessuna categoria",
-        "signup.division_men": "Uomini",
-        "signup.division_women": "Donne",
-        "signup.submit": "Registrati"
-      },
-      "fr": {
-        "signup.subtitle": "Inscription athlète",
-        "signup.avatar": "Avatar athlète",
-        "signup.station_select": "Sélectionner un poste",
-        "signup.athlete_name": "Nom de l'athlète (facultatif)",
-        "signup.athlete_placeholder": "Saisir le nom...",
-        "signup.team": "Équipe (facultatif)",
-        "signup.division": "Catégorie (facultatif)",
-        "signup.division_none": "Aucune catégorie",
-        "signup.division_men": "Hommes",
-        "signup.division_women": "Femmes",
-        "signup.submit": "S'inscrire"
-      },
-      "de-CH": {
-        "signup.subtitle": "Athleten-Registrierung",
-        "signup.avatar": "Athletenbild",
-        "signup.station_select": "Station wählen",
-        "signup.athlete_name": "Name (optional)",
-        "signup.athlete_placeholder": "Name eingeben...",
-        "signup.team": "Team (optional)",
-        "signup.division": "Kategorie (optional)",
-        "signup.division_none": "Keine Kategorie",
-        "signup.division_men": "Männer",
-        "signup.division_women": "Frauen",
-        "signup.submit": "Registrieren"
-      },
-      "sv": {
-        "signup.subtitle": "Deltagarregistrering",
-        "signup.avatar": "Deltagarbild",
-        "signup.station_select": "Välj station",
-        "signup.athlete_name": "Deltagarens namn (valfritt)",
-        "signup.athlete_placeholder": "Ange namn...",
-        "signup.team": "Lag (valfritt)",
-        "signup.division": "Kategori (valfritt)",
-        "signup.division_none": "Ingen kategori",
-        "signup.division_men": "Herrar",
-        "signup.division_women": "Damer",
-        "signup.submit": "Registrera"
-      }
-    };
-
     function interpolate(template, values = {}) {
       return String(template).replace(/\{(\w+)\}/g, (_, key) => values[key] ?? "");
     }
 
+    // Page key first, then the built-in English, then a shared global key
+    // (equipment_type.*), finally the key itself.
     function t(key, values = {}) {
-      return interpolate(signupMessages[key] || fallbackMessages[key] || key, values);
+      return interpolate(messages[`signup_page.${key}`] || FALLBACK_MESSAGES[key] || messages[key] || key, values);
+    }
+
+    async function loadLocaleList() {
+      try {
+        const response = await fetch('/api/locales');
+        const payload = await response.json();
+        languageSelect.innerHTML = (payload.locales || []).map((entry) =>
+          `<option value="${escapeHtml(entry.code)}">${escapeHtml(entry.label)}</option>`
+        ).join('');
+        languageSelect.value = currentLocale;
+      } catch (_) {
+        // Non-fatal: the page works with the markup's English option only.
+      }
     }
 
     async function loadLocale(locale) {
-      const normalized = signupLocaleOverrides[locale] || locale === 'en-US' ? locale : 'en-US';
-      currentLocale = normalized;
-      localStorage.setItem('fitrace.locale', normalized);
-      document.documentElement.lang = normalized;
-      if (languageSelect) languageSelect.value = normalized;
-      signupMessages = { ...fallbackMessages, ...(signupLocaleOverrides[normalized] || {}) };
+      try {
+        const response = await fetch(`/api/locales/${encodeURIComponent(locale)}?t=${Date.now()}`);
+        const payload = await response.json();
+        currentLocale = payload.locale || 'en-US';
+        messages = payload.messages || {};
+        localStorage.setItem('fitrace.locale', currentLocale);
+      } catch (_) {
+        // Non-fatal: keep whatever text is already on screen.
+      }
+      document.documentElement.lang = currentLocale;
+      if (languageSelect) languageSelect.value = currentLocale;
       applyTranslations();
       await initStations();
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function stationName(number) {
+      return t('signup.station_name', { number });
+    }
+
+    // Signup-specific name first, then the shared equipment_type.* label,
+    // finally the raw type.
+    function equipmentLabel(type) {
+      if (equipmentNames[type]) return t(equipmentNames[type]);
+      const shared = `equipment_type.${type}`;
+      const label = t(shared);
+      return label === shared ? type : label;
     }
 
     function applyTranslations() {
@@ -801,16 +714,16 @@
         if (hasQueryStation) {
           // Display specific station label with equipment info
           const st = stations[station] || {};
-          const eqType = st.equipment_type ? t(equipmentNames[st.equipment_type] || st.equipment_type) : null;
+          const eqType = st.equipment_type ? equipmentLabel(st.equipment_type) : null;
           const nodeInfo = st.node_id ? ` (${t('signup.device_bound', { node: st.node_display_name || st.node_id })})` : ` (${t('signup.device_unbound')})`;
 
-          stationLbl.innerText = `Station ${station}${eqType ? ' - ' + eqType : ''}${nodeInfo}`;
+          stationLbl.innerText = `${stationName(station)}${eqType ? ' - ' + eqType : ''}${nodeInfo}`;
 
           // The registered flag (not athlete_name truthiness) is the
           // source of truth -- a station can be registered anonymously,
           // with no name to show, so fall back to the station number.
           if (st.registered) {
-            warningDiv.innerText = t('signup.overwrite_warning', { name: st.athlete_name || `Station ${station}` });
+            warningDiv.innerText = t('signup.overwrite_warning', { name: st.athlete_name || stationName(station) });
             warningDiv.style.display = 'block';
           } else {
             warningDiv.style.display = 'none';
@@ -831,7 +744,7 @@
             for (let i = 1; i <= 10; i++) {
               const opt = document.createElement('option');
               opt.value = i;
-              opt.innerText = `Station ${i} (${t('signup.station_unconfigured')})`;
+              opt.innerText = `${stationName(i)} (${t('signup.station_unconfigured')})`;
               select.appendChild(opt);
             }
           } else {
@@ -841,11 +754,11 @@
               const opt = document.createElement('option');
               opt.value = sn;
 
-              const eqType = st.equipment_type ? t(equipmentNames[st.equipment_type] || st.equipment_type) : t('signup.station_unassigned');
+              const eqType = st.equipment_type ? equipmentLabel(st.equipment_type) : t('signup.station_unassigned');
               const nodeInfo = st.node_id ? ` (${st.node_display_name || st.node_id})` : "";
-              const athInfo = st.registered ? ` [${t('signup.station_registered', { name: st.athlete_name || `Station ${sn}` })}]` : "";
+              const athInfo = st.registered ? ` [${t('signup.station_registered', { name: st.athlete_name || stationName(sn) })}]` : "";
 
-              opt.innerText = `Station ${sn} - ${eqType}${nodeInfo}${athInfo}`;
+              opt.innerText = `${stationName(sn)} - ${eqType}${nodeInfo}${athInfo}`;
               select.appendChild(opt);
             });
 
@@ -853,7 +766,7 @@
             const firstStation = select.value;
             if (firstStation && stations[firstStation] && stations[firstStation].registered) {
               const firstStationEntry = stations[firstStation];
-              warningDiv.innerText = t('signup.overwrite_warning', { name: firstStationEntry.athlete_name || `Station ${firstStation}` });
+              warningDiv.innerText = t('signup.overwrite_warning', { name: firstStationEntry.athlete_name || stationName(firstStation) });
               warningDiv.style.display = 'block';
             }
           }
@@ -869,7 +782,7 @@
             for (let i = 1; i <= 10; i++) {
               const opt = document.createElement('option');
               opt.value = i;
-              opt.innerText = `Station ${i}`;
+              opt.innerText = stationName(i);
               select.appendChild(opt);
             }
           }
@@ -878,6 +791,7 @@
     }
 
     async function initializeSignupPage() {
+      loadLocaleList();
       await loadLocale(currentLocale);
       if (urlParams.get('admin') === '1') {
         window.location.href = '/admin';
@@ -899,7 +813,7 @@
             const data = await res.json();
             const st = (data.stations || {})[selectedStation] || {};
             if (st.registered) {
-              warningDiv.innerText = t('signup.overwrite_warning', { name: st.athlete_name || `Station ${selectedStation}` });
+              warningDiv.innerText = t('signup.overwrite_warning', { name: st.athlete_name || stationName(selectedStation) });
               warningDiv.style.display = 'block';
             } else {
               warningDiv.style.display = 'none';

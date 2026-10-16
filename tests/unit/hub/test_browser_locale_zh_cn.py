@@ -21,6 +21,7 @@ PAGES = [
     "results.html",
     "gameAdmin.html",
     "systemAdmin.html",
+    "signup.html",
 ]
 
 

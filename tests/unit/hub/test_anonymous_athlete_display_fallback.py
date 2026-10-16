@@ -18,7 +18,7 @@ import re
 import subprocess
 from pathlib import Path
 
-from page_locale import page_dictionaries
+from page_locale import page_dictionaries, served_messages
 
 STATIC_DIR = Path(__file__).resolve().parents[3] / "hub_server" / "static"
 LOCALES_DIR = (
@@ -569,41 +569,18 @@ def test_signup_athlete_name_input_has_no_required_attribute():
 
 
 def _signup_locale_label_values() -> dict:
-    """Extract signup.athlete_name's value from fallbackMessages (en-US)
-    and every signupLocaleOverrides entry, by loading the real inline
-    dictionaries under node (not a text grep), so this proves the actual
-    values a browser would use, in all six locales."""
-    source = _read("signup.html")
-    script = _script_body(source)
-    fallback_start = script.index("const fallbackMessages = {")
-    fallback_open = script.index("{", fallback_start)
-    fallback_close = _matching_brace_end(script, fallback_open)
-    overrides_start = script.index("const signupLocaleOverrides = {")
-    overrides_open = script.index("{", overrides_start)
-    overrides_close = _matching_brace_end(script, overrides_open)
-
-    js = (
-        script[fallback_start : fallback_close + 1]
-        + ";\n"
-        + script[overrides_start : overrides_close + 1]
-        + ";\n"
-        "const result = { 'en-US': fallbackMessages['signup.athlete_name'] };\n"
-        "for (const locale of Object.keys(signupLocaleOverrides)) {\n"
-        "  result[locale] = signupLocaleOverrides[locale]['signup.athlete_name']"
-        " || fallbackMessages['signup.athlete_name'];\n"
-        "}\n"
-        "console.log(JSON.stringify(result));"
-    )
-    result = subprocess.run(
-        ["node", "-e", js], capture_output=True, text=True, timeout=5
-    )
-    assert result.returncode == 0, f"node failed: {result.stderr}\nScript:\n{js}"
-    return json.loads(result.stdout)
+    """signup.athlete_name's label in every locale, as the hub serves it to
+    the page (the real locale files, en-US underneath), so this proves the
+    actual values a browser would use."""
+    return {
+        locale: served_messages(locale)["signup_page.signup.athlete_name"]
+        for locale in ("en-US", "zh-TW", "zh-CN", "it", "fr", "de-CH", "sv")
+    }
 
 
 def test_signup_athlete_name_label_reads_optional_in_all_six_locales():
     values = _signup_locale_label_values()
-    assert set(values.keys()) == {"en-US", "zh-TW", "it", "fr", "de-CH", "sv"}
+    assert set(values.keys()) == {"en-US", "zh-TW", "zh-CN", "it", "fr", "de-CH", "sv"}
     # Every locale must mark the field optional in its own language -- none
     # left as a copy of a stale mandatory-sounding label, and none identical
     # to another locale's translation (would indicate a missed translation).
@@ -619,6 +596,7 @@ def test_signup_athlete_name_label_reads_optional_in_all_six_locales():
             needle.lower() in values[locale].lower()
         ), f"{locale} athlete-name label does not read as optional: {values[locale]!r}"
     assert "選填" in values["zh-TW"]
+    assert "选填" in values["zh-CN"]
     # No two locales share the exact same (untranslated) string.
     assert len(set(values.values())) == len(values)
 
