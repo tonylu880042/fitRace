@@ -64,6 +64,8 @@ def _matching_end(source: str, open_idx: int, open_ch: str, close_ch: str) -> in
 
 def _extract_function(source: str, name: str) -> str:
     start = source.index(f"function {name}(")
+    if source[max(0, start - 6) : start] == "async ":
+        start -= 6
     paren_open = source.index("(", start)
     paren_end = _matching_end(source, paren_open, "(", ")")
     brace_open = source.index("{", paren_end)
@@ -302,3 +304,172 @@ def test_countdown_flag_off_or_missing_changes_nothing():
 def test_editing_and_assignment_locked_while_running_only():
     for state in ("IDLE", "READY", "RUNNING", "STOPPED"):
         assert _control(state, ALL_REGISTERED)["locked"] is (state == "RUNNING")
+
+
+# ---- localized readiness ----
+
+JS_MESSAGES = """
+const messages = {
+  "readiness.no_config": "請先儲存設定",
+  "readiness.relay_wrong_size": "第 {station} 站需要 {legs} 位，目前 {count} 位",
+  "readiness.sound_disabled": "開始音效已關閉",
+  "teams.readiness_blocked": "尚未就緒：{issues}",
+  "teams.readiness_ready": "可以開始",
+  "teams.start_blocked": "目前無法開始，請查看整備清單。",
+};
+function t(key, params = {}) {
+  let value = messages[key] || key;
+  Object.entries(params).forEach(([name, replacement]) => {
+    value = value.replaceAll(`{${name}}`, String(replacement));
+  });
+  return value;
+}
+"""
+
+READINESS_PAYLOAD = """{
+  ready: false,
+  blocking_issues: ["EN no config", "EN relay size"],
+  blocking_items: [
+    {code: "no_config", params: {}},
+    {code: "relay_wrong_size", params: {station: 2, legs: 3, count: 1}},
+  ],
+  warnings: ["EN sound", "EN future warning"],
+  warning_items: [
+    {code: "sound_disabled", params: {}},
+    {code: "code_without_translation", params: {}},
+  ],
+}"""
+
+READINESS_FNS = ["translateIfKnown", "readinessLines"]
+
+
+def _run_script(functions: list[str], body: str):
+    code = _strip_js_comments(_script())
+    bodies = "\n".join(_extract_function(code, name) for name in functions)
+    script = f"{JS_MESSAGES}\n{bodies}\n{body}"
+    result = subprocess.run(
+        ["node", "-e", script], capture_output=True, text=True, timeout=10
+    )
+    assert result.returncode == 0, f"node failed: {result.stderr}\n{script}"
+    return json.loads(result.stdout)
+
+
+def test_readiness_lines_use_localized_codes_with_english_fallback():
+    lines = _run_script(
+        READINESS_FNS,
+        f"console.log(JSON.stringify(readinessLines({READINESS_PAYLOAD}, translateIfKnown)));",
+    )
+    assert lines["blocking"] == ["請先儲存設定", "第 2 站需要 3 位，目前 1 位"]
+    # Known code -> localized; code the locale lacks -> the English sentence.
+    assert lines["warnings"] == ["開始音效已關閉", "EN future warning"]
+
+
+def test_readiness_lines_fall_back_to_english_for_an_older_hub_without_items():
+    lines = _run_script(
+        READINESS_FNS,
+        "console.log(JSON.stringify(readinessLines("
+        '{ready: false, blocking_issues: ["EN a", "EN b"], warnings: ["EN w"]},'
+        " translateIfKnown)));",
+    )
+    assert lines == {"blocking": ["EN a", "EN b"], "warnings": ["EN w"]}
+
+
+RENDER_BAR_FNS = [
+    "translateIfKnown",
+    "readinessLines",
+    "assignedStationNumbers",
+    "controlState",
+    "raceStateName",
+    "relayLegs",
+    "countdownActive",
+    "renderRaceBar",
+]
+
+
+def _render_race_bar(readiness_js: str) -> dict:
+    return _run_script(
+        RENDER_BAR_FNS,
+        f"""
+const out = {{}};
+function $(id) {{
+  if (!out[id]) out[id] = {{ textContent: "", disabled: false, className: "" }};
+  return out[id];
+}}
+const state = {{
+  race: {{ state: "READY", config: {{ competition_mode: "relay", relay_legs: 2 }} }},
+  stations: {{ stations: {{}} }},
+  readiness: {readiness_js},
+  busy: false,
+}};
+renderRaceBar();
+console.log(JSON.stringify({{
+  line: out["readiness-line"].textContent,
+  warnings: out["readiness-warnings"].textContent,
+}}));
+""",
+    )
+
+
+def test_race_bar_shows_the_localized_blocking_list_once_and_the_warnings():
+    result = _render_race_bar(READINESS_PAYLOAD)
+    assert result["line"] == "尚未就緒：請先儲存設定 第 2 站需要 3 位，目前 1 位"
+    assert "EN" not in result["line"]
+    assert result["warnings"] == "開始音效已關閉 EN future warning"
+
+
+def test_race_bar_shows_ready_text_and_no_warnings_when_ready():
+    result = _render_race_bar(
+        "{ready: true, blocking_issues: [], blocking_items: [],"
+        " warnings: [], warning_items: []}"
+    )
+    assert result == {"line": "可以開始", "warnings": ""}
+
+
+START_FAILURE_FNS = [
+    "translateIfKnown",
+    "readinessLines",
+    "startFailureMessage",
+    "explainStartFailure",
+    "fetchJson",
+    "refreshReadiness",
+    "raceCommand",
+    "startRace",
+]
+
+
+def _start_with_409(readiness_js: str) -> list:
+    return _run_script(
+        START_FAILURE_FNS,
+        f"""
+const calls = [];
+const state = {{ busy: false, race: {{}}, stations: {{ stations: {{}} }}, readiness: null }};
+function renderAll() {{}}
+function openLogin() {{}}
+function adminHeaders() {{ return {{}}; }}
+function setMessage(id, text, kind) {{ calls.push([id, text, kind]); }}
+async function refreshRace() {{}}
+async function refreshStations() {{}}
+globalThis.fetch = async (url) => {{
+  if (url.startsWith("/api/race/countdown-start")) {{
+    return {{ ok: false, status: 409, statusText: "Conflict",
+      text: async () => JSON.stringify({{ detail: "EN raw 409 detail" }}) }};
+  }}
+  return {{ ok: true, status: 200, statusText: "OK",
+    text: async () => JSON.stringify({readiness_js}) }};
+}};
+startRace().then(() => console.log(JSON.stringify(calls)));
+""",
+    )
+
+
+def test_start_409_shows_the_localized_line_instead_of_the_raw_detail():
+    calls = _start_with_409(READINESS_PAYLOAD)
+    assert calls == [["race-message", "目前無法開始，請查看整備清單。", "error"]]
+
+
+def test_start_409_for_a_non_readiness_reason_keeps_the_hub_detail():
+    calls = _start_with_409(
+        "{ready: true, blocking_issues: [], blocking_items: [],"
+        " warnings: [], warning_items: []}"
+    )
+    assert calls == [["race-message", "EN raw 409 detail", "error"]]

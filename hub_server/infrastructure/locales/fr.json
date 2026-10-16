@@ -434,5 +434,6 @@
   "readiness.relay_teams_review": "La composition des équipes de relais doit être revue.",
   "readiness.relay_teams_ready": "{count} équipe(s) de relais prête(s).",
   "readiness.teams_individual": "Course individuelle ; les règles d'équipe ne s'appliquent pas.",
-  "readiness.sound_silent": "Départ silencieux sélectionné."
+  "readiness.sound_silent": "Départ silencieux sélectionné.",
+  "teams.start_blocked": "Démarrage impossible pour le moment. Consultez la liste ci-dessus."
 }

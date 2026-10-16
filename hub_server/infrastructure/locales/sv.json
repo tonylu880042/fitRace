@@ -434,5 +434,6 @@
   "readiness.relay_teams_review": "Stafettlagens uppsättning behöver ses över.",
   "readiness.relay_teams_ready": "{count} stafettlag redo.",
   "readiness.teams_individual": "Individuellt lopp; lagregler tillämpas inte.",
-  "readiness.sound_silent": "Tyst start vald."
+  "readiness.sound_silent": "Tyst start vald.",
+  "teams.start_blocked": "Kan inte starta än. Kontrollera beredskapslistan ovan."
 }

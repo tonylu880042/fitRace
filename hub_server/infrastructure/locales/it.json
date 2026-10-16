@@ -434,5 +434,6 @@
   "readiness.relay_teams_review": "La configurazione delle squadre staffetta va controllata.",
   "readiness.relay_teams_ready": "{count} squadra/e staffetta pronta/e.",
   "readiness.teams_individual": "Gara individuale; le regole di squadra non si applicano.",
-  "readiness.sound_silent": "Partenza silenziosa selezionata."
+  "readiness.sound_silent": "Partenza silenziosa selezionata.",
+  "teams.start_blocked": "Impossibile avviare ora. Controlla l'elenco di idoneità qui sopra."
 }

@@ -434,5 +434,6 @@
   "readiness.relay_teams_review": "Relay team setup needs review.",
   "readiness.relay_teams_ready": "{count} relay team(s) ready.",
   "readiness.teams_individual": "Individual race; team rules are not applied.",
-  "readiness.sound_silent": "Silent start selected."
+  "readiness.sound_silent": "Silent start selected.",
+  "teams.start_blocked": "Cannot start yet. Check the readiness list above."
 }

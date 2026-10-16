@@ -434,5 +434,6 @@
   "readiness.relay_teams_review": "Die Staffelteam-Einrichtung muss geprüft werden.",
   "readiness.relay_teams_ready": "{count} Staffelteam(s) bereit.",
   "readiness.teams_individual": "Einzelrennen; Teamregeln werden nicht angewendet.",
-  "readiness.sound_silent": "Stiller Start gewählt."
+  "readiness.sound_silent": "Stiller Start gewählt.",
+  "teams.start_blocked": "Start noch nicht möglich. Prüfen Sie die Bereitschaftsliste oben."
 }

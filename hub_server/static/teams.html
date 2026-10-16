@@ -249,6 +249,7 @@
           <span class="hint" id="relay-legs"></span>
         </div>
         <div class="hint" id="readiness-line"></div>
+        <div class="hint warn" id="readiness-warnings"></div>
         <div class="hint warn" id="start-warning"></div>
         <div class="hint warn" id="race-notice"></div>
       </div>
@@ -486,6 +487,33 @@
       };
     }
 
+    // Localized text for a readiness code, or null when this locale has no
+    // readiness.<code> message (callers then fall back to the hub's English).
+    function translateIfKnown(key, params = {}) {
+      return messages[key] ? t(key, params) : null;
+    }
+
+    // blocking_items / warning_items run parallel to blocking_issues /
+    // warnings: item i is the coded form of English sentence i. A hub that
+    // sends no items (older build) simply yields the English lists.
+    function readinessLines(readiness, translate) {
+      const localize = (issues, items) => (issues || []).map((english, index) => {
+        const item = (items || [])[index];
+        const text = item ? translate(`readiness.${item.code}`, item.params || {}) : null;
+        return text === null || text === undefined ? english : text;
+      });
+      return {
+        blocking: localize(readiness.blocking_issues, readiness.blocking_items),
+        warnings: localize(readiness.warnings, readiness.warning_items),
+      };
+    }
+
+    // A 409 from Start: when readiness (re-fetched) is the reason, say so in
+    // the operator's language instead of echoing the hub's English detail.
+    function startFailureMessage(readiness, translate, detail, blockedText) {
+      return readiness && readiness.ready === false ? blockedText : detail;
+    }
+
     // ------------------------------------------------------------------
     // Networking.
     // ------------------------------------------------------------------
@@ -605,12 +633,16 @@
 
       const readiness = state.readiness;
       let line = "";
+      let warningText = "";
       if (readiness) {
+        const lines = readinessLines(readiness, translateIfKnown);
         line = readiness.ready
           ? t("teams.readiness_ready")
-          : t("teams.readiness_blocked", { issues: (readiness.blocking_issues || []).join(" ") });
+          : t("teams.readiness_blocked", { issues: lines.blocking.join(" ") });
+        warningText = lines.warnings.join(" ");
       }
       $("readiness-line").textContent = line;
+      $("readiness-warnings").textContent = warningText;
 
       let notice = "";
       if (controls.locked) {
@@ -831,14 +863,20 @@
       }
     }
 
-    async function raceCommand(url, successKey) {
+    async function explainStartFailure(error) {
+      await refreshReadiness();
+      return startFailureMessage(state.readiness, translateIfKnown, error.message, t("teams.start_blocked"));
+    }
+
+    async function raceCommand(url, successKey, explainError) {
       state.busy = true;
       renderAll();
       try {
         state.race = await fetchJson(url, { method: "POST", headers: adminHeaders() });
         setMessage("race-message", t(successKey), "ok");
       } catch (error) {
-        setMessage("race-message", error.message, "error");
+        const text = explainError ? await explainError(error) : error.message;
+        setMessage("race-message", text, "error");
       } finally {
         state.busy = false;
         await Promise.allSettled([refreshRace(), refreshStations(), refreshReadiness()]);
@@ -846,7 +884,7 @@
     }
 
     async function startRace() {
-      await raceCommand("/api/race/countdown-start", "teams.msg_race_started");
+      await raceCommand("/api/race/countdown-start", "teams.msg_race_started", explainStartFailure);
     }
 
     async function stopRace() {
