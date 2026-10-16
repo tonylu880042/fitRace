@@ -21,7 +21,8 @@
 
 ### 2.0 現場頁面職責邊界
 - **Dashboard 主頁 (`/`, `/static/index.html`) 只能顯示現場資訊**：Leaderboard、倒數提示、比賽狀態、QR code、設備狀態等。主頁通常是無滑鼠/鍵盤的投放螢幕，禁止新增設定、切換、啟用音效、開始/停止比賽等人工操作控制。
-- **Game Admin (`/gameAdmin`) 負責比賽操作設定**：比賽模式、Leaderboard 顯示模式、開始倒數是否播放聲音、Start/Stop/Reset 等都必須由 Game Admin 控制。
+- **Game Admin (`/gameAdmin`) 負責比賽操作設定**：比賽模式、Leaderboard 顯示模式、開始倒數是否播放聲音、Start/Stop/Reset 等都必須由 Game Admin 控制（接力賽的 Start/Stop/Reset 與 `/teams` 共用）。
+- **Teams (`/teams`) 負責接力賽隊伍操作**：接力隊伍庫、隊伍→站位分配，以及接力賽的 Start/Stop/Next Race。比賽規則與投影設定仍留在 Game Admin。
 - **System Admin (`/systemAdmin`) 負責技術維護操作**：Station assignment、Edge Node、更新、電源等維護行為不得放入 Dashboard 或 Game Admin。
 - 若 Dashboard 需要聲音、視覺模式或其他行為變更，必須由後端狀態或 WebSocket event 驅動；控制項放在 Game Admin 或 System Admin，不得放在 Dashboard。
 
