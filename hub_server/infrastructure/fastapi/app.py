@@ -2661,6 +2661,11 @@ def read_game_admin():
     return RedirectResponse(url="/static/gameAdmin.html")
 
 
+@app.get("/teams")
+def read_teams():
+    return RedirectResponse(url="/static/teams.html")
+
+
 @app.get("/classAdmin")
 def read_class_admin():
     return RedirectResponse(url="/static/classAdmin.html")

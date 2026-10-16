@@ -1,0 +1,906 @@
+<!DOCTYPE html>
+<html lang="en-US">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FitRaceStudio Relay Teams</title>
+  <meta name="description" content="FitRaceStudio relay team library, station assignment and race control">
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;700&family=Outfit:wght@400;600;800&family=Noto+Sans+TC:wght@500;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #09090b;
+      --surface: #18181b;
+      --surface-2: #111113;
+      --border: #27272a;
+      --border-strong: #3f3f46;
+      --text: #fafafa;
+      --muted: #a1a1aa;
+      --accent: #e2ff3b;
+      --warn: #f59e0b;
+      --danger: #f43f5e;
+      --ok: #34d399;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Outfit", "Noto Sans TC", sans-serif;
+      padding: 24px;
+    }
+
+    button, input, select, textarea { font: inherit; }
+
+    button {
+      min-height: 42px;
+      border: 1px solid var(--border-strong);
+      border-radius: 4px;
+      background: var(--surface-2);
+      color: var(--text);
+      cursor: pointer;
+      font-family: "Oswald", sans-serif;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 0 14px;
+    }
+    button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    .primary { background: var(--accent); border-color: var(--accent); color: #09090b; }
+    .primary:hover:not(:disabled) { color: #09090b; filter: brightness(1.08); }
+    .danger { border-color: rgba(244, 63, 94, 0.7); color: var(--danger); }
+    .danger:hover:not(:disabled) { background: rgba(244, 63, 94, 0.12); color: #fb7185; }
+    .small { min-height: 34px; padding: 0 10px; font-size: 12px; }
+
+    input, select, textarea {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: rgba(0,0,0,0.32);
+      color: var(--text);
+      padding: 0 12px;
+    }
+    input, select { height: 42px; }
+    textarea { min-height: 120px; padding: 10px 12px; resize: vertical; }
+    input:disabled, select:disabled, textarea:disabled { opacity: 0.5; }
+
+    label {
+      display: block;
+      margin-bottom: 7px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .shell { width: min(1480px, 100%); margin: 0 auto; display: grid; gap: 18px; }
+
+    .topbar {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 16px;
+      align-items: center;
+      padding: 22px 24px;
+      border: 2px solid var(--border);
+      border-radius: 4px;
+      background: linear-gradient(180deg, rgba(24,24,27,0.92), rgba(17,17,19,0.94));
+      position: relative;
+      overflow: hidden;
+    }
+    @media (max-width: 80em) { .topbar { grid-template-columns: 1fr; } }
+    .topbar::before {
+      content: "";
+      position: absolute;
+      inset: 0 0 auto 0;
+      height: 4px;
+      background: repeating-linear-gradient(-45deg, var(--accent), var(--accent) 8px, #000 8px, #000 16px);
+    }
+    .brand h1 {
+      margin: 0;
+      font-family: "Oswald", sans-serif;
+      font-size: clamp(28px, 3.2vw, 44px);
+      line-height: 1;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .brand h1 span { color: var(--accent); }
+    .brand p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .top-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 10px; }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 34px;
+      padding: 0 11px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: rgba(0,0,0,0.24);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--danger); box-shadow: 0 0 10px rgba(244,63,94,0.55); }
+    .dot.online { background: var(--accent); box-shadow: 0 0 10px rgba(226,255,59,0.48); }
+    #language-select { width: auto; height: 34px; padding: 0 8px; }
+
+    .layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+    @media (max-width: 1000px) { .layout { grid-template-columns: 1fr; } body { padding: 14px; } }
+
+    .panel { border: 2px solid var(--border); border-radius: 4px; background: var(--surface); padding: 18px; }
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding-bottom: 12px;
+      margin-bottom: 14px;
+      border-bottom: 2px solid var(--border);
+    }
+    .panel-title { margin: 0; font-family: "Oswald", sans-serif; font-size: 22px; letter-spacing: 0.04em; text-transform: uppercase; }
+    .panel-subtitle { margin: 0 0 4px; color: var(--muted); font-size: 13px; line-height: 1.35; }
+
+    .race-bar { display: grid; gap: 12px; }
+    .race-bar-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+    .state-badge {
+      font-family: "Oswald", sans-serif;
+      font-size: 22px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--accent);
+      border: 2px solid var(--accent);
+      border-radius: 4px;
+      padding: 4px 14px;
+    }
+    .state-badge.running { color: var(--ok); border-color: var(--ok); }
+    .state-badge.stopped { color: var(--warn); border-color: var(--warn); }
+    .state-badge.idle { color: var(--muted); border-color: var(--border-strong); }
+    .button-group { display: flex; flex-wrap: wrap; gap: 10px; }
+
+    .status-text { min-height: 20px; margin-top: 10px; color: var(--muted); font-size: 13px; line-height: 1.35; }
+    .status-text.ok { color: var(--ok); }
+    .status-text.warn { color: var(--warn); }
+    .status-text.error { color: var(--danger); }
+
+    .team-list, .station-list { display: grid; gap: 8px; margin-bottom: 14px; }
+    .team-row, .station-row {
+      display: grid;
+      gap: 10px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: rgba(0,0,0,0.22);
+      padding: 10px 12px;
+      font-size: 14px;
+    }
+    .team-row { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+    .station-row { grid-template-columns: 110px minmax(0, 1fr); align-items: center; }
+    @media (max-width: 600px) { .station-row { grid-template-columns: 1fr; } }
+    .team-name { font-weight: 800; }
+    .team-members, .station-registered { color: var(--muted); font-size: 12px; margin-top: 3px; }
+    .station-label { font-family: "Oswald", sans-serif; font-size: 18px; letter-spacing: 0.04em; text-transform: uppercase; }
+    .station-device { color: var(--muted); font-size: 11px; }
+    .empty { color: var(--muted); font-size: 13px; padding: 14px; text-align: center; border: 1px dashed var(--border); border-radius: 4px; }
+
+    .form { display: grid; gap: 12px; padding-top: 14px; border-top: 2px solid var(--border); }
+    .form h3 { margin: 0; font-family: "Oswald", sans-serif; font-size: 17px; letter-spacing: 0.04em; text-transform: uppercase; }
+    .member-counter { font-size: 12px; font-weight: 800; color: var(--muted); margin-top: 6px; }
+    .member-counter.bad { color: var(--warn); }
+    .member-counter.ok { color: var(--ok); }
+    .hint { color: var(--muted); font-size: 13px; line-height: 1.4; }
+    .hint.warn { color: var(--warn); }
+
+    .login {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      align-items: center;
+      justify-content: center;
+      z-index: 50;
+    }
+    .login.show { display: flex; }
+    .login-box { width: min(420px, 92vw); border: 2px solid var(--border); border-radius: 4px; background: var(--surface); padding: 20px; }
+    .login-box h2 { margin: 0 0 8px; font-family: "Oswald", sans-serif; text-transform: uppercase; }
+    .login-box p { color: var(--muted); font-size: 13px; line-height: 1.4; margin: 0 0 14px; }
+    .button-row { display: flex; gap: 10px; margin-top: 14px; }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <h1>FitRace<span>Studio</span> <span data-i18n="teams.title">Relay Teams</span></h1>
+        <p data-i18n="teams.subtitle">Team library, station assignment and race control</p>
+      </div>
+      <div class="top-actions">
+        <select id="language-select" onchange="setLanguage(this.value)"></select>
+        <div class="pill"><span class="dot" id="ws-dot"></span><span id="ws-label" data-i18n="connection.offline">Offline</span></div>
+        <button type="button" onclick="window.location.href='/'" data-i18n="teams.nav_dashboard">Dashboard</button>
+        <button type="button" onclick="window.location.href='/gameAdmin'" data-i18n="teams.nav_game_admin">Game Admin</button>
+        <button type="button" onclick="window.location.href='/systemAdmin'" data-i18n="teams.nav_system_admin">System Admin</button>
+        <button type="button" onclick="openLogin()" data-i18n="teams.nav_unlock">Operator Unlock</button>
+      </div>
+    </header>
+
+    <section class="panel" aria-labelledby="race-title">
+      <div class="panel-header">
+        <h2 class="panel-title" id="race-title" data-i18n="teams.panel_race">Race Control</h2>
+        <span class="state-badge idle" id="race-state-badge">IDLE</span>
+      </div>
+      <div class="race-bar">
+        <div class="race-bar-row">
+          <div class="button-group">
+            <button type="button" class="primary" id="btn-start" onclick="startRace()" data-i18n="teams.btn_start" disabled>Start Race</button>
+            <button type="button" class="danger" id="btn-stop" onclick="stopRace()" data-i18n="teams.btn_stop" disabled>Stop Race</button>
+            <button type="button" id="btn-next-race" onclick="nextRace()" data-i18n="teams.btn_next_race" disabled>Next Race</button>
+          </div>
+          <span class="hint" id="relay-legs"></span>
+        </div>
+        <div class="hint" id="readiness-line"></div>
+        <div class="hint warn" id="race-notice"></div>
+      </div>
+      <div class="status-text" id="race-message"></div>
+    </section>
+
+    <main class="layout">
+      <section class="panel" aria-labelledby="library-title">
+        <div class="panel-header">
+          <h2 class="panel-title" id="library-title" data-i18n="teams.panel_library">Team Library</h2>
+        </div>
+        <div class="team-list" id="team-list"></div>
+        <div class="form">
+          <h3 id="form-title" data-i18n="teams.form_title_add">Add Team</h3>
+          <div>
+            <label for="team-name" data-i18n="teams.label_team_name">Team Name</label>
+            <input type="text" id="team-name" maxlength="80" autocomplete="off" oninput="renderMemberCounter()">
+          </div>
+          <div>
+            <label for="team-members" data-i18n="teams.label_members">Members (one per line, in running order)</label>
+            <textarea id="team-members" oninput="renderMemberCounter()"></textarea>
+            <div class="member-counter" id="member-counter"></div>
+          </div>
+          <div class="button-group">
+            <button type="button" class="primary" id="btn-save-team" onclick="saveTeam()" data-i18n="teams.btn_add_team">Add Team</button>
+            <button type="button" id="btn-cancel-edit" onclick="cancelEdit()" data-i18n="teams.btn_cancel_edit" hidden>Cancel Edit</button>
+          </div>
+        </div>
+        <div class="status-text" id="library-message"></div>
+      </section>
+
+      <section class="panel" aria-labelledby="assignment-title">
+        <div class="panel-header">
+          <h2 class="panel-title" id="assignment-title" data-i18n="teams.panel_assignment">Station Assignment</h2>
+        </div>
+        <div class="station-list" id="station-list"></div>
+        <div class="button-group">
+          <button type="button" class="primary" id="btn-apply" onclick="applyAssignment()" data-i18n="teams.btn_apply" disabled>Apply Assignment</button>
+        </div>
+        <div class="status-text" id="assign-message"></div>
+      </section>
+    </main>
+  </div>
+
+  <div class="login" id="login-modal" role="dialog" aria-modal="true" aria-labelledby="login-title">
+    <div class="login-box">
+      <h2 id="login-title" data-i18n="teams.login_title">Operator Unlock</h2>
+      <p data-i18n="teams.login_description">Enter the operator access code for protected actions.</p>
+      <div>
+        <label for="admin-token" data-i18n="teams.label_access_code">Access Code</label>
+        <input type="password" id="admin-token" autocomplete="off">
+      </div>
+      <div class="button-row">
+        <button type="button" class="primary" onclick="saveAdminToken()" data-i18n="teams.btn_save">Save</button>
+        <button type="button" onclick="closeLogin()" data-i18n="teams.btn_cancel">Cancel</button>
+      </div>
+      <div class="status-text" id="login-message"></div>
+    </div>
+  </div>
+
+  <script>
+    const state = {
+      race: {},
+      stations: { stations: {} },
+      readiness: null,
+      teams: [],
+      // station number (string) -> team id ("" = leave empty). Operator-owned
+      // once touched (selectionsDirty); until then it mirrors what the hub
+      // says is registered.
+      selections: {},
+      selectionsDirty: false,
+      editingId: null,
+      busy: false,
+      wsConnected: false,
+      refreshTimer: null,
+      renderSignature: "",
+      adminToken: localStorage.getItem("fitrace.adminPassword") || localStorage.getItem("fitrace.adminToken") || "",
+    };
+
+    function $(id) {
+      return document.getElementById(id);
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    // ------------------------------------------------------------------
+    // i18n: six-locale API system (same as classAdmin / the dashboard).
+    // ------------------------------------------------------------------
+    function getBrowserLocale() {
+      const saved = localStorage.getItem("fitrace.locale");
+      if (saved) return saved;
+      const browserLang = navigator.language || navigator.userLanguage;
+      if (browserLang) {
+        const lower = browserLang.toLowerCase();
+        if (lower.startsWith("zh")) return "zh-TW";
+        if (lower.startsWith("it")) return "it";
+        if (lower.startsWith("fr")) return "fr";
+        if (lower.startsWith("de")) return "de-CH";
+        if (lower.startsWith("sv")) return "sv";
+        if (lower.startsWith("en")) return "en-US";
+      }
+      return "en-US";
+    }
+
+    let currentLocale = getBrowserLocale();
+    let messages = {};
+
+    function t(key, params = {}) {
+      let value = messages[key] || key;
+      Object.entries(params).forEach(([name, replacement]) => {
+        value = value.replaceAll(`{${name}}`, String(replacement));
+      });
+      return value;
+    }
+
+    async function loadLocaleList() {
+      try {
+        const response = await fetch("/api/locales");
+        const payload = await response.json();
+        const select = $("language-select");
+        select.innerHTML = (payload.locales || []).map((entry) =>
+          `<option value="${escapeHtml(entry.code)}">${escapeHtml(entry.label)}</option>`
+        ).join("");
+        select.value = currentLocale;
+      } catch (_) {
+        // Non-fatal: the page still works with the fallback strings.
+      }
+    }
+
+    async function loadLocale(locale = currentLocale) {
+      const response = await fetch(`/api/locales/${encodeURIComponent(locale)}?t=${Date.now()}`);
+      const payload = await response.json();
+      currentLocale = payload.locale || "en-US";
+      messages = payload.messages || {};
+      localStorage.setItem("fitrace.locale", currentLocale);
+      document.documentElement.lang = currentLocale;
+      const select = $("language-select");
+      if (select) select.value = currentLocale;
+      applyTranslations();
+    }
+
+    async function setLanguage(locale) {
+      await loadLocale(locale);
+    }
+
+    function applyTranslations() {
+      document.querySelectorAll("[data-i18n]").forEach((element) => {
+        element.textContent = t(element.dataset.i18n);
+      });
+      state.renderSignature = "";
+      renderAll();
+    }
+
+    // ------------------------------------------------------------------
+    // Pure helpers -- no DOM access; unit-tested under `node` in
+    // tests/unit/hub/test_teams_page.py.
+    // ------------------------------------------------------------------
+
+    function parseMembers(text) {
+      return String(text || "")
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line !== "");
+    }
+
+    function memberCounterState(text, legs) {
+      const count = parseMembers(text).length;
+      const knownLegs = legs === null || legs === undefined ? null : Number(legs);
+      return {
+        count,
+        legs: knownLegs,
+        ok: knownLegs === null ? true : count === knownLegs,
+      };
+    }
+
+    // Teams a station's select may offer: everything not already chosen in
+    // ANOTHER station's select (its own current choice stays offered).
+    function availableTeamsFor(stationNumber, selections, teams) {
+      const own = String(stationNumber);
+      const taken = new Set();
+      Object.keys(selections || {}).forEach((key) => {
+        if (key !== own && selections[key]) taken.add(selections[key]);
+      });
+      return (teams || []).filter((team) => !taken.has(team.id));
+    }
+
+    function buildAssignmentsPayload(stationNumbers, selections) {
+      const assignments = {};
+      (stationNumbers || []).forEach((number) => {
+        assignments[String(number)] = (selections && selections[number]) || null;
+      });
+      return { assignments };
+    }
+
+    // Stations with a machine (node) assigned -- the only ones a team can
+    // run on.
+    function assignedStationNumbers(stations) {
+      return Object.keys(stations || {})
+        .filter((key) => stations[key] && stations[key].node_id)
+        .map((key) => Number(key))
+        .sort((a, b) => a - b);
+    }
+
+    function selectionsFromStations(stations, teams) {
+      const selections = {};
+      assignedStationNumbers(stations).forEach((number) => {
+        const station = stations[String(number)];
+        const name = station.registered && station.team_name ? String(station.team_name).toLowerCase() : null;
+        const match = name === null ? null : (teams || []).find((team) => String(team.name).toLowerCase() === name);
+        selections[String(number)] = match ? match.id : "";
+      });
+      return selections;
+    }
+
+    function controlState(raceState, stations) {
+      const assigned = assignedStationNumbers(stations);
+      const everyRegistered = assigned.length > 0 && assigned.every((number) => stations[String(number)].registered);
+      return {
+        canStart: raceState === "READY" && everyRegistered,
+        canStop: raceState === "RUNNING",
+        canNextRace: raceState === "STOPPED",
+        canAssign: raceState === "IDLE" || raceState === "READY",
+        locked: raceState === "RUNNING",
+      };
+    }
+
+    // ------------------------------------------------------------------
+    // Networking.
+    // ------------------------------------------------------------------
+
+    function adminHeaders(extra = {}) {
+      const headers = { ...extra };
+      if (state.adminToken) {
+        headers["X-FitRace-Admin-Token"] = state.adminToken;
+      }
+      return headers;
+    }
+
+    async function fetchJson(url, options = {}) {
+      const response = await fetch(url, options);
+      const text = await response.text();
+      const payload = text ? JSON.parse(text) : {};
+      if (!response.ok) {
+        if (response.status === 401) openLogin();
+        throw new Error(payload.detail || response.statusText || "Request failed");
+      }
+      return payload;
+    }
+
+    function setMessage(id, text, kind = "") {
+      const node = $(id);
+      node.textContent = text || "";
+      node.className = `status-text ${kind}`;
+    }
+
+    function raceStateName() {
+      return String((state.race && state.race.state) || "IDLE").toUpperCase();
+    }
+
+    function relayLegs() {
+      const config = state.race && state.race.config;
+      if (config && config.competition_mode === "relay" && config.relay_legs) {
+        return Number(config.relay_legs);
+      }
+      return null;
+    }
+
+    async function refreshRace() {
+      state.race = await fetchJson(`/api/race/state?t=${Date.now()}`);
+      renderAll();
+    }
+
+    async function refreshStations() {
+      state.stations = await fetchJson(`/api/stations?t=${Date.now()}`);
+      if (!state.selectionsDirty) {
+        state.selections = selectionsFromStations(state.stations.stations, state.teams);
+      }
+      renderAll();
+    }
+
+    async function refreshReadiness() {
+      try {
+        state.readiness = await fetchJson(`/api/race/readiness?t=${Date.now()}`);
+      } catch (_) {
+        state.readiness = null;
+      }
+      renderAll();
+    }
+
+    async function refreshTeams() {
+      try {
+        const payload = await fetchJson(`/api/relay-teams?t=${Date.now()}`, { headers: adminHeaders() });
+        state.teams = payload.teams || [];
+        if (!state.selectionsDirty) {
+          state.selections = selectionsFromStations(state.stations.stations, state.teams);
+        }
+      } catch (error) {
+        setMessage("library-message", error.message, "error");
+      }
+      renderAll();
+    }
+
+    async function refreshAll() {
+      await Promise.allSettled([refreshRace(), refreshStations(), refreshReadiness(), refreshTeams()]);
+    }
+
+    function scheduleRefresh() {
+      if (state.refreshTimer) window.clearInterval(state.refreshTimer);
+      state.refreshTimer = window.setInterval(() => {
+        Promise.allSettled([refreshRace(), refreshStations(), refreshReadiness()]);
+      }, 4000);
+    }
+
+    // ------------------------------------------------------------------
+    // Rendering.
+    // ------------------------------------------------------------------
+
+    function renderMemberCounter() {
+      const counter = memberCounterState($("team-members").value, relayLegs());
+      const node = $("member-counter");
+      node.textContent = counter.legs === null
+        ? t("teams.member_counter_no_legs", { count: counter.count })
+        : t("teams.member_counter", { count: counter.count, legs: counter.legs });
+      node.className = `member-counter ${counter.legs === null ? "" : (counter.ok ? "ok" : "bad")}`;
+    }
+
+    function renderRaceBar() {
+      const raceState = raceStateName();
+      const controls = controlState(raceState, state.stations.stations);
+      const badge = $("race-state-badge");
+      badge.textContent = t(`state.${raceState.toLowerCase()}`);
+      badge.className = `state-badge ${raceState.toLowerCase()}`;
+      $("btn-start").disabled = state.busy || !controls.canStart;
+      $("btn-stop").disabled = state.busy || !controls.canStop;
+      $("btn-next-race").disabled = state.busy || !controls.canNextRace;
+
+      const legs = relayLegs();
+      $("relay-legs").textContent = legs === null ? "" : t("teams.relay_legs", { legs });
+
+      const readiness = state.readiness;
+      let line = "";
+      if (readiness) {
+        line = readiness.ready
+          ? t("teams.readiness_ready")
+          : t("teams.readiness_blocked", { issues: (readiness.blocking_issues || []).join(" ") });
+      }
+      $("readiness-line").textContent = line;
+
+      let notice = "";
+      if (controls.locked) {
+        notice = t("teams.locked_running");
+      } else if (state.race && state.race.config && legs === null) {
+        notice = t("teams.not_relay");
+      } else if (raceState === "READY" && !controls.canStart) {
+        notice = t("teams.hint_all_registered");
+      }
+      $("race-notice").textContent = notice;
+    }
+
+    function renderLibrary() {
+      const controls = controlState(raceStateName(), state.stations.stations);
+      const locked = controls.locked || state.busy;
+      const list = $("team-list");
+      if (!state.teams.length) {
+        list.innerHTML = `<div class="empty">${escapeHtml(t("teams.library_empty"))}</div>`;
+      } else {
+        list.innerHTML = state.teams.map((team) => `
+          <div class="team-row">
+            <div>
+              <div class="team-name">${escapeHtml(team.name)}</div>
+              <div class="team-members">${escapeHtml(t("teams.member_count", { count: team.members.length }))}: ${escapeHtml(team.members.join(", "))}</div>
+            </div>
+            <div class="button-group">
+              <button type="button" class="small" data-edit="${escapeHtml(team.id)}" ${locked ? "disabled" : ""}>${escapeHtml(t("teams.btn_edit"))}</button>
+              <button type="button" class="small danger" data-delete="${escapeHtml(team.id)}" ${locked ? "disabled" : ""}>${escapeHtml(t("teams.btn_delete"))}</button>
+            </div>
+          </div>`).join("");
+        list.querySelectorAll("[data-edit]").forEach((button) => {
+          button.addEventListener("click", () => editTeam(button.dataset.edit));
+        });
+        list.querySelectorAll("[data-delete]").forEach((button) => {
+          button.addEventListener("click", () => deleteTeam(button.dataset.delete));
+        });
+      }
+      const editing = state.editingId !== null;
+      $("form-title").textContent = t(editing ? "teams.form_title_edit" : "teams.form_title_add");
+      $("btn-save-team").textContent = t(editing ? "teams.btn_update_team" : "teams.btn_add_team");
+      $("btn-cancel-edit").hidden = !editing;
+      $("btn-save-team").disabled = locked;
+      $("team-name").disabled = locked;
+      $("team-members").disabled = locked;
+      renderMemberCounter();
+    }
+
+    function stationDeviceName(station) {
+      return station.node_display_name || station.node_id || "";
+    }
+
+    function renderStations() {
+      const stations = state.stations.stations || {};
+      const numbers = assignedStationNumbers(stations);
+      const controls = controlState(raceStateName(), stations);
+      const disabled = !controls.canAssign || state.busy;
+      const signature = JSON.stringify([
+        numbers.map((n) => [n, stations[String(n)].registered, stations[String(n)].team_name, stations[String(n)].relay_members, stationDeviceName(stations[String(n)])]),
+        state.teams,
+        state.selections,
+        disabled,
+        currentLocale,
+      ]);
+      $("btn-apply").disabled = disabled || numbers.length === 0 || relayLegs() === null;
+      if (signature === state.renderSignature) return;
+      state.renderSignature = signature;
+
+      const list = $("station-list");
+      if (!numbers.length) {
+        list.innerHTML = `<div class="empty">${escapeHtml(t("teams.assignment_empty"))}</div>`;
+        return;
+      }
+      list.innerHTML = numbers.map((number) => {
+        const station = stations[String(number)];
+        const chosen = state.selections[String(number)] || "";
+        const options = availableTeamsFor(number, state.selections, state.teams)
+          .map((team) => `<option value="${escapeHtml(team.id)}" ${team.id === chosen ? "selected" : ""}>${escapeHtml(team.name)}</option>`)
+          .join("");
+        const registered = station.registered && station.team_name
+          ? t("teams.registered_team", { team: station.team_name, members: (station.relay_members || []).join(", ") })
+          : t("teams.not_registered");
+        return `
+          <div class="station-row">
+            <div>
+              <div class="station-label">${escapeHtml(t("teams.station_label", { number }))}</div>
+              <div class="station-device">${escapeHtml(stationDeviceName(station))}</div>
+            </div>
+            <div>
+              <select data-station="${number}" ${disabled ? "disabled" : ""}>
+                <option value="">${escapeHtml(t("teams.option_empty"))}</option>
+                ${options}
+              </select>
+              <div class="station-registered">${escapeHtml(registered)}</div>
+            </div>
+          </div>`;
+      }).join("");
+      list.querySelectorAll("select[data-station]").forEach((select) => {
+        select.addEventListener("change", () => {
+          state.selections[select.dataset.station] = select.value;
+          state.selectionsDirty = true;
+          renderAll();
+        });
+      });
+    }
+
+    function renderAll() {
+      renderRaceBar();
+      renderLibrary();
+      renderStations();
+    }
+
+    // ------------------------------------------------------------------
+    // Actions.
+    // ------------------------------------------------------------------
+
+    function openLogin() {
+      $("admin-token").value = state.adminToken;
+      $("login-modal").classList.add("show");
+      $("admin-token").focus();
+    }
+
+    function closeLogin() {
+      $("login-modal").classList.remove("show");
+      setMessage("login-message", "");
+    }
+
+    async function saveAdminToken() {
+      state.adminToken = $("admin-token").value.trim();
+      localStorage.setItem("fitrace.adminToken", state.adminToken);
+      localStorage.setItem("fitrace.adminPassword", state.adminToken);
+      closeLogin();
+      await refreshTeams();
+    }
+
+    function editTeam(teamId) {
+      const team = state.teams.find((entry) => entry.id === teamId);
+      if (!team) return;
+      state.editingId = team.id;
+      $("team-name").value = team.name;
+      $("team-members").value = team.members.join("\n");
+      setMessage("library-message", "");
+      renderLibrary();
+    }
+
+    function cancelEdit() {
+      state.editingId = null;
+      $("team-name").value = "";
+      $("team-members").value = "";
+      renderLibrary();
+    }
+
+    async function saveTeam() {
+      const body = JSON.stringify({
+        name: $("team-name").value,
+        members: parseMembers($("team-members").value),
+      });
+      const editing = state.editingId;
+      try {
+        await fetchJson(editing ? `/api/relay-teams/${encodeURIComponent(editing)}` : "/api/relay-teams", {
+          method: editing ? "PUT" : "POST",
+          headers: adminHeaders({ "Content-Type": "application/json" }),
+          body,
+        });
+        cancelEdit();
+        setMessage("library-message", t("teams.team_saved"), "ok");
+        await refreshTeams();
+        await refreshStations();
+      } catch (error) {
+        setMessage("library-message", error.message, "error");
+      }
+    }
+
+    async function deleteTeam(teamId) {
+      const team = state.teams.find((entry) => entry.id === teamId);
+      if (!team) return;
+      if (!window.confirm(t("teams.confirm_delete", { name: team.name }))) return;
+      try {
+        const payload = await fetchJson(`/api/relay-teams/${encodeURIComponent(teamId)}`, {
+          method: "DELETE",
+          headers: adminHeaders(),
+        });
+        state.teams = payload.teams || [];
+        if (state.selections) {
+          Object.keys(state.selections).forEach((key) => {
+            if (state.selections[key] === teamId) state.selections[key] = "";
+          });
+        }
+        if (state.editingId === teamId) cancelEdit();
+        setMessage("library-message", t("teams.team_deleted"), "ok");
+        renderAll();
+      } catch (error) {
+        setMessage("library-message", error.message, "error");
+      }
+    }
+
+    async function applyAssignment() {
+      const numbers = assignedStationNumbers(state.stations.stations);
+      state.busy = true;
+      renderAll();
+      try {
+        state.stations = await fetchJson("/api/relay-teams/assign", {
+          method: "POST",
+          headers: adminHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify(buildAssignmentsPayload(numbers, state.selections)),
+        });
+        state.selectionsDirty = false;
+        state.selections = selectionsFromStations(state.stations.stations, state.teams);
+        setMessage("assign-message", t("teams.assign_applied"), "ok");
+      } catch (error) {
+        setMessage("assign-message", error.message, "error");
+      } finally {
+        state.busy = false;
+        await Promise.allSettled([refreshRace(), refreshReadiness()]);
+        renderAll();
+      }
+    }
+
+    async function raceCommand(url, successKey) {
+      state.busy = true;
+      renderAll();
+      try {
+        state.race = await fetchJson(url, { method: "POST", headers: adminHeaders() });
+        setMessage("race-message", t(successKey), "ok");
+      } catch (error) {
+        setMessage("race-message", error.message, "error");
+      } finally {
+        state.busy = false;
+        await Promise.allSettled([refreshRace(), refreshStations(), refreshReadiness()]);
+      }
+    }
+
+    async function startRace() {
+      await raceCommand("/api/race/countdown-start", "teams.msg_race_started");
+    }
+
+    async function stopRace() {
+      await raceCommand("/api/race/stop", "teams.msg_race_stopped");
+    }
+
+    async function nextRace() {
+      state.selectionsDirty = false;
+      state.selections = {};
+      setMessage("assign-message", "");
+      await raceCommand("/api/race/next-race", "teams.msg_next_race");
+    }
+
+    function connectWebSocket() {
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const socket = new WebSocket(`${protocol}//${window.location.host}/ws/dashboard`);
+      socket.onopen = () => {
+        state.wsConnected = true;
+        if (state.refreshTimer) {
+          window.clearInterval(state.refreshTimer);
+          state.refreshTimer = null;
+        }
+        $("ws-dot").className = "dot online";
+        $("ws-label").textContent = t("connection.online");
+        refreshAll();
+      };
+      socket.onclose = () => {
+        state.wsConnected = false;
+        $("ws-dot").className = "dot";
+        $("ws-label").textContent = t("connection.offline");
+        scheduleRefresh();
+        window.setTimeout(connectWebSocket, 3000);
+      };
+      socket.onerror = () => {
+        state.wsConnected = false;
+        $("ws-dot").className = "dot";
+        $("ws-label").textContent = t("connection.offline");
+        scheduleRefresh();
+      };
+      socket.onmessage = (event) => {
+        const payload = JSON.parse(event.data);
+        if (payload.type === "state_change") {
+          state.race = payload;
+          renderAll();
+          Promise.allSettled([refreshStations(), refreshReadiness()]);
+          return;
+        }
+        if (payload.type === "node_status" || payload.type === "registration_success") {
+          Promise.allSettled([refreshStations(), refreshReadiness()]);
+        }
+      };
+    }
+
+    $("login-modal").addEventListener("click", (event) => {
+      if (event.target.id === "login-modal") closeLogin();
+    });
+    $("admin-token").addEventListener("keydown", (event) => {
+      if (event.key === "Enter") saveAdminToken();
+      if (event.key === "Escape") closeLogin();
+    });
+
+    loadLocaleList();
+    loadLocale().finally(() => {
+      connectWebSocket();
+      refreshAll();
+    });
+  </script>
+</body>
+</html>
