@@ -56,9 +56,18 @@ TELEMETRY_SPEC.md, OTA_UPDATE.md.
   blocked while a session is RUNNING.
 
 ## i18n
-- Locale dicts live in `infrastructure/locales/` (zh_tw.json, en.json).
-  Frontends fetch translations via API — never hardcode zh/en strings in
-  static pages.
+- Locale dicts live in `hub_server/infrastructure/locales/` (en-US.json,
+  zh-TW.json, zh-CN.json, it.json, fr.json, de-CH.json, sv.json). Frontends
+  fetch translations via API (`/api/locales`) — never hardcode zh/en strings
+  in static pages. Pages that carry their own text use a key prefix
+  (`game_admin.`, `system_admin.`, `signup_page.`, `docs.`).
+- Completeness: en-US, zh-TW and zh-CN are the complete locales and must have
+  exactly the same key set. it, fr, de-CH and sv may be missing keys: the hub
+  serves them merged over en-US (a missing key shows English), and a
+  non-English locale never has a key en-US lacks. New keys go into en-US,
+  zh-TW and zh-CN only.
+- zh-CN is generated from zh-TW once (OpenCC `tw2sp`, then hand-reviewed for
+  mainland wording); edit the JSON afterwards, never add OpenCC to the repo.
 
 ## Gotchas
 - `EDGE_SETUP_HTML` (edge_node/infrastructure/fastapi/app.py) is a Python
