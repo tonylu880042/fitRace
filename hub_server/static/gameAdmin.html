@@ -2205,10 +2205,33 @@
       syncRaceFields();
     }
 
+    // The readiness.* strings live in the hub's locale files, not in the
+    // inline dictionaries above: fetch the locale and merge only those keys.
+    function mergeReadinessMessages(locale, messages) {
+      const target = dictionaries[locale];
+      if (!target) return;
+      Object.keys(messages || {}).forEach((key) => {
+        if (key.startsWith("readiness.")) target[key] = messages[key];
+      });
+    }
+
+    async function loadReadinessMessages(locale) {
+      try {
+        const response = await fetch(`/api/locales/${encodeURIComponent(locale)}?t=${Date.now()}`);
+        if (!response.ok) return;
+        const payload = await response.json();
+        mergeReadinessMessages(locale, payload.messages);
+        renderReadinessPanel();
+      } catch (_) {
+        // Non-fatal: the readiness panel keeps showing the hub's English.
+      }
+    }
+
     function setLanguage(lang) {
       currentLocale = lang;
       localStorage.setItem("fitrace.locale", lang);
       applyTranslations();
+      loadReadinessMessages(lang);
     }
 
     function adminHeaders(extra = {}) {
@@ -2898,6 +2921,38 @@
       return "info";
     }
 
+    // Localized text for a readiness code, or null while this locale's
+    // readiness.* messages are not loaded (the hub's English is the fallback).
+    function translateReadiness(key, params = {}) {
+      const text = t(key, params);
+      return text === key ? null : text;
+    }
+
+    // Bullet-list lines: blocking issues except station-scoped ones (those
+    // are shown as per-station cards) plus every warning. Localized from the
+    // parallel *_items lists; a hub without items yields its English lines.
+    function readinessIssueTexts(readiness) {
+      const localize = (item, english) => {
+        const text = item ? translateReadiness(`readiness.${item.code}`, item.params || {}) : null;
+        return text === null ? english : text;
+      };
+      const blocking = (readiness.blocking_issues || [])
+        .map((english, index) => ({ item: (readiness.blocking_items || [])[index], english }))
+        .filter(({ item, english }) => item
+          ? !(item.params && item.params.station !== undefined)
+          : !/^Station \d+:/.test(english))
+        .map(({ item, english }) => localize(item, english));
+      const warnings = (readiness.warnings || [])
+        .map((english, index) => localize((readiness.warning_items || [])[index], english));
+      return [...blocking, ...warnings];
+    }
+
+    function readinessCheckMessage(check) {
+      if (!check) return "--";
+      const text = check.code ? translateReadiness(`readiness.${check.code}`, check.params || {}) : null;
+      return text === null ? (check.message || "--") : text;
+    }
+
     function renderReadinessPanel() {
       const panel = $("race-readiness-panel");
       if (!panel) return;
@@ -2922,10 +2977,9 @@
       const title = readiness.ready ? t("text.ready_to_start") : t("text.needs_attention");
       // Station-specific issues are shown as localized cards below; keep only
       // the rest (register athlete, target, teams) in the bullet list.
-      const issues = (readiness.blocking_issues || []).filter((i) => !/^Station \d+:/.test(i));
-      const warnings = readiness.warnings || [];
-      const issueHtml = [...issues, ...warnings].length
-        ? `<ul class="issue-list">${[...issues, ...warnings].map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`
+      const issueLines = readinessIssueTexts(readiness);
+      const issueHtml = issueLines.length
+        ? `<ul class="issue-list">${issueLines.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`
         : "";
       const checks = readiness.checks || {};
       const checkOrder = [
@@ -2952,7 +3006,7 @@
             <span class="readiness-check-dot ${klass}"></span>
             <div class="readiness-check-body">
               <div class="readiness-check-title">${escapeHtml(label)}</div>
-              <div class="readiness-check-message">${escapeHtml(check.message || "--")}</div>
+              <div class="readiness-check-message">${escapeHtml(readinessCheckMessage(check))}</div>
             </div>
           </div>
         `;
@@ -4278,6 +4332,7 @@
     syncCompetitionFields();
     syncVisibility();
     applyTranslations();
+    loadReadinessMessages(currentLocale);
     connectWebSocket();
     refreshAll();
   </script>
